@@ -6,7 +6,7 @@ Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 diffe
 - Core 1 is for the realtime plane: statically allocated, pinned, and kept close to the silicon.
 - `arc::Dio` and `arc::Din` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::Ring` handles ordered telemetry.
-- `arc::Reg` is the single-word fast path for latest-wins control.
+- `arc::Reg` is the single-word fast path for latest-wins control, including compact multi-field words.
 
 ## Layout
 
@@ -14,6 +14,9 @@ Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 diffe
 .
 ├── CMakeLists.txt
 ├── env.sh
+├── examples
+│   └── udp
+│       └── README.md
 ├── README.md
 ├── sdkconfig.defaults
 ├── sdkconfig.defaults.psram
@@ -251,7 +254,8 @@ The shipped app is intentionally asymmetric:
 - Core 1 samples `arc::Din`
 - Core 1 pushes edge telemetry through `arc::Ring`
 - Core 0 drains telemetry every `1 ms`
-- Core 0 updates the latest blink rate through `arc::Reg`
+- Core 0 updates the wave period through `arc::Reg<std::uint32_t>`
+- Core 0 updates a compact control word through `arc::Reg<Ctl>`
 
 `main/app_main.cpp` stays minimal:
 
@@ -271,4 +275,6 @@ extern "C" void app_main()
 - `arc::Dio` is the default CPU-driven output path on ESP32-S3.
 - `arc::Din` gives the same dedicated path for deterministic input sampling.
 - `arc::Reg` is better than a queue for latest-wins control words.
+- For multi-field control words, prefer explicit fixed-width fields over C++ bitfields.
 - `arc::Ring` is better than a register when event history matters.
+- UDP over Wi-Fi is a good first network demo, but it belongs under `examples/udp`, not in the root baseline.

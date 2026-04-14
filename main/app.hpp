@@ -16,11 +16,24 @@ struct Telemetry {
     std::uint32_t tick;
     std::uint32_t seq;
     std::uint8_t level;
+    std::uint8_t mark;
 };
+
+inline constexpr std::uint8_t tx_on = 1U << 0;
+
+struct Ctl {
+    std::uint8_t mark;
+    std::uint8_t stride;
+    std::uint8_t flags;
+    std::uint8_t spare{};
+};
+
+static_assert(sizeof(Ctl) == sizeof(std::uint32_t));
 
 struct Ctx {
     arc::Ring<Telemetry, 256> tx{};
     arc::Reg<std::uint32_t> half{};
+    arc::Reg<Ctl> ctl{};
 };
 
 struct Loop {
@@ -46,6 +59,13 @@ struct Loop {
     }
 
 private:
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::uint32_t mask(
+        const std::uint8_t stride) noexcept
+    {
+        const auto shift = stride >= 31U ? 31U : stride;
+        return shift == 0U ? 0U : ((std::uint32_t{1} << shift) - 1U);
+    }
+
     IRAM_ATTR [[gnu::noinline]] static void step(
         Ctx& ctx,
         bool& last,
@@ -54,10 +74,19 @@ private:
         const auto level = Sense::high();
         if (level != last) {
             last = level;
+            const auto ctl = ctx.ctl.read();
+            const auto edge = seq++;
+            if ((ctl.flags & tx_on) == 0U) {
+                return;
+            }
+            if ((edge & mask(ctl.stride)) != 0U) {
+                return;
+            }
             static_cast<void>(ctx.tx.try_push(Telemetry{
                 .tick = static_cast<std::uint32_t>(arc::Clock::tick()),
-                .seq = seq++,
+                .seq = edge,
                 .level = static_cast<std::uint8_t>(level),
+                .mark = ctl.mark,
             }));
         }
     }
@@ -68,6 +97,8 @@ using Rt = arc::Plane<Loop, arc::cfg::stack, Ctx>;
 inline constexpr char tag[] = "arc";
 inline constexpr TickType_t cmd_ticks = pdMS_TO_TICKS(2000);
 inline constexpr std::uint32_t fast_half_us = 50000;
+inline constexpr Ctl base_ctl{.mark = 0x10, .stride = 0, .flags = tx_on};
+inline constexpr Ctl fast_ctl{.mark = 0x2a, .stride = 2, .flags = tx_on};
 
 #if CONFIG_LOG_DEFAULT_LEVEL > 0
 inline constexpr TickType_t poll_ticks = pdMS_TO_TICKS(1);
@@ -90,9 +121,10 @@ inline void drain() noexcept
     while (ctx.tx.try_pop(sample)) {
         ESP_LOGI(
             tag,
-            "edge seq=%u level=%u tick=%u",
+            "edge seq=%u level=%u mark=%u tick=%u",
             static_cast<unsigned>(sample.seq),
             static_cast<unsigned>(sample.level),
+            static_cast<unsigned>(sample.mark),
             static_cast<unsigned>(sample.tick));
     }
 #endif
@@ -112,8 +144,16 @@ inline void io([[maybe_unused]] void* raw) noexcept
             fast = !fast;
 
             const auto half_us = fast ? fast_half_us : arc::cfg::half_us;
+            const auto ctl = fast ? fast_ctl : base_ctl;
             ctx.half.write(half_cycles(half_us));
-            ESP_LOGI(tag, "cmd half=%u us", static_cast<unsigned>(half_us));
+            ctx.ctl.write(ctl);
+            ESP_LOGI(
+                tag,
+                "cmd half=%u us mark=%u stride=%u flags=0x%x",
+                static_cast<unsigned>(half_us),
+                static_cast<unsigned>(ctl.mark),
+                static_cast<unsigned>(ctl.stride),
+                static_cast<unsigned>(ctl.flags));
         }
 
         vTaskDelay(poll_ticks);
@@ -123,6 +163,7 @@ inline void io([[maybe_unused]] void* raw) noexcept
 inline void boot()
 {
     ctx.half.write(half_cycles(arc::cfg::half_us));
+    ctx.ctl.write(base_ctl);
 
     const auto io_task = arc::spawn(
         &io,
