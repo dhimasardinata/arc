@@ -18,13 +18,9 @@ struct Telemetry {
     std::uint8_t level;
 };
 
-struct Command {
-    std::uint32_t half_cycles;
-};
-
 struct Ctx {
     arc::Ring<Telemetry, 256> tx{};
-    arc::Ring<Command, 16> rx{};
+    arc::Reg<std::uint32_t> half{};
 };
 
 struct Loop {
@@ -32,19 +28,17 @@ struct Loop {
 
     IRAM_ATTR static void run(Ctx& ctx) noexcept
     {
-        auto half_cycles =
-            static_cast<esp_cpu_cycle_count_t>(imm<arc::cfg::half_us>()) *
-            static_cast<esp_cpu_cycle_count_t>(imm<arc::cfg::mhz>());
         auto last = Sense::high();
         std::uint32_t seq = 0;
 
         while (true) {
-            step(ctx, half_cycles, last, seq);
+            const auto half_cycles = static_cast<esp_cpu_cycle_count_t>(ctx.half.read());
+            step(ctx, last, seq);
             Led::template write<true>();
             arc::fence();
             arc::Clock::spin(half_cycles);
 
-            step(ctx, half_cycles, last, seq);
+            step(ctx, last, seq);
             Led::template write<false>();
             arc::fence();
             arc::Clock::spin(half_cycles);
@@ -52,27 +46,11 @@ struct Loop {
     }
 
 private:
-    template <std::uint32_t Value>
-    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::uint32_t imm() noexcept
-    {
-        volatile std::uint32_t value = (Value >> 24U) & 0xFFU;
-        value = (value << 8U) | ((Value >> 16U) & 0xFFU);
-        value = (value << 8U) | ((Value >> 8U) & 0xFFU);
-        value = (value << 8U) | (Value & 0xFFU);
-        return value;
-    }
-
     IRAM_ATTR [[gnu::noinline]] static void step(
         Ctx& ctx,
-        esp_cpu_cycle_count_t& half_cycles,
         bool& last,
         std::uint32_t& seq) noexcept
     {
-        Command cmd{};
-        if (ctx.rx.try_pop(cmd) && cmd.half_cycles != 0U) {
-            half_cycles = static_cast<esp_cpu_cycle_count_t>(cmd.half_cycles);
-        }
-
         const auto level = Sense::high();
         if (level != last) {
             last = level;
@@ -88,20 +66,26 @@ private:
 using Rt = arc::Plane<Loop, arc::cfg::stack, Ctx>;
 
 inline constexpr char tag[] = "arc";
-inline constexpr TickType_t poll_ticks = pdMS_TO_TICKS(1);
 inline constexpr TickType_t cmd_ticks = pdMS_TO_TICKS(2000);
 inline constexpr std::uint32_t fast_half_us = 50000;
+
+#if CONFIG_LOG_DEFAULT_LEVEL > 0
+inline constexpr TickType_t poll_ticks = pdMS_TO_TICKS(1);
+#else
+inline constexpr TickType_t poll_ticks = pdMS_TO_TICKS(50);
+#endif
 
 constinit inline Ctx ctx{};
 constinit inline arc::TaskMem<4096> io_mem{};
 
-[[nodiscard]] constexpr Command rate(const std::uint32_t half_us) noexcept
+[[nodiscard]] constexpr std::uint32_t half_cycles(const std::uint32_t half_us) noexcept
 {
-    return Command{.half_cycles = static_cast<std::uint32_t>(arc::Clock::us(half_us, arc::cfg::mhz))};
+    return static_cast<std::uint32_t>(arc::Clock::us(half_us, arc::cfg::mhz));
 }
 
 inline void drain() noexcept
 {
+#if CONFIG_LOG_DEFAULT_LEVEL > 0
     Telemetry sample{};
     while (ctx.tx.try_pop(sample)) {
         ESP_LOGI(
@@ -111,6 +95,7 @@ inline void drain() noexcept
             static_cast<unsigned>(sample.level),
             static_cast<unsigned>(sample.tick));
     }
+#endif
 }
 
 inline void io([[maybe_unused]] void* raw) noexcept
@@ -127,7 +112,7 @@ inline void io([[maybe_unused]] void* raw) noexcept
             fast = !fast;
 
             const auto half_us = fast ? fast_half_us : arc::cfg::half_us;
-            static_cast<void>(ctx.rx.try_push(rate(half_us)));
+            ctx.half.write(half_cycles(half_us));
             ESP_LOGI(tag, "cmd half=%u us", static_cast<unsigned>(half_us));
         }
 
@@ -137,7 +122,7 @@ inline void io([[maybe_unused]] void* raw) noexcept
 
 inline void boot()
 {
-    static_cast<void>(ctx.rx.try_push(rate(arc::cfg::half_us)));
+    ctx.half.write(half_cycles(arc::cfg::half_us));
 
     const auto io_task = arc::spawn(
         &io,

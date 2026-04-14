@@ -8,6 +8,7 @@
 #include "arc/fence.hpp"
 #include "arc/gpio.hpp"
 #include "arc/plane.hpp"
+#include "arc/reg.hpp"
 #include "arc/ring.hpp"
 #include "arc/task.hpp"
 #include "arc/wave.hpp"

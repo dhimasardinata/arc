@@ -1,13 +1,12 @@
 # Arc
 
-Arc is an ESP-IDF base for ESP32-S3 work that wants explicit control over core affinity, memory placement, and hot-path cost.
+Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 differently on purpose.
 
-The split is intentional:
-
-- Core 0 handles framework work: boot, storage, drivers, network, logs.
-- Core 1 runs the realtime plane as a statically allocated pinned task.
-- `arc::Dio` and `arc::Din` bind the dedicated GPIO instruction path directly to compile-time types.
-- `arc::Ring` is the lock-free lane between the two cores.
+- Core 0 is for framework work: boot, storage, drivers, network, logs.
+- Core 1 is for the realtime plane: statically allocated, pinned, and kept close to the silicon.
+- `arc::Dio` and `arc::Din` bind ESP32-S3 dedicated GPIO directly to compile-time types.
+- `arc::Ring` handles ordered telemetry.
+- `arc::Reg` is the single-word fast path for latest-wins control.
 
 ## Layout
 
@@ -18,6 +17,7 @@ The split is intentional:
 ├── README.md
 ├── sdkconfig.defaults
 ├── sdkconfig.defaults.psram
+├── sdkconfig.defaults.release
 ├── components
 │   └── arc
 │       ├── CMakeLists.txt
@@ -32,6 +32,7 @@ The split is intentional:
 │               ├── fence.hpp
 │               ├── gpio.hpp
 │               ├── plane.hpp
+│               ├── reg.hpp
 │               ├── ring.hpp
 │               ├── task.hpp
 │               └── wave.hpp
@@ -46,37 +47,149 @@ The split is intentional:
 
 - `-O2` via `CONFIG_COMPILER_OPTIMIZATION_PERF`
 - CPU default frequency forced to `240 MHz`
-- `gnu++26` on ESP-IDF v6.0
+- `gnu++26`
 - C++ exceptions and RTTI disabled
-- FreeRTOS trace/stat formatting disabled
-- Core 1 idle task removed from the task watchdog
+- Xtensa-safe `-mtext-section-literals` for C++ units that host IRAM code
 - Static FreeRTOS task allocation for the realtime plane
+- Core 1 idle watchdog detached so a non-yielding loop can own that core
 - Dedicated GPIO output and input on the hot path
-- Lock-free SPSC rings for Core 1 -> Core 0 telemetry and Core 0 -> Core 1 commands
-- Optional PSRAM overlay for boards that actually have PSRAM
+- Lock-free telemetry ring and single-word control register
 
-## Bootstrap
+## Start From Zero
 
-Arc expects a local `esp-idf/` checkout next to the project:
+### 1. Install prerequisites
+
+You need at minimum:
+
+- `git`
+- `python3`
+- a working serial permission setup for your board
+
+ESP-IDF will install its own toolchain and Python environment with `install.sh`.
+
+### 2. Create your own project from the template
+
+Web:
+
+- Open `https://github.com/dhimasardinata/arc`
+- Click `Use this template`
+
+CLI:
 
 ```bash
+gh repo create my-fw --template dhimasardinata/arc --private
+git clone https://github.com/<you>/my-fw.git
+cd my-fw
+```
+
+If you just want to inspect Arc directly:
+
+```bash
+git clone https://github.com/dhimasardinata/arc.git
+cd arc
+```
+
+## Install ESP-IDF
+
+Arc supports both global and project-local ESP-IDF.
+
+### Option A: global ESP-IDF
+
+This is the better default if you work on more than one ESP-IDF repo.
+
+```bash
+mkdir -p ~/esp
+cd ~/esp
 git clone --branch v6.0 --recursive https://github.com/espressif/esp-idf.git
 ./esp-idf/install.sh esp32s3
 ```
 
-Then load the environment from the project root:
+Then expose it in your shell:
+
+```bash
+export IDF_PATH="$HOME/esp/esp-idf"
+```
+
+You can put that line in `.bashrc` or `.zshrc`.
+
+### Option B: project-local ESP-IDF
+
+Use this if you want the toolchain and IDF checkout pinned next to the repo.
+
+```bash
+git clone --branch v6.0 --recursive https://github.com/espressif/esp-idf.git esp-idf
+./esp-idf/install.sh esp32s3
+```
+
+## Load the environment
+
+From the project root:
 
 ```bash
 . ./env.sh
 ```
 
-## Commands
+`env.sh` works in this order:
+
+- `ARC_IDF_PATH`
+- existing global `IDF_PATH`
+- local `./esp-idf`
+
+## First Build
 
 Set the target once in a fresh workspace:
 
 ```bash
 idf.py set-target esp32s3
 ```
+
+Build the default dev profile:
+
+```bash
+idf.py build
+```
+
+Flash and monitor:
+
+```bash
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+## Release Profile
+
+Arc ships a separate release overlay in `sdkconfig.defaults.release`.
+
+It is more aggressive than the default profile:
+
+- app logs off
+- bootloader logs off
+- runtime log level control off
+- tag-level cache/list off
+- `esp_err_to_name()` lookup tables off
+- silent assertions/check macros
+- silent reboot panic handler
+
+If you are switching from the default profile to release in the same `build/` directory, clean first:
+
+```bash
+idf.py fullclean
+idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.release" set-target esp32s3 build
+```
+
+If you want to keep dev and release artifacts side by side, use a second explicit build directory:
+
+```bash
+idf.py -B build-release -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.release" set-target esp32s3 build
+```
+
+Release with PSRAM:
+
+```bash
+idf.py fullclean
+idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.psram;sdkconfig.defaults.release" set-target esp32s3 build
+```
+
+## Command Reference
 
 Build:
 
@@ -120,12 +233,6 @@ Build, upload, and monitor:
 idf.py -p /dev/ttyACM0 build flash monitor
 ```
 
-If your board has PSRAM:
-
-```bash
-idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.psram" set-target esp32s3 build
-```
-
 ## Outputs
 
 - App binary: `build/arc.bin`
@@ -133,14 +240,18 @@ idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.psram" set-ta
 - Bootloader: `build/bootloader/bootloader.bin`
 - Partition table: `build/partition_table/partition-table.bin`
 
+Arc uses one build directory by default: `build/`.
+If you keep a separate release profile in parallel, use `build-release/` deliberately.
+
 ## Demo Topology
 
-The shipped demo is intentionally asymmetric and complete:
+The shipped app is intentionally asymmetric:
 
-- Core 1 drives `arc::Dio` and samples `arc::Din` inside the steady-state loop.
-- Core 1 never blocks. If telemetry cannot be pushed, it is dropped.
-- Core 0 polls the telemetry ring every `1 ms`, drains it in bursts, and logs what it sees.
-- Core 0 also injects a rate command every `2 s` to exercise the command lane.
+- Core 1 drives `arc::Dio`
+- Core 1 samples `arc::Din`
+- Core 1 pushes edge telemetry through `arc::Ring`
+- Core 0 drains telemetry every `1 ms`
+- Core 0 updates the latest blink rate through `arc::Reg`
 
 `main/app_main.cpp` stays minimal:
 
@@ -155,9 +266,9 @@ extern "C" void app_main()
 
 ## Notes
 
-- This repo uses one build directory: `build/`.
-- If you still have `build-esp32s3/`, it is an old artifact from an earlier target-scoped build and can be deleted.
-- `arc::Dio` is the right default for CPU-driven output on ESP32-S3. `arc::Gpio` remains available when you want direct MMIO without consuming a dedicated channel.
-- `arc::Din` gives you deterministic input sampling on the same dedicated path.
-- The realtime contract is on the steady-state loop, not on a half-IRAM bootstrap fantasy.
-- Core 0 polling is the right tradeoff here. Jitter is accepted on Core 0 so Core 1 does not pay for RTOS queues, notifications, or locks.
+- Global ESP-IDF is fully supported and is usually the cleaner setup.
+- Local `esp-idf/` is still useful when you want a pinned checkout beside the firmware repo.
+- `arc::Dio` is the default CPU-driven output path on ESP32-S3.
+- `arc::Din` gives the same dedicated path for deterministic input sampling.
+- `arc::Reg` is better than a queue for latest-wins control words.
+- `arc::Ring` is better than a register when event history matters.

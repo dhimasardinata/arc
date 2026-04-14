@@ -5,4 +5,5 @@ idf_component_register(
 
 target_compile_options(${COMPONENT_LIB} INTERFACE
     $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++26>
+    $<$<COMPILE_LANGUAGE:CXX>:-mtext-section-literals>
 )
