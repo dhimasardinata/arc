@@ -1,0 +1,70 @@
+menu "Arc UDP"
+
+    config ARC_UDP_LED
+        int "LED GPIO"
+        range 0 48
+        default 48
+        help
+            Dedicated output pin driven by the realtime plane.
+
+    config ARC_UDP_STACK
+        int "RT stack (bytes)"
+        range 2048 16384
+        default 4096
+        help
+            Stack for the core 1 realtime task.
+
+    config ARC_UDP_NET_STACK
+        int "Net stack (bytes)"
+        range 4096 16384
+        default 6144
+        help
+            Stack for the core 0 Wi-Fi and UDP task.
+
+    config ARC_UDP_HALF_US
+        int "Half period slow (us)"
+        range 1000 1000000
+        default 20000
+        help
+            Slow half period for the waveform.
+
+    config ARC_UDP_FAST_HALF_US
+        int "Half period fast (us)"
+        range 1000 1000000
+        default 5000
+        help
+            Fast half period pushed by the core 0 control plane.
+
+    config ARC_UDP_CMD_MS
+        int "Control cadence (ms)"
+        range 500 60000
+        default 5000
+        help
+            How often core 0 toggles the command word and wave period.
+
+    config ARC_UDP_SSID
+        string "Wi-Fi SSID"
+        default ""
+        help
+            Station SSID used by the UDP example.
+
+    config ARC_UDP_PASS
+        string "Wi-Fi password"
+        default ""
+        help
+            Station password. Leave empty for open networks.
+
+    config ARC_UDP_HOST
+        string "UDP host"
+        default "192.168.1.2"
+        help
+            IPv4 address or DNS name that will receive telemetry.
+
+    config ARC_UDP_PORT
+        int "UDP port"
+        range 1 65535
+        default 9000
+        help
+            Destination port for binary telemetry frames.
+
+endmenu

@@ -246,6 +246,18 @@ idf.py -p /dev/ttyACM0 build flash monitor
 Arc uses one build directory by default: `build/`.
 If you keep a separate release profile in parallel, use `build-release/` deliberately.
 
+## UDP Example
+
+Arc ships a standalone network demo at `examples/udp`.
+
+```bash
+cd examples/udp
+. ./env.sh
+idf.py set-target esp32s3
+idf.py menuconfig
+idf.py build flash monitor
+```
+
 ## Demo Topology
 
 The shipped app is intentionally asymmetric:

@@ -1,35 +1,63 @@
 # UDP Example
 
-This is the right first network example for Arc, but it should stay opt-in.
+This is a standalone ESP-IDF project under `examples/udp`.
 
-- Core 1 stays deterministic and never blocks on Wi-Fi.
-- Core 1 pushes telemetry through `arc::Ring`.
-- Core 0 owns NVS, Wi-Fi station mode, and the UDP socket.
-- Core 0 sends latest-wins control back to Core 1 through `arc::Reg`.
+- Core 1 owns the waveform and telemetry production.
+- Core 0 owns NVS, Wi-Fi station mode, DNS, and the UDP socket.
+- Core 1 pushes ordered telemetry through `arc::Ring`.
+- Core 0 pushes latest-wins commands back through `arc::Reg`.
 
-Why UDP first:
+The baseline root app stays transport-free on purpose. This example is where the network plane lives.
 
-- it matches Arc's drop-on-full telemetry policy
-- it keeps the transport stateless and cheap
-- it proves the asymmetric dual-core split without dragging MQTT into the baseline
+## Configure
 
-Recommended shape:
+From this directory:
 
-```text
-examples/udp
-├── README.md
-└── main
-    ├── app.hpp
-    ├── app_main.cpp
-    └── net.hpp
+```bash
+. ./env.sh
+idf.py set-target esp32s3
+idf.py menuconfig
 ```
 
-Recommended Core 0 flow:
+Set these fields in `Arc UDP`:
 
-1. `nvs_flash_init()`
-2. Wi-Fi station init
-3. socket setup with `sendto()`
-4. drain `ctx.tx`
-5. update `ctx.ctl` or other `arc::Reg` words with latest commands
+- `Wi-Fi SSID`
+- `Wi-Fi password`
+- `UDP host`
+- `UDP port`
 
-The root app stays transport-free on purpose. That keeps the default template small, deterministic, and readable.
+## Build And Flash
+
+```bash
+. ./env.sh
+idf.py build
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+Binary outputs:
+
+- `build/arc_udp.bin`
+- `build/arc_udp.elf`
+
+## Receive Telemetry
+
+On the receiving machine:
+
+```bash
+nc -ul 9000 | hexdump -C
+```
+
+Each UDP frame is 12 bytes, little-endian:
+
+1. `tick` as `u32`
+2. `seq` as `u32`
+3. `level` as `u8`
+4. `mark` as `u8`
+5. padding as `u16`
+
+## What It Does
+
+- Core 1 toggles the LED through dedicated GPIO.
+- Core 1 emits a telemetry frame on each output edge.
+- Core 0 drains the ring and sends frames with `sendto()`.
+- Core 0 toggles the control word every few seconds, changing rate, mark, and telemetry stride.
