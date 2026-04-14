@@ -1,0 +1,31 @@
+menu "Arc"
+
+    config ARC_LED
+        int "LED GPIO"
+        range 0 48
+        default 48
+        help
+            GPIO used by the demo loop.
+
+    config ARC_SENSE
+        int "Sense GPIO"
+        range 0 48
+        default 0
+        help
+            GPIO sampled through the dedicated input path.
+
+    config ARC_STACK
+        int "RT stack (bytes)"
+        range 2048 16384
+        default 4096
+        help
+            Stack for the core 1 static task.
+
+    config ARC_HALF_US
+        int "Half period (us)"
+        range 1000 1000000
+        default 200000
+        help
+            Half period used by the demo wave.
+
+endmenu

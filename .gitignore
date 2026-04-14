@@ -1,0 +1,12 @@
+build/
+build-*/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+compile_commands.json
+.espressif/
+esp-idf/
+.cache/
+.rustup/
+.codex
