@@ -1,6 +1,6 @@
 idf_component_register(
     INCLUDE_DIRS "include"
-    REQUIRES freertos heap esp_driver_gpio esp_hw_support soc
+    REQUIRES freertos heap esp_driver_gpio esp_event esp_hw_support esp_netif esp_wifi lwip nvs_flash soc
 )
 
 target_compile_options(${COMPONENT_LIB} INTERFACE

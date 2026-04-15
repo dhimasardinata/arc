@@ -4,9 +4,11 @@ Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 diffe
 
 - Core 0 is for framework work: boot, storage, drivers, network, logs.
 - Core 1 is for the realtime plane: statically allocated, pinned, and kept close to the silicon.
+- User programs live in `main/app_main.cpp`.
 - `arc::Dio` and `arc::Din` bind ESP32-S3 dedicated GPIO directly to compile-time types.
-- `arc::Ring` handles ordered telemetry.
-- `arc::Reg` is the single-word fast path for latest-wins control, including compact multi-field words.
+- `arc::Sketch` runs a tiny zero-cost program on a chosen core.
+- `arc::Bus` gives shared event/control state without heap or virtual dispatch.
+- `arc::net::Udp` is a reusable Core 0 transport plane, not an example-only wrapper.
 
 ## Layout
 
@@ -27,6 +29,7 @@ Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 diffe
 │       └── include
 │           ├── arc.hpp
 │           └── arc
+│               ├── bus.hpp
 │               ├── caps.hpp
 │               ├── cfg.hpp
 │               ├── clock.hpp
@@ -37,10 +40,11 @@ Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 diffe
 │               ├── plane.hpp
 │               ├── reg.hpp
 │               ├── ring.hpp
+│               ├── sketch.hpp
 │               ├── task.hpp
+│               ├── udp.hpp
 │               └── wave.hpp
 └── main
-    ├── app.hpp
     ├── app_main.cpp
     ├── CMakeLists.txt
     └── Kconfig.projbuild
@@ -57,6 +61,65 @@ Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 diffe
 - Core 1 idle watchdog detached so a non-yielding loop can own that core
 - Dedicated GPIO output and input on the hot path
 - Lock-free telemetry ring and single-word control register
+
+## Programming Model
+
+Arc should feel like a small framework, not like a bag of headers.
+
+- The user-facing program goes in `main/app_main.cpp`.
+- `app::boot()` is the normal signature entry you expose for your program.
+- `extern "C" void app_main()` stays as the single ESP-IDF boundary.
+- For a trivial app, `app::boot()` may be the only thing `app_main()` does.
+- For a richer app, `main/app_main.cpp` still shows the program topology directly.
+
+The shipped baseline is a tiny mirror program:
+
+- `arc::Din` samples the configured input pin.
+- `arc::Dio` drives the configured LED pin.
+- Core 1 mirrors input level to output level with no queue, no heap, and no RTOS API in the hot loop.
+
+`main/app_main.cpp` looks like this:
+
+```cpp
+#include "arc.hpp"
+
+using Sense = arc::Din<arc::cfg::sense, 0>;
+using Led = arc::Dio<arc::cfg::led, 0>;
+
+struct Mirror {
+    static void setup()
+    {
+        Sense::in();
+        Led::out();
+        Led::template write<false>();
+    }
+
+    IRAM_ATTR static void loop() noexcept
+    {
+        if (Sense::high()) {
+            Led::hi();
+        } else {
+            Led::lo();
+        }
+    }
+};
+
+using Core1 = arc::Sketch<Mirror, arc::cfg::stack, arc::Core::core1>;
+
+namespace app {
+inline void boot() { Core1::boot("arc"); }
+}
+
+extern "C" void app_main()
+{
+    app::boot();
+}
+```
+
+The core clue is explicit where it matters:
+
+- `arc::Core::core1` in `arc::Sketch<...>` means the hot loop is pinned to Core 1.
+- `arc::net::Udp` always owns Core 0 when you use it.
 
 ## Start From Zero
 
@@ -236,6 +299,96 @@ Build, upload, and monitor:
 idf.py -p /dev/ttyACM0 build flash monitor
 ```
 
+## API
+
+### `arc::Dio<Pin, Channel, Core>`
+
+Dedicated GPIO output bound at compile time.
+
+- `out()` routes the pin to dedicated output.
+- `hi()` and `lo()` are the hot-path writes.
+- `write<true>()` and `write<false>()` are zero-cost compile-time forms.
+
+### `arc::Din<Pin, Channel, Core>`
+
+Dedicated GPIO input bound at compile time.
+
+- `in()` routes the pin to dedicated input.
+- `high()` and `low()` read the dedicated input register directly.
+
+### `arc::Sketch<Program, StackBytes, Core>`
+
+The smallest way to run a program on one core.
+
+Your `Program` type defines:
+
+- `static void setup()`
+- `IRAM_ATTR static void loop() noexcept`
+
+`Sketch` turns that into a static pinned task without heap allocation.
+
+### `arc::Bus<Event, Control, Capacity>`
+
+Shared state for asymmetric programs.
+
+- `events` is an `arc::Ring<Event, Capacity>`
+- `pace` is an `arc::Reg<std::uint32_t>`
+- `control` is an `arc::Reg<Control>`
+
+Use it when Core 1 emits ordered events and Core 0 applies latest-wins control.
+
+### `arc::Ring<T, Capacity>`
+
+Single-producer single-consumer event lane.
+
+- use for history you cannot collapse
+- push/pop are lock-free and power-of-two indexed
+
+### `arc::Reg<T>`
+
+Single-word latest-wins lane.
+
+- use for control words or pace values
+- `T` must fit in 32 bits and be trivially copyable
+
+### `arc::Plane<Work, StackBytes, State, Core>`
+
+Pinned static task for a bound workload.
+
+Your workload defines either:
+
+- `setup()` and `run() noexcept`
+
+or:
+
+- `setup(state)` and `run(state) noexcept`
+
+Use this when you want explicit stateful realtime workers instead of the simpler `Sketch`.
+
+### `arc::net::Udp<Policy, Bus>`
+
+Reusable Core 0 UDP transport plane.
+
+`Policy` supplies compile-time config:
+
+- `tag`
+- `stack`
+- `ssid`
+- `pass`
+- `host`
+- `port`
+
+Optional hooks:
+
+- `start(bus)`
+- `tick(bus, now)`
+
+This lets you keep network code in the framework while still expressing program-specific control in the app.
+
+### `arc::Wave<Pin, HalfUs, Mhz>`
+
+Static square-wave generator when you want a fixed compile-time waveform.
+
 ## Outputs
 
 - App binary: `build/arc.bin`
@@ -258,27 +411,13 @@ idf.py menuconfig
 idf.py build flash monitor
 ```
 
-## Demo Topology
+The example writes the program directly in `examples/udp/main/app_main.cpp`.
 
-The shipped app is intentionally asymmetric:
+- `Bus = arc::Bus<Edge, Control, 256>`
+- `Core1 = arc::Plane<Pulse, ... , Bus>`
+- `Core0 = arc::net::Udp<Udp, Bus>`
 
-- Core 1 drives `arc::Dio`
-- Core 1 samples `arc::Din`
-- Core 1 pushes edge telemetry through `arc::Ring`
-- Core 0 drains telemetry every `1 ms`
-- Core 0 updates the wave period through `arc::Reg<std::uint32_t>`
-- Core 0 updates a compact control word through `arc::Reg<Ctl>`
-
-`main/app_main.cpp` stays minimal:
-
-```cpp
-#include "app.hpp"
-
-extern "C" void app_main()
-{
-    app::boot();
-}
-```
+This is the intended style for larger apps: the app composes framework utilities in `main.cpp`, while the heavy transport/runtime machinery stays inside `arc`.
 
 ## Notes
 
@@ -290,3 +429,4 @@ extern "C" void app_main()
 - For multi-field control words, prefer explicit fixed-width fields over C++ bitfields.
 - `arc::Ring` is better than a register when event history matters.
 - UDP over Wi-Fi is a good first network demo, but it belongs under `examples/udp`, not in the root baseline.
+- `app_main()` should remain the one C boundary; wrapping it further does not buy speed or clarity.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "arc/bus.hpp"
 #include "arc/caps.hpp"
 #include "arc/cfg.hpp"
 #include "arc/clock.hpp"
@@ -10,5 +11,7 @@
 #include "arc/plane.hpp"
 #include "arc/reg.hpp"
 #include "arc/ring.hpp"
+#include "arc/sketch.hpp"
 #include "arc/task.hpp"
+#include "arc/udp.hpp"
 #include "arc/wave.hpp"

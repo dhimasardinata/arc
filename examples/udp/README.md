@@ -2,10 +2,11 @@
 
 This is a standalone ESP-IDF project under `examples/udp`.
 
+- The program is written in `main/app_main.cpp`.
 - Core 1 owns the waveform and telemetry production.
-- Core 0 owns NVS, Wi-Fi station mode, DNS, and the UDP socket.
-- Core 1 pushes ordered telemetry through `arc::Ring`.
-- Core 0 pushes latest-wins commands back through `arc::Reg`.
+- Core 0 owns Wi-Fi station mode, DNS, and the UDP socket.
+- Shared state uses `arc::Bus`.
+- Transport uses `arc::net::Udp`.
 
 The baseline root app stays transport-free on purpose. This example is where the network plane lives.
 
@@ -55,9 +56,23 @@ Each UDP frame is 12 bytes, little-endian:
 4. `mark` as `u8`
 5. padding as `u16`
 
+## API Shape
+
+This example is intentionally written in the same style as the baseline app:
+
+- define event and control types in `main/link.hpp`
+- compose the app directly in `main/app_main.cpp`
+- keep `app::boot()` as the single app-level entry
+
+The main pieces are:
+
+- `Bus = arc::Bus<Edge, Control, 256>`
+- `Core1 = arc::Plane<Pulse, ..., Bus>`
+- `Core0 = arc::net::Udp<Udp, Bus>`
+
 ## What It Does
 
 - Core 1 toggles the LED through dedicated GPIO.
 - Core 1 emits a telemetry frame on each output edge.
-- Core 0 drains the ring and sends frames with `sendto()`.
+- Core 0 drains the event ring and sends frames with UDP.
 - Core 0 toggles the control word every few seconds, changing rate, mark, and telemetry stride.

@@ -52,7 +52,9 @@ struct Plane {
         boot(tag, nullptr, name);
     }
 
-    static void boot(const char* tag, State& state, const char* name = "rt") requires kBound
+    template <typename Shared = State>
+    static void boot(const char* tag, Shared& state, const char* name = "rt")
+        requires BoundWork<Workload, Shared>
     {
         boot(tag, static_cast<void*>(&state), name);
     }
