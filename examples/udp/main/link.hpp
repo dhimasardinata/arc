@@ -38,7 +38,7 @@ inline constexpr Control slow{.mark = 0x31, .stride = 0, .flags = trace_on};
 inline constexpr Control fast{.mark = 0x7a, .stride = 3, .flags = trace_on};
 
 template <typename Bus>
-inline void boot(Bus& bus) noexcept
+inline void prime(Bus& bus) noexcept
 {
     bus.pace.write(cycles(cfg::half_us));
     bus.control.write(slow);

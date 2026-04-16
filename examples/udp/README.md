@@ -5,8 +5,9 @@ This is a standalone ESP-IDF project under `examples/udp`.
 - The program is written in `main/app_main.cpp`.
 - Core 1 owns the waveform and telemetry production.
 - Core 0 owns Wi-Fi station mode, DNS, and the UDP socket.
-- Shared state uses `arc::Bus`.
+- Shared state uses `arc::Link`.
 - Transport uses `arc::net::Udp`.
+- Defaults target `ESP32-S3 N16R8` with `16 MB` flash and `8 MB` Octal PSRAM.
 
 The baseline root app stays transport-free on purpose. This example is where the network plane lives.
 
@@ -16,6 +17,14 @@ From this directory:
 
 ```bash
 . ./env.sh
+idf.py set-target esp32s3
+idf.py menuconfig
+```
+
+For fish:
+
+```fish
+source ./env.fish
 idf.py set-target esp32s3
 idf.py menuconfig
 ```
@@ -31,6 +40,14 @@ Set these fields in `Arc UDP`:
 
 ```bash
 . ./env.sh
+idf.py build
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+source ./env.fish
 idf.py build
 idf.py -p /dev/ttyACM0 flash monitor
 ```
@@ -66,9 +83,9 @@ This example is intentionally written in the same style as the baseline app:
 
 The main pieces are:
 
-- `Bus = arc::Bus<Edge, Control, 256>`
-- `Core1 = arc::Plane<Pulse, ..., Bus>`
-- `Core0 = arc::net::Udp<Udp, Bus>`
+- `Link = arc::Link<Edge, Control, 256>`
+- `Core1 = arc::Plane<Pulse, ..., Link>`
+- `Core0 = arc::net::Udp<Udp, Link>`
 
 ## What It Does
 

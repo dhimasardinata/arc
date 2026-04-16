@@ -3,25 +3,25 @@
 #include "cfg.hpp"
 #include "link.hpp"
 
-using Led = arc::Dio<app::cfg::led, 0>;
-using Bus = arc::Bus<app::Edge, app::Control, 256>;
+using Led = arc::Drive<app::cfg::led, 0>;
+using Link = arc::Link<app::Edge, app::Control, 256>;
 
 struct Pulse {
-    static void setup(Bus&) { Led::out(); Led::template write<false>(); }
+    static void setup(Link&) { Led::out(); Led::off(); }
 
-    IRAM_ATTR static void run(Bus& bus) noexcept
+    IRAM_ATTR static void run(Link& bus) noexcept
     {
         std::uint32_t seq = 0;
 
         while (true) {
             const auto pace = static_cast<esp_cpu_cycle_count_t>(bus.pace.read());
 
-            Led::template write<true>();
+            Led::on();
             emit(bus, seq, 1U);
             arc::fence();
             arc::Clock::spin(pace);
 
-            Led::template write<false>();
+            Led::off();
             emit(bus, seq, 0U);
             arc::fence();
             arc::Clock::spin(pace);
@@ -37,7 +37,7 @@ private:
     }
 
     IRAM_ATTR [[gnu::noinline]] static void emit(
-        Bus& bus,
+        Link& bus,
         std::uint32_t& seq,
         const std::uint8_t level) noexcept
     {
@@ -69,14 +69,14 @@ struct Udp {
     inline constexpr static const char* host = app::cfg::host;
     inline constexpr static std::uint32_t port = app::cfg::port;
 
-    static void start(Bus& bus) noexcept
+    static void start(Link& bus) noexcept
     {
         last = xTaskGetTickCount();
         fast = false;
-        app::boot(bus);
+        app::prime(bus);
     }
 
-    static void tick(Bus& bus, const TickType_t now) noexcept
+    static void tick(Link& bus, const TickType_t now) noexcept
     {
         if ((now - last) < pdMS_TO_TICKS(app::cfg::cmd_ms)) {
             return;
@@ -104,16 +104,16 @@ private:
     inline static bool fast{};
 };
 
-using Core0 = arc::net::Udp<Udp, Bus>;
-using Core1 = arc::Plane<Pulse, app::cfg::stack, Bus>;
+using Core0 = arc::net::Udp<Udp, Link>;
+using Core1 = arc::Plane<Pulse, app::cfg::stack, Link>;
 
 namespace app {
 
-constinit inline Bus bus{};
+constinit inline Link bus{};
 
 inline void boot()
 {
-    app::boot(bus);
+    app::prime(bus);
     Core0::boot(bus);
     Core1::boot(Udp::tag, bus);
 }

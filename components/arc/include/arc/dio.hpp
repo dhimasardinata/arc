@@ -56,9 +56,19 @@ struct Dio {
         dedic_gpio_cpu_ll_write_mask(channel_mask(), channel_mask());
     }
 
+    IRAM_ATTR [[gnu::always_inline]] static inline void on() noexcept
+    {
+        hi();
+    }
+
     IRAM_ATTR [[gnu::always_inline]] static inline void lo() noexcept
     {
         dedic_gpio_cpu_ll_write_mask(channel_mask(), 0U);
+    }
+
+    IRAM_ATTR [[gnu::always_inline]] static inline void off() noexcept
+    {
+        lo();
     }
 
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline bool high() noexcept
@@ -75,5 +85,8 @@ struct Dio {
         }
     }
 };
+
+template <int Pin, std::uint32_t Chan, Core Bind = Core::core1>
+using Drive = Dio<Pin, Chan, Bind>;
 
 }  // namespace arc

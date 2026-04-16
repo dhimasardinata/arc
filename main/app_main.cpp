@@ -1,27 +1,27 @@
 #include "arc.hpp"
 
-using Sense = arc::Din<arc::cfg::sense, 0>;
-using Led = arc::Dio<arc::cfg::led, 0>;
+using Button = arc::Sense<arc::cfg::sense, 0>;
+using Led = arc::Drive<arc::cfg::led, 0>;
 
-struct Mirror {
+struct Follow {
     static void setup()
     {
-        Sense::in();
+        Button::in();
         Led::out();
-        Led::template write<false>();
+        Led::off();
     }
 
     IRAM_ATTR static void loop() noexcept
     {
-        if (Sense::high()) {
-            Led::hi();
+        if (Button::high()) {
+            Led::on();
         } else {
-            Led::lo();
+            Led::off();
         }
     }
 };
 
-using Core1 = arc::Sketch<Mirror, arc::cfg::stack, arc::Core::core1>;
+using Core1 = arc::App<Follow, arc::cfg::stack, arc::Core::core1>;
 
 namespace app {
 

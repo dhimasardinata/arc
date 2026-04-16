@@ -12,6 +12,7 @@
 #include "arc/reg.hpp"
 #include "arc/ring.hpp"
 #include "arc/sketch.hpp"
+#include "arc/space.hpp"
 #include "arc/task.hpp"
 #include "arc/udp.hpp"
 #include "arc/wave.hpp"

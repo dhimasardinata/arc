@@ -18,4 +18,7 @@ struct Bus {
     Reg<Control> control{};
 };
 
+template <typename Event, typename Control, std::size_t Capacity>
+using Link = Bus<Event, Control, Capacity>;
+
 }  // namespace arc

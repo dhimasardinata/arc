@@ -53,4 +53,7 @@ struct Din {
     }
 };
 
+template <int Pin, std::uint32_t Chan, Core Bind = Core::core1>
+using Sense = Din<Pin, Chan, Bind>;
+
 }  // namespace arc

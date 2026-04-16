@@ -45,4 +45,10 @@ private:
     };
 };
 
+template <typename Program,
+          std::size_t StackBytes,
+          Core Bind = Core::core1,
+          UBaseType_t Pri = static_cast<UBaseType_t>(configMAX_PRIORITIES - 2)>
+using App = Sketch<Program, StackBytes, Bind, Pri>;
+
 }  // namespace arc
