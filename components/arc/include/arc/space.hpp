@@ -4,6 +4,7 @@
 
 #include "esp_flash.h"
 #include "esp_heap_caps.h"
+#include "esp_image_format.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
@@ -47,6 +48,40 @@ struct Space {
                      kib(running->size),
                      slot.whole,
                      slot.frac);
+
+            const auto app = app_area();
+            const auto image = image_size(*running);
+            if (image != 0U) {
+                const auto in_slot = pct(image, static_cast<std::uint32_t>(running->size));
+                const auto in_apps = pct(image, app.total);
+                const auto slot_free =
+                    running->size > image ? static_cast<std::uint32_t>(running->size) - image : 0U;
+                const auto free_slot = pct(slot_free, static_cast<std::uint32_t>(running->size));
+
+                ESP_LOGI(tag,
+                         "image=%uB (%u KiB, %u.%02u%% slot, %u.%02u%% ota apps) slot_free=%uB (%u KiB, %u.%02u%% slot)",
+                         image,
+                         kib(image),
+                         in_slot.whole,
+                         in_slot.frac,
+                         in_apps.whole,
+                         in_apps.frac,
+                         slot_free,
+                         kib(slot_free),
+                         free_slot.whole,
+                         free_slot.frac);
+            }
+
+            if (app.total != 0U) {
+                const auto apps = pct(app.total, chip);
+                ESP_LOGI(tag,
+                         "app area slots=%u total=%uB (%u KiB, %u.%02u%% chip)",
+                         app.count,
+                         app.total,
+                         kib(app.total),
+                         apps.whole,
+                         apps.frac);
+            }
         }
     }
 
@@ -62,8 +97,8 @@ struct Space {
         std::uint32_t count = 0;
 
         for (auto it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, nullptr);
-             it != nullptr;) {
-            const auto next = esp_partition_next(it);
+             it != nullptr;
+             it = esp_partition_next(it)) {
             const auto* const part = esp_partition_get(it);
             if (part != nullptr) {
                 const auto end = static_cast<std::uint32_t>(part->address + part->size);
@@ -80,8 +115,6 @@ struct Space {
                          part->size,
                          kib(part->size));
             }
-            esp_partition_iterator_release(it);
-            it = next;
         }
 
         if (chip == 0U) {
@@ -119,6 +152,11 @@ private:
         std::uint32_t frac;
     };
 
+    struct AppArea {
+        std::uint32_t total;
+        std::uint32_t count;
+    };
+
     [[nodiscard]] static constexpr std::uint32_t kib(const std::uint32_t bytes) noexcept
     {
         return bytes / 1024U;
@@ -140,6 +178,34 @@ private:
             .whole = static_cast<std::uint32_t>(scaled / 100ULL),
             .frac = static_cast<std::uint32_t>(scaled % 100ULL),
         };
+    }
+
+    [[nodiscard]] static std::uint32_t image_size(const esp_partition_t& part) noexcept
+    {
+        const esp_partition_pos_t pos{
+            .offset = part.address,
+            .size = part.size,
+        };
+        esp_image_metadata_t meta{};
+        const auto err = esp_image_get_metadata(&pos, &meta);
+        return err == ESP_OK ? meta.image_len : 0U;
+    }
+
+    [[nodiscard]] static AppArea app_area() noexcept
+    {
+        AppArea area{};
+        for (auto it = esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, nullptr);
+             it != nullptr;
+             it = esp_partition_next(it)) {
+            const auto* const part = esp_partition_get(it);
+            if (part == nullptr) {
+                continue;
+            }
+
+            area.total += static_cast<std::uint32_t>(part->size);
+            ++area.count;
+        }
+        return area;
     }
 
     static void head(const char* tag, const char* title) noexcept

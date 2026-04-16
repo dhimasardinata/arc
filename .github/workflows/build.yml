@@ -1,0 +1,90 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  esp32s3:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            wget \
+            flex \
+            bison \
+            gperf \
+            python3 \
+            python3-pip \
+            python3-venv \
+            cmake \
+            ninja-build \
+            ccache \
+            libffi-dev \
+            libssl-dev \
+            dfu-util \
+            libusb-1.0-0
+
+      - name: Install ESP-IDF v6.0
+        run: |
+          git clone --branch v6.0 --recursive https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
+          "$HOME/esp-idf/install.sh" esp32s3
+
+      - name: Build root
+        shell: bash
+        run: |
+          . "$HOME/esp-idf/export.sh"
+          idf.py set-target esp32s3
+          idf.py build
+          idf.py size
+          echo "root arc.bin $(stat -c '%s' build/arc.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build space example
+        shell: bash
+        run: |
+          . "$HOME/esp-idf/export.sh"
+          cd examples/space
+          idf.py set-target esp32s3
+          idf.py build
+          idf.py size
+          echo "space arc_space.bin $(stat -c '%s' build/arc_space.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build store example
+        shell: bash
+        run: |
+          . "$HOME/esp-idf/export.sh"
+          cd examples/store
+          idf.py set-target esp32s3
+          idf.py build
+          idf.py size
+          echo "store arc_store.bin $(stat -c '%s' build/arc_store.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build udp example
+        shell: bash
+        run: |
+          . "$HOME/esp-idf/export.sh"
+          cd examples/udp
+          idf.py set-target esp32s3
+          idf.py build
+          idf.py size
+          echo "udp arc_udp.bin $(stat -c '%s' build/arc_udp.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-binaries
+          path: |
+            build/arc.bin
+            build/arc.elf
+            examples/space/build/arc_space.bin
+            examples/space/build/arc_space.elf
+            examples/store/build/arc_store.bin
+            examples/store/build/arc_store.elf
+            examples/udp/build/arc_udp.bin
+            examples/udp/build/arc_udp.elf

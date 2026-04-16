@@ -14,6 +14,9 @@ At runtime, this example reports:
 
 - flash chip size
 - running app slot size
+- current image size inside the active app slot
+- percent used and free inside the active app slot
+- percent used across the combined OTA app area
 - full partition table with address and size
 - general 8-bit heap
 - internal heap
@@ -23,7 +26,7 @@ At runtime, this example reports:
 - PSRAM heap
 - the delta after explicit internal and PSRAM allocations
 
-This complements `idf.py size`, which only reports static ELF sections.
+This complements `idf.py size`, which only reports static ELF sections and does not know how much of the active OTA slot is left at runtime.
 
 ## Build And Run
 

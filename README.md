@@ -14,8 +14,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
-- `arc::Space` reports runtime flash, partition, and heap capacity without heap allocation.
-- `arc::net::Udp` is a reusable Core 0 transport plane, not an example-only wrapper.
+- `arc::Space` reports runtime flash, image, partition, and heap capacity without heap allocation.
+- `arc::Store` gives typed NVS blobs without raw handle plumbing in user code.
+- `arc::net::Udp` is a reusable Core 0 transport plane when you opt into `#include "arc/udp.hpp"`.
 
 ## Layout
 
@@ -26,6 +27,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 ├── env.sh
 ├── examples
 │   ├── space
+│   │   └── README.md
+│   ├── store
 │   │   └── README.md
 │   └── udp
 │       └── README.md
@@ -53,6 +56,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── ring.hpp
 │               ├── sketch.hpp
 │               ├── space.hpp
+│               ├── store.hpp
 │               ├── task.hpp
 │               ├── udp.hpp
 │               └── wave.hpp
@@ -75,6 +79,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Core 1 idle watchdog detached so a non-yielding loop can own that core
 - Dedicated GPIO output and input on the hot path
 - Lock-free telemetry ring and single-word control register
+- Typed NVS persistence on the Core 0 side
 
 ## Programming Model
 
@@ -432,12 +437,24 @@ Use it when Core 1 emits ordered events and Core 0 applies latest-wins control.
 
 Runtime capacity reporter.
 
-- `flash(tag)` reports flash chip size and the running app slot.
+- `flash(tag)` reports flash chip size, the running app slot, the current image size, the percent used inside the active slot, the free bytes and free percent left in that slot, and the percent used across all OTA app slots.
 - `parts(tag)` reports every partition with address and size.
 - `heap(tag)` reports 8-bit, internal, DMA, IRAM-capable, optional exec, and PSRAM heap capacity.
 - `all(tag)` runs all three in one call.
 
 Use this alongside `idf.py size`, `idf.py size-components`, and `idf.py size-files` when you want the real board view.
+
+### `arc::Store`
+
+Typed NVS blob storage for Core 0 work.
+
+- `boot()` initializes NVS and repairs the partition if IDF reports version/free-page mismatch.
+- `save(ns, key, value)` writes a trivially copyable value.
+- `load(ns, key, value)` reads the exact typed blob back.
+- `load_or(ns, key, fallback)` keeps user code short when missing data should fall back cleanly.
+- `erase(ns, key)` removes one key and commits.
+
+Use this when you want persistent config without hand-written handle lifetime code.
 
 ### `arc::Ring<T, Capacity>`
 
@@ -486,6 +503,12 @@ Optional hooks:
 - `tick(bus, now)`
 
 This lets you keep network code in the framework while still expressing program-specific control in the app.
+
+Network is intentionally opt-in. Baseline apps only include `arc.hpp`; UDP apps add:
+
+```cpp
+#include "arc/udp.hpp"
+```
 
 ### `arc::Wave<Pin, HalfUs, Mhz>`
 
@@ -564,8 +587,56 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 The example shows two things:
 
-- baseline runtime capacity via `arc::Space::all(...)`
+- baseline runtime capacity via `arc::Space::all(...)`, including the current image size and percent used inside the active OTA slot
 - the effect of `arc::inram` and `arc::psram` on free heap
+
+## Store Example
+
+Arc also ships a standalone typed-NVS demo at `examples/store`.
+
+```bash
+cd examples/store
+. ./env.sh
+idf.py set-target esp32s3
+idf.py build
+idf.py size
+idf.py size-components
+idf.py size-files
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/store
+source ./env.fish
+idf.py set-target esp32s3
+idf.py build
+idf.py size
+idf.py size-components
+idf.py size-files
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example shows:
+
+- `arc::Store::boot()` as the one-time baseline init for NVS
+- `arc::Store::load_or(...)` for a typed control word
+- `arc::Store::save(...)` after mutation
+- `arc::Space::flash(...)` and `arc::Space::heap(...)` so persistence and capacity stay visible together
+
+## CI
+
+Arc now ships a build workflow at `.github/workflows/build.yml`.
+
+It builds:
+
+- root baseline
+- `examples/space`
+- `examples/store`
+- `examples/udp`
+
+and writes bin sizes into the GitHub Actions step summary so size regressions are visible on every push or PR.
 
 ## Notes
 
