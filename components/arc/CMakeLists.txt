@@ -1,6 +1,6 @@
 idf_component_register(
     INCLUDE_DIRS "include"
-    REQUIRES app_update bootloader_support esp_partition freertos heap esp_driver_gpio esp_hw_support nvs_flash soc spi_flash
+    REQUIRES app_update bootloader_support esp_partition freertos heap esp_driver_gpio esp_driver_ledc esp_hw_support nvs_flash soc spi_flash
 )
 
 target_compile_options(${COMPONENT_LIB} INTERFACE

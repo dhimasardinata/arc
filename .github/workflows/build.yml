@@ -55,6 +55,16 @@ jobs:
           idf.py size
           echo "space arc_space.bin $(stat -c '%s' build/arc_space.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Build pwm example
+        shell: bash
+        run: |
+          . "$HOME/esp-idf/export.sh"
+          cd examples/pwm
+          idf.py set-target esp32s3
+          idf.py build
+          idf.py size
+          echo "pwm arc_pwm.bin $(stat -c '%s' build/arc_pwm.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build store example
         shell: bash
         run: |
@@ -82,6 +92,8 @@ jobs:
           path: |
             build/arc.bin
             build/arc.elf
+            examples/pwm/build/arc_pwm.bin
+            examples/pwm/build/arc_pwm.elf
             examples/space/build/arc_space.bin
             examples/space/build/arc_space.elf
             examples/store/build/arc_store.bin

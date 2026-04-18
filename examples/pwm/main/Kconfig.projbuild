@@ -1,0 +1,24 @@
+menu "Arc PWM"
+
+    config ARC_PWM_LED
+        int "PWM GPIO"
+        range 0 48
+        default 48
+        help
+            GPIO driven by the LEDC PWM example.
+
+    config ARC_PWM_HZ
+        int "PWM frequency (Hz)"
+        range 1 1000000
+        default 1000
+        help
+            LEDC output frequency.
+
+    config ARC_PWM_DUTY
+        int "PWM duty (permille)"
+        range 0 1000
+        default 500
+        help
+            Duty cycle in permille. 500 means 50%.
+
+endmenu

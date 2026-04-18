@@ -12,6 +12,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Core 1 is for the realtime plane: statically allocated, pinned, and kept close to the silicon.
 - User programs live in `main/app_main.cpp`.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
+- `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency/duty choices.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
 - `arc::Space` reports runtime flash, image, partition, and heap capacity without heap allocation.
@@ -27,6 +28,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 ├── env.sh
 ├── examples
 │   ├── space
+│   │   └── README.md
+│   ├── pwm
 │   │   └── README.md
 │   ├── store
 │   │   └── README.md
@@ -52,6 +55,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── fence.hpp
 │               ├── gpio.hpp
 │               ├── plane.hpp
+│               ├── pwm.hpp
 │               ├── reg.hpp
 │               ├── ring.hpp
 │               ├── sketch.hpp
@@ -78,6 +82,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Static FreeRTOS task allocation for the realtime plane
 - Core 1 idle watchdog detached so a non-yielding loop can own that core
 - Dedicated GPIO output and input on the hot path
+- Hardware PWM offload through LEDC for periodic output that should not burn a core
 - Lock-free telemetry ring and single-word control register
 - Typed NVS persistence on the Core 0 side
 
@@ -433,6 +438,18 @@ Use it when Core 1 emits ordered events and Core 0 applies latest-wins control.
 
 `arc::Bus` remains available as a compatibility alias.
 
+### `arc::Pwm<Pin, Hz, DutyPermille = 500, Channel = 0, Timer = Channel % 4, Bits = 10>`
+
+Compile-time hardware PWM on ESP32-S3 LEDC.
+
+- `start()` configures timer, channel, pin routing, and starts output.
+- `on()` reapplies the default duty.
+- `off()` stops output low.
+- `pause()` and `resume()` gate the underlying LEDC timer.
+- `duty<permille>()` updates duty with a compile-time value.
+
+Use this when the waveform is periodic and the silicon should generate it. Keep `arc::Wave` for cases where the CPU must own every edge.
+
 ### `arc::Space`
 
 Runtime capacity reporter.
@@ -512,7 +529,7 @@ Network is intentionally opt-in. Baseline apps only include `arc.hpp`; UDP apps 
 
 ### `arc::Wave<Pin, HalfUs, Mhz>`
 
-Static square-wave generator when you want a fixed compile-time waveform.
+Static CPU-owned square-wave generator when you want fixed compile-time timing and explicit spin control on Core 1.
 
 ## Outputs
 
@@ -590,6 +607,36 @@ The example shows two things:
 - baseline runtime capacity via `arc::Space::all(...)`, including the current image size and percent used inside the active OTA slot
 - the effect of `arc::inram` and `arc::psram` on free heap
 
+## PWM Example
+
+Arc also ships a standalone hardware-PWM demo at `examples/pwm`.
+
+```bash
+cd examples/pwm
+. ./env.sh
+idf.py set-target esp32s3
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/pwm
+source ./env.fish
+idf.py set-target esp32s3
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example shows:
+
+- `app::boot()` staying tiny
+- `arc::Pwm<...>::start()` owning the waveform
+- no pinned task and no busy loop for a simple periodic LED output
+
 ## Store Example
 
 Arc also ships a standalone typed-NVS demo at `examples/store`.
@@ -632,6 +679,7 @@ Arc now ships a build workflow at `.github/workflows/build.yml`.
 It builds:
 
 - root baseline
+- `examples/pwm`
 - `examples/space`
 - `examples/store`
 - `examples/udp`
@@ -646,6 +694,8 @@ and writes bin sizes into the GitHub Actions step summary so size regressions ar
 - If your board LED is not on `GPIO48`, change `CONFIG_ARC_LED` or `CONFIG_ARC_UDP_LED` in `menuconfig`.
 - `arc::Drive` is the default CPU-driven output path on ESP32-S3.
 - `arc::Sense` gives the same dedicated path for deterministic input sampling.
+- `arc::Pwm` is the right default for fixed periodic output when a hardware timer can own the waveform.
+- `arc::Wave` is for deliberate CPU-owned edges, not for the common case of “just blink this periodically”.
 - `arc::Reg` is better than a queue for latest-wins control words.
 - For multi-field control words, prefer explicit fixed-width fields over C++ bitfields.
 - `arc::Ring` is better than a register when event history matters.
