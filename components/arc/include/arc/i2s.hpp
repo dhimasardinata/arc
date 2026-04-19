@@ -277,18 +277,40 @@ private:
 
     [[nodiscard]] static constexpr i2s_std_slot_config_t slot() noexcept
     {
-        if constexpr (Format == I2sStd::philips) {
-            return I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(Bits, Slots);
-        } else if constexpr (Format == I2sStd::pcm) {
-            return I2S_STD_PCM_SLOT_DEFAULT_CONFIG(Bits, Slots);
+        i2s_std_slot_config_t cfg{};
+        cfg.data_bit_width = Bits;
+        cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO;
+        cfg.slot_mode = Slots;
+        cfg.slot_mask = I2S_STD_SLOT_BOTH;
+        cfg.left_align = true;
+        cfg.big_endian = false;
+        cfg.bit_order_lsb = false;
+
+        if constexpr (Format == I2sStd::pcm) {
+            cfg.ws_width = 1U;
+            cfg.ws_pol = true;
+            cfg.bit_shift = true;
+        } else if constexpr (Format == I2sStd::msb) {
+            cfg.ws_width = static_cast<std::uint32_t>(Bits);
+            cfg.ws_pol = false;
+            cfg.bit_shift = false;
         } else {
-            return I2S_STD_MSB_SLOT_DEFAULT_CONFIG(Bits, Slots);
+            cfg.ws_width = static_cast<std::uint32_t>(Bits);
+            cfg.ws_pol = false;
+            cfg.bit_shift = true;
         }
+
+        return cfg;
     }
 
     [[nodiscard]] static constexpr i2s_std_clk_config_t clock(const std::uint32_t rate) noexcept
     {
-        auto cfg = i2s_std_clk_config_t{I2S_STD_CLK_DEFAULT_CONFIG(rate)};
+        i2s_std_clk_config_t cfg{};
+        cfg.sample_rate_hz = rate;
+        cfg.clk_src = I2S_CLK_SRC_DEFAULT;
+        cfg.ext_clk_freq_hz = 0U;
+        cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
+        cfg.bclk_div = 8U;
         if constexpr (Bits == I2S_DATA_BIT_WIDTH_24BIT) {
             cfg.mclk_multiple = I2S_MCLK_MULTIPLE_384;
         }

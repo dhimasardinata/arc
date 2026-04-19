@@ -1313,6 +1313,8 @@ Arc now ships a build workflow at `.github/workflows/build.yml`.
 
 It builds the root baseline and every directory under `examples/*`, then writes each app binary size into the GitHub Actions step summary so size regressions are visible on every push or PR.
 
+If `idf.py build` fails in CI, the workflow now dumps the matching `build/log/idf_py_stdout_output_*` and `idf_py_stderr_output_*` files directly into the job log so the real compiler or linker error is visible instead of only the outer `ninja` failure.
+
 The workflow also caches:
 
 - the ESP-IDF checkout under `~/esp-idf`

@@ -10,6 +10,8 @@
 
 #include "esp_heap_caps.h"
 
+#include "arc/sdk.hpp"
+
 namespace arc {
 
 template <typename T>
@@ -185,19 +187,19 @@ template <typename T, std::size_t Align = alignof(T)>
     return capsbuf<T, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, Align>(count);
 }
 
-template <typename T, std::size_t Align = CONFIG_CACHE_L1_CACHE_LINE_SIZE>
+template <typename T, std::size_t Align = arc::cache_line>
 [[nodiscard]] inline CapsBuf<T> dmabuf(const std::size_t count) noexcept
 {
     return capsbuf<T, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL, Align>(count);
 }
 
-template <typename T, std::size_t Align = CONFIG_CACHE_L1_CACHE_LINE_SIZE>
+template <typename T, std::size_t Align = arc::cache_line>
 [[nodiscard]] inline CapsBuf<T> cachebuf(const std::size_t count) noexcept
 {
     return capsbuf<T, MALLOC_CAP_CACHE_ALIGNED | MALLOC_CAP_INTERNAL, Align>(count);
 }
 
-template <typename T, std::size_t Align = CONFIG_CACHE_L1_CACHE_LINE_SIZE>
+template <typename T, std::size_t Align = arc::cache_line>
 [[nodiscard]] inline CapsBuf<T> simdbuf(const std::size_t count) noexcept
 {
     return capsbuf<T, MALLOC_CAP_SIMD | MALLOC_CAP_INTERNAL, Align>(count);

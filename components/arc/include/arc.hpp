@@ -22,6 +22,7 @@
 #include "arc/pwm.hpp"
 #include "arc/reg.hpp"
 #include "arc/ring.hpp"
+#include "arc/sdk.hpp"
 #include "arc/seq.hpp"
 #include "arc/sketch.hpp"
 #include "arc/scope.hpp"

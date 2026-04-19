@@ -78,6 +78,17 @@ jobs:
           export IDF_CCACHE_ENABLE=1
           ccache --max-size 300M || true
           . ./env.sh
+          dump_idf_logs() {
+            local label="$1"
+            shopt -s nullglob
+            local logs=(build/log/idf_py_stderr_output_* build/log/idf_py_stdout_output_*)
+            shopt -u nullglob
+            for log in "${logs[@]}"; do
+              echo "::group::$label $(basename "$log")"
+              cat "$log"
+              echo "::endgroup::"
+            done
+          }
           app_bin() {
             find build -maxdepth 1 -type f -name '*.bin' \
               ! -name 'bootloader.bin' \
@@ -94,7 +105,10 @@ jobs:
             fi
             echo "::group::build $label"
             pushd "$dir" >/dev/null
-            idf.py build
+            if ! idf.py build; then
+              dump_idf_logs "$label"
+              exit 1
+            fi
             idf.py size
             bin="$(app_bin)"
             echo "$label $bin $(stat -c '%s' "build/$bin") bytes" >> "$GITHUB_STEP_SUMMARY"
