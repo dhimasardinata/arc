@@ -18,7 +18,10 @@ struct Space {
         row(tag, "8bit", MALLOC_CAP_8BIT);
         row(tag, "internal", MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         row(tag, "dma", MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+        row(tag, "cache", MALLOC_CAP_CACHE_ALIGNED | MALLOC_CAP_INTERNAL);
         row(tag, "simd", MALLOC_CAP_SIMD | MALLOC_CAP_INTERNAL);
+        row(tag, "desc_ahb", MALLOC_CAP_DMA_DESC_AHB | MALLOC_CAP_INTERNAL);
+        row(tag, "desc_axi", MALLOC_CAP_DMA_DESC_AXI | MALLOC_CAP_INTERNAL);
 #if CONFIG_HEAP_HAS_EXEC_HEAP
         row(tag, "exec", MALLOC_CAP_EXEC);
 #endif

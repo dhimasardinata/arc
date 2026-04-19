@@ -192,6 +192,12 @@ template <typename T, std::size_t Align = CONFIG_CACHE_L1_CACHE_LINE_SIZE>
 }
 
 template <typename T, std::size_t Align = CONFIG_CACHE_L1_CACHE_LINE_SIZE>
+[[nodiscard]] inline CapsBuf<T> cachebuf(const std::size_t count) noexcept
+{
+    return capsbuf<T, MALLOC_CAP_CACHE_ALIGNED | MALLOC_CAP_INTERNAL, Align>(count);
+}
+
+template <typename T, std::size_t Align = CONFIG_CACHE_L1_CACHE_LINE_SIZE>
 [[nodiscard]] inline CapsBuf<T> simdbuf(const std::size_t count) noexcept
 {
     return capsbuf<T, MALLOC_CAP_SIMD | MALLOC_CAP_INTERNAL, Align>(count);
@@ -201,6 +207,18 @@ template <typename T, std::size_t Align = alignof(T)>
 [[nodiscard]] inline CapsBuf<T> rtbuf(const std::size_t count) noexcept
 {
     return capsbuf<T, MALLOC_CAP_RTCRAM | MALLOC_CAP_8BIT, Align>(count);
+}
+
+template <typename T, std::size_t Align = alignof(T)>
+[[nodiscard]] inline CapsBuf<T> ahbbuf(const std::size_t count) noexcept
+{
+    return capsbuf<T, MALLOC_CAP_DMA_DESC_AHB | MALLOC_CAP_INTERNAL, Align>(count);
+}
+
+template <typename T, std::size_t Align = alignof(T)>
+[[nodiscard]] inline CapsBuf<T> axibuf(const std::size_t count) noexcept
+{
+    return capsbuf<T, MALLOC_CAP_DMA_DESC_AXI | MALLOC_CAP_INTERNAL, Align>(count);
 }
 
 }  // namespace arc

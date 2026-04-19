@@ -18,10 +18,11 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency/duty choices.
 - `arc::Timer` binds the GPTimer block to a compile-time timebase and optional ISR hook.
+- `arc::Tight` runs a masked per-step loop for the rare path that needs tighter jitter than `arc::App`.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
 - `arc::SeqReg` gives multi-word latest-snapshot handoff without queues or torn reads.
-- `arc::dmabuf`, `arc::simdbuf`, and friends make DMA/SIMD/RTC-capable heap placement explicit.
+- `arc::dmabuf`, `arc::simdbuf`, `arc::ahbbuf`, `arc::axibuf`, and friends make DMA/SIMD/descriptor/RTC-capable heap placement explicit.
 - `arc::Space` reports runtime flash, OTA slot, partition, and heap capacity without heap allocation.
 - `arc::Ota` wraps staged OTA writes and slot state without raw handle plumbing.
 - `arc::Store` gives typed NVS blobs without raw handle plumbing in user code.
@@ -462,6 +463,19 @@ Your `Program` type defines:
 
 `arc::Sketch` remains available as a compatibility alias.
 
+### `arc::Tight<Program, StackBytes, Core = core1, Guard = arc::Critical>`
+
+Masked per-step loop for the extreme path.
+
+Your `Program` type defines:
+
+- `static void setup()`
+- `IRAM_ATTR static void step() noexcept`
+
+`Tight` runs `step()` forever and constructs `Guard` around every iteration.
+
+Use this only when the step body is tiny and the jitter budget is tighter than what a normal task iteration should tolerate. `arc::Hard` is a compatibility alias.
+
 ### `arc::Link<Event, Control, Capacity>`
 
 Shared state for asymmetric programs.
@@ -568,8 +582,11 @@ Typed heap slabs for memory placement that should stay obvious in user code.
 - `arc::inbuf<T>(n)` allocates an internal RAM slab
 - `arc::psbuf<T>(n)` allocates a PSRAM slab
 - `arc::dmabuf<T>(n)` allocates a DMA-capable internal slab with cache-line alignment
+- `arc::cachebuf<T>(n)` allocates a cache-line-capable internal slab
 - `arc::simdbuf<T>(n)` allocates a SIMD-capable internal slab
 - `arc::rtbuf<T>(n)` allocates an RTC RAM slab
+- `arc::ahbbuf<T>(n)` allocates an AHB DMA descriptor slab
+- `arc::axibuf<T>(n)` allocates an AXI DMA descriptor slab
 
 Each returns `arc::CapsBuf<T>` with `data()`, `size()`, `bytes()`, and `view()`.
 
@@ -578,6 +595,7 @@ Each returns `arc::CapsBuf<T>` with `data()`, `size()`, `bytes()`, and `view()`.
 Arc also exposes short placement aliases in `arc/place.hpp`:
 
 - `ARC_HOT`, `ARC_FORCE_HOT`
+- `ARC_TCM_CODE`, `ARC_TCM_DATA`
 - `ARC_DRAM`, `ARC_DMA`, `ARC_DMA_ALIGN`
 - `ARC_RTC`, `ARC_RTC_NOINIT`, `ARC_RTC_CODE`
 - `ARC_EXT_BSS`, `ARC_EXT_NOINIT`, `ARC_NOINIT`
@@ -590,7 +608,7 @@ Runtime capacity reporter.
 
 - `flash(tag)` reports flash chip size, the running app slot, running OTA image state, the current image size, the percent used inside the active slot, the free bytes and free percent left in that slot, the percent used across all OTA app slots, and the boot plus next-update slots.
 - `parts(tag)` reports every partition with address and size.
-- `heap(tag)` reports 8-bit, internal, DMA, SIMD, IRAM-capable, RTC RAM, optional exec, and PSRAM heap capacity.
+- `heap(tag)` reports 8-bit, internal, DMA, cache-aligned, SIMD, DMA-descriptor, IRAM-capable, RTC RAM, optional exec, and PSRAM heap capacity.
 - `all(tag)` runs all three in one call.
 
 Use this alongside `idf.py size`, `idf.py size-components`, and `idf.py size-files` when you want the real board view.
@@ -1022,7 +1040,8 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 - `arc::Burst`, `arc::Trace`, and `arc::Count` are the first place to go when a pin-level job should move from CPU polling into dedicated hardware.
 - `arc::Timer` is the right timebase when cycle counters are too core-local or when you need a true peripheral alarm.
 - `arc::Mask` is for tiny deterministic sections, not for normal app structure.
+- `arc::Tight` is the next step after `arc::App` when you need a masked step loop, not a normal forever-loop task body.
 - `arc::SeqReg` is the right latest-snapshot lane once a control word no longer fits in `arc::Reg`.
-- `arc::dmabuf` and `arc::simdbuf` are the right way to keep performance-critical heap placement explicit.
+- `arc::dmabuf`, `arc::cachebuf`, `arc::simdbuf`, `arc::ahbbuf`, and `arc::axibuf` are the right way to keep performance-critical heap placement explicit.
 - UDP over Wi-Fi is a good first network demo, but it belongs under `examples/udp`, not in the root baseline.
 - `app_main()` should remain the one C boundary; wrapping it further does not buy speed or clarity.

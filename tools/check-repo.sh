@@ -10,6 +10,8 @@ die() {
     exit 1
 }
 
+git diff --check --cached >/dev/null 2>&1 || die "staged diff contains whitespace errors"
+
 while IFS= read -r file; do
     if [[ -e "$file" ]]; then
         die "tracked sdkconfig or sdkconfig.old files are not allowed: $file"
@@ -30,6 +32,18 @@ for file in CMakeLists.txt examples/*/CMakeLists.txt; do
     if ! rg -q 'arc-idf\.cmake' "$file"; then
         die "$file does not include cmake/arc-idf.cmake"
     fi
+done
+
+if ! rg -q 'set\(IDF_TARGET "esp32s3".*FORCE\)' cmake/arc-idf.cmake; then
+    die "cmake/arc-idf.cmake no longer force-locks esp32s3"
+fi
+
+if ! rg -q 'IDF_TARGET=\"esp32s3\"|IDF_TARGET "esp32s3"' env.sh env.fish; then
+    die "env loaders no longer export IDF_TARGET=esp32s3"
+fi
+
+for file in env.sh examples/*/env.sh; do
+    [[ -x "$file" ]] || die "$file must stay executable"
 done
 
 echo "arc repo check: OK"

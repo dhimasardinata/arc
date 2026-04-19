@@ -23,5 +23,6 @@
 #include "arc/store.hpp"
 #include "arc/task.hpp"
 #include "arc/timer.hpp"
+#include "arc/tight.hpp"
 #include "arc/trace.hpp"
 #include "arc/wave.hpp"
