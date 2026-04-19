@@ -2,6 +2,7 @@
 
 #include "arc/burst.hpp"
 #include "arc/bus.hpp"
+#include "arc/capture.hpp"
 #include "arc/caps.hpp"
 #include "arc/cfg.hpp"
 #include "arc/clock.hpp"
@@ -13,6 +14,7 @@
 #include "arc/mask.hpp"
 #include "arc/plane.hpp"
 #include "arc/place.hpp"
+#include "arc/pulse.hpp"
 #include "arc/pwm.hpp"
 #include "arc/reg.hpp"
 #include "arc/ring.hpp"

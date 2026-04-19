@@ -42,6 +42,10 @@ if ! rg -q 'IDF_TARGET=\"esp32s3\"|IDF_TARGET "esp32s3"' env.sh env.fish; then
     die "env loaders no longer export IDF_TARGET=esp32s3"
 fi
 
+if ! rg -q 'for dir in \. examples/\*; do' .github/workflows/build.yml; then
+    die "build workflow must auto-discover examples instead of hardcoding a partial list"
+fi
+
 for file in env.sh examples/*/env.sh; do
     [[ -x "$file" ]] || die "$file must stay executable"
 done

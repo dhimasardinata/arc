@@ -47,49 +47,36 @@ jobs:
         run: |
           export ARC_IDF_PATH="$HOME/esp-idf"
           . ./env.sh
-          while IFS='|' read -r label dir bin; do
+          app_bin() {
+            find build -maxdepth 1 -type f -name '*.bin' \
+              ! -name 'bootloader.bin' \
+              ! -name 'partition-table.bin' \
+              ! -name 'ota_data_initial.bin' \
+              -printf '%f\n' | head -n 1
+          }
+          for dir in . examples/*; do
+            [[ -d "$dir" ]] || continue
+            if [[ "$dir" == "." ]]; then
+              label=root
+            else
+              label="$(basename "$dir")"
+            fi
             echo "::group::build $label"
             pushd "$dir" >/dev/null
             idf.py build
             idf.py size
-            echo "$label $bin $(stat -c '%s' build/$bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+            bin="$(app_bin)"
+            echo "$label $bin $(stat -c '%s' "build/$bin") bytes" >> "$GITHUB_STEP_SUMMARY"
             popd >/dev/null
             echo "::endgroup::"
-          done <<'EOF'
-          root|.|arc.bin
-          space|examples/space|arc_space.bin
-          count|examples/count|arc_count.bin
-          ota|examples/ota|arc_ota.bin
-          pwm|examples/pwm|arc_pwm.bin
-          timer|examples/timer|arc_timer.bin
-          trace|examples/trace|arc_trace.bin
-          espnow|examples/espnow|arc_espnow.bin
-          store|examples/store|arc_store.bin
-          udp|examples/udp|arc_udp.bin
-          EOF
+          done
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: arc-binaries
           path: |
-            build/arc.bin
-            build/arc.elf
-            examples/count/build/arc_count.bin
-            examples/count/build/arc_count.elf
-            examples/espnow/build/arc_espnow.bin
-            examples/espnow/build/arc_espnow.elf
-            examples/ota/build/arc_ota.bin
-            examples/ota/build/arc_ota.elf
-            examples/pwm/build/arc_pwm.bin
-            examples/pwm/build/arc_pwm.elf
-            examples/space/build/arc_space.bin
-            examples/space/build/arc_space.elf
-            examples/store/build/arc_store.bin
-            examples/store/build/arc_store.elf
-            examples/timer/build/arc_timer.bin
-            examples/timer/build/arc_timer.elf
-            examples/trace/build/arc_trace.bin
-            examples/trace/build/arc_trace.elf
-            examples/udp/build/arc_udp.bin
-            examples/udp/build/arc_udp.elf
+            build/*.bin
+            build/*.elf
+            examples/*/build/*.bin
+            examples/*/build/*.elf

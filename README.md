@@ -14,6 +14,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
 - `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
+- `arc::Pulse` uses MCPWM for higher-grade waveform generation than LEDC when period and edge placement matter.
+- `arc::Capture` timestamps edges in hardware through the MCPWM capture block.
 - `arc::Count` offloads pulse accumulation to the PCNT block.
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency/duty choices.
@@ -47,6 +49,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │   │   └── README.md
 │   ├── ota
 │   │   └── README.md
+│   ├── pulse
+│   │   └── README.md
 │   ├── pwm
 │   │   └── README.md
 │   ├── timer
@@ -72,6 +76,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │           └── arc
 │               ├── bus.hpp
 │               ├── burst.hpp
+│               ├── capture.hpp
 │               ├── caps.hpp
 │               ├── cfg.hpp
 │               ├── clock.hpp
@@ -83,6 +88,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── espnow.hpp
 │               ├── plane.hpp
 │               ├── ota.hpp
+│               ├── pulse.hpp
 │               ├── pwm.hpp
 │               ├── reg.hpp
 │               ├── ring.hpp
@@ -115,6 +121,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware pulse counting through PCNT
 - Hardware symbol streaming through RMT
 - Hardware symbol capture through RMT RX
+- Hardware MCPWM waveform generation with runtime frequency and duty retuning
+- Hardware MCPWM edge capture for period/high/low measurement
 - Hardware PWM offload through LEDC for periodic output that should not burn a core
 - Hardware timebase and alarms through GPTimer
 - Lock-free telemetry ring and single-word control register
@@ -499,6 +507,30 @@ Compile-time hardware PWM on ESP32-S3 LEDC.
 - `duty<permille>()` updates duty with a compile-time value.
 
 Use this when the waveform is periodic and the silicon should generate it. Keep `arc::Wave` for cases where the CPU must own every edge.
+
+### `arc::Pulse<Pin, Hz, DutyPermille = 500, Group = 0, ResolutionHz = 10'000'000>`
+
+Compile-time MCPWM waveform wrapper.
+
+- `start()` allocates the timer, operator, comparator, and generator, then starts the hardware waveform.
+- `hz(value)` retunes the timer period at runtime.
+- `duty(value)` retunes the duty cycle at runtime.
+- `on()` and `off()` force a level without tearing down the hardware path.
+- `wave()` returns control to the timer/comparator path after a forced level.
+
+Use this when LEDC is too small a hammer and you want a stronger waveform block with explicit period and compare control.
+
+### `arc::Capture<Pin, Hz = 1'000'000, Group = 0, Prescale = 1, Rise = true, Fall = true>`
+
+Compile-time MCPWM capture wrapper.
+
+- `start()` allocates a capture timer and channel and starts timestamping selected edges.
+- `ticks()` returns the latest captured timestamp.
+- `period()`, `high()`, and `low()` expose the measured edge deltas with no queue allocation.
+- `rising()` tells you which edge arrived last.
+- `soft()` triggers a software capture for bring-up and inspection.
+
+Use this when you want real edge timestamps without a CPU spin loop or GPIO ISR plumbing.
 
 ### `arc::Burst<Pin, Hz, Symbols = 64, Depth = 1, Dma = false>`
 
@@ -968,6 +1000,34 @@ The example shows:
 - `arc::Pwm<...>::start()` owning the waveform
 - no pinned task and no busy loop for a simple periodic LED output
 
+## Pulse Example
+
+Arc also ships a standalone MCPWM waveform-plus-capture demo at `examples/pulse`.
+
+```bash
+cd examples/pulse
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/pulse
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example shows:
+
+- `arc::Pulse<...>::start()` owning a `20 kHz` hardware waveform on `GPIO4`
+- `arc::Capture<...>::start()` timestamping the same waveform on `GPIO5`
+- period, high time, and low time reported without a CPU sampling loop
+
 ## Store Example
 
 Arc also ships a standalone typed-NVS demo at `examples/store`.
@@ -1005,20 +1065,7 @@ The example shows:
 
 Arc now ships a build workflow at `.github/workflows/build.yml`.
 
-It builds:
-
-- root baseline
-- `examples/count`
-- `examples/espnow`
-- `examples/ota`
-- `examples/pwm`
-- `examples/space`
-- `examples/store`
-- `examples/timer`
-- `examples/trace`
-- `examples/udp`
-
-and writes bin sizes into the GitHub Actions step summary so size regressions are visible on every push or PR.
+It builds the root baseline and every directory under `examples/*`, then writes each app binary size into the GitHub Actions step summary so size regressions are visible on every push or PR.
 
 Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared `esp32s3` lock in `cmake/arc-idf.cmake`.
 
@@ -1031,6 +1078,8 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 - `arc::Drive` is the default CPU-driven output path on ESP32-S3.
 - `arc::Sense` gives the same dedicated path for deterministic input sampling.
 - `arc::Pwm` is the right default for fixed periodic output when a hardware timer can own the waveform.
+- `arc::Pulse` is the next lane up when you want a stronger waveform block than LEDC and still do not want the CPU owning edges.
+- `arc::Capture` is the cleanest way to timestamp edges in hardware before reaching for a GPIO ISR.
 - `arc::Wave` is for deliberate CPU-owned edges, not for the common case of “just blink this periodically”.
 - `arc::Reg` is better than a queue for latest-wins control words.
 - For multi-field control words, prefer explicit fixed-width fields over C++ bitfields.
