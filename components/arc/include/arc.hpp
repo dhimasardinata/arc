@@ -1,5 +1,6 @@
 #pragma once
 
+#include "arc/bridge.hpp"
 #include "arc/burst.hpp"
 #include "arc/bus.hpp"
 #include "arc/capture.hpp"

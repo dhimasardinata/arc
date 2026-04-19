@@ -15,6 +15,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
 - `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
 - `arc::Pulse` uses MCPWM for higher-grade waveform generation than LEDC when period and edge placement matter.
+- `arc::Bridge` drives complementary MCPWM pairs with explicit dead-time.
 - `arc::Capture` timestamps edges in hardware through the MCPWM capture block.
 - `arc::Count` offloads pulse accumulation to the PCNT block.
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
@@ -41,6 +42,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 ├── env.fish
 ├── env.sh
 ├── examples
+│   ├── bridge
+│   │   └── README.md
 │   ├── space
 │   │   └── README.md
 │   ├── count
@@ -74,6 +77,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │       └── include
 │           ├── arc.hpp
 │           └── arc
+│               ├── bridge.hpp
 │               ├── bus.hpp
 │               ├── burst.hpp
 │               ├── capture.hpp
@@ -122,6 +126,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware symbol streaming through RMT
 - Hardware symbol capture through RMT RX
 - Hardware MCPWM waveform generation with runtime frequency and duty retuning
+- Hardware complementary MCPWM pairs with explicit dead-time
 - Hardware MCPWM edge capture for period/high/low measurement
 - Hardware PWM offload through LEDC for periodic output that should not burn a core
 - Hardware timebase and alarms through GPTimer
@@ -519,6 +524,18 @@ Compile-time MCPWM waveform wrapper.
 - `wave()` returns control to the timer/comparator path after a forced level.
 
 Use this when LEDC is too small a hammer and you want a stronger waveform block with explicit period and compare control.
+
+### `arc::Bridge<HighPin, LowPin, Hz, DutyPermille = 500, RiseDelayTicks = 0, FallDelayTicks = 0>`
+
+Compile-time MCPWM complementary pair wrapper.
+
+- `start()` allocates one timer, one operator, one comparator, and two generators.
+- `hz(value)` retunes the switching frequency at runtime.
+- `duty(value)` retunes the base duty cycle at runtime.
+- `wave()` restores complementary switching after a forced state.
+- `hi()`, `lo()`, and `off()` force safe states onto the pair without deleting the hardware path.
+
+Use this when the output is no longer “just PWM” and you need a half-bridge style pair with explicit dead-time.
 
 ### `arc::Capture<Pin, Hz = 1'000'000, Group = 0, Prescale = 1, Rise = true, Fall = true>`
 
@@ -1028,6 +1045,34 @@ The example shows:
 - `arc::Capture<...>::start()` timestamping the same waveform on `GPIO5`
 - period, high time, and low time reported without a CPU sampling loop
 
+## Bridge Example
+
+Arc also ships a standalone complementary-MCPWM demo at `examples/bridge`.
+
+```bash
+cd examples/bridge
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/bridge
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example shows:
+
+- `arc::Bridge<...>::start()` owning a complementary pair on `GPIO4` and `GPIO5`
+- explicit rising and falling edge dead-time at the MCPWM hardware level
+- a tiny `app::boot()` surface while the power-stage waveform stays entirely in silicon
+
 ## Store Example
 
 Arc also ships a standalone typed-NVS demo at `examples/store`.
@@ -1067,6 +1112,14 @@ Arc now ships a build workflow at `.github/workflows/build.yml`.
 
 It builds the root baseline and every directory under `examples/*`, then writes each app binary size into the GitHub Actions step summary so size regressions are visible on every push or PR.
 
+The workflow also caches:
+
+- the ESP-IDF checkout under `~/esp-idf`
+- the installed Espressif toolchain and Python env under `~/.espressif`
+- `~/.ccache` for repeated C/C++ builds
+
+GitHub-hosted runners are still ephemeral, so host packages installed by `apt` do not persist across jobs. Arc now only installs host packages if they are actually missing on the runner.
+
 Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared `esp32s3` lock in `cmake/arc-idf.cmake`.
 
 ## Notes
@@ -1079,6 +1132,7 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 - `arc::Sense` gives the same dedicated path for deterministic input sampling.
 - `arc::Pwm` is the right default for fixed periodic output when a hardware timer can own the waveform.
 - `arc::Pulse` is the next lane up when you want a stronger waveform block than LEDC and still do not want the CPU owning edges.
+- `arc::Bridge` is the right lane when the waveform controls a half-bridge, gate driver, or any complementary output that must respect dead-time.
 - `arc::Capture` is the cleanest way to timestamp edges in hardware before reaching for a GPIO ISR.
 - `arc::Wave` is for deliberate CPU-owned edges, not for the common case of “just blink this periodically”.
 - `arc::Reg` is better than a queue for latest-wins control words.

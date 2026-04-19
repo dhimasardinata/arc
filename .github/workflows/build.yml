@@ -7,34 +7,63 @@ on:
 jobs:
   esp32s3:
     runs-on: ubuntu-latest
+    env:
+      ARC_IDF_VERSION: v6.0
+      ARC_IDF_TARGET: esp32s3
+      ARC_PYTHON: "3.12"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install host packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git \
-            wget \
-            flex \
-            bison \
-            gperf \
-            python3 \
-            python3-pip \
-            python3-venv \
-            cmake \
-            ninja-build \
-            ccache \
-            libffi-dev \
-            libssl-dev \
-            dfu-util \
-            libusb-1.0-0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.ARC_PYTHON }}
 
-      - name: Install ESP-IDF v6.0
+      - name: Ensure host tools
+        shell: bash
         run: |
-          git clone --branch v6.0 --recursive https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
-          "$HOME/esp-idf/install.sh" esp32s3
+          missing=()
+          command -v git >/dev/null || missing+=(git)
+          command -v wget >/dev/null || missing+=(wget)
+          command -v flex >/dev/null || missing+=(flex)
+          command -v bison >/dev/null || missing+=(bison)
+          command -v gperf >/dev/null || missing+=(gperf)
+          command -v cmake >/dev/null || missing+=(cmake)
+          command -v ninja >/dev/null || missing+=(ninja-build)
+          command -v ccache >/dev/null || missing+=(ccache)
+          python3 --version >/dev/null 2>&1 || missing+=(python3)
+          python3 -m pip --version >/dev/null 2>&1 || missing+=(python3-pip)
+          python3 -m venv --help >/dev/null 2>&1 || missing+=(python3-venv)
+          if ((${#missing[@]})); then
+            sudo apt-get update
+            sudo apt-get install -y "${missing[@]}"
+          fi
+
+      - name: Cache ESP-IDF and tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: ${{ runner.os }}-esp-idf-${{ env.ARC_IDF_VERSION }}-${{ env.ARC_IDF_TARGET }}-py${{ env.ARC_PYTHON }}
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ env.ARC_IDF_VERSION }}-py${{ env.ARC_PYTHON }}-${{ github.ref_name }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ env.ARC_IDF_VERSION }}-py${{ env.ARC_PYTHON }}-
+
+      - name: Ensure ESP-IDF
+        shell: bash
+        run: |
+          if [[ ! -x "$HOME/esp-idf/export.sh" ]]; then
+            git clone --branch "${ARC_IDF_VERSION}" --depth 1 --recursive https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
+          fi
+          if ! find "$HOME/.espressif/python_env" -maxdepth 1 -type d -name "idf${ARC_IDF_VERSION#v}_py*" 2>/dev/null | grep -q .; then
+            "$HOME/esp-idf/install.sh" "${ARC_IDF_TARGET}"
+          fi
 
       - name: Repo sanity
         shell: bash
@@ -46,6 +75,8 @@ jobs:
         shell: bash
         run: |
           export ARC_IDF_PATH="$HOME/esp-idf"
+          export IDF_CCACHE_ENABLE=1
+          ccache --max-size 300M || true
           . ./env.sh
           app_bin() {
             find build -maxdepth 1 -type f -name '*.bin' \
