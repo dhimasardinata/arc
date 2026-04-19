@@ -25,6 +25,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency/duty choices.
 - `arc::Timer` binds the GPTimer block to a compile-time timebase and optional ISR hook.
+- `arc::Route` binds ETM channels so hardware events can trigger hardware tasks without a CPU loop.
 - `arc::Tight` runs a masked per-step loop for the rare path that needs tighter jitter than `arc::App`.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
@@ -49,6 +50,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │   ├── bridge
 │   │   └── README.md
 │   ├── dsp
+│   │   └── README.md
+│   ├── etm
 │   │   └── README.md
 │   ├── i2s
 │   │   └── README.md
@@ -101,6 +104,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── dsp.hpp
 │               ├── din.hpp
 │               ├── dio.hpp
+│               ├── etm.hpp
 │               ├── fence.hpp
 │               ├── gpio.hpp
 │               ├── espnow.hpp
@@ -150,6 +154,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware I2S streaming with duplex DMA and event counters
 - Hardware PWM offload through LEDC for periodic output that should not burn a core
 - Hardware timebase and alarms through GPTimer
+- Hardware event routing between GPTimer and GPIO through ETM
 - Lock-free telemetry ring and single-word control register
 - Slot-aware OTA helper for staged writes and rollback state
 - Typed NVS persistence on the Core 0 side
@@ -679,6 +684,38 @@ Compile-time GPTimer wrapper for a hardware timebase.
 
 Use this when you want a real hardware timebase or periodic alarm instead of a busy loop.
 
+### `arc::Route<Event, Task, AllowPd = false>`
+
+Compile-time ETM route between one hardware event and one hardware task.
+
+- `boot()` allocates the ETM channel and connects the route
+- `on()` connects and enables the channel
+- `off()` disables the channel without deleting the static route
+
+Use this when a peripheral should trigger another peripheral directly instead of waking the CPU.
+
+### `arc::Alarm<Timer>`, `arc::Arm<Timer>`, `arc::Reload<Timer>`
+
+Timer-side ETM primitives built on top of `arc::Timer`.
+
+- `arc::Alarm<Timer>` exposes the GPTimer alarm event
+- `arc::Arm<Timer>` re-enables a one-shot timer alarm through ETM
+- `arc::Reload<Timer>` reloads the timer counter through ETM
+- `arc::Start<Timer>` and `arc::Stop<Timer>` remain available when ETM should gate the whole counter
+
+Use these when a timer should become part of a hardware route instead of only serving an ISR.
+
+### `arc::Toggle<Pin>`, `arc::Set<Pin>`, `arc::Clear<Pin>`
+
+GPIO-side ETM tasks.
+
+- `arc::Toggle<Pin>` flips the output level on every routed ETM event
+- `arc::Set<Pin>` forces the pin high
+- `arc::Clear<Pin>` forces the pin low
+- `arc::Rise<Pin>`, `arc::Fall<Pin>`, and `arc::AnyEdge<Pin>` expose GPIO edge events to ETM routes
+
+Use these when the GPIO should be owned by ETM instead of a software write path.
+
 ### `arc::Mask<Level = XCHAL_EXCM_LEVEL>`
 
 Core-local Xtensa interrupt-level guard.
@@ -1016,6 +1053,37 @@ The example composes:
 - `Tick = arc::Timer<1'000'000>`
 
 The LED edge is driven by a GPTimer alarm ISR instead of a busy loop, while a tiny host task logs the free-running counter.
+
+## ETM Example
+
+Arc also ships a standalone hardware-route demo at `examples/etm`.
+
+```bash
+cd examples/etm
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/etm
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example composes:
+
+- `Clock = arc::Timer<1'000'000>`
+- `Blink = arc::Route<arc::Alarm<Clock>, arc::Toggle<4>>`
+- `Rearm = arc::Route<arc::Alarm<Clock>, arc::Arm<Clock>>`
+- `Reset = arc::Route<arc::Alarm<Clock>, arc::Reload<Clock>>`
+
+After boot, the waveform continues as a pure hardware graph: one GPTimer alarm event toggles the pin, re-enables the next alarm, and reloads the counter without an ISR or CPU loop.
 
 ## UDP Example
 

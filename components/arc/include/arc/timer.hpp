@@ -21,6 +21,11 @@ template <std::uint32_t Hz,
 struct Timer {
     static_assert(Hz != 0U, "timer resolution must be non-zero");
 
+    static void init()
+    {
+        create();
+    }
+
     static void start()
     {
         ensure<void>();
@@ -36,7 +41,7 @@ struct Timer {
 
     static void stop()
     {
-        if (!state.running) {
+        if (state.timer == nullptr || !state.running) {
             return;
         }
 
@@ -54,13 +59,25 @@ struct Timer {
         run();
     }
 
+    static void enable()
+    {
+        ensure<void>();
+
+        if (!state.enabled) {
+            ESP_ERROR_CHECK(gptimer_enable(state.timer));
+            state.enabled = true;
+        }
+    }
+
     static void zero(const std::uint64_t value = 0) noexcept
     {
+        create();
         ESP_ERROR_CHECK(gptimer_set_raw_count(state.timer, value));
     }
 
     [[nodiscard]] static std::uint64_t read() noexcept
     {
+        create();
         std::uint64_t value = 0;
         ESP_ERROR_CHECK(gptimer_get_raw_count(state.timer, &value));
         return value;
@@ -82,6 +99,7 @@ struct Timer {
         const std::uint64_t reload = 0,
         const bool auto_reload = false) noexcept
     {
+        create();
         static gptimer_alarm_config_t config{};
 
         config.alarm_count = count;
@@ -92,7 +110,14 @@ struct Timer {
 
     static void off() noexcept
     {
+        create();
         ESP_ERROR_CHECK(gptimer_set_alarm_action(state.timer, nullptr));
+    }
+
+    [[nodiscard]] static gptimer_handle_t native()
+    {
+        create();
+        return state.timer;
     }
 
 private:
@@ -151,10 +176,7 @@ private:
 
     static void run()
     {
-        if (!state.enabled) {
-            ESP_ERROR_CHECK(gptimer_enable(state.timer));
-            state.enabled = true;
-        }
+        enable();
 
         if (!state.running) {
             ESP_ERROR_CHECK(gptimer_start(state.timer));

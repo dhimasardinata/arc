@@ -12,6 +12,7 @@
 #include "arc/dsp.hpp"
 #include "arc/din.hpp"
 #include "arc/dio.hpp"
+#include "arc/etm.hpp"
 #include "arc/fence.hpp"
 #include "arc/gpio.hpp"
 #include "arc/i2s.hpp"
