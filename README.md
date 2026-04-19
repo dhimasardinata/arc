@@ -18,7 +18,10 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Bridge` drives complementary MCPWM pairs with explicit dead-time.
 - `arc::Capture` timestamps edges in hardware through the MCPWM capture block.
 - `arc::Scope` streams ADC data through the digital controller and DMA path.
+- `arc::SpiBus` and `arc::Spi` drive DMA-capable SPI transfers without queue boilerplate in user code.
+- `arc::I2s` owns standard-mode I2S channels and DMA event counters with one compile-time type.
 - `arc::Count` offloads pulse accumulation to the PCNT block.
+- `arc::dsp` adds hot-loop math kernels that pair naturally with `arc::simdbuf` and Core 1.
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency/duty choices.
 - `arc::Timer` binds the GPTimer block to a compile-time timebase and optional ISR hook.
@@ -45,7 +48,13 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 ├── examples
 │   ├── bridge
 │   │   └── README.md
+│   ├── dsp
+│   │   └── README.md
+│   ├── i2s
+│   │   └── README.md
 │   ├── scope
+│   │   └── README.md
+│   ├── spi
 │   │   └── README.md
 │   ├── space
 │   │   └── README.md
@@ -89,11 +98,13 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── cfg.hpp
 │               ├── clock.hpp
 │               ├── count.hpp
+│               ├── dsp.hpp
 │               ├── din.hpp
 │               ├── dio.hpp
 │               ├── fence.hpp
 │               ├── gpio.hpp
 │               ├── espnow.hpp
+│               ├── i2s.hpp
 │               ├── plane.hpp
 │               ├── ota.hpp
 │               ├── pulse.hpp
@@ -102,6 +113,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── ring.hpp
 │               ├── scope.hpp
 │               ├── sketch.hpp
+│               ├── spi.hpp
 │               ├── space.hpp
 │               ├── store.hpp
 │               ├── task.hpp
@@ -134,11 +146,14 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware complementary MCPWM pairs with explicit dead-time
 - Hardware MCPWM edge capture for period/high/low measurement
 - Hardware ADC streaming through the digital controller and DMA
+- Hardware SPI transfers with explicit bus/device composition and DMA-capable paths
+- Hardware I2S streaming with duplex DMA and event counters
 - Hardware PWM offload through LEDC for periodic output that should not burn a core
 - Hardware timebase and alarms through GPTimer
 - Lock-free telemetry ring and single-word control register
 - Slot-aware OTA helper for staged writes and rollback state
 - Typed NVS persistence on the Core 0 side
+- SIMD-friendly math kernels that fit the Core 1 compute plane
 
 ## Programming Model
 
@@ -577,6 +592,39 @@ Compile-time ADC continuous wrapper.
 
 Use this when analog throughput matters more than per-sample polling.
 
+### `arc::SpiBus<Host, Sclk, Mosi, Miso = -1, MaxBytes = 4096, ...>`
+
+Compile-time SPI bus wrapper.
+
+- `boot()` initializes one ESP32-S3 SPI host with DMA-capable transfer sizing.
+- `host()`, `sclk()`, `mosi()`, and `miso()` keep the routing obvious in user code.
+- The SPI ISR is pinned to CPU0 by default so transport work naturally stays off the realtime core.
+
+Use this when multiple devices should share one bus or when bus routing should stay explicit and reusable.
+
+### `arc::Spi<Bus, Cs = -1, Hz = SPI_MASTER_FREQ_20M, Mode = 0, Queue = 4, ...>`
+
+Compile-time SPI device wrapper.
+
+- `boot()` adds one device on top of a compile-time `arc::SpiBus`.
+- `send(...)`, `recv(...)`, `xfer(...)`, and `poll(...)` cover the common synchronous paths.
+- `queue(...)` and `wait(...)` expose the interrupt-driven transaction path when you want multiple jobs in flight.
+- `acquire()` and `release()` give explicit bus ownership when CS must stay held.
+
+Use this when bytes should move through the SPI engine and DMA path instead of a software bit loop.
+
+### `arc::I2s<Bclk, Ws, Dout = I2S_GPIO_UNUSED, Din = I2S_GPIO_UNUSED, Hz = 48'000, ...>`
+
+Compile-time standard-mode I2S wrapper.
+
+- `boot()` allocates and initializes TX, RX, or duplex channels.
+- `start()` and `stop()` gate the hardware stream without deleting the channels.
+- `preload(...)` primes TX DMA before enabling the lane.
+- `write(...)` and `read(...)` move frames through DMA-backed channels.
+- `sent()`, `recv()`, `send_ovf()`, and `recv_ovf()` expose ISR-side event counters.
+
+Use this when framed serial audio or sample streams should be owned by the I2S block, not by a CPU copy loop.
+
 ### `arc::Burst<Pin, Hz, Symbols = 64, Depth = 1, Dma = false>`
 
 Compile-time RMT TX wrapper for symbol streams.
@@ -651,6 +699,19 @@ Seqlock-style latest-snapshot lane for payloads larger than one word.
 - `try_read(value)` gives you the same read without blocking
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
+
+### `arc::dsp`
+
+Hot-loop math helpers for the compute plane.
+
+- `arc::dsp::dot(...)` computes one dot product.
+- `arc::dsp::scale(...)` writes `out = in * gain`.
+- `arc::dsp::mix(...)` writes `out = lhs + rhs`.
+- `arc::dsp::mac(...)` accumulates `acc += in * gain`.
+- `arc::dsp::peak(...)` finds the absolute peak.
+- `arc::dsp::Fir<T, N>` provides a no-heap FIR state machine with `step(...)` and `run(...)`.
+
+Use this when Core 1 is doing signal work and you want aligned buffers plus tight, vector-friendly loops without a heavyweight DSP framework.
 
 ### `arc::CapsBuf<T>` and explicit capability buffers
 
@@ -1101,6 +1162,90 @@ The example shows:
 - `arc::Scope::pull(...)` returning parsed samples instead of raw driver bytes
 - frame and overflow counters reported alongside `avg/min/max`
 
+## SPI Example
+
+Arc also ships a standalone SPI loopback demo at `examples/spi`.
+
+```bash
+cd examples/spi
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/spi
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example shows:
+
+- `arc::SpiBus<...>::boot()` bringing up `SPI2_HOST`
+- `arc::Spi<...>::poll(...)` performing one full-duplex loopback transfer
+- DMA-capable receive storage with no queue plumbing in user code
+
+## I2S Example
+
+Arc also ships a standalone I2S duplex demo at `examples/i2s`.
+
+```bash
+cd examples/i2s
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/i2s
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example shows:
+
+- `arc::I2s<...>::boot()` allocating a duplex standard-mode lane
+- `arc::I2s<...>::preload(...)`, `write(...)`, and `read(...)` moving data through DMA
+- TX/RX event counters reported without user ISR plumbing
+
+## DSP Example
+
+Arc also ships a standalone compute-plane demo at `examples/dsp`.
+
+```bash
+cd examples/dsp
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/dsp
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example shows:
+
+- `arc::simdbuf<float>(...)` making the buffer placement explicit
+- `arc::dsp::*` kernels running on Core 1
+- `arc::SeqReg` publishing compute snapshots back to Core 0
+
 ## Bridge Example
 
 Arc also ships a standalone complementary-MCPWM demo at `examples/bridge`.
@@ -1191,6 +1336,8 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 - `arc::Bridge` is the right lane when the waveform controls a half-bridge, gate driver, or any complementary output that must respect dead-time.
 - `arc::Capture` is the cleanest way to timestamp edges in hardware before reaching for a GPIO ISR.
 - `arc::Scope` is the lane to reach for when analog sampling should move into DMA instead of a software read loop.
+- `arc::SpiBus` and `arc::Spi` are the lanes to reach for when a sensor, display, or converter should move bytes through the SPI peripheral instead of CPU-owned toggling.
+- `arc::I2s` is the right lane when the data is naturally framed and should live on a DMA-backed serial stream.
 - `arc::Wave` is for deliberate CPU-owned edges, not for the common case of “just blink this periodically”.
 - `arc::Reg` is better than a queue for latest-wins control words.
 - For multi-field control words, prefer explicit fixed-width fields over C++ bitfields.
@@ -1203,5 +1350,6 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 - `arc::Tight` is the next step after `arc::App` when you need a masked step loop, not a normal forever-loop task body.
 - `arc::SeqReg` is the right latest-snapshot lane once a control word no longer fits in `arc::Reg`.
 - `arc::dmabuf`, `arc::cachebuf`, `arc::simdbuf`, `arc::ahbbuf`, and `arc::axibuf` are the right way to keep performance-critical heap placement explicit.
+- `arc::dsp` is intentionally small: it is there to feed the compute plane, not to hide the math under a giant framework.
 - UDP over Wi-Fi is a good first network demo, but it belongs under `examples/udp`, not in the root baseline.
 - `app_main()` should remain the one C boundary; wrapping it further does not buy speed or clarity.
