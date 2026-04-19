@@ -51,7 +51,7 @@ if ! grep -qE 'set\(IDF_TARGET "esp32s3".*FORCE\)' cmake/arc-idf.cmake; then
     die "cmake/arc-idf.cmake no longer force-locks esp32s3"
 fi
 
-if ! grep -qE 'IDF_TARGET=\"esp32s3\"|IDF_TARGET "esp32s3"' env.sh env.fish; then
+if ! grep -qE 'IDF_TARGET="esp32s3"|IDF_TARGET "esp32s3"' env.sh env.fish; then
     die "env loaders no longer export IDF_TARGET=esp32s3"
 fi
 

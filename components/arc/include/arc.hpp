@@ -1,5 +1,6 @@
 #pragma once
 
+#include "arc/adc.hpp"
 #include "arc/bridge.hpp"
 #include "arc/burst.hpp"
 #include "arc/bus.hpp"
@@ -21,6 +22,7 @@
 #include "arc/ring.hpp"
 #include "arc/seq.hpp"
 #include "arc/sketch.hpp"
+#include "arc/scope.hpp"
 #include "arc/ota.hpp"
 #include "arc/space.hpp"
 #include "arc/store.hpp"

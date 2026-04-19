@@ -17,6 +17,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Pulse` uses MCPWM for higher-grade waveform generation than LEDC when period and edge placement matter.
 - `arc::Bridge` drives complementary MCPWM pairs with explicit dead-time.
 - `arc::Capture` timestamps edges in hardware through the MCPWM capture block.
+- `arc::Scope` streams ADC data through the digital controller and DMA path.
 - `arc::Count` offloads pulse accumulation to the PCNT block.
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency/duty choices.
@@ -43,6 +44,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 ├── env.sh
 ├── examples
 │   ├── bridge
+│   │   └── README.md
+│   ├── scope
 │   │   └── README.md
 │   ├── space
 │   │   └── README.md
@@ -77,6 +80,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │       └── include
 │           ├── arc.hpp
 │           └── arc
+│               ├── adc.hpp
 │               ├── bridge.hpp
 │               ├── bus.hpp
 │               ├── burst.hpp
@@ -96,6 +100,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── pwm.hpp
 │               ├── reg.hpp
 │               ├── ring.hpp
+│               ├── scope.hpp
 │               ├── sketch.hpp
 │               ├── space.hpp
 │               ├── store.hpp
@@ -128,6 +133,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware MCPWM waveform generation with runtime frequency and duty retuning
 - Hardware complementary MCPWM pairs with explicit dead-time
 - Hardware MCPWM edge capture for period/high/low measurement
+- Hardware ADC streaming through the digital controller and DMA
 - Hardware PWM offload through LEDC for periodic output that should not burn a core
 - Hardware timebase and alarms through GPTimer
 - Lock-free telemetry ring and single-word control register
@@ -548,6 +554,28 @@ Compile-time MCPWM capture wrapper.
 - `soft()` triggers a software capture for bring-up and inspection.
 
 Use this when you want real edge timestamps without a CPU spin loop or GPIO ISR plumbing.
+
+### `arc::Adc<Io, Atten = ADC_ATTEN_DB_12, Width = SOC_ADC_DIGI_MAX_BITWIDTH>`
+
+Compile-time ADC pad descriptor for `arc::Scope`.
+
+- `io()` returns the GPIO number.
+- `atten()` returns the attenuation used for the digital pattern.
+- `width()` returns the configured ADC bit width.
+
+Use this as a pad specifier, not as a runtime object.
+
+### `arc::Scope<Hz, FrameBytes = 256, StoreBytes = 1024, Flush = true, Pads...>`
+
+Compile-time ADC continuous wrapper.
+
+- `start()` boots the ADC digital controller and DMA path.
+- `pull(...)` reads and parses samples into `adc_continuous_data_t` in one call.
+- `raw(...)` exposes the raw DMA frame if you want to own parsing yourself.
+- `frames()` and `overruns()` expose ISR-side frame and overflow counters.
+- `flush()` drops queued samples and resets the software counters.
+
+Use this when analog throughput matters more than per-sample polling.
 
 ### `arc::Burst<Pin, Hz, Symbols = 64, Depth = 1, Dma = false>`
 
@@ -1045,6 +1073,34 @@ The example shows:
 - `arc::Capture<...>::start()` timestamping the same waveform on `GPIO5`
 - period, high time, and low time reported without a CPU sampling loop
 
+## Scope Example
+
+Arc also ships a standalone ADC-DMA demo at `examples/scope`.
+
+```bash
+cd examples/scope
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/scope
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example shows:
+
+- `arc::Scope<...>::start()` owning a `40 kHz` ADC continuous stream on `GPIO4`
+- `arc::Scope::pull(...)` returning parsed samples instead of raw driver bytes
+- frame and overflow counters reported alongside `avg/min/max`
+
 ## Bridge Example
 
 Arc also ships a standalone complementary-MCPWM demo at `examples/bridge`.
@@ -1134,6 +1190,7 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 - `arc::Pulse` is the next lane up when you want a stronger waveform block than LEDC and still do not want the CPU owning edges.
 - `arc::Bridge` is the right lane when the waveform controls a half-bridge, gate driver, or any complementary output that must respect dead-time.
 - `arc::Capture` is the cleanest way to timestamp edges in hardware before reaching for a GPIO ISR.
+- `arc::Scope` is the lane to reach for when analog sampling should move into DMA instead of a software read loop.
 - `arc::Wave` is for deliberate CPU-owned edges, not for the common case of “just blink this periodically”.
 - `arc::Reg` is better than a queue for latest-wins control words.
 - For multi-field control words, prefer explicit fixed-width fields over C++ bitfields.
