@@ -1,0 +1,52 @@
+menu "Arc ESP-NOW"
+
+    config ARC_ESPNOW_LED
+        int "LED GPIO"
+        range 0 48
+        default 48
+        help
+            Dedicated output pin driven by the realtime plane.
+
+    config ARC_ESPNOW_STACK
+        int "RT stack (bytes)"
+        range 2048 16384
+        default 4096
+        help
+            Stack for the Core 1 realtime task.
+
+    config ARC_ESPNOW_NET_STACK
+        int "Radio stack (bytes)"
+        range 4096 16384
+        default 6144
+        help
+            Stack for the Core 0 Wi-Fi and ESP-NOW task.
+
+    config ARC_ESPNOW_HALF_US
+        int "Half period slow (us)"
+        range 1000 1000000
+        default 20000
+        help
+            Slow half period for the waveform.
+
+    config ARC_ESPNOW_FAST_HALF_US
+        int "Half period fast (us)"
+        range 1000 1000000
+        default 5000
+        help
+            Fast half period pushed by the Core 0 control plane.
+
+    config ARC_ESPNOW_CMD_MS
+        int "Control cadence (ms)"
+        range 500 60000
+        default 5000
+        help
+            How often Core 0 toggles the command word and wave period.
+
+    config ARC_ESPNOW_CHANNEL
+        int "Wi-Fi channel"
+        range 1 14
+        default 1
+        help
+            Channel used by the ESP-NOW peer entry.
+
+endmenu

@@ -17,7 +17,6 @@ From this directory:
 
 ```bash
 . ./env.sh
-idf.py set-target esp32s3
 idf.py menuconfig
 ```
 
@@ -25,7 +24,6 @@ For fish:
 
 ```fish
 source ./env.fish
-idf.py set-target esp32s3
 idf.py menuconfig
 ```
 

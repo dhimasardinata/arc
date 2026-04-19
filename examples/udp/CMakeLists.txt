@@ -1,11 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../components")
+set(ARC_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../components")
+set(ARC_SDKCONFIG_DEFAULTS
+    "${CMAKE_CURRENT_LIST_DIR}/../../sdkconfig.defaults"
+    "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
 
-if(NOT DEFINED ENV{IDF_PATH})
-    message(FATAL_ERROR "IDF_PATH is not set. Source the ESP-IDF export script before configuring this project.")
-endif()
-
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/arc-idf.cmake)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(arc_udp)

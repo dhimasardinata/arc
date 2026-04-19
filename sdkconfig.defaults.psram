@@ -1,3 +1,0 @@
-# PSRAM is part of the default N16R8 target now.
-# This file remains only so older build commands that append
-# sdkconfig.defaults.psram still work without breaking.

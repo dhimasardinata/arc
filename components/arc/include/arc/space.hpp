@@ -49,6 +49,11 @@ struct Space {
                      slot.whole,
                      slot.frac);
 
+            esp_ota_img_states_t state{};
+            if (esp_ota_get_state_partition(running, &state) == ESP_OK) {
+                ESP_LOGI(tag, "running state=%s", state_name(state));
+            }
+
             const auto app = app_area();
             const auto image = image_size(*running);
             if (image != 0U) {
@@ -82,6 +87,24 @@ struct Space {
                          apps.whole,
                          apps.frac);
             }
+        }
+
+        if (const auto* const boot = esp_ota_get_boot_partition(); boot != nullptr) {
+            ESP_LOGI(tag,
+                     "boot label=%s addr=0x%08x size=%uB (%u KiB)",
+                     boot->label,
+                     boot->address,
+                     boot->size,
+                     kib(boot->size));
+        }
+
+        if (const auto* const next = esp_ota_get_next_update_partition(nullptr); next != nullptr) {
+            ESP_LOGI(tag,
+                     "next update label=%s addr=0x%08x size=%uB (%u KiB)",
+                     next->label,
+                     next->address,
+                     next->size,
+                     kib(next->size));
         }
     }
 
@@ -286,6 +309,25 @@ private:
         }
 
         return "raw";
+    }
+
+    [[nodiscard]] static constexpr const char* state_name(const esp_ota_img_states_t state) noexcept
+    {
+        switch (state) {
+            case ESP_OTA_IMG_NEW:
+                return "new";
+            case ESP_OTA_IMG_PENDING_VERIFY:
+                return "pending_verify";
+            case ESP_OTA_IMG_VALID:
+                return "valid";
+            case ESP_OTA_IMG_INVALID:
+                return "invalid";
+            case ESP_OTA_IMG_ABORTED:
+                return "aborted";
+            case ESP_OTA_IMG_UNDEFINED:
+            default:
+                return "undefined";
+        }
     }
 };
 

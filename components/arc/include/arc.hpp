@@ -1,9 +1,11 @@
 #pragma once
 
+#include "arc/burst.hpp"
 #include "arc/bus.hpp"
 #include "arc/caps.hpp"
 #include "arc/cfg.hpp"
 #include "arc/clock.hpp"
+#include "arc/count.hpp"
 #include "arc/din.hpp"
 #include "arc/dio.hpp"
 #include "arc/fence.hpp"
@@ -13,7 +15,10 @@
 #include "arc/reg.hpp"
 #include "arc/ring.hpp"
 #include "arc/sketch.hpp"
+#include "arc/ota.hpp"
 #include "arc/space.hpp"
 #include "arc/store.hpp"
 #include "arc/task.hpp"
+#include "arc/timer.hpp"
+#include "arc/trace.hpp"
 #include "arc/wave.hpp"

@@ -1,7 +1,11 @@
 build/
 build-*/
+**/build/
+**/build-*/
 sdkconfig
 sdkconfig.old
+**/sdkconfig
+**/sdkconfig.old
 dependencies.lock
 managed_components/
 compile_commands.json

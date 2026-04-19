@@ -19,3 +19,4 @@ else
 end
 
 source "$IDF_PATH/export.fish"
+set -gx IDF_TARGET "esp32s3"

@@ -1,0 +1,31 @@
+menu "Arc Timer"
+
+    config ARC_TIMER_LED
+        int "Timer GPIO"
+        range 0 48
+        default 48
+        help
+            Dedicated output pin toggled by the GPTimer alarm ISR on Core 0.
+
+    config ARC_TIMER_PERIOD_US
+        int "Alarm period (us)"
+        range 1 10000000
+        default 500000
+        help
+            Alarm period in microseconds at 1 MHz timer resolution.
+
+    config ARC_TIMER_LOG_MS
+        int "Log period (ms)"
+        range 100 10000
+        default 1000
+        help
+            How often the host task logs the free-running timer count.
+
+    config ARC_TIMER_STACK
+        int "Host stack (bytes)"
+        range 2048 16384
+        default 4096
+        help
+            Stack for the timer logging task.
+
+endmenu

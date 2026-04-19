@@ -23,3 +23,4 @@ else
 fi
 
 . "${IDF_PATH}/export.sh"
+export IDF_TARGET="esp32s3"

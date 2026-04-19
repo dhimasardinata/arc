@@ -23,7 +23,6 @@ From this directory:
 
 ```bash
 . ./env.sh
-idf.py set-target esp32s3
 idf.py build
 idf.py size
 idf.py -p /dev/ttyACM0 flash monitor
@@ -33,7 +32,6 @@ For fish:
 
 ```fish
 source ./env.fish
-idf.py set-target esp32s3
 idf.py build
 idf.py size
 idf.py -p /dev/ttyACM0 flash monitor

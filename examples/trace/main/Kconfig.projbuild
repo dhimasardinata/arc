@@ -1,0 +1,52 @@
+menu "Arc Trace"
+
+    config ARC_TRACE_OUT
+        int "Burst output GPIO"
+        range 0 48
+        default 4
+        help
+            Output pin driven by arc::Burst. Jumper this pin to the trace input pin.
+
+    config ARC_TRACE_IN
+        int "Trace input GPIO"
+        range 0 48
+        default 5
+        help
+            Input pin captured by arc::Trace.
+
+    config ARC_TRACE_STACK
+        int "Host stack (bytes)"
+        range 2048 16384
+        default 4096
+        help
+            Stack for the logging task on Core 0.
+
+    config ARC_TRACE_SAMPLE_MS
+        int "Report period (ms)"
+        range 100 10000
+        default 1000
+        help
+            How often the host task sends one frame and reports the captured symbols.
+
+    config ARC_TRACE_HALF_US
+        int "Base half pulse width (us)"
+        range 1 1000
+        default 10
+        help
+            Base duration used to build the pulse-width pattern.
+
+    config ARC_TRACE_MIN_NS
+        int "RX minimum pulse width (ns)"
+        range 0 1000000
+        default 100
+        help
+            Pulses shorter than this are ignored as glitches.
+
+    config ARC_TRACE_MAX_NS
+        int "RX stop width (ns)"
+        range 1000 100000000
+        default 200000
+        help
+            Receiving stops when the line stays at one level longer than this.
+
+endmenu

@@ -12,24 +12,42 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Core 1 is for the realtime plane: statically allocated, pinned, and kept close to the silicon.
 - User programs live in `main/app_main.cpp`.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
+- `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
+- `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
+- `arc::Count` offloads pulse accumulation to the PCNT block.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency/duty choices.
+- `arc::Timer` binds the GPTimer block to a compile-time timebase and optional ISR hook.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
-- `arc::Space` reports runtime flash, image, partition, and heap capacity without heap allocation.
+- `arc::Space` reports runtime flash, OTA slot, partition, and heap capacity without heap allocation.
+- `arc::Ota` wraps staged OTA writes and slot state without raw handle plumbing.
 - `arc::Store` gives typed NVS blobs without raw handle plumbing in user code.
 - `arc::net::Udp` is a reusable Core 0 transport plane when you opt into `#include "arc/udp.hpp"`.
+- `arc::net::EspNow` is a reusable Core 0 raw-radio plane when you opt into `#include "arc/espnow.hpp"`.
 
 ## Layout
 
 ```text
 .
 ├── CMakeLists.txt
+├── cmake
+│   └── arc-idf.cmake
 ├── env.fish
 ├── env.sh
 ├── examples
 │   ├── space
 │   │   └── README.md
+│   ├── count
+│   │   └── README.md
+│   ├── trace
+│   │   └── README.md
+│   ├── ota
+│   │   └── README.md
 │   ├── pwm
+│   │   └── README.md
+│   ├── timer
+│   │   └── README.md
+│   ├── espnow
 │   │   └── README.md
 │   ├── store
 │   │   └── README.md
@@ -38,8 +56,10 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 ├── README.md
 ├── partitions_16mb.csv
 ├── sdkconfig.defaults
-├── sdkconfig.defaults.psram
 ├── sdkconfig.defaults.release
+├── tools
+│   ├── check-repo.sh
+│   └── clean-generated.sh
 ├── components
 │   └── arc
 │       ├── CMakeLists.txt
@@ -47,14 +67,18 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │           ├── arc.hpp
 │           └── arc
 │               ├── bus.hpp
+│               ├── burst.hpp
 │               ├── caps.hpp
 │               ├── cfg.hpp
 │               ├── clock.hpp
+│               ├── count.hpp
 │               ├── din.hpp
 │               ├── dio.hpp
 │               ├── fence.hpp
 │               ├── gpio.hpp
+│               ├── espnow.hpp
 │               ├── plane.hpp
+│               ├── ota.hpp
 │               ├── pwm.hpp
 │               ├── reg.hpp
 │               ├── ring.hpp
@@ -62,6 +86,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── space.hpp
 │               ├── store.hpp
 │               ├── task.hpp
+│               ├── timer.hpp
+│               ├── trace.hpp
 │               ├── udp.hpp
 │               └── wave.hpp
 └── main
@@ -82,8 +108,13 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Static FreeRTOS task allocation for the realtime plane
 - Core 1 idle watchdog detached so a non-yielding loop can own that core
 - Dedicated GPIO output and input on the hot path
+- Hardware pulse counting through PCNT
+- Hardware symbol streaming through RMT
+- Hardware symbol capture through RMT RX
 - Hardware PWM offload through LEDC for periodic output that should not burn a core
+- Hardware timebase and alarms through GPTimer
 - Lock-free telemetry ring and single-word control register
+- Slot-aware OTA helper for staged writes and rollback state
 - Typed NVS persistence on the Core 0 side
 
 ## Programming Model
@@ -231,13 +262,9 @@ The env loader works in this order:
 - existing global `IDF_PATH`
 - local `./esp-idf`
 
+It also exports `IDF_TARGET=esp32s3`, and every project CMake entry forces `esp32s3` again during configure. Arc is intentionally single-target.
+
 ## First Build
-
-Set the target once in a fresh workspace:
-
-```bash
-idf.py set-target esp32s3
-```
 
 Build the default dev profile:
 
@@ -245,7 +272,7 @@ Build the default dev profile:
 idf.py build
 ```
 
-Those defaults already assume `ESP32-S3 N16R8`. The optional `sdkconfig.defaults.psram` file is kept only for backward compatibility with older commands.
+Those defaults already assume `ESP32-S3 N16R8`. There is no secondary PSRAM overlay anymore because PSRAM is part of the baseline target.
 
 Flash and monitor:
 
@@ -271,20 +298,20 @@ If you are switching from the default profile to release in the same `build/` di
 
 ```bash
 idf.py fullclean
-idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.release" set-target esp32s3 build
+idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults.release" build
 ```
 
 If you want to keep dev and release artifacts side by side, use a second explicit build directory:
 
 ```bash
-idf.py -B build-release -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.release" set-target esp32s3 build
+idf.py -B build-release -DSDKCONFIG_DEFAULTS="sdkconfig.defaults.release" build
 ```
 
 Release:
 
 ```bash
 idf.py fullclean
-idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.release" set-target esp32s3 build
+idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults.release" build
 ```
 
 ## Command Reference
@@ -391,6 +418,12 @@ Build, upload, and monitor:
 idf.py -p /dev/ttyACM0 build flash monitor
 ```
 
+Clean generated local state across root and examples:
+
+```bash
+./tools/clean-generated.sh
+```
+
 ## API
 
 ### `arc::Drive<Pin, Channel, Core>`
@@ -450,11 +483,65 @@ Compile-time hardware PWM on ESP32-S3 LEDC.
 
 Use this when the waveform is periodic and the silicon should generate it. Keep `arc::Wave` for cases where the CPU must own every edge.
 
+### `arc::Burst<Pin, Hz, Symbols = 64, Depth = 1, Dma = false>`
+
+Compile-time RMT TX wrapper for symbol streams.
+
+- `start()` allocates and enables one TX channel plus a copy encoder.
+- `symbol(d0, l0, d1, l1)` builds one `rmt_symbol_word_t` at compile time.
+- `send(...)` pushes a symbol array and optionally hardware-loops it forever with `loop = -1`.
+- `wait()` drains queued transfers.
+- `carrier(...)` and `plain()` toggle carrier modulation.
+
+Use this when you want deterministic pulse trains or protocol waveforms without a CPU spin loop.
+
+### `arc::Trace<Pin, Hz, Symbols = 64, MinNs = 100, MaxNs = 200000, Dma = false>`
+
+Compile-time RMT RX wrapper for symbol capture.
+
+- `start()` allocates and enables one RX channel.
+- `arm()` starts one receive job into a static symbol buffer.
+- `ready()` reports whether one capture has completed.
+- `view()` exposes the captured symbols as `std::span<const rmt_symbol_word_t>`.
+- `size()`, `data()`, and `last()` expose the raw result without queueing or heap allocation.
+- `carrier(...)` and `plain()` toggle RX-side carrier demodulation.
+
+Use this when you need pulse widths, protocol symbols, or edge timing without CPU sampling.
+
+### `arc::Count<EdgePin, ...>`
+
+Compile-time PCNT wrapper for hardware edge accumulation.
+
+- `start()` allocates the unit, configures the channel, enables the counter, and starts counting.
+- `read()` returns the accumulated count.
+- `clear()` zeroes the hardware counter.
+- `watch(value)` and `unwatch(value)` manage PCNT watch points.
+- `stop()` and `resume()` gate counting without deleting the unit.
+
+Use this when the silicon should count pulses while the CPU only samples or reacts at a slower cadence.
+
+### `arc::Timer<Hz, Source = GPTIMER_CLK_SRC_DEFAULT, Direction = GPTIMER_COUNT_UP>`
+
+Compile-time GPTimer wrapper for a hardware timebase.
+
+- `start()` boots and runs a free-running timer.
+- `start<Handler>()` also binds a compile-time alarm ISR hook before enabling the timer.
+- `alarm(count, reload, auto_reload)` arms the timer alarm.
+- `read()` returns the current counter value.
+- `zero()` sets the counter.
+- `stop()`, `pause()`, and `resume()` gate the timer.
+
+`Handler` supplies:
+
+- `IRAM_ATTR static bool alarm(const gptimer_alarm_event_data_t&) noexcept`
+
+Use this when you want a real hardware timebase or periodic alarm instead of a busy loop.
+
 ### `arc::Space`
 
 Runtime capacity reporter.
 
-- `flash(tag)` reports flash chip size, the running app slot, the current image size, the percent used inside the active slot, the free bytes and free percent left in that slot, and the percent used across all OTA app slots.
+- `flash(tag)` reports flash chip size, the running app slot, running OTA image state, the current image size, the percent used inside the active slot, the free bytes and free percent left in that slot, the percent used across all OTA app slots, and the boot plus next-update slots.
 - `parts(tag)` reports every partition with address and size.
 - `heap(tag)` reports 8-bit, internal, DMA, IRAM-capable, optional exec, and PSRAM heap capacity.
 - `all(tag)` runs all three in one call.
@@ -472,6 +559,19 @@ Typed NVS blob storage for Core 0 work.
 - `erase(ns, key)` removes one key and commits.
 
 Use this when you want persistent config without hand-written handle lifetime code.
+
+### `arc::Ota`
+
+Typed OTA session wrapper for Core 0 work.
+
+- `running()`, `boot()`, and `next()` expose the active, configured, and next update slots.
+- `begin(session)` starts a staged write against the next OTA slot using sequential erase by default.
+- `write(...)` and `write_at(...)` feed the slot.
+- `finish(session)` validates the image and optionally activates it for next boot.
+- `confirm()` marks the running image valid.
+- `rollback()` forces rollback and reboot.
+
+Use this when your transport plane needs to stage firmware without leaking raw OTA handles into app code.
 
 ### `arc::Ring<T, Capacity>`
 
@@ -527,6 +627,25 @@ Network is intentionally opt-in. Baseline apps only include `arc.hpp`; UDP apps 
 #include "arc/udp.hpp"
 ```
 
+### `arc::net::EspNow<Policy, Bus>`
+
+Reusable Core 0 ESP-NOW plane.
+
+`Policy` supplies compile-time config:
+
+- `tag`
+- `stack`
+- `channel`
+- `peer`
+
+Optional hooks:
+
+- `start(bus)`
+- `tick(bus, now)`
+- `recv(bus, peer, data, len)`
+
+This is the transport to use when you want Wi-Fi silicon and low latency, but not IP, DHCP, or sockets.
+
 ### `arc::Wave<Pin, HalfUs, Mhz>`
 
 Static CPU-owned square-wave generator when you want fixed compile-time timing and explicit spin control on Core 1.
@@ -542,6 +661,159 @@ Static CPU-owned square-wave generator when you want fixed compile-time timing a
 Arc uses one build directory by default: `build/`.
 If you keep a separate release profile in parallel, use `build-release/` deliberately.
 
+## ESP-NOW Example
+
+Arc ships a standalone raw-radio demo at `examples/espnow`.
+
+```bash
+cd examples/espnow
+. ./env.sh
+idf.py menuconfig
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/espnow
+source ./env.fish
+idf.py menuconfig
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example composes:
+
+- `Link = arc::Link<Edge, Control, 256>`
+- `Core1 = arc::Plane<Pulse, ... , Link>`
+- `Core0 = arc::net::EspNow<Radio, Link>`
+
+This keeps the same Arc program shape as UDP, but replaces IP transport with raw ESP-NOW frames.
+
+## Count Example
+
+Arc ships a standalone pulse-counter demo at `examples/count`.
+
+```bash
+cd examples/count
+. ./env.sh
+idf.py menuconfig
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/count
+source ./env.fish
+idf.py menuconfig
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example composes:
+
+- `Source = arc::Burst<...>`
+- `Meter = arc::Count<...>`
+
+Add a jumper from the configured output pin to the configured input pin and the program will report the hardware pulse count without polling the pin in software.
+
+## Trace Example
+
+Arc ships a standalone RMT loopback capture demo at `examples/trace`.
+
+```bash
+cd examples/trace
+. ./env.sh
+idf.py menuconfig
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/trace
+source ./env.fish
+idf.py menuconfig
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example composes:
+
+- `Source = arc::Burst<...>`
+- `Sink = arc::Trace<...>`
+
+Add a jumper from the configured output pin to the configured input pin and the program will print the captured symbol widths from hardware RX.
+
+## OTA Example
+
+Arc also ships a standalone OTA-slot inspection demo at `examples/ota`.
+
+```bash
+cd examples/ota
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/ota
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example shows:
+
+- `arc::Ota::running()`, `boot()`, and `next()`
+- rollback/pending-verify visibility without mutating flash
+- `arc::Space::flash(...)` and `arc::Space::parts(...)` alongside OTA slot state
+
+## Timer Example
+
+Arc also ships a standalone hardware-timer demo at `examples/timer`.
+
+```bash
+cd examples/timer
+. ./env.sh
+idf.py menuconfig
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/timer
+source ./env.fish
+idf.py menuconfig
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example composes:
+
+- `Led = arc::Drive<... , arc::Core::core0>`
+- `Tick = arc::Timer<1'000'000>`
+
+The LED edge is driven by a GPTimer alarm ISR instead of a busy loop, while a tiny host task logs the free-running counter.
+
 ## UDP Example
 
 Arc ships a standalone network demo at `examples/udp`.
@@ -549,7 +821,6 @@ Arc ships a standalone network demo at `examples/udp`.
 ```bash
 cd examples/udp
 . ./env.sh
-idf.py set-target esp32s3
 idf.py menuconfig
 idf.py build flash monitor
 ```
@@ -559,7 +830,6 @@ For fish:
 ```fish
 cd examples/udp
 source ./env.fish
-idf.py set-target esp32s3
 idf.py menuconfig
 idf.py build flash monitor
 ```
@@ -581,7 +851,6 @@ Arc also ships a standalone capacity demo at `examples/space`.
 ```bash
 cd examples/space
 . ./env.sh
-idf.py set-target esp32s3
 idf.py build
 idf.py size
 idf.py size-components
@@ -594,7 +863,6 @@ For fish:
 ```fish
 cd examples/space
 source ./env.fish
-idf.py set-target esp32s3
 idf.py build
 idf.py size
 idf.py size-components
@@ -614,7 +882,6 @@ Arc also ships a standalone hardware-PWM demo at `examples/pwm`.
 ```bash
 cd examples/pwm
 . ./env.sh
-idf.py set-target esp32s3
 idf.py build
 idf.py size
 idf.py -p /dev/ttyACM0 flash monitor
@@ -625,7 +892,6 @@ For fish:
 ```fish
 cd examples/pwm
 source ./env.fish
-idf.py set-target esp32s3
 idf.py build
 idf.py size
 idf.py -p /dev/ttyACM0 flash monitor
@@ -644,7 +910,6 @@ Arc also ships a standalone typed-NVS demo at `examples/store`.
 ```bash
 cd examples/store
 . ./env.sh
-idf.py set-target esp32s3
 idf.py build
 idf.py size
 idf.py size-components
@@ -657,7 +922,6 @@ For fish:
 ```fish
 cd examples/store
 source ./env.fish
-idf.py set-target esp32s3
 idf.py build
 idf.py size
 idf.py size-components
@@ -679,12 +943,19 @@ Arc now ships a build workflow at `.github/workflows/build.yml`.
 It builds:
 
 - root baseline
+- `examples/count`
+- `examples/espnow`
+- `examples/ota`
 - `examples/pwm`
 - `examples/space`
 - `examples/store`
+- `examples/timer`
+- `examples/trace`
 - `examples/udp`
 
 and writes bin sizes into the GitHub Actions step summary so size regressions are visible on every push or PR.
+
+Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared `esp32s3` lock in `cmake/arc-idf.cmake`.
 
 ## Notes
 
@@ -699,5 +970,9 @@ and writes bin sizes into the GitHub Actions step summary so size regressions ar
 - `arc::Reg` is better than a queue for latest-wins control words.
 - For multi-field control words, prefer explicit fixed-width fields over C++ bitfields.
 - `arc::Ring` is better than a register when event history matters.
+- `arc::net::EspNow` is the transport to reach for before IP when you want radio latency and do not need routers.
+- `arc::Ota` belongs on Core 0 with transports and storage, not in the realtime loop.
+- `arc::Burst`, `arc::Trace`, and `arc::Count` are the first place to go when a pin-level job should move from CPU polling into dedicated hardware.
+- `arc::Timer` is the right timebase when cycle counters are too core-local or when you need a true peripheral alarm.
 - UDP over Wi-Fi is a good first network demo, but it belongs under `examples/udp`, not in the root baseline.
 - `app_main()` should remain the one C boundary; wrapping it further does not buy speed or clarity.

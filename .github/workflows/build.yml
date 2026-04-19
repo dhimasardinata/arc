@@ -36,11 +36,16 @@ jobs:
           git clone --branch v6.0 --recursive https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
           "$HOME/esp-idf/install.sh" esp32s3
 
+      - name: Repo sanity
+        shell: bash
+        run: |
+          chmod +x tools/check-repo.sh
+          ./tools/check-repo.sh
+
       - name: Build root
         shell: bash
         run: |
           . "$HOME/esp-idf/export.sh"
-          idf.py set-target esp32s3
           idf.py build
           idf.py size
           echo "root arc.bin $(stat -c '%s' build/arc.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
@@ -50,27 +55,69 @@ jobs:
         run: |
           . "$HOME/esp-idf/export.sh"
           cd examples/space
-          idf.py set-target esp32s3
           idf.py build
           idf.py size
           echo "space arc_space.bin $(stat -c '%s' build/arc_space.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build count example
+        shell: bash
+        run: |
+          . "$HOME/esp-idf/export.sh"
+          cd examples/count
+          idf.py build
+          idf.py size
+          echo "count arc_count.bin $(stat -c '%s' build/arc_count.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build ota example
+        shell: bash
+        run: |
+          . "$HOME/esp-idf/export.sh"
+          cd examples/ota
+          idf.py build
+          idf.py size
+          echo "ota arc_ota.bin $(stat -c '%s' build/arc_ota.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build pwm example
         shell: bash
         run: |
           . "$HOME/esp-idf/export.sh"
           cd examples/pwm
-          idf.py set-target esp32s3
           idf.py build
           idf.py size
           echo "pwm arc_pwm.bin $(stat -c '%s' build/arc_pwm.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build timer example
+        shell: bash
+        run: |
+          . "$HOME/esp-idf/export.sh"
+          cd examples/timer
+          idf.py build
+          idf.py size
+          echo "timer arc_timer.bin $(stat -c '%s' build/arc_timer.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build trace example
+        shell: bash
+        run: |
+          . "$HOME/esp-idf/export.sh"
+          cd examples/trace
+          idf.py build
+          idf.py size
+          echo "trace arc_trace.bin $(stat -c '%s' build/arc_trace.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build espnow example
+        shell: bash
+        run: |
+          . "$HOME/esp-idf/export.sh"
+          cd examples/espnow
+          idf.py build
+          idf.py size
+          echo "espnow arc_espnow.bin $(stat -c '%s' build/arc_espnow.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build store example
         shell: bash
         run: |
           . "$HOME/esp-idf/export.sh"
           cd examples/store
-          idf.py set-target esp32s3
           idf.py build
           idf.py size
           echo "store arc_store.bin $(stat -c '%s' build/arc_store.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
@@ -80,7 +127,6 @@ jobs:
         run: |
           . "$HOME/esp-idf/export.sh"
           cd examples/udp
-          idf.py set-target esp32s3
           idf.py build
           idf.py size
           echo "udp arc_udp.bin $(stat -c '%s' build/arc_udp.bin) bytes" >> "$GITHUB_STEP_SUMMARY"
@@ -92,11 +138,21 @@ jobs:
           path: |
             build/arc.bin
             build/arc.elf
+            examples/count/build/arc_count.bin
+            examples/count/build/arc_count.elf
+            examples/espnow/build/arc_espnow.bin
+            examples/espnow/build/arc_espnow.elf
+            examples/ota/build/arc_ota.bin
+            examples/ota/build/arc_ota.elf
             examples/pwm/build/arc_pwm.bin
             examples/pwm/build/arc_pwm.elf
             examples/space/build/arc_space.bin
             examples/space/build/arc_space.elf
             examples/store/build/arc_store.bin
             examples/store/build/arc_store.elf
+            examples/timer/build/arc_timer.bin
+            examples/timer/build/arc_timer.elf
+            examples/trace/build/arc_trace.bin
+            examples/trace/build/arc_trace.elf
             examples/udp/build/arc_udp.bin
             examples/udp/build/arc_udp.elf

@@ -1,0 +1,45 @@
+menu "Arc Count"
+
+    config ARC_COUNT_OUT
+        int "Burst output GPIO"
+        range 0 48
+        default 4
+        help
+            Output pin driven by arc::Burst. Jumper this pin to the count input pin.
+
+    config ARC_COUNT_IN
+        int "Count input GPIO"
+        range 0 48
+        default 5
+        help
+            Input pin measured by arc::Count.
+
+    config ARC_COUNT_STACK
+        int "Host stack (bytes)"
+        range 2048 16384
+        default 4096
+        help
+            Stack for the logging task on Core 0.
+
+    config ARC_COUNT_SAMPLE_MS
+        int "Sample period (ms)"
+        range 100 10000
+        default 1000
+        help
+            How often the host task reports the hardware count delta.
+
+    config ARC_COUNT_HALF_US
+        int "Half pulse width (us)"
+        range 1 1000
+        default 5
+        help
+            High and low half-width used in the repeated RMT burst symbols.
+
+    config ARC_COUNT_FILTER_NS
+        int "Glitch filter (ns)"
+        range 0 1000000
+        default 0
+        help
+            Ignore pulses shorter than this threshold. Set 0 to disable the filter.
+
+endmenu

@@ -18,6 +18,7 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 
+#include "arc/store.hpp"
 #include "arc/task.hpp"
 
 namespace arc::net {
@@ -51,10 +52,27 @@ struct Udp {
 
 private:
     inline constexpr static EventBits_t wifi_up = BIT0;
-    inline constexpr static TickType_t idle_ticks =
-        requires { Policy::idle; } ? Policy::idle : pdMS_TO_TICKS(1);
-    inline constexpr static TickType_t retry_ticks =
-        requires { Policy::retry; } ? Policy::retry : pdMS_TO_TICKS(1000);
+
+    [[nodiscard]] static consteval TickType_t idle_default() noexcept
+    {
+        if constexpr (requires { Policy::idle; }) {
+            return Policy::idle;
+        } else {
+            return pdMS_TO_TICKS(1);
+        }
+    }
+
+    [[nodiscard]] static consteval TickType_t retry_default() noexcept
+    {
+        if constexpr (requires { Policy::retry; }) {
+            return Policy::retry;
+        } else {
+            return pdMS_TO_TICKS(1000);
+        }
+    }
+
+    inline constexpr static TickType_t idle_ticks = idle_default();
+    inline constexpr static TickType_t retry_ticks = retry_default();
 
     struct State {
         StaticEventGroup_t events_mem{};
@@ -77,18 +95,6 @@ private:
             close(state.sock);
             state.sock = -1;
         }
-    }
-
-    static void start_nvs()
-    {
-        const auto err = nvs_flash_init();
-        if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-            ESP_ERROR_CHECK(nvs_flash_erase());
-            ESP_ERROR_CHECK(nvs_flash_init());
-            return;
-        }
-
-        ESP_ERROR_CHECK(err);
     }
 
     template <std::size_t N>
@@ -128,7 +134,7 @@ private:
             state.events = xEventGroupCreateStatic(&state.events_mem);
         }
 
-        start_nvs();
+        ESP_ERROR_CHECK(Store::boot());
         ESP_ERROR_CHECK(esp_netif_init());
         ESP_ERROR_CHECK(esp_event_loop_create_default());
         state.sta = esp_netif_create_default_wifi_sta();
