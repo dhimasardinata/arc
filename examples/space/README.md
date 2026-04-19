@@ -4,7 +4,7 @@ This is a standalone ESP-IDF project under `examples/space`.
 
 - The program is written directly in `main/app_main.cpp`.
 - It reports flash, partition, and heap capacity through `arc::Space`.
-- It then allocates one block explicitly in internal RAM and one block explicitly in PSRAM with `arc::inram` and `arc::psram`.
+- It then allocates explicit internal, PSRAM, DMA, and SIMD blocks with Arc capability helpers.
 - It prints heap capacity again so you can see the effect immediately on real hardware.
 - Defaults target `ESP32-S3 N16R8` with `16 MB` flash and `8 MB` Octal PSRAM.
 
@@ -21,10 +21,12 @@ At runtime, this example reports:
 - general 8-bit heap
 - internal heap
 - DMA-capable heap
+- SIMD-capable heap
 - IRAM-capable heap
+- RTC RAM heap
 - executable-capable heap when the target exposes it
 - PSRAM heap
-- the delta after explicit internal and PSRAM allocations
+- the delta after explicit internal, PSRAM, DMA, and SIMD allocations
 
 This complements `idf.py size`, which only reports static ELF sections and does not know how much of the active OTA slot is left at runtime.
 
@@ -71,7 +73,9 @@ inline void boot()
     arc::Space::all("arc-space", "baseline");
     hot = arc::inram<Hot>();
     cold = arc::psram<Cold>();
-    arc::Space::heap("arc-space", "after explicit arc::inram + arc::psram");
+    dma = arc::dmabuf<std::uint8_t>(dma_bytes);
+    simd = arc::simdbuf<std::uint16_t>(simd_words);
+    arc::Space::heap("arc-space", "after explicit allocations");
 }
 
 }
@@ -85,3 +89,7 @@ The main API pieces are:
 - `arc::Space::all(tag)`
 - `arc::inram<T>()`
 - `arc::psram<T>()`
+- `arc::dmabuf<T>(count)`
+- `arc::simdbuf<T>(count)`
+- `ARC_DMA`
+- `ARC_RTC_NOINIT`

@@ -15,10 +15,13 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
 - `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
 - `arc::Count` offloads pulse accumulation to the PCNT block.
+- `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency/duty choices.
 - `arc::Timer` binds the GPTimer block to a compile-time timebase and optional ISR hook.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
+- `arc::SeqReg` gives multi-word latest-snapshot handoff without queues or torn reads.
+- `arc::dmabuf`, `arc::simdbuf`, and friends make DMA/SIMD/RTC-capable heap placement explicit.
 - `arc::Space` reports runtime flash, OTA slot, partition, and heap capacity without heap allocation.
 - `arc::Ota` wraps staged OTA writes and slot state without raw handle plumbing.
 - `arc::Store` gives typed NVS blobs without raw handle plumbing in user code.
@@ -537,13 +540,57 @@ Compile-time GPTimer wrapper for a hardware timebase.
 
 Use this when you want a real hardware timebase or periodic alarm instead of a busy loop.
 
+### `arc::Mask<Level = XCHAL_EXCM_LEVEL>`
+
+Core-local Xtensa interrupt-level guard.
+
+- construct it to raise the interrupt level for the current core
+- destroy it to restore the previous level
+- `arc::Critical` is the normal “silence OS-visible interrupts” alias
+- `arc::Silence` raises all the way to level `15`
+
+Use this only around tiny hot sections where determinism matters more than latency. It is not a substitute for architecture.
+
+### `arc::SeqReg<T>`
+
+Seqlock-style latest-snapshot lane for payloads larger than one word.
+
+- `write(value)` publishes one complete snapshot
+- `read()` retries until one stable snapshot is observed
+- `try_read(value)` gives you the same read without blocking
+
+Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
+
+### `arc::CapsBuf<T>` and explicit capability buffers
+
+Typed heap slabs for memory placement that should stay obvious in user code.
+
+- `arc::inbuf<T>(n)` allocates an internal RAM slab
+- `arc::psbuf<T>(n)` allocates a PSRAM slab
+- `arc::dmabuf<T>(n)` allocates a DMA-capable internal slab with cache-line alignment
+- `arc::simdbuf<T>(n)` allocates a SIMD-capable internal slab
+- `arc::rtbuf<T>(n)` allocates an RTC RAM slab
+
+Each returns `arc::CapsBuf<T>` with `data()`, `size()`, `bytes()`, and `view()`.
+
+### Placement aliases
+
+Arc also exposes short placement aliases in `arc/place.hpp`:
+
+- `ARC_HOT`, `ARC_FORCE_HOT`
+- `ARC_DRAM`, `ARC_DMA`, `ARC_DMA_ALIGN`
+- `ARC_RTC`, `ARC_RTC_NOINIT`, `ARC_RTC_CODE`
+- `ARC_EXT_BSS`, `ARC_EXT_NOINIT`, `ARC_NOINIT`
+
+Use these when a variable or function must live in a specific memory region and you want that intent to stay visible in the source.
+
 ### `arc::Space`
 
 Runtime capacity reporter.
 
 - `flash(tag)` reports flash chip size, the running app slot, running OTA image state, the current image size, the percent used inside the active slot, the free bytes and free percent left in that slot, the percent used across all OTA app slots, and the boot plus next-update slots.
 - `parts(tag)` reports every partition with address and size.
-- `heap(tag)` reports 8-bit, internal, DMA, IRAM-capable, optional exec, and PSRAM heap capacity.
+- `heap(tag)` reports 8-bit, internal, DMA, SIMD, IRAM-capable, RTC RAM, optional exec, and PSRAM heap capacity.
 - `all(tag)` runs all three in one call.
 
 Use this alongside `idf.py size`, `idf.py size-components`, and `idf.py size-files` when you want the real board view.
@@ -873,7 +920,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 The example shows two things:
 
 - baseline runtime capacity via `arc::Space::all(...)`, including the current image size and percent used inside the active OTA slot
-- the effect of `arc::inram` and `arc::psram` on free heap
+- the effect of `arc::inram`, `arc::psram`, `arc::dmabuf`, and `arc::simdbuf` on free heap and capability-specific pools
 
 ## PWM Example
 
@@ -974,5 +1021,8 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 - `arc::Ota` belongs on Core 0 with transports and storage, not in the realtime loop.
 - `arc::Burst`, `arc::Trace`, and `arc::Count` are the first place to go when a pin-level job should move from CPU polling into dedicated hardware.
 - `arc::Timer` is the right timebase when cycle counters are too core-local or when you need a true peripheral alarm.
+- `arc::Mask` is for tiny deterministic sections, not for normal app structure.
+- `arc::SeqReg` is the right latest-snapshot lane once a control word no longer fits in `arc::Reg`.
+- `arc::dmabuf` and `arc::simdbuf` are the right way to keep performance-critical heap placement explicit.
 - UDP over Wi-Fi is a good first network demo, but it belongs under `examples/udp`, not in the root baseline.
 - `app_main()` should remain the one C boundary; wrapping it further does not buy speed or clarity.
