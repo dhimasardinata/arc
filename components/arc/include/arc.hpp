@@ -30,6 +30,7 @@
 #include "arc/sigma.hpp"
 #include "arc/sketch.hpp"
 #include "arc/scope.hpp"
+#include "arc/sleep.hpp"
 #include "arc/ota.hpp"
 #include "arc/spi.hpp"
 #include "arc/space.hpp"
