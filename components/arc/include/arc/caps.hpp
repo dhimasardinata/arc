@@ -157,7 +157,8 @@ template <typename T, typename... Args>
 template <typename T, std::uint32_t Caps, std::size_t Align = alignof(T)>
 [[nodiscard]] inline CapsBuf<T> capsbuf(const std::size_t count) noexcept
 {
-    static_assert(std::is_trivially_copyable_v<T>, "capability buffers require trivially copyable element types");
+    static_assert(std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>,
+                  "capability buffers require trivial element types");
     static_assert(std::has_single_bit(Align), "buffer alignment must be a power of two");
 
     if (count == 0U) {

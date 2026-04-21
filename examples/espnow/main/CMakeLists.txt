@@ -1,10 +1,6 @@
-set(main_requires
-    arc
-    esp_event
-    esp_netif
-    esp_wifi
-    nvs_flash
-)
+include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/arc-deps.cmake)
+
+arc_requires(main_requires core espnow)
 
 idf_component_register(
     SRCS "app_main.cpp"

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -60,10 +61,10 @@ struct Scope {
 
     static void clear() noexcept
     {
-        state.ready = false;
-        state.overflow = false;
-        state.frames = 0U;
-        state.overruns = 0U;
+        state.ready.store(false, std::memory_order_release);
+        state.overflow.store(false, std::memory_order_relaxed);
+        state.frames.store(0U, std::memory_order_relaxed);
+        state.overruns.store(0U, std::memory_order_relaxed);
         fence();
     }
 
@@ -79,26 +80,22 @@ struct Scope {
 
     [[nodiscard]] static bool ready() noexcept
     {
-        fence();
-        return state.ready;
+        return state.ready.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] static bool overflow() noexcept
     {
-        fence();
-        return state.overflow;
+        return state.overflow.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] static std::uint32_t frames() noexcept
     {
-        fence();
-        return state.frames;
+        return state.frames.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] static std::uint32_t overruns() noexcept
     {
-        fence();
-        return state.overruns;
+        return state.overruns.load(std::memory_order_relaxed);
     }
 
     static void flush() noexcept
@@ -127,8 +124,7 @@ struct Scope {
         init();
         const auto ret = adc_continuous_read_parse(state.handle, out, samples, got, timeout_ms);
         if (ret == ESP_OK && got != nullptr && *got != 0U) {
-            fence();
-            state.ready = false;
+            state.ready.store(false, std::memory_order_release);
         }
         return ret;
     }
@@ -136,10 +132,10 @@ struct Scope {
 private:
     struct State {
         adc_continuous_handle_t handle{};
-        volatile bool ready{};
-        volatile bool overflow{};
-        volatile std::uint32_t frames{};
-        volatile std::uint32_t overruns{};
+        std::atomic<bool> ready{false};
+        std::atomic<bool> overflow{false};
+        std::atomic<std::uint32_t> frames{0U};
+        std::atomic<std::uint32_t> overruns{0U};
         bool running{};
     };
 
@@ -150,9 +146,9 @@ private:
         const adc_continuous_evt_data_t*,
         void*) noexcept
     {
-        state.frames += 1U;
+        state.frames.fetch_add(1U, std::memory_order_relaxed);
         fence();
-        state.ready = true;
+        state.ready.store(true, std::memory_order_release);
         return false;
     }
 
@@ -161,8 +157,8 @@ private:
         const adc_continuous_evt_data_t*,
         void*) noexcept
     {
-        state.overruns += 1U;
-        state.overflow = true;
+        state.overruns.fetch_add(1U, std::memory_order_relaxed);
+        state.overflow.store(true, std::memory_order_release);
         return false;
     }
 

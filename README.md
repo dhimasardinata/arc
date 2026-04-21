@@ -11,6 +11,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Core 0 is for framework work: boot, storage, drivers, network, logs.
 - Core 1 is for the realtime plane: statically allocated, pinned, and kept close to the silicon.
 - User programs live in `main/app_main.cpp`.
+- `arc.hpp` is lean by default and only exposes feature headers whose backing ESP-IDF components are actually in the build graph.
+- `cmake/arc-deps.cmake` maps Arc feature names to ESP-IDF components so each app can stay explicit without writing a long `REQUIRES` list by hand.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site.
 - `arc::Can` binds the ESP32-S3 TWAI/CAN controller with ISR-backed RX handoff.
@@ -51,6 +53,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 .
 ├── CMakeLists.txt
 ├── cmake
+│   ├── arc-deps.cmake
 │   └── arc-idf.cmake
 ├── env.fish
 ├── env.sh
@@ -198,6 +201,54 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - SIMD-friendly math kernels that fit the Core 1 compute plane
 - Cycle-counter instrumentation for hot-path measurement
 
+## Granular Builds
+
+Arc no longer needs to drag every hardware driver into every app.
+
+- `components/arc` now exports only the shared core headers and dependencies.
+- `arc.hpp` only pulls feature headers when the matching ESP-IDF headers are visible through the current target's `REQUIRES`.
+- `cmake/arc-deps.cmake` gives a terse way to declare only the Arc features a target actually uses.
+
+Use this pattern in `main/CMakeLists.txt` or any example `main/CMakeLists.txt`:
+
+```cmake
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/arc-deps.cmake)
+
+arc_requires(main_requires core gptimer)
+
+idf_component_register(
+    SRCS "app_main.cpp"
+    REQUIRES ${main_requires}
+)
+```
+
+Feature names map directly to hardware lanes:
+
+- `gpio`
+- `adc`
+- `copy`
+- `mcpwm`
+- `rmt`
+- `pcnt`
+- `ledc`
+- `gptimer`
+- `i2s`
+- `spi`
+- `twai`
+- `cam`
+- `lcd`
+- `sdm`
+- `temp`
+- `store`
+- `ota`
+- `space`
+- `udp`
+- `espnow`
+
+`core` already covers the dedicated GPIO path used by `arc::Drive` and `arc::Sense`. Add `gpio` only when you use raw `arc::Gpio`.
+
+For the fastest compile times, keep each app honest: include only the Arc headers you use directly, and request only the matching Arc features in CMake.
+
 ## Programming Model
 
 Arc should feel like a small framework, not like a bag of headers.
@@ -207,6 +258,7 @@ Arc should feel like a small framework, not like a bag of headers.
 - `extern "C" void app_main()` stays as the single ESP-IDF boundary.
 - For a trivial app, `app::boot()` may be the only thing `app_main()` does.
 - For a richer app, `main/app_main.cpp` still shows the program topology directly.
+- Define one type alias per physical peripheral in one central place; do not instantiate the same GPIO, bus, timer, or channel with different template aliases across multiple files.
 
 The shipped baseline is a tiny follow program:
 

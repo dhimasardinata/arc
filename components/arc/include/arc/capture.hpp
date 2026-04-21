@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 
 #include "driver/mcpwm_prelude.h"
@@ -66,17 +67,17 @@ struct Capture {
 
     static void clear() noexcept
     {
-        state.stamp = 0U;
-        state.rise = false;
-        state.ready = false;
-        state.edges = 0U;
-        state.rise_stamp = 0U;
-        state.fall_stamp = 0U;
-        state.period = 0U;
-        state.high = 0U;
-        state.low = 0U;
-        state.have_rise = false;
-        state.have_fall = false;
+        state.stamp.store(0U, std::memory_order_relaxed);
+        state.rise.store(false, std::memory_order_relaxed);
+        state.ready.store(false, std::memory_order_release);
+        state.edges.store(0U, std::memory_order_relaxed);
+        state.rise_stamp.store(0U, std::memory_order_relaxed);
+        state.fall_stamp.store(0U, std::memory_order_relaxed);
+        state.period.store(0U, std::memory_order_relaxed);
+        state.high.store(0U, std::memory_order_relaxed);
+        state.low.store(0U, std::memory_order_relaxed);
+        state.have_rise.store(false, std::memory_order_relaxed);
+        state.have_fall.store(false, std::memory_order_relaxed);
         fence();
     }
 
@@ -87,50 +88,42 @@ struct Capture {
 
     [[nodiscard]] static bool ready() noexcept
     {
-        fence();
-        return state.ready;
+        return state.ready.load(std::memory_order_acquire);
     }
 
     static void flush() noexcept
     {
-        fence();
-        state.ready = false;
+        state.ready.store(false, std::memory_order_release);
     }
 
     [[nodiscard]] static std::uint32_t ticks() noexcept
     {
-        fence();
-        return state.stamp;
+        return state.stamp.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] static std::uint32_t edges() noexcept
     {
-        fence();
-        return state.edges;
+        return state.edges.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] static bool rising() noexcept
     {
-        fence();
-        return state.rise;
+        return state.rise.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] static std::uint32_t period() noexcept
     {
-        fence();
-        return state.period;
+        return state.period.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] static std::uint32_t high() noexcept
     {
-        fence();
-        return state.high;
+        return state.high.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] static std::uint32_t low() noexcept
     {
-        fence();
-        return state.low;
+        return state.low.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] static std::uint32_t latched() noexcept
@@ -151,17 +144,17 @@ private:
     struct State {
         mcpwm_cap_timer_handle_t timer{};
         mcpwm_cap_channel_handle_t chan{};
-        volatile std::uint32_t stamp{};
-        volatile bool rise{};
-        volatile bool ready{};
-        volatile std::uint32_t edges{};
-        volatile std::uint32_t rise_stamp{};
-        volatile std::uint32_t fall_stamp{};
-        volatile std::uint32_t period{};
-        volatile std::uint32_t high{};
-        volatile std::uint32_t low{};
-        volatile bool have_rise{};
-        volatile bool have_fall{};
+        std::atomic<std::uint32_t> stamp{0U};
+        std::atomic<bool> rise{false};
+        std::atomic<bool> ready{false};
+        std::atomic<std::uint32_t> edges{0U};
+        std::atomic<std::uint32_t> rise_stamp{0U};
+        std::atomic<std::uint32_t> fall_stamp{0U};
+        std::atomic<std::uint32_t> period{0U};
+        std::atomic<std::uint32_t> high{0U};
+        std::atomic<std::uint32_t> low{0U};
+        std::atomic<bool> have_rise{false};
+        std::atomic<bool> have_fall{false};
         bool enabled{};
         bool running{};
     };
@@ -180,29 +173,35 @@ private:
         const auto tick = event->cap_value;
         const bool rise = event->cap_edge == MCPWM_CAP_EDGE_POS;
 
-        state.stamp = tick;
-        state.rise = rise;
-        state.edges += 1U;
+        state.stamp.store(tick, std::memory_order_relaxed);
+        state.rise.store(rise, std::memory_order_relaxed);
+        state.edges.fetch_add(1U, std::memory_order_relaxed);
 
         if (rise) {
-            if (state.have_rise) {
-                state.period = tick - state.rise_stamp;
+            if (state.have_rise.load(std::memory_order_relaxed)) {
+                state.period.store(
+                    tick - state.rise_stamp.load(std::memory_order_relaxed),
+                    std::memory_order_relaxed);
             }
-            if (state.have_fall) {
-                state.low = tick - state.fall_stamp;
+            if (state.have_fall.load(std::memory_order_relaxed)) {
+                state.low.store(
+                    tick - state.fall_stamp.load(std::memory_order_relaxed),
+                    std::memory_order_relaxed);
             }
-            state.rise_stamp = tick;
-            state.have_rise = true;
+            state.rise_stamp.store(tick, std::memory_order_relaxed);
+            state.have_rise.store(true, std::memory_order_relaxed);
         } else {
-            if (state.have_rise) {
-                state.high = tick - state.rise_stamp;
+            if (state.have_rise.load(std::memory_order_relaxed)) {
+                state.high.store(
+                    tick - state.rise_stamp.load(std::memory_order_relaxed),
+                    std::memory_order_relaxed);
             }
-            state.fall_stamp = tick;
-            state.have_fall = true;
+            state.fall_stamp.store(tick, std::memory_order_relaxed);
+            state.have_fall.store(true, std::memory_order_relaxed);
         }
 
         fence();
-        state.ready = true;
+        state.ready.store(true, std::memory_order_release);
         return false;
     }
 

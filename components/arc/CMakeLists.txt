@@ -1,6 +1,6 @@
 idf_component_register(
     INCLUDE_DIRS "include"
-    REQUIRES app_update bootloader_support esp_adc esp_lcd esp_mm esp_partition freertos heap esp_driver_cam esp_driver_dma esp_driver_gpio esp_driver_gptimer esp_driver_i2s esp_driver_ledc esp_driver_mcpwm esp_driver_pcnt esp_driver_rmt esp_driver_sdm esp_driver_spi esp_driver_tsens esp_driver_twai esp_hw_support nvs_flash soc spi_flash
+    REQUIRES esp_common esp_hw_support esp_mm esp_rom freertos heap log soc xtensa
 )
 
 target_compile_options(${COMPONENT_LIB} INTERFACE

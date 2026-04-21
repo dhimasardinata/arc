@@ -1,11 +1,6 @@
-set(main_requires
-    arc
-    esp_event
-    esp_netif
-    esp_wifi
-    lwip
-    nvs_flash
-)
+include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/arc-deps.cmake)
+
+arc_requires(main_requires core udp)
 
 idf_component_register(
     SRCS "app_main.cpp"
