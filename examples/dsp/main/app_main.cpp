@@ -70,7 +70,7 @@ struct Kernel {
     }
 };
 
-using Core1 = arc::App<Kernel, arc::cfg::stack, arc::Core::core1>;
+using Core1 = arc::App<Kernel, stack, arc::Core::core1>;
 
 void host(void*) noexcept
 {

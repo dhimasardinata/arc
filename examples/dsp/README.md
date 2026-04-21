@@ -47,7 +47,7 @@ Binary outputs:
 The program surface stays small:
 
 ```cpp
-using Core1 = arc::App<Kernel, arc::cfg::stack, arc::Core::core1>;
+using Core1 = arc::App<Kernel, stack, arc::Core::core1>;
 ```
 
 The main API pieces are:
