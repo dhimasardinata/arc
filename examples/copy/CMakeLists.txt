@@ -7,4 +7,4 @@ set(ARC_SDKCONFIG_DEFAULTS
 
 include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/arc-idf.cmake)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(arc_etm)
+project(arc_copy)
