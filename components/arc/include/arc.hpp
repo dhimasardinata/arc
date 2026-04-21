@@ -36,6 +36,7 @@
 #include "arc/space.hpp"
 #include "arc/store.hpp"
 #include "arc/task.hpp"
+#include "arc/temp.hpp"
 #include "arc/timer.hpp"
 #include "arc/tight.hpp"
 #include "arc/trace.hpp"

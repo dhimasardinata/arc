@@ -30,6 +30,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Sigma` binds the ESP32-S3 Sigma-Delta Modulator to a compile-time GPIO and sample rate.
 - `arc::Timer` binds the GPTimer block to a compile-time timebase and optional ISR hook.
 - `arc::Sleep` wraps wake causes, timer wake, power-domain policy, light sleep, and deep sleep.
+- `arc::Temp` reads the ESP32-S3 internal temperature sensor for thermal telemetry.
 - `arc::Tight` runs a masked per-step loop for the rare path that needs tighter jitter than `arc::App`.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
@@ -87,6 +88,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │   │   └── README.md
 │   ├── store
 │   │   └── README.md
+│   ├── temp
+│   │   └── README.md
 │   └── udp
 │       └── README.md
 ├── README.md
@@ -135,6 +138,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── space.hpp
 │               ├── store.hpp
 │               ├── task.hpp
+│               ├── temp.hpp
 │               ├── timer.hpp
 │               ├── trace.hpp
 │               ├── udp.hpp
@@ -172,6 +176,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware Sigma-Delta pulse-density output with IRAM-safe density updates enabled
 - Hardware timebase and alarms through GPTimer
 - Deep-sleep and light-sleep entry with explicit wake-source and power-domain policy
+- Hardware die-temperature telemetry for thermal guard logic
 - Lock-free telemetry ring and single-word control register
 - Slot-aware OTA helper for staged writes and rollback state
 - Typed NVS persistence on the Core 0 side
@@ -454,6 +459,14 @@ Decode the built partition table:
 ```bash
 python "$IDF_PATH/components/partition_table/gen_esp32part.py" build/partition_table/partition-table.bin
 ```
+
+Dump source/docs into one clean folder:
+
+```bash
+python tools/dump-source.py
+```
+
+The dump output is `dump/files`. It only copies C/C++ sources, headers, README files, CMake/text files, and `partitions*.csv`; it skips shell scripts, generated builds, ESP-IDF, `.espressif`, and all `sdkconfig*` files.
 
 Monitor:
 
@@ -750,6 +763,18 @@ Power-state helper for the Core 0 side.
 - `deep()` enters deep sleep and does not return.
 
 Use this when the most efficient loop is no loop at all.
+
+### `arc::Temp<Min = -10, Max = 80>`
+
+Internal ESP32-S3 die-temperature helper.
+
+- `start()` installs and enables the temperature sensor once.
+- `stop()` disables the sensor without deleting the driver object.
+- `read(value)` writes Celsius into a `float&` and returns `esp_err_t`.
+- `celsius()` returns Celsius and panics on driver error.
+- `milli()` returns milli-Celsius for integer telemetry.
+
+Use this as a Core 0 guard rail when radio, CPU, DMA, and waveform peripherals are running hard.
 
 ### `arc::Mask<Level = XCHAL_EXCM_LEVEL>`
 
@@ -1221,6 +1246,36 @@ The example composes:
 - `arc::Sleep::deep()`
 
 Use this when the firmware should spend most of its life asleep instead of burning cycles.
+
+## Temp Example
+
+Arc also ships a standalone internal temperature sensor demo at `examples/temp`.
+
+```bash
+cd examples/temp
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/temp
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example composes:
+
+- `Die = arc::Temp<-10, 80>`
+- `Die::start()`
+- `Die::milli()` for integer telemetry
+
+Use this when firmware needs thermal awareness while the S3 is being driven hard.
 
 ## UDP Example
 
