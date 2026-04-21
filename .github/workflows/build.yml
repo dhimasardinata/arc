@@ -39,13 +39,17 @@ jobs:
             sudo apt-get install -y "${missing[@]}"
           fi
 
-      - name: Cache ESP-IDF and tools
-        uses: actions/cache@v4
+      - name: Restore ESP-IDF and tools cache
+        id: idf-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/esp-idf
             ~/.espressif
           key: ${{ runner.os }}-esp-idf-${{ env.ARC_IDF_VERSION }}-${{ env.ARC_IDF_TARGET }}-py${{ env.ARC_PYTHON }}
+          restore-keys: |
+            ${{ runner.os }}-esp-idf-${{ env.ARC_IDF_VERSION }}-${{ env.ARC_IDF_TARGET }}-
+            ${{ runner.os }}-esp-idf-${{ env.ARC_IDF_VERSION }}-
 
       - name: Cache ccache
         uses: actions/cache@v4
@@ -64,6 +68,16 @@ jobs:
           if ! find "$HOME/.espressif/python_env" -maxdepth 1 -type d -name "idf${ARC_IDF_VERSION#v}_py*" 2>/dev/null | grep -q .; then
             "$HOME/esp-idf/install.sh" "${ARC_IDF_TARGET}"
           fi
+
+      - name: Save ESP-IDF and tools cache
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: ${{ runner.os }}-esp-idf-${{ env.ARC_IDF_VERSION }}-${{ env.ARC_IDF_TARGET }}-py${{ env.ARC_PYTHON }}
 
       - name: Repo sanity
         shell: bash

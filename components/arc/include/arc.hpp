@@ -27,6 +27,7 @@
 #include "arc/ring.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
+#include "arc/sigma.hpp"
 #include "arc/sketch.hpp"
 #include "arc/scope.hpp"
 #include "arc/ota.hpp"
