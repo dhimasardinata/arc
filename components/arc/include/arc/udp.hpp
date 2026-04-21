@@ -16,9 +16,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
-#include "nvs_flash.h"
 
-#include "arc/store.hpp"
+#include "arc/net.hpp"
+#include "arc/soc.hpp"
 #include "arc/task.hpp"
 
 namespace arc::net {
@@ -36,6 +36,8 @@ concept UdpTick = requires(Bus& bus, const TickType_t now) {
 template <typename Policy, typename Bus>
 struct Udp {
     using Event = typename Bus::event_type;
+
+    static_assert(Soc::wifi, "arc::net::Udp requires ESP32-S3 Wi-Fi");
 
     static void boot(Bus& bus)
     {
@@ -110,14 +112,14 @@ private:
         void* data) noexcept
     {
         if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-            ESP_ERROR_CHECK(esp_wifi_connect());
+            connect();
             return;
         }
 
         if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
             xEventGroupClearBits(state.events, wifi_up);
             ESP_LOGW(Policy::tag, "wifi disconnected, retrying");
-            ESP_ERROR_CHECK(esp_wifi_connect());
+            connect();
             return;
         }
 
@@ -128,20 +130,38 @@ private:
         }
     }
 
+    static void connect() noexcept
+    {
+        const auto err = esp_wifi_connect();
+        if (err == ESP_OK || err == ESP_ERR_WIFI_STATE) {
+            return;
+        }
+
+        ESP_ERROR_CHECK(err);
+    }
+
+    static void raise_if_ip_ready() noexcept
+    {
+        if (state.sta == nullptr) {
+            return;
+        }
+
+        esp_netif_ip_info_t ip{};
+        if (esp_netif_get_ip_info(state.sta, &ip) == ESP_OK && ip.ip.addr != 0U) {
+            xEventGroupSetBits(state.events, wifi_up);
+        }
+    }
+
     static void start_wifi()
     {
         if (state.events == nullptr) {
             state.events = xEventGroupCreateStatic(&state.events_mem);
         }
 
-        ESP_ERROR_CHECK(Store::boot());
-        ESP_ERROR_CHECK(esp_netif_init());
-        ESP_ERROR_CHECK(esp_event_loop_create_default());
-        state.sta = esp_netif_create_default_wifi_sta();
+        ESP_ERROR_CHECK(Radio::base());
+        state.sta = Radio::sta();
         configASSERT(state.sta != nullptr);
-
-        wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
-        ESP_ERROR_CHECK(esp_wifi_init(&init));
+        ESP_ERROR_CHECK(Radio::prepare(WIFI_MODE_STA, WIFI_PS_NONE));
 
         ESP_ERROR_CHECK(esp_event_handler_instance_register(
             WIFI_EVENT,
@@ -163,11 +183,10 @@ private:
         wifi.sta.pmf_cfg.capable = true;
         wifi.sta.pmf_cfg.required = false;
 
-        ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-        ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi));
-        ESP_ERROR_CHECK(esp_wifi_start());
+        ESP_ERROR_CHECK(Radio::start(WIFI_MODE_STA, WIFI_PS_NONE));
+        connect();
+        raise_if_ip_ready();
 
         static_cast<void>(xEventGroupWaitBits(state.events, wifi_up, pdFALSE, pdFALSE, portMAX_DELAY));
     }

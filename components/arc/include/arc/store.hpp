@@ -11,6 +11,10 @@ namespace arc {
 struct Store {
     static esp_err_t boot() noexcept
     {
+        if (ready) {
+            return ESP_OK;
+        }
+
         auto err = nvs_flash_init();
         if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
             err = nvs_flash_erase();
@@ -19,6 +23,11 @@ struct Store {
             }
             err = nvs_flash_init();
         }
+
+        if (err == ESP_OK) {
+            ready = true;
+        }
+
         return err;
     }
 
@@ -96,6 +105,8 @@ struct Store {
     }
 
 private:
+    constinit static inline bool ready{};
+
     template <typename T>
     [[nodiscard]] static consteval bool blob() noexcept
     {

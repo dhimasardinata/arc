@@ -16,7 +16,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "arc/store.hpp"
+#include "arc/net.hpp"
+#include "arc/soc.hpp"
 #include "arc/task.hpp"
 
 namespace arc::net {
@@ -36,10 +37,35 @@ concept EspNowRecv = requires(Bus& bus, const std::uint8_t* peer, const std::uin
     { Policy::recv(bus, peer, data, size) } -> std::same_as<void>;
 };
 
+struct EspNowRadio {
+    static esp_err_t start() noexcept
+    {
+        if (state.ready) {
+            return ESP_OK;
+        }
+
+        const auto err = esp_now_init();
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        state.ready = true;
+        return ESP_OK;
+    }
+
+private:
+    struct State {
+        bool ready{};
+    };
+
+    constinit static inline State state{};
+};
+
 template <typename Policy, typename Bus>
 struct EspNow {
     using Event = typename Bus::event_type;
 
+    static_assert(Soc::wifi, "arc::net::EspNow requires ESP32-S3 Wi-Fi");
     static_assert(std::is_trivially_copyable_v<Event>, "ESP-NOW event payload must be trivially copyable");
     static_assert(sizeof(Event) <= ESP_NOW_MAX_DATA_LEN, "ESP-NOW event payload too large");
     static_assert(Policy::peer.size() == ESP_NOW_ETH_ALEN, "ESP-NOW peer must be 6 bytes");
@@ -95,30 +121,9 @@ private:
 
     static void start_wifi()
     {
-        ESP_ERROR_CHECK(Store::boot());
-
-        const auto netif_err = esp_netif_init();
-        if (netif_err != ESP_OK && netif_err != ESP_ERR_INVALID_STATE) {
-            ESP_ERROR_CHECK(netif_err);
-        }
-
-        const auto loop_err = esp_event_loop_create_default();
-        if (loop_err != ESP_OK && loop_err != ESP_ERR_INVALID_STATE) {
-            ESP_ERROR_CHECK(loop_err);
-        }
-
-        state.sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-        if (state.sta == nullptr) {
-            state.sta = esp_netif_create_default_wifi_sta();
-        }
+        ESP_ERROR_CHECK(Radio::start(WIFI_MODE_STA, WIFI_PS_NONE));
+        state.sta = Radio::sta();
         configASSERT(state.sta != nullptr);
-
-        wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
-        ESP_ERROR_CHECK(esp_wifi_init(&init));
-        ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-        ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-        ESP_ERROR_CHECK(esp_wifi_start());
 
         if constexpr (Policy::channel != 0U) {
             ESP_ERROR_CHECK(esp_wifi_set_channel(Policy::channel, WIFI_SECOND_CHAN_NONE));
@@ -158,7 +163,7 @@ private:
     {
         start_wifi();
 
-        ESP_ERROR_CHECK(esp_now_init());
+        ESP_ERROR_CHECK(EspNowRadio::start());
         ESP_ERROR_CHECK(esp_now_register_send_cb(&on_send));
 
         if constexpr (EspNowRecv<Policy, Bus>) {

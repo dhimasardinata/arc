@@ -13,6 +13,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - User programs live in `main/app_main.cpp`.
 - `arc.hpp` is lean by default and only exposes feature headers whose backing ESP-IDF components are actually in the build graph.
 - `cmake/arc-deps.cmake` maps Arc feature names to ESP-IDF components so each app can stay explicit without writing a long `REQUIRES` list by hand.
+- `arc::Soc` exposes the ESP32-S3 capability map from `soc_caps.h` as compile-time constants and hard-fails on non-S3 targets.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::Pins` gives one-file board topology checks so duplicate physical pins are caught where hardware truth is declared.
 - `arc::Result<T>` is an opt-in `std::expected<T, esp_err_t>` alias for runtime operations that should not hard-panic.
@@ -46,6 +47,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Space` reports runtime flash, OTA slot, partition, and heap capacity without heap allocation.
 - `arc::Ota` wraps staged OTA writes and slot state without raw handle plumbing.
 - `arc::Store` gives typed NVS blobs without raw handle plumbing in user code.
+- `arc::net::Radio` is the shared Core 0 Wi-Fi owner, so UDP and ESP-NOW do not each re-create NVS, netif, event loop, and Wi-Fi driver state.
 - `arc::net::Udp` is a reusable Core 0 transport plane when you opt into `#include "arc/udp.hpp"`.
 - `arc::net::EspNow` is a reusable Core 0 raw-radio plane when you opt into `#include "arc/espnow.hpp"`.
 
@@ -266,6 +268,7 @@ Feature names map directly to hardware lanes:
 - `sdm`
 - `temp`
 - `store`
+- `net`
 - `ota`
 - `space`
 - `udp`
@@ -610,6 +613,15 @@ Clean generated local state across root and examples:
 ```
 
 ## API
+
+### `arc::Soc`
+
+Compile-time ESP32-S3 capability map.
+
+- Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
+- Exposes feature booleans such as `wifi`, `ble`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, and `ulp_riscv`.
+- Exposes hardware counts such as `gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, and `sdmmc_slots`.
+- Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
 
 ### `arc::Pins<...>` and `arc::Topology<Board>`
 
@@ -1099,9 +1111,22 @@ or:
 
 Use this when you want explicit stateful realtime workers instead of the simpler `Sketch`.
 
+### `arc::net::Radio`
+
+Shared Wi-Fi foundation for Core 0 transports.
+
+- `base()` initializes typed NVS, `esp_netif`, the default event loop, the default STA netif, and the Wi-Fi driver exactly once.
+- `prepare(mode, power_save)` sets storage, Wi-Fi mode, and power-save policy before a transport writes its own config.
+- `start(mode, power_save)` starts Wi-Fi once and rejects later mode mismatches instead of silently reconfiguring a live radio.
+- `sta()` returns the shared STA netif handle for transports that need IP state.
+
+Use `arc_requires(... net)` only when directly using `arc::net::Radio`. `udp` and `espnow` already include the same dependencies.
+
 ### `arc::net::Udp<Policy, Bus>`
 
 Reusable Core 0 UDP transport plane.
+
+UDP uses `arc::net::Radio` underneath, so it shares the same NVS/netif/event-loop/Wi-Fi driver ownership as ESP-NOW instead of reinitializing global radio state.
 
 `Policy` supplies compile-time config:
 
@@ -1128,6 +1153,8 @@ Network is intentionally opt-in. Baseline apps only include `arc.hpp`; UDP apps 
 ### `arc::net::EspNow<Policy, Bus>`
 
 Reusable Core 0 ESP-NOW plane.
+
+ESP-NOW uses `arc::net::Radio` for the shared Wi-Fi base and only owns ESP-NOW peer/callback setup. This keeps raw-radio and UDP examples compatible with the same Core 0 radio foundation.
 
 `Policy` supplies compile-time config:
 

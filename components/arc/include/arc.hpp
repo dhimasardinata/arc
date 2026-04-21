@@ -16,6 +16,7 @@
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
 #include "arc/sketch.hpp"
+#include "arc/soc.hpp"
 #include "arc/task.hpp"
 #include "arc/tight.hpp"
 #include "arc/topology.hpp"
@@ -99,6 +100,10 @@
 
 #if __has_include("driver/temperature_sensor.h")
 #include "arc/temp.hpp"
+#endif
+
+#if __has_include("esp_event.h") && __has_include("esp_netif.h") && __has_include("esp_wifi.h") && __has_include("nvs_flash.h")
+#include "arc/net.hpp"
 #endif
 
 #if __has_include("driver/gptimer.h")
