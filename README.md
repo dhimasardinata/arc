@@ -20,6 +20,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Capture` timestamps edges in hardware through the MCPWM capture block.
 - `arc::Scope` streams ADC data through the digital controller and DMA path.
 - `arc::Copy` offloads memory movement to the async DMA memcpy engine.
+- `arc::Dvp` captures parallel camera frames through the ESP32-S3 LCD_CAM DMA path.
+- `arc::I80Bus` and `arc::I80` drive the ESP32-S3 LCD_CAM Intel 8080 DMA path.
 - `arc::SpiBus` and `arc::Spi` drive DMA-capable SPI transfers without queue boilerplate in user code.
 - `arc::I2s` owns standard-mode I2S channels and DMA event counters with one compile-time type.
 - `arc::Count` offloads pulse accumulation to the PCNT block.
@@ -58,7 +60,11 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │   │   └── README.md
 │   ├── copy
 │   │   └── README.md
+│   ├── dvp
+│   │   └── README.md
 │   ├── i2s
+│   │   └── README.md
+│   ├── i80
 │   │   └── README.md
 │   ├── scope
 │   │   └── README.md
@@ -119,8 +125,10 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── dsp.hpp
 │               ├── din.hpp
 │               ├── dio.hpp
+│               ├── dvp.hpp
 │               ├── fence.hpp
 │               ├── gpio.hpp
+│               ├── i80.hpp
 │               ├── espnow.hpp
 │               ├── i2s.hpp
 │               ├── plane.hpp
@@ -170,6 +178,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware MCPWM edge capture for period/high/low measurement
 - Hardware ADC streaming through the digital controller and DMA
 - Hardware async memory copy through the ESP32-S3 DMA memcpy path
+- Hardware LCD_CAM DVP camera input through DMA-backed frame buffers
+- Hardware LCD_CAM Intel 8080 parallel output through DMA-backed panel IO
 - Hardware SPI transfers with explicit bus/device composition and DMA-capable paths
 - Hardware I2S streaming with duplex DMA and event counters
 - Hardware PWM offload through LEDC for periodic output that should not burn a core
@@ -673,6 +683,34 @@ Compile-time standard-mode I2S wrapper.
 
 Use this when framed serial audio or sample streams should be owned by the I2S block, not by a CPU copy loop.
 
+### `arc::Dvp<arc::DvpLines<...>, Vsync, Pclk, De, Xclk>`
+
+Compile-time DVP camera input using the ESP32-S3 LCD_CAM block.
+
+- `arc::DvpLines<...>` declares 8, 10, 12, or 16 data GPIOs.
+- `boot()` creates one DVP controller with compile-time sync/data routing.
+- `start()`, `stop()`, `pause()`, and `resume()` gate the capture lane.
+- `buffer<T>(count)` allocates a DMA-capable camera frame buffer.
+- `grab(frame, &bytes, timeout_ms)` receives one frame into user-owned storage.
+- `convert(in, out, ...)` exposes the hardware format-conversion hook.
+- `frames()` and `bytes()` expose received-frame counters.
+
+Use this for camera or parallel input streams that should land in RAM through LCD_CAM/DMA instead of CPU sampling.
+
+### `arc::I80Bus<arc::Lines<...>, Dc, Wr>` and `arc::I80<Bus, Cs>`
+
+Compile-time Intel 8080 parallel output using the ESP32-S3 LCD_CAM block.
+
+- `arc::Lines<...>` declares 8 or 16 data GPIOs.
+- `I80Bus::boot()` creates one DMA-backed I80 bus.
+- `I80::boot()` creates one panel IO endpoint.
+- `param(cmd, data, bytes)` sends command parameters.
+- `color(cmd, data, bytes)` queues a DMA-backed payload transfer.
+- `buffer<T>(count)` allocates a draw buffer with the alignment/caps expected by the I80 path.
+- `sent()`, `done()`, `bytes()`, `idle()`, and `wait()` expose the DMA queue state.
+
+Use this for display or parallel-device throughput that should be owned by LCD_CAM/DMA, not by a GPIO loop.
+
 ### `arc::Copy<Backlog = 4, BurstBytes = 64, Weight = 0, Backend = arc::CopyBackend::auto_dma>`
 
 Compile-time async DMA memcpy wrapper.
@@ -1154,6 +1192,68 @@ The example composes:
 - `dst = arc::dmabuf<std::uint8_t>(4096)`
 
 The CPU submits a 4096-byte transfer, the DMA memcpy engine moves the payload, and the app verifies completion through `arc::Copy::done()`.
+
+## DVP Example
+
+Arc also ships a standalone LCD_CAM DVP input skeleton at `examples/dvp`.
+
+```bash
+cd examples/dvp
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/dvp
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example composes:
+
+- `Cam = arc::Dvp<arc::DvpLines<...>, vsync, pclk, href, xclk>`
+- `Cam::boot()`
+- `Cam::buffer<std::uint16_t>(...)`
+
+It does not call `grab()` automatically because the external camera sensor must be configured first.
+
+## I80 Example
+
+Arc also ships a standalone LCD_CAM Intel 8080 demo at `examples/i80`.
+
+```bash
+cd examples/i80
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/i80
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example composes:
+
+- `Bus = arc::I80Bus<arc::Lines<...>, dc, wr>`
+- `Lcd = arc::I80<Bus, cs, 20'000'000>`
+- `Lcd::buffer<std::uint16_t>(...)`
+- `Lcd::color(0x2C, frame)`
+- `Lcd::wait()`
+
+Use this when a display or parallel peripheral should stream through LCD_CAM/DMA instead of CPU-driven GPIO.
 
 ## Probe Example
 
