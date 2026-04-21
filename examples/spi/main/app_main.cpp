@@ -1,4 +1,3 @@
-#include <array>
 #include <cstdint>
 
 #include "arc.hpp"
@@ -20,8 +19,9 @@ constinit static arc::TaskMem<stack> host_mem{};
 
 void host(void*) noexcept
 {
-    std::array<std::uint8_t, 16> tx{};
+    auto tx = arc::dmabuf<std::uint8_t>(16);
     auto rx = arc::dmabuf<std::uint8_t>(tx.size());
+    configASSERT(static_cast<bool>(tx));
     configASSERT(static_cast<bool>(rx));
 
     std::uint8_t seed = 0U;
@@ -31,9 +31,17 @@ void host(void*) noexcept
             tx[i] = static_cast<std::uint8_t>(seed + static_cast<std::uint8_t>(i));
         }
 
-        const auto ret = Dev::poll(tx.data(), rx.data(), tx.size());
+        Dev::Move move{};
+        const auto ret = Dev::queue_coherent(move, tx.view(), rx.view());
         if (ret != ESP_OK) {
-            ESP_LOGW(tag, "poll failed ret=0x%x", static_cast<unsigned>(ret));
+            ESP_LOGW(tag, "queue failed ret=0x%x", static_cast<unsigned>(ret));
+            vTaskDelay(log_ticks);
+            continue;
+        }
+
+        const auto done = Dev::finish_coherent(move);
+        if (done != ESP_OK) {
+            ESP_LOGW(tag, "finish failed ret=0x%x", static_cast<unsigned>(done));
             vTaskDelay(log_ticks);
             continue;
         }

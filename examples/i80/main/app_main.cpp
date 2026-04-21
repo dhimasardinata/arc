@@ -37,8 +37,9 @@ void host(void*) noexcept
             frame[i] = static_cast<std::uint16_t>(((v & 0x1fU) << 11U) | (((v >> 1U) & 0x3fU) << 5U) | (v & 0x1fU));
         }
 
-        ESP_ERROR_CHECK(Lcd::color(0x2C, frame));
-        Lcd::wait();
+        Lcd::Ticket paint{};
+        ESP_ERROR_CHECK(Lcd::color_coherent(paint, 0x2C, frame));
+        Lcd::finish(paint);
         ESP_LOGI(
             tag,
             "hz=%u sent=%u done=%u frame=%u total=%u",

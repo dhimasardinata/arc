@@ -14,6 +14,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc.hpp` is lean by default and only exposes feature headers whose backing ESP-IDF components are actually in the build graph.
 - `cmake/arc-deps.cmake` maps Arc feature names to ESP-IDF components so each app can stay explicit without writing a long `REQUIRES` list by hand.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
+- `arc::Pins` gives one-file board topology checks so duplicate physical pins are caught where hardware truth is declared.
+- `arc::Result<T>` is an opt-in `std::expected<T, esp_err_t>` alias for runtime operations that should not hard-panic.
 - `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site, while `arc::Copy::send_coherent(...)` and `finish_coherent(...)` cover the common async-memcpy handoff without blocking useful CPU work.
 - `arc::Can` binds the ESP32-S3 TWAI/CAN controller with ISR-backed RX handoff.
 - `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
@@ -24,9 +26,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Scope` streams ADC data through the digital controller and DMA path.
 - `arc::Copy` offloads memory movement to the async DMA memcpy engine.
 - `arc::Dvp` captures parallel camera frames through the ESP32-S3 LCD_CAM DMA path.
-- `arc::I80Bus` and `arc::I80` drive the ESP32-S3 LCD_CAM Intel 8080 DMA path.
-- `arc::SpiBus` and `arc::Spi` drive DMA-capable SPI transfers without queue boilerplate in user code.
-- `arc::I2s` owns standard-mode I2S channels and DMA event counters with one compile-time type.
+- `arc::I80Bus` and `arc::I80` drive the ESP32-S3 LCD_CAM Intel 8080 DMA path with exact transfer tickets.
+- `arc::SpiBus` and `arc::Spi` drive DMA-capable SPI transfers with ticketed queue/finish ownership.
+- `arc::I2s` owns standard-mode I2S channels and DMA event counters with both raw `esp_err_t` and opt-in `arc::Result` APIs.
 - `arc::Count` offloads pulse accumulation to the PCNT block.
 - `arc::dsp` adds hot-loop math kernels that pair naturally with `arc::simdbuf` and Core 1.
 - `arc::Probe` reads the Xtensa cycle counter so hot paths can be measured, not guessed.
@@ -144,6 +146,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── pulse.hpp
 │               ├── pwm.hpp
 │               ├── reg.hpp
+│               ├── result.hpp
 │               ├── ring.hpp
 │               ├── scope.hpp
 │               ├── sleep.hpp
@@ -155,6 +158,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── task.hpp
 │               ├── temp.hpp
 │               ├── timer.hpp
+│               ├── topology.hpp
 │               ├── trace.hpp
 │               ├── udp.hpp
 │               └── wave.hpp
@@ -200,6 +204,28 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Typed NVS persistence on the Core 0 side
 - SIMD-friendly math kernels that fit the Core 1 compute plane
 - Cycle-counter instrumentation for hot-path measurement
+
+## C++ Reality
+
+The current local Arc toolchain was checked against the installed ESP-IDF environment on this machine:
+
+- ESP-IDF `v6.0-dirty`
+- `xtensa-esp32s3-elf-g++ 15.2.0`
+- Espressif toolchain `esp-15.2.0_20251204`
+- `__cplusplus == 202400L`
+- libstdc++ `__GLIBCXX__ == 20250808`
+
+Useful features present for Arc:
+
+- `consteval`, `constinit`, concepts, `if consteval`, C++26 constexpr upgrades
+- pack indexing and placeholder variables on the compiler side
+- `std::expected`, `std::span 202311`, `std::byteswap`, `std::to_underlying`, `std::unreachable`
+
+Features intentionally not treated as Arc foundation:
+
+- standard `<simd>`, `<mdspan>`, `<inplace_vector>`, and `<hive>` are not available in this target libstdc++ build
+- `<experimental/simd>` exists, but Arc keeps DSP kernels explicit and allocation-controlled instead of binding the framework to an experimental ABI
+- `<print>` exists, but firmware logging stays on ESP-IDF logging paths
 
 ## Granular Builds
 
@@ -308,6 +334,24 @@ The core clue is explicit where it matters:
 
 - `arc::Core::core1` in `arc::App<...>` means the hot loop is pinned to Core 1.
 - `arc::net::Udp` always owns Core 0 when you use it.
+
+## Hardware Topology
+
+C++ cannot globally prove that two unrelated translation units did not instantiate the same physical pin through two different template aliases. Arc handles this with a strict topology pattern: declare the board truth once, then import aliases from that one place.
+
+```cpp
+struct Board {
+    using pins = arc::Pins<4, 5, 12, 13>;
+
+    using Led = arc::Drive<4, 0>;
+    using Button = arc::Sense<5, 1>;
+    using Spi = arc::SpiBus<SPI2_HOST, 12, 13>;
+};
+
+static_assert(arc::Topology<Board>);
+```
+
+`arc::Pins` ignores negative sentinel pins like `-1`, so optional CS/MISO-style values can still be represented without false collisions.
 
 ## Start From Zero
 
@@ -567,6 +611,27 @@ Clean generated local state across root and examples:
 
 ## API
 
+### `arc::Pins<...>` and `arc::Topology<Board>`
+
+Compile-time board topology guard.
+
+- `arc::Pins<...>` asserts that all non-negative physical pins in the pack are unique.
+- `arc::Topology<Board>` checks that `Board::pins` exists and passes the uniqueness rule.
+- Use it in one central `Board`/`Hw` declaration, not scattered through application files.
+
+This does not attempt impossible cross-translation-unit magic. It makes the intended hardware truth explicit and catches duplicate pins inside that truth source.
+
+### `arc::Result<T>` and `arc::Status`
+
+Opt-in C++23/26 runtime error surface based on `std::expected`.
+
+- `arc::Result<T>` is `std::expected<T, esp_err_t>`.
+- `arc::Status` is `std::expected<void, esp_err_t>`.
+- `arc::fail(err)` creates the error side.
+- `arc::status(err)` converts an `esp_err_t` into `arc::Status`.
+
+Use this for runtime operations that can fail without invalidating the board topology. Hardware boot/configuration errors still intentionally use fail-fast ESP-IDF checks.
+
 ### `arc::Drive<Pin, Channel, Core>`
 
 Dedicated GPIO output bound at compile time.
@@ -724,6 +789,9 @@ Compile-time SPI device wrapper.
 - `boot()` adds one device on top of a compile-time `arc::SpiBus`.
 - `send(...)`, `recv(...)`, `xfer(...)`, and `poll(...)` cover the common synchronous paths.
 - `queue(...)` and `wait(...)` expose the interrupt-driven transaction path when you want multiple jobs in flight.
+- `Move` and `StrictMove` are ticket objects that own queued transaction storage until `finish(...)`.
+- `queue_coherent(move, tx, rx, bytes)` flushes TX, discards RX, and queues one DMA transfer.
+- `finish_coherent(move)` waits for that exact SPI transfer and invalidates RX before the CPU reads it.
 - `acquire()` and `release()` give explicit bus ownership when CS must stay held.
 
 Use this when bytes should move through the SPI engine and DMA path instead of a software bit loop.
@@ -750,6 +818,7 @@ Compile-time standard-mode I2S wrapper.
 - `start()` and `stop()` gate the hardware stream without deleting the channels.
 - `preload(...)` primes TX DMA before enabling the lane.
 - `write(...)` and `read(...)` move frames through DMA-backed channels.
+- `preload(span)`, `write(span)`, and `read(span)` also expose `arc::Result<std::size_t>` overloads for runtime failures that should stay recoverable.
 - `sent()`, `recv()`, `send_ovf()`, and `recv_ovf()` expose ISR-side event counters.
 
 Use this when framed serial audio or sample streams should be owned by the I2S block, not by a CPU copy loop.
@@ -777,8 +846,10 @@ Compile-time Intel 8080 parallel output using the ESP32-S3 LCD_CAM block.
 - `I80::boot()` creates one panel IO endpoint.
 - `param(cmd, data, bytes)` sends command parameters.
 - `color(cmd, data, bytes)` queues a DMA-backed payload transfer.
+- `Ticket` captures the exact queued color transfer so `finish(ticket)` does not wait on unrelated later transfers.
+- `color_coherent(ticket, cmd, buffer)` flushes the draw buffer before LCD_CAM owns it.
 - `buffer<T>(count)` allocates a draw buffer with the alignment/caps expected by the I80 path.
-- `sent()`, `done()`, `bytes()`, `idle()`, and `wait()` expose the DMA queue state.
+- `sent()`, `done()`, `bytes()`, `idle()`, `ready(ticket)`, `wait()`, and `finish(ticket)` expose the DMA queue state.
 
 Use this for display or parallel-device throughput that should be owned by LCD_CAM/DMA, not by a GPIO loop.
 
@@ -1359,8 +1430,8 @@ The example composes:
 - `Bus = arc::I80Bus<arc::Lines<...>, dc, wr>`
 - `Lcd = arc::I80<Bus, cs, 20'000'000>`
 - `Lcd::buffer<std::uint16_t>(...)`
-- `Lcd::color(0x2C, frame)`
-- `Lcd::wait()`
+- `Lcd::color_coherent(ticket, 0x2C, frame)`
+- `Lcd::finish(ticket)`
 
 Use this when a display or parallel peripheral should stream through LCD_CAM/DMA instead of CPU-driven GPIO.
 
@@ -1656,8 +1727,9 @@ idf.py -p /dev/ttyACM0 flash monitor
 The example shows:
 
 - `arc::SpiBus<...>::boot()` bringing up `SPI2_HOST`
-- `arc::Spi<...>::poll(...)` performing one full-duplex loopback transfer
-- DMA-capable receive storage with no queue plumbing in user code
+- `arc::Spi<...>::queue_coherent(...)` submitting one full-duplex loopback transfer
+- `arc::Spi<...>::finish_coherent(...)` waiting on the exact queued transfer and making RX cache-safe
+- DMA-capable TX/RX storage with no raw transaction lifetime plumbing in user code
 
 ## I2S Example
 
@@ -1684,7 +1756,8 @@ idf.py -p /dev/ttyACM0 flash monitor
 The example shows:
 
 - `arc::I2s<...>::boot()` allocating a duplex standard-mode lane
-- `arc::I2s<...>::preload(...)`, `write(...)`, and `read(...)` moving data through DMA
+- `arc::I2s<...>::preload(span)`, `write(span)`, and `read(span)` moving data through DMA
+- `arc::Result<std::size_t>` replacing mutable byte-count out parameters on the ergonomic path
 - TX/RX event counters reported without user ISR plumbing
 
 ## DSP Example

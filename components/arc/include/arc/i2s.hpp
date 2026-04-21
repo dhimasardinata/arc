@@ -2,12 +2,17 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <type_traits>
 
 #include "driver/i2s_std.h"
 #include "esp_attr.h"
 #include "esp_check.h"
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
+
+#include "arc/result.hpp"
+#include "arc/sdk.hpp"
 
 namespace arc {
 
@@ -157,6 +162,27 @@ struct I2s {
     }
 
     template <bool Enabled = kTx>
+    [[nodiscard]] static Result<std::size_t> preload(
+        const void* const src,
+        const std::size_t size) noexcept
+        requires(Enabled)
+    {
+        std::size_t loaded{};
+        const auto err = preload(src, size, &loaded);
+        if (err != ESP_OK) {
+            return fail(err);
+        }
+        return loaded;
+    }
+
+    template <typename T, bool Enabled = kTx>
+    [[nodiscard]] static Result<std::size_t> preload(const std::span<T> src) noexcept
+        requires(Enabled && std::is_trivially_copyable_v<std::remove_cv_t<T>>)
+    {
+        return preload(src.data(), src.size_bytes());
+    }
+
+    template <bool Enabled = kTx>
     [[nodiscard]] static esp_err_t write(
         const void* const src,
         const std::size_t size,
@@ -166,6 +192,30 @@ struct I2s {
     {
         boot();
         return i2s_channel_write(state.tx, src, size, wrote, timeout_ms);
+    }
+
+    template <bool Enabled = kTx>
+    [[nodiscard]] static Result<std::size_t> write(
+        const void* const src,
+        const std::size_t size,
+        const std::uint32_t timeout_ms = 1000U) noexcept
+        requires(Enabled)
+    {
+        std::size_t wrote{};
+        const auto err = write(src, size, &wrote, timeout_ms);
+        if (err != ESP_OK) {
+            return fail(err);
+        }
+        return wrote;
+    }
+
+    template <typename T, bool Enabled = kTx>
+    [[nodiscard]] static Result<std::size_t> write(
+        const std::span<T> src,
+        const std::uint32_t timeout_ms = 1000U) noexcept
+        requires(Enabled && std::is_trivially_copyable_v<std::remove_cv_t<T>>)
+    {
+        return write(src.data(), src.size_bytes(), timeout_ms);
     }
 
     template <bool Enabled = kRx>
@@ -178,6 +228,30 @@ struct I2s {
     {
         boot();
         return i2s_channel_read(state.rx, dst, size, got, timeout_ms);
+    }
+
+    template <bool Enabled = kRx>
+    [[nodiscard]] static Result<std::size_t> read(
+        void* const dst,
+        const std::size_t size,
+        const std::uint32_t timeout_ms = 1000U) noexcept
+        requires(Enabled)
+    {
+        std::size_t got{};
+        const auto err = read(dst, size, &got, timeout_ms);
+        if (err != ESP_OK) {
+            return fail(err);
+        }
+        return got;
+    }
+
+    template <typename T, bool Enabled = kRx>
+    [[nodiscard]] static Result<std::size_t> read(
+        const std::span<T> dst,
+        const std::uint32_t timeout_ms = 1000U) noexcept
+        requires(Enabled && !std::is_const_v<T> && std::is_trivially_copyable_v<T>)
+    {
+        return read(dst.data(), dst.size_bytes(), timeout_ms);
     }
 
     template <bool Enabled = kTx>
@@ -218,22 +292,22 @@ struct I2s {
 
     [[nodiscard]] static std::uint32_t sent() noexcept
     {
-        return state.sent;
+        return __atomic_load_n(&state.sent, __ATOMIC_ACQUIRE);
     }
 
     [[nodiscard]] static std::uint32_t recv() noexcept
     {
-        return state.recv;
+        return __atomic_load_n(&state.recv, __ATOMIC_ACQUIRE);
     }
 
     [[nodiscard]] static std::uint32_t send_ovf() noexcept
     {
-        return state.send_ovf;
+        return __atomic_load_n(&state.send_ovf, __ATOMIC_ACQUIRE);
     }
 
     [[nodiscard]] static std::uint32_t recv_ovf() noexcept
     {
-        return state.recv_ovf;
+        return __atomic_load_n(&state.recv_ovf, __ATOMIC_ACQUIRE);
     }
 
 private:
@@ -241,10 +315,10 @@ private:
         i2s_chan_handle_t tx{};
         i2s_chan_handle_t rx{};
         std::uint32_t rate{};
-        volatile std::uint32_t sent{};
-        volatile std::uint32_t recv{};
-        volatile std::uint32_t send_ovf{};
-        volatile std::uint32_t recv_ovf{};
+        alignas(cache_line) std::uint32_t sent{};
+        alignas(cache_line) std::uint32_t recv{};
+        alignas(cache_line) std::uint32_t send_ovf{};
+        alignas(cache_line) std::uint32_t recv_ovf{};
         bool booted{};
         bool running{};
     };
@@ -253,25 +327,25 @@ private:
 
     IRAM_ATTR static bool on_sent(i2s_chan_handle_t, i2s_event_data_t*, void*) noexcept
     {
-        state.sent += 1U;
+        __atomic_add_fetch(&state.sent, 1U, __ATOMIC_RELEASE);
         return false;
     }
 
     IRAM_ATTR static bool on_send_ovf(i2s_chan_handle_t, i2s_event_data_t*, void*) noexcept
     {
-        state.send_ovf += 1U;
+        __atomic_add_fetch(&state.send_ovf, 1U, __ATOMIC_RELEASE);
         return false;
     }
 
     IRAM_ATTR static bool on_recv(i2s_chan_handle_t, i2s_event_data_t*, void*) noexcept
     {
-        state.recv += 1U;
+        __atomic_add_fetch(&state.recv, 1U, __ATOMIC_RELEASE);
         return false;
     }
 
     IRAM_ATTR static bool on_recv_ovf(i2s_chan_handle_t, i2s_event_data_t*, void*) noexcept
     {
-        state.recv_ovf += 1U;
+        __atomic_add_fetch(&state.recv_ovf, 1U, __ATOMIC_RELEASE);
         return false;
     }
 

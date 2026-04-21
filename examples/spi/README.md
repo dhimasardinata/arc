@@ -11,7 +11,8 @@ This is a standalone ESP-IDF project under `examples/spi`.
 At runtime, this example:
 
 - boots a DMA-capable SPI master bus on Core 0
-- polls one full-duplex transaction per cycle
+- queues one cache-coherent full-duplex transaction per cycle
+- finishes the exact queued transaction before reading RX bytes
 - verifies that the received bytes match the transmitted bytes
 
 This is the lane to use when a peripheral should move bytes through the SPI engine instead of CPU bit banging.
@@ -72,3 +73,6 @@ The main API pieces are:
 - `arc::Spi<...>::xfer(...)`
 - `arc::Spi<...>::queue(...)`
 - `arc::Spi<...>::wait(...)`
+- `arc::Spi<...>::Move`
+- `arc::Spi<...>::queue_coherent(...)`
+- `arc::Spi<...>::finish_coherent(...)`

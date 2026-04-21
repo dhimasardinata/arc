@@ -18,6 +18,7 @@
 #include "arc/sketch.hpp"
 #include "arc/task.hpp"
 #include "arc/tight.hpp"
+#include "arc/topology.hpp"
 #include "arc/wave.hpp"
 
 #if __has_include("driver/gpio.h")

@@ -13,6 +13,7 @@ At runtime, this example:
 - allocates one standard-mode I2S controller
 - preloads TX DMA
 - streams TX and RX through the hardware DMA path
+- uses `arc::Result<std::size_t>` overloads for runtime byte counts
 - logs RX bytes and DMA event counters
 
 This is the lane to use when audio or framed sample streams should move through the I2S engine instead of a software copy loop.
@@ -70,5 +71,6 @@ The main API pieces are:
 - `arc::I2s<...>::preload(...)`
 - `arc::I2s<...>::write(...)`
 - `arc::I2s<...>::read(...)`
+- `arc::Result<std::size_t>`
 - `arc::I2s<...>::sent()`
 - `arc::I2s<...>::recv()`

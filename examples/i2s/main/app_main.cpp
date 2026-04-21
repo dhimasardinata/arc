@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <span>
 
 #include "arc.hpp"
 
@@ -26,25 +27,21 @@ void host(void*) noexcept
         tx[i] = static_cast<std::uint8_t>((i * 17U) & 0xFFU);
     }
 
-    std::size_t loaded = 0U;
-    const auto preload = Link::preload(tx.data(), tx.size(), &loaded);
-    configASSERT(preload == ESP_OK || preload == ESP_ERR_INVALID_SIZE);
+    const auto preload = Link::preload(std::span{tx});
+    configASSERT(preload.has_value() || preload.error() == ESP_ERR_INVALID_SIZE);
 
     Link::start();
 
     while (true) {
-        std::size_t wrote = 0U;
-        std::size_t got = 0U;
+        const auto wrote = Link::write(std::span{tx}, 1000U);
+        const auto got = Link::read(std::span{rx}, 1000U);
 
-        const auto wret = Link::write(tx.data(), tx.size(), &wrote, 1000U);
-        const auto rret = Link::read(rx.data(), rx.size(), &got, 1000U);
-
-        if (wret != ESP_OK || rret != ESP_OK) {
+        if (!wrote || !got) {
             ESP_LOGW(
                 tag,
                 "io failed w=0x%x r=0x%x sent=%u recv=%u sovf=%u rovf=%u",
-                static_cast<unsigned>(wret),
-                static_cast<unsigned>(rret),
+                static_cast<unsigned>(wrote ? ESP_OK : wrote.error()),
+                static_cast<unsigned>(got ? ESP_OK : got.error()),
                 static_cast<unsigned>(Link::sent()),
                 static_cast<unsigned>(Link::recv()),
                 static_cast<unsigned>(Link::send_ovf()),
@@ -57,8 +54,8 @@ void host(void*) noexcept
             tag,
             "rate=%u wrote=%u read=%u sent=%u recv=%u first=%02x %02x %02x %02x",
             static_cast<unsigned>(Link::rate()),
-            static_cast<unsigned>(wrote),
-            static_cast<unsigned>(got),
+            static_cast<unsigned>(*wrote),
+            static_cast<unsigned>(*got),
             static_cast<unsigned>(Link::sent()),
             static_cast<unsigned>(Link::recv()),
             rx[0],

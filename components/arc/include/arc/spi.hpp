@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <type_traits>
 
 #include "driver/spi_master.h"
 #include "esp_check.h"
@@ -11,7 +13,12 @@
 #include "freertos/task.h"
 #include "soc/soc_caps.h"
 
+#include "arc/cache.hpp"
+
 namespace arc {
+
+template <typename T>
+concept SpiBytes = std::is_trivially_copyable_v<std::remove_cv_t<T>>;
 
 template <spi_host_device_t Host,
           int Sclk,
@@ -101,6 +108,16 @@ struct Spi {
     static_assert(Hz != 0U, "SPI frequency must be non-zero");
     static_assert(Mode < 4U, "SPI mode must be in [0, 3]");
     static_assert(Queue > 0, "SPI queue depth must be non-zero");
+
+    template <bool Strict = false>
+    struct Ticket {
+        spi_transaction_t trans{};
+        void* rx{};
+        std::size_t rx_bytes{};
+    };
+
+    using Move = Ticket<false>;
+    using StrictMove = Ticket<true>;
 
     static void boot()
     {
@@ -231,12 +248,180 @@ struct Spi {
         return spi_device_queue_trans(state.dev, &trans, wait);
     }
 
+    [[nodiscard]] static esp_err_t queue(
+        Move& ticket,
+        const void* const tx,
+        void* const rx,
+        const std::size_t bytes,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        return queue_impl(ticket, tx, rx, bytes, wait);
+    }
+
+    [[nodiscard]] static esp_err_t queue_strict(
+        StrictMove& ticket,
+        const void* const tx,
+        void* const rx,
+        const std::size_t bytes,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        return queue_impl(ticket, tx, rx, bytes, wait);
+    }
+
+    template <typename T>
+        requires SpiBytes<T>
+    [[nodiscard]] static esp_err_t queue(
+        Move& ticket,
+        const std::span<T> tx,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        return queue(ticket, tx.data(), nullptr, tx.size_bytes(), wait);
+    }
+
+    template <typename T>
+        requires SpiBytes<T>
+    [[nodiscard]] static esp_err_t queue_strict(
+        StrictMove& ticket,
+        const std::span<T> tx,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        return queue_strict(ticket, tx.data(), nullptr, tx.size_bytes(), wait);
+    }
+
+    template <typename Tx, typename Rx>
+        requires(SpiBytes<Tx> && SpiBytes<Rx> && !std::is_const_v<Rx>)
+    [[nodiscard]] static esp_err_t queue(
+        Move& ticket,
+        const std::span<Tx> tx,
+        const std::span<Rx> rx,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        if (tx.size_bytes() != rx.size_bytes()) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        return queue(ticket, tx.data(), rx.data(), tx.size_bytes(), wait);
+    }
+
+    template <typename Tx, typename Rx>
+        requires(SpiBytes<Tx> && SpiBytes<Rx> && !std::is_const_v<Rx>)
+    [[nodiscard]] static esp_err_t queue_strict(
+        StrictMove& ticket,
+        const std::span<Tx> tx,
+        const std::span<Rx> rx,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        if (tx.size_bytes() != rx.size_bytes()) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        return queue_strict(ticket, tx.data(), rx.data(), tx.size_bytes(), wait);
+    }
+
     [[nodiscard]] static esp_err_t wait(
         spi_transaction_t** const trans,
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
         boot();
         return spi_device_get_trans_result(state.dev, trans, wait_ticks);
+    }
+
+    [[nodiscard]] static esp_err_t finish(
+        Move& ticket,
+        const TickType_t wait_ticks = portMAX_DELAY) noexcept
+    {
+        return finish_impl(ticket, wait_ticks);
+    }
+
+    [[nodiscard]] static esp_err_t finish(
+        StrictMove& ticket,
+        const TickType_t wait_ticks = portMAX_DELAY) noexcept
+    {
+        return finish_impl(ticket, wait_ticks);
+    }
+
+    [[nodiscard]] static esp_err_t queue_coherent(
+        Move& ticket,
+        const void* const tx,
+        void* const rx,
+        const std::size_t bytes,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        return queue_coherent_impl(ticket, tx, rx, bytes, wait);
+    }
+
+    [[nodiscard]] static esp_err_t queue_coherent_strict(
+        StrictMove& ticket,
+        const void* const tx,
+        void* const rx,
+        const std::size_t bytes,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        return queue_coherent_impl(ticket, tx, rx, bytes, wait);
+    }
+
+    template <typename T>
+        requires SpiBytes<T>
+    [[nodiscard]] static esp_err_t queue_coherent(
+        Move& ticket,
+        const std::span<T> tx,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        return queue_coherent(ticket, tx.data(), nullptr, tx.size_bytes(), wait);
+    }
+
+    template <typename T>
+        requires SpiBytes<T>
+    [[nodiscard]] static esp_err_t queue_coherent_strict(
+        StrictMove& ticket,
+        const std::span<T> tx,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        return queue_coherent_strict(ticket, tx.data(), nullptr, tx.size_bytes(), wait);
+    }
+
+    template <typename Tx, typename Rx>
+        requires(SpiBytes<Tx> && SpiBytes<Rx> && !std::is_const_v<Rx>)
+    [[nodiscard]] static esp_err_t queue_coherent(
+        Move& ticket,
+        const std::span<Tx> tx,
+        const std::span<Rx> rx,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        if (tx.size_bytes() != rx.size_bytes()) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        return queue_coherent(ticket, tx.data(), rx.data(), tx.size_bytes(), wait);
+    }
+
+    template <typename Tx, typename Rx>
+        requires(SpiBytes<Tx> && SpiBytes<Rx> && !std::is_const_v<Rx>)
+    [[nodiscard]] static esp_err_t queue_coherent_strict(
+        StrictMove& ticket,
+        const std::span<Tx> tx,
+        const std::span<Rx> rx,
+        const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        if (tx.size_bytes() != rx.size_bytes()) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        return queue_coherent_strict(ticket, tx.data(), rx.data(), tx.size_bytes(), wait);
+    }
+
+    [[nodiscard]] static esp_err_t finish_coherent(
+        Move& ticket,
+        const TickType_t wait_ticks = portMAX_DELAY) noexcept
+    {
+        return finish_coherent_impl(ticket, wait_ticks);
+    }
+
+    [[nodiscard]] static esp_err_t finish_coherent(
+        StrictMove& ticket,
+        const TickType_t wait_ticks = portMAX_DELAY) noexcept
+    {
+        return finish_coherent_impl(ticket, wait_ticks);
     }
 
     [[nodiscard]] static constexpr int cs() noexcept
@@ -267,6 +452,97 @@ private:
     };
 
     constinit static inline State state{};
+
+    template <bool Strict>
+    [[nodiscard]] static esp_err_t queue_impl(
+        Ticket<Strict>& ticket,
+        const void* const tx,
+        void* const rx,
+        const std::size_t bytes,
+        const TickType_t wait) noexcept
+    {
+        if (bytes == 0U || (tx == nullptr && rx == nullptr)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        boot();
+        ticket.trans = job(tx, rx, bytes);
+        ticket.rx = rx;
+        ticket.rx_bytes = rx == nullptr ? 0U : bytes;
+        return spi_device_queue_trans(state.dev, &ticket.trans, wait);
+    }
+
+    template <bool Strict>
+    [[nodiscard]] static esp_err_t finish_impl(
+        Ticket<Strict>& ticket,
+        const TickType_t wait_ticks) noexcept
+    {
+        spi_transaction_t* done{};
+        const auto err = wait(&done, wait_ticks);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        return done == &ticket.trans ? ESP_OK : ESP_ERR_INVALID_STATE;
+    }
+
+    template <bool Strict>
+    [[nodiscard]] static esp_err_t queue_coherent_impl(
+        Ticket<Strict>& ticket,
+        const void* const tx,
+        void* const rx,
+        const std::size_t bytes,
+        const TickType_t wait) noexcept
+    {
+        if (bytes == 0U || (tx == nullptr && rx == nullptr)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        if (tx != nullptr) {
+            const auto source = [&]() noexcept -> esp_err_t {
+                if constexpr (Strict) {
+                    return Cache::to_device_strict(const_cast<void*>(tx), bytes);
+                } else {
+                    return Cache::to_device(const_cast<void*>(tx), bytes);
+                }
+            }();
+            if (source != ESP_OK) {
+                return source;
+            }
+        }
+
+        if (rx != nullptr) {
+            const auto target = [&]() noexcept -> esp_err_t {
+                if constexpr (Strict) {
+                    return Cache::discard_strict(rx, bytes);
+                } else {
+                    return Cache::discard(rx, bytes);
+                }
+            }();
+            if (target != ESP_OK) {
+                return target;
+            }
+        }
+
+        return queue_impl(ticket, tx, rx, bytes, wait);
+    }
+
+    template <bool Strict>
+    [[nodiscard]] static esp_err_t finish_coherent_impl(
+        Ticket<Strict>& ticket,
+        const TickType_t wait_ticks) noexcept
+    {
+        const auto err = finish_impl(ticket, wait_ticks);
+        if (err != ESP_OK || ticket.rx == nullptr || ticket.rx_bytes == 0U) {
+            return err;
+        }
+
+        if constexpr (Strict) {
+            return Cache::from_device_strict(ticket.rx, ticket.rx_bytes);
+        } else {
+            return Cache::from_device(ticket.rx, ticket.rx_bytes);
+        }
+    }
 };
 
 }  // namespace arc

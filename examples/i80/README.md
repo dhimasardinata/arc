@@ -14,10 +14,11 @@ This is a standalone ESP-IDF project under `examples/i80`.
 
 - `param(cmd, data, bytes)` for command/parameter transfers
 - `color(cmd, data, bytes)` for queued DMA color/data transfers
+- `color_coherent(ticket, cmd, buffer)` for cache-safe queued payload ownership
 - `buffer<T>(count)` for DMA-safe draw buffers
-- `sent()`, `done()`, `idle()`, and `wait()` for the DMA queue state
+- `sent()`, `done()`, `idle()`, `ready(ticket)`, `wait()`, and `finish(ticket)` for the DMA queue state
 
-The example repeatedly fills a tiny RGB565 buffer, queues it with command `0x2C` (`RAMWR` on common LCD controllers), and waits until DMA has consumed that buffer before writing it again. Adjust pins for your board before connecting hardware.
+The example repeatedly fills a tiny RGB565 buffer, queues it with command `0x2C` (`RAMWR` on common LCD controllers), and finishes that exact ticket before writing the buffer again. Adjust pins for your board before connecting hardware.
 
 ## Build And Run
 
@@ -51,6 +52,7 @@ using Bus = arc::I80Bus<arc::Lines<4, 5, 6, 7, 15, 16, 17, 18>, 21, 47>;
 using Lcd = arc::I80<Bus, 48, 20'000'000>;
 
 auto frame = Lcd::buffer<std::uint16_t>(128);
-Lcd::color(0x2C, frame);
-Lcd::wait();
+Lcd::Ticket paint{};
+Lcd::color_coherent(paint, 0x2C, frame);
+Lcd::finish(paint);
 ```

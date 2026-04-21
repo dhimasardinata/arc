@@ -12,6 +12,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/cache.hpp"
 #include "arc/caps.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
@@ -125,6 +126,10 @@ struct I80 {
     static_assert(CmdBits > 0, "I80 command width must be non-zero");
     static_assert(ParamBits > 0, "I80 parameter width must be non-zero");
 
+    struct Ticket {
+        std::uint32_t target{};
+    };
+
     static void boot()
     {
         if (state.io != nullptr) {
@@ -167,19 +172,71 @@ struct I80 {
         const void* const data,
         const std::size_t bytes) noexcept
     {
-        boot();
-        const auto err = esp_lcd_panel_io_tx_color(state.io, cmd, data, bytes);
-        if (err == ESP_OK) {
-            __atomic_add_fetch(&state.sent, 1U, __ATOMIC_RELEASE);
-            __atomic_add_fetch(&state.bytes, bytes, __ATOMIC_RELEASE);
-        }
-        return err;
+        return color_impl(cmd, data, bytes, nullptr);
+    }
+
+    [[nodiscard]] static esp_err_t color(
+        Ticket& ticket,
+        const int cmd,
+        const void* const data,
+        const std::size_t bytes) noexcept
+    {
+        return color_impl(cmd, data, bytes, &ticket);
     }
 
     template <typename T>
     [[nodiscard]] static esp_err_t color(const int cmd, const CapsBuf<T>& data) noexcept
     {
         return color(cmd, data.data(), data.bytes());
+    }
+
+    template <typename T>
+    [[nodiscard]] static esp_err_t color(Ticket& ticket, const int cmd, const CapsBuf<T>& data) noexcept
+    {
+        return color(ticket, cmd, data.data(), data.bytes());
+    }
+
+    [[nodiscard]] static esp_err_t color_coherent(
+        Ticket& ticket,
+        const int cmd,
+        void* const data,
+        const std::size_t bytes) noexcept
+    {
+        const auto err = Cache::to_device(data, bytes);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        return color(ticket, cmd, data, bytes);
+    }
+
+    template <typename T>
+    [[nodiscard]] static esp_err_t color_coherent(
+        Ticket& ticket,
+        const int cmd,
+        CapsBuf<T>& data) noexcept
+    {
+        return color_coherent(ticket, cmd, data.data(), data.bytes());
+    }
+
+    [[nodiscard]] static esp_err_t color_coherent(
+        const int cmd,
+        void* const data,
+        const std::size_t bytes) noexcept
+    {
+        Ticket ticket{};
+        const auto err = color_coherent(ticket, cmd, data, bytes);
+        if (err != ESP_OK) {
+            return err;
+        }
+        finish(ticket);
+        return ESP_OK;
+    }
+
+    template <typename T>
+    [[nodiscard]] static esp_err_t color_coherent(const int cmd, CapsBuf<T>& data) noexcept
+    {
+        return color_coherent(cmd, data.data(), data.bytes());
     }
 
     template <typename T>
@@ -216,12 +273,24 @@ struct I80 {
         return seq_reached(done(), sent());
     }
 
+    [[nodiscard]] static bool ready(const Ticket& ticket) noexcept
+    {
+        return seq_reached(done(), ticket.target);
+    }
+
     static void wait() noexcept
     {
-        const auto target = sent();
-        while (seq_before(done(), target)) {
-            __asm__ __volatile__("nop");
-        }
+        wait(sent());
+    }
+
+    static void wait(const Ticket& ticket) noexcept
+    {
+        wait(ticket.target);
+    }
+
+    static void finish(const Ticket& ticket) noexcept
+    {
+        wait(ticket);
     }
 
     [[nodiscard]] static constexpr std::uint32_t hz() noexcept
@@ -255,8 +324,33 @@ private:
         esp_lcd_panel_io_event_data_t*,
         void*) noexcept
     {
-        __atomic_add_fetch(&state.done, 1U, __ATOMIC_RELAXED);
+        __atomic_add_fetch(&state.done, 1U, __ATOMIC_RELEASE);
         return false;
+    }
+
+    [[nodiscard]] static esp_err_t color_impl(
+        const int cmd,
+        const void* const data,
+        const std::size_t bytes,
+        Ticket* const ticket) noexcept
+    {
+        boot();
+        const auto err = esp_lcd_panel_io_tx_color(state.io, cmd, data, bytes);
+        if (err == ESP_OK) {
+            const auto target = __atomic_add_fetch(&state.sent, 1U, __ATOMIC_RELEASE);
+            __atomic_add_fetch(&state.bytes, bytes, __ATOMIC_RELEASE);
+            if (ticket != nullptr) {
+                *ticket = Ticket{.target = target};
+            }
+        }
+        return err;
+    }
+
+    static void wait(const std::uint32_t target) noexcept
+    {
+        while (seq_before(done(), target)) {
+            __asm__ __volatile__("nop");
+        }
     }
 };
 
