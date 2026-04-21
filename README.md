@@ -14,7 +14,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc.hpp` is lean by default and only exposes feature headers whose backing ESP-IDF components are actually in the build graph.
 - `cmake/arc-deps.cmake` maps Arc feature names to ESP-IDF components so each app can stay explicit without writing a long `REQUIRES` list by hand.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
-- `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site, while `arc::Copy::copy_coherent(...)` covers the common async-memcpy handoff in one call.
+- `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site, while `arc::Copy::send_coherent(...)` and `finish_coherent(...)` cover the common async-memcpy handoff without blocking useful CPU work.
 - `arc::Can` binds the ESP32-S3 TWAI/CAN controller with ISR-backed RX handoff.
 - `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
 - `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
@@ -789,8 +789,11 @@ Compile-time async DMA memcpy wrapper.
 - `boot()` installs one async memcpy driver instance.
 - `send(dst, src, bytes)` queues a non-blocking DMA copy and returns immediately after submission.
 - `copy(dst, src, bytes)` submits the transfer and spins until the completion counter reaches the target.
-- `copy_coherent(dst, src, bytes)` flushes the source cache, performs the DMA copy, and invalidates the destination cache before returning.
-- `copy_coherent_strict(dst, src, bytes)` does the same thing but requires cache-line aligned buffers and sizes.
+- `send_coherent(ticket, dst, src, bytes)` flushes the source cache, discards destination cache lines, queues the DMA copy, and stores the exact completion target in `ticket`.
+- `finish_coherent(ticket)` waits for that exact transfer and invalidates the destination cache before CPU reads it.
+- `ready(ticket)` reports whether that exact transfer has completed.
+- `copy_coherent(dst, src, bytes)` is the blocking one-call form built on the non-blocking ticket path.
+- `copy_coherent_strict(...)` and `send_coherent_strict(...)` require cache-line aligned buffers and sizes.
 - `sent()`, `done()`, `bytes()`, and `idle()` expose lock-free counters without FreeRTOS queues.
 - `arc::CopyBackend::ahb` pins the backend to AHB-GDMA on ESP32-S3.
 
@@ -1297,7 +1300,7 @@ The example composes:
 - `src = arc::dmabuf<std::uint8_t>(4096)`
 - `dst = arc::dmabuf<std::uint8_t>(4096)`
 
-The CPU submits a 4096-byte transfer, the DMA memcpy engine moves the payload, and the app verifies completion through `arc::Copy::done()`. The example now uses `arc::Copy::copy_coherent(...)` so the normal cache handoff is correct by construction.
+The CPU submits a 4096-byte transfer, computes the source checksum while DMA owns the destination, then finishes the exact transfer through `arc::Copy::finish_coherent(...)`. The normal cache handoff is correct by construction.
 
 ## DVP Example
 

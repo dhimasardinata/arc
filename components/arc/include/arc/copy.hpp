@@ -30,12 +30,28 @@ concept CopyHook = requires {
     { Hook::done() } -> std::same_as<bool>;
 };
 
+template <typename Dst, typename Src>
+concept CopySpan =
+    !std::is_const_v<Dst> &&
+    std::is_trivially_copyable_v<std::remove_cv_t<Dst>> &&
+    std::same_as<std::remove_cv_t<Dst>, std::remove_cv_t<Src>>;
+
+template <bool Strict = false>
+struct CopyTicket {
+    std::uint32_t target{};
+    void* dst{};
+    std::size_t bytes{};
+};
+
 template <std::uint32_t Backlog = 4,
           std::size_t BurstBytes = 64,
           std::uint32_t Weight = 0,
           CopyBackend Backend = CopyBackend::auto_dma>
 struct Copy {
     static_assert(Backlog != 0U, "copy backlog must be non-zero");
+
+    using Ticket = CopyTicket<false>;
+    using StrictTicket = CopyTicket<true>;
 
     static void boot()
     {
@@ -55,31 +71,12 @@ struct Copy {
     template <typename Hook = void>
     static esp_err_t send(void* const dst, const void* const src, const std::size_t bytes) noexcept
     {
-        boot();
-
-        if (dst == nullptr || src == nullptr || bytes == 0U) {
-            return ESP_ERR_INVALID_ARG;
-        }
-
-        const auto ret = esp_async_memcpy(
-            state.driver,
-            dst,
-            const_cast<void*>(src),
-            bytes,
-            &on_done<Hook>,
-            nullptr);
-
-        if (ret == ESP_OK) {
-            __atomic_add_fetch(&state.sent, 1U, __ATOMIC_RELEASE);
-            __atomic_add_fetch(&state.bytes, bytes, __ATOMIC_RELEASE);
-        }
-
-        return ret;
+        return send_impl<Hook>(dst, src, bytes, nullptr);
     }
 
-    template <typename Hook = void, typename T>
-        requires std::is_trivially_copyable_v<T>
-    static esp_err_t send(std::span<T> dst, std::span<const T> src) noexcept
+    template <typename Hook = void, typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t send(std::span<Dst> dst, std::span<Src> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;
@@ -90,17 +87,18 @@ struct Copy {
 
     static esp_err_t copy(void* const dst, const void* const src, const std::size_t bytes) noexcept
     {
-        const auto ret = send(dst, src, bytes);
+        std::uint32_t target{};
+        const auto ret = send_impl<void>(dst, src, bytes, &target);
         if (ret != ESP_OK) {
             return ret;
         }
-        wait(sent());
+        wait(target);
         return ESP_OK;
     }
 
-    template <typename T>
-        requires std::is_trivially_copyable_v<T>
-    static esp_err_t copy(std::span<T> dst, std::span<const T> src) noexcept
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t copy(std::span<Dst> dst, std::span<Src> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;
@@ -111,7 +109,12 @@ struct Copy {
 
     static esp_err_t copy_coherent(void* const dst, const void* const src, const std::size_t bytes) noexcept
     {
-        return copy_coherent_impl<false>(dst, src, bytes);
+        Ticket ticket{};
+        const auto ret = send_coherent(ticket, dst, src, bytes);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        return finish_coherent(ticket);
     }
 
     static esp_err_t copy_coherent_strict(
@@ -119,12 +122,17 @@ struct Copy {
         const void* const src,
         const std::size_t bytes) noexcept
     {
-        return copy_coherent_impl<true>(dst, src, bytes);
+        StrictTicket ticket{};
+        const auto ret = send_coherent_strict(ticket, dst, src, bytes);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        return finish_coherent(ticket);
     }
 
-    template <typename T>
-        requires std::is_trivially_copyable_v<T>
-    static esp_err_t copy_coherent(std::span<T> dst, std::span<const T> src) noexcept
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t copy_coherent(std::span<Dst> dst, std::span<Src> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;
@@ -133,15 +141,81 @@ struct Copy {
         return copy_coherent(dst.data(), src.data(), src.size_bytes());
     }
 
-    template <typename T>
-        requires std::is_trivially_copyable_v<T>
-    static esp_err_t copy_coherent_strict(std::span<T> dst, std::span<const T> src) noexcept
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t copy_coherent_strict(std::span<Dst> dst, std::span<Src> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;
         }
 
         return copy_coherent_strict(dst.data(), src.data(), src.size_bytes());
+    }
+
+    static esp_err_t send_coherent(
+        Ticket& ticket,
+        void* const dst,
+        const void* const src,
+        const std::size_t bytes) noexcept
+    {
+        return send_coherent_impl(ticket, dst, src, bytes);
+    }
+
+    static esp_err_t send_coherent_strict(
+        StrictTicket& ticket,
+        void* const dst,
+        const void* const src,
+        const std::size_t bytes) noexcept
+    {
+        return send_coherent_impl(ticket, dst, src, bytes);
+    }
+
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t send_coherent(
+        Ticket& ticket,
+        std::span<Dst> dst,
+        std::span<Src> src) noexcept
+    {
+        if (dst.size() < src.size()) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        return send_coherent(ticket, dst.data(), src.data(), src.size_bytes());
+    }
+
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t send_coherent_strict(
+        StrictTicket& ticket,
+        std::span<Dst> dst,
+        std::span<Src> src) noexcept
+    {
+        if (dst.size() < src.size()) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        return send_coherent_strict(ticket, dst.data(), src.data(), src.size_bytes());
+    }
+
+    [[nodiscard]] static bool ready(const Ticket& ticket) noexcept
+    {
+        return seq_reached(done(), ticket.target);
+    }
+
+    [[nodiscard]] static bool ready(const StrictTicket& ticket) noexcept
+    {
+        return seq_reached(done(), ticket.target);
+    }
+
+    static esp_err_t finish_coherent(const Ticket& ticket) noexcept
+    {
+        return finish_coherent_impl(ticket);
+    }
+
+    static esp_err_t finish_coherent(const StrictTicket& ticket) noexcept
+    {
+        return finish_coherent_impl(ticket);
     }
 
     [[nodiscard]] static std::uint32_t sent() noexcept
@@ -191,6 +265,38 @@ private:
         }
     }
 
+    template <typename Hook>
+    static esp_err_t send_impl(
+        void* const dst,
+        const void* const src,
+        const std::size_t bytes,
+        std::uint32_t* const target) noexcept
+    {
+        boot();
+
+        if (dst == nullptr || src == nullptr || bytes == 0U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        const auto ret = esp_async_memcpy(
+            state.driver,
+            dst,
+            const_cast<void*>(src),
+            bytes,
+            &on_done<Hook>,
+            nullptr);
+
+        if (ret == ESP_OK) {
+            const auto seq = __atomic_add_fetch(&state.sent, 1U, __ATOMIC_RELEASE);
+            __atomic_add_fetch(&state.bytes, bytes, __ATOMIC_RELEASE);
+            if (target != nullptr) {
+                *target = seq;
+            }
+        }
+
+        return ret;
+    }
+
     static void wait(const std::uint32_t target) noexcept
     {
         while (seq_before(done(), target)) {
@@ -199,7 +305,8 @@ private:
     }
 
     template <bool Strict>
-    static esp_err_t copy_coherent_impl(
+    static esp_err_t send_coherent_impl(
+        CopyTicket<Strict>& ticket,
         void* const dst,
         const void* const src,
         const std::size_t bytes) noexcept
@@ -208,26 +315,54 @@ private:
             return ESP_ERR_INVALID_ARG;
         }
 
-        const auto push = [&]() noexcept -> esp_err_t {
+        const auto source = [&]() noexcept -> esp_err_t {
             if constexpr (Strict) {
                 return Cache::to_device_strict(const_cast<void*>(src), bytes);
             } else {
                 return Cache::to_device(const_cast<void*>(src), bytes);
             }
         }();
-        if (push != ESP_OK) {
-            return push;
+        if (source != ESP_OK) {
+            return source;
         }
 
-        const auto ret = copy(dst, src, bytes);
-        if (ret != ESP_OK) {
-            return ret;
+        const auto target = [&]() noexcept -> esp_err_t {
+            if constexpr (Strict) {
+                return Cache::discard_strict(dst, bytes);
+            } else {
+                return Cache::discard(dst, bytes);
+            }
+        }();
+        if (target != ESP_OK) {
+            return target;
         }
+
+        std::uint32_t seq{};
+        const auto sent = send_impl<void>(dst, src, bytes, &seq);
+        if (sent == ESP_OK) {
+            ticket = CopyTicket<Strict>{
+                .target = seq,
+                .dst = dst,
+                .bytes = bytes,
+            };
+        }
+
+        return sent;
+    }
+
+    template <bool Strict>
+    static esp_err_t finish_coherent_impl(const CopyTicket<Strict>& ticket) noexcept
+    {
+        if (ticket.dst == nullptr || ticket.bytes == 0U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        wait(ticket.target);
 
         if constexpr (Strict) {
-            return Cache::from_device_strict(dst, bytes);
+            return Cache::from_device_strict(ticket.dst, ticket.bytes);
         } else {
-            return Cache::from_device(dst, bytes);
+            return Cache::from_device(ticket.dst, ticket.bytes);
         }
     }
 

@@ -44,11 +44,12 @@ void host(void*) noexcept
         }
 
         const auto before = Dma::done();
-        ESP_ERROR_CHECK(Dma::copy_coherent(dst.view(), src.view()));
-
-        const auto completions = Dma::done() - before;
+        Dma::Ticket move{};
+        ESP_ERROR_CHECK(Dma::send_coherent(move, dst.view(), src.view()));
 
         const auto src_sum = sum({src.data(), src.size()});
+        ESP_ERROR_CHECK(Dma::finish_coherent(move));
+        const auto completions = Dma::done() - before;
         const auto dst_sum = sum({dst.data(), dst.size()});
 
         ESP_LOGI(
