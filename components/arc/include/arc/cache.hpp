@@ -10,31 +10,34 @@
 namespace arc {
 
 struct Cache {
+    static constexpr int invalidate = static_cast<int>(ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+    static constexpr int unaligned = static_cast<int>(ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+    static constexpr int dir_c2m = static_cast<int>(ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    static constexpr int dir_m2c = static_cast<int>(ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+    static constexpr int type_data = static_cast<int>(ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+
     static esp_err_t sync(void* const data, const std::size_t bytes, const int flags) noexcept
     {
         if (data == nullptr || bytes == 0U) {
             return ESP_ERR_INVALID_ARG;
         }
 
-        return esp_cache_msync(data, bytes, flags | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
+        return esp_cache_msync(data, bytes, flags | type_data);
     }
 
     static esp_err_t to_device(void* const data, const std::size_t bytes) noexcept
     {
-        return sync(data, bytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+        return sync(data, bytes, dir_c2m | unaligned);
     }
 
     static esp_err_t from_device(void* const data, const std::size_t bytes) noexcept
     {
-        return sync(data, bytes, ESP_CACHE_MSYNC_FLAG_DIR_M2C | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+        return sync(data, bytes, dir_m2c | unaligned);
     }
 
     static esp_err_t discard(void* const data, const std::size_t bytes) noexcept
     {
-        return sync(
-            data,
-            bytes,
-            ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+        return sync(data, bytes, dir_c2m | invalidate | unaligned);
     }
 
     [[nodiscard]] static std::size_t line(const void* const data) noexcept
