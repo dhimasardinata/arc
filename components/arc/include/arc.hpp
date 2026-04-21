@@ -19,6 +19,7 @@
 #include "arc/mask.hpp"
 #include "arc/plane.hpp"
 #include "arc/place.hpp"
+#include "arc/probe.hpp"
 #include "arc/pulse.hpp"
 #include "arc/pwm.hpp"
 #include "arc/reg.hpp"

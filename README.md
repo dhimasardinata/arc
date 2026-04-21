@@ -23,6 +23,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::I2s` owns standard-mode I2S channels and DMA event counters with one compile-time type.
 - `arc::Count` offloads pulse accumulation to the PCNT block.
 - `arc::dsp` adds hot-loop math kernels that pair naturally with `arc::simdbuf` and Core 1.
+- `arc::Probe` reads the Xtensa cycle counter so hot paths can be measured, not guessed.
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency/duty choices.
 - `arc::Timer` binds the GPTimer block to a compile-time timebase and optional ISR hook.
@@ -69,6 +70,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │   │   └── README.md
 │   ├── pulse
 │   │   └── README.md
+│   ├── probe
+│   │   └── README.md
 │   ├── pwm
 │   │   └── README.md
 │   ├── timer
@@ -111,6 +114,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── i2s.hpp
 │               ├── plane.hpp
 │               ├── ota.hpp
+│               ├── probe.hpp
 │               ├── pulse.hpp
 │               ├── pwm.hpp
 │               ├── reg.hpp
@@ -159,6 +163,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Slot-aware OTA helper for staged writes and rollback state
 - Typed NVS persistence on the Core 0 side
 - SIMD-friendly math kernels that fit the Core 1 compute plane
+- Cycle-counter instrumentation for hot-path measurement
 
 ## Programming Model
 
@@ -717,6 +722,17 @@ Seqlock-style latest-snapshot lane for payloads larger than one word.
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
 
+### `arc::Probe` and `arc::CycleStats`
+
+Cycle-counter instrumentation for hot paths.
+
+- `arc::Probe::now()` snapshots the current Xtensa cycle counter.
+- `probe.lap()` returns elapsed cycles since the snapshot.
+- `arc::CycleStats::add(cycles)` tracks min/max/total/sample count with no heap.
+- `arc::CycleStats::avg()` returns the integer average cycle count.
+
+Use this when you want to validate the actual cost of a hot path instead of trusting intuition.
+
 ### `arc::dsp`
 
 Hot-loop math helpers for the compute plane.
@@ -1063,6 +1079,37 @@ The example composes:
 - `dst = arc::dmabuf<std::uint8_t>(4096)`
 
 The CPU submits a 4096-byte transfer, the DMA memcpy engine moves the payload, and the app verifies completion through `arc::Copy::done()`.
+
+## Probe Example
+
+Arc also ships a standalone cycle-counter demo at `examples/probe`.
+
+```bash
+cd examples/probe
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/probe
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example composes:
+
+- `Led = arc::Drive<4, 0, arc::Core::core1>`
+- `arc::Probe::now()` around the hot path
+- `arc::CycleStats` for min/avg/max
+- `arc::SeqReg<Snapshot>` to report from Core 1 to Core 0
+
+Use this to measure the real cycle cost of Arc hot-path calls on your board.
 
 ## UDP Example
 
