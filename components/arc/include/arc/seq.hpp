@@ -8,6 +8,20 @@
 
 namespace arc {
 
+[[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool seq_before(
+    const std::uint32_t value,
+    const std::uint32_t target) noexcept
+{
+    return (value - target) >= 0x8000'0000U;
+}
+
+[[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool seq_reached(
+    const std::uint32_t value,
+    const std::uint32_t target) noexcept
+{
+    return !seq_before(value, target);
+}
+
 template <typename T>
 struct SeqReg {
     static_assert(sizeof(T) > sizeof(std::uint32_t), "prefer arc::Reg<T> for one-word payloads");

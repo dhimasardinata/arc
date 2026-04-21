@@ -13,6 +13,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - User programs live in `main/app_main.cpp`.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site.
+- `arc::Can` binds the ESP32-S3 TWAI/CAN controller with ISR-backed RX handoff.
 - `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
 - `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
 - `arc::Pulse` uses MCPWM for higher-grade waveform generation than LEDC when period and edge placement matter.
@@ -59,6 +60,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │   ├── dsp
 │   │   └── README.md
 │   ├── copy
+│   │   └── README.md
+│   ├── can
 │   │   └── README.md
 │   ├── dvp
 │   │   └── README.md
@@ -115,6 +118,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── bridge.hpp
 │               ├── bus.hpp
 │               ├── cache.hpp
+│               ├── can.hpp
 │               ├── burst.hpp
 │               ├── capture.hpp
 │               ├── caps.hpp
@@ -167,6 +171,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `16 MB` flash header and partition layout for `ESP32-S3 N16R8`
 - `8 MB` Octal PSRAM at `80 MHz`, exposed explicitly through caps allocation
 - Explicit cache sync helpers for DMA/PSRAM buffers
+- Hardware TWAI/CAN node with self-test loopback, ISR RX, and lock-free handoff
 - Static FreeRTOS task allocation for the realtime plane
 - Core 1 idle watchdog detached so a non-yielding loop can own that core
 - Dedicated GPIO output and input on the hot path
@@ -671,6 +676,20 @@ Compile-time SPI device wrapper.
 
 Use this when bytes should move through the SPI engine and DMA path instead of a software bit loop.
 
+### `arc::Can<Tx, Rx, Bitrate = 500'000, Queue = 8, RxDepth = 8, ...>`
+
+Compile-time ESP32-S3 TWAI/CAN node wrapper.
+
+- `boot()` creates one on-chip TWAI node and binds ISR callbacks.
+- `start()` and `stop()` enable or disable bus participation.
+- `frame(id, payload, ext, remote)` builds an owning classic CAN frame.
+- `send(frame, timeout_ms)` queues a frame; keep the frame alive until TX completes.
+- `send_wait(frame, timeout_ms)` queues and waits for completion before returning.
+- `recv(frame)` drains the ISR-backed lock-free RX ring.
+- `sent()`, `done()`, `rx()`, `drop()`, `err()`, `bytes()`, and `idle()` expose bus counters.
+
+Use this for robot/industrial control links where the TWAI controller should own bit timing and arbitration, not software.
+
 ### `arc::I2s<Bclk, Ws, Dout = I2S_GPIO_UNUSED, Din = I2S_GPIO_UNUSED, Hz = 48'000, ...>`
 
 Compile-time standard-mode I2S wrapper.
@@ -1162,6 +1181,37 @@ The example composes:
 - `Tick = arc::Timer<1'000'000>`
 
 The LED edge is driven by a GPTimer alarm ISR instead of a busy loop, while a tiny host task logs the free-running counter.
+
+## CAN Example
+
+Arc also ships a standalone TWAI/CAN self-test demo at `examples/can`.
+
+```bash
+cd examples/can
+. ./env.sh
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+For fish:
+
+```fish
+cd examples/can
+source ./env.fish
+idf.py build
+idf.py size
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+The example composes:
+
+- `Bus = arc::Can<tx, rx, bitrate, ..., self_test, loopback>`
+- `Bus::frame(...)`
+- `Bus::send_wait(...)`
+- `Bus::recv(...)`
+
+It uses self-test loopback so the example can run without an external CAN transceiver.
 
 ## Copy Example
 

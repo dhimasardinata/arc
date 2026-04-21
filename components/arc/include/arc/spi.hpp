@@ -5,8 +5,10 @@
 
 #include "driver/spi_master.h"
 #include "esp_check.h"
+#include "esp_err.h"
 #include "esp_intr_types.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "soc/soc_caps.h"
 
 namespace arc {
@@ -130,19 +132,44 @@ struct Spi {
 
     static void acquire(const TickType_t wait = portMAX_DELAY)
     {
+        ESP_ERROR_CHECK(hold(wait));
+    }
+
+    [[nodiscard]] static esp_err_t hold(const TickType_t wait = portMAX_DELAY) noexcept
+    {
         boot();
-        ESP_ERROR_CHECK(spi_device_acquire_bus(state.dev, wait));
-        state.held = true;
+
+        const auto task = xTaskGetCurrentTaskHandle();
+        if (__atomic_load_n(&state.owner, __ATOMIC_ACQUIRE) == task) {
+            __atomic_add_fetch(&state.depth, 1U, __ATOMIC_RELAXED);
+            return ESP_OK;
+        }
+
+        const auto err = spi_device_acquire_bus(state.dev, wait);
+        if (err == ESP_OK) {
+            __atomic_store_n(&state.depth, 1U, __ATOMIC_RELEASE);
+            __atomic_store_n(&state.owner, task, __ATOMIC_RELEASE);
+        }
+        return err;
     }
 
     static void release() noexcept
     {
-        if (state.dev == nullptr || !state.held) {
+        if (state.dev == nullptr) {
             return;
         }
 
+        const auto task = xTaskGetCurrentTaskHandle();
+        if (__atomic_load_n(&state.owner, __ATOMIC_ACQUIRE) != task) {
+            return;
+        }
+
+        if (__atomic_sub_fetch(&state.depth, 1U, __ATOMIC_RELEASE) != 0U) {
+            return;
+        }
+
+        __atomic_store_n(&state.owner, static_cast<TaskHandle_t>(nullptr), __ATOMIC_RELEASE);
         spi_device_release_bus(state.dev);
-        state.held = false;
     }
 
     [[nodiscard]] static spi_transaction_t job(
@@ -235,7 +262,8 @@ struct Spi {
 private:
     struct State {
         spi_device_handle_t dev{};
-        bool held{};
+        TaskHandle_t owner{};
+        std::uint32_t depth{};
     };
 
     constinit static inline State state{};

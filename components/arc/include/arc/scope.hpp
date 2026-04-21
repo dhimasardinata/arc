@@ -120,12 +120,12 @@ struct Scope {
 
     [[nodiscard]] static esp_err_t pull(
         Sample* out,
-        const std::uint32_t capacity,
+        const std::uint32_t samples,
         std::uint32_t* got,
         const std::uint32_t timeout_ms = 0) noexcept
     {
         init();
-        const auto ret = adc_continuous_read_parse(state.handle, out, capacity, got, timeout_ms);
+        const auto ret = adc_continuous_read_parse(state.handle, out, samples, got, timeout_ms);
         if (ret == ESP_OK && got != nullptr && *got != 0U) {
             fence();
             state.ready = false;

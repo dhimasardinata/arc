@@ -8,6 +8,8 @@
 
 #include "esp_attr.h"
 
+#include "arc/sdk.hpp"
+
 namespace arc {
 
 template <typename T, std::size_t Capacity>
@@ -75,8 +77,8 @@ private:
     }
 
     std::array<T, Capacity> buffer_{};
-    alignas(sizeof(std::uint32_t)) std::uint32_t head_{0};
-    alignas(sizeof(std::uint32_t)) std::uint32_t tail_{0};
+    alignas(cache_line) std::uint32_t head_{0};
+    alignas(cache_line) std::uint32_t tail_{0};
 };
 
 }  // namespace arc

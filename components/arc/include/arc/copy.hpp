@@ -12,6 +12,9 @@
 #include "esp_check.h"
 #include "esp_err.h"
 
+#include "arc/sdk.hpp"
+#include "arc/seq.hpp"
+
 namespace arc {
 
 enum class CopyBackend : std::uint8_t {
@@ -86,12 +89,11 @@ struct Copy {
 
     static esp_err_t copy(void* const dst, const void* const src, const std::size_t bytes) noexcept
     {
-        const auto target = done() + 1U;
         const auto ret = send(dst, src, bytes);
         if (ret != ESP_OK) {
             return ret;
         }
-        wait(target);
+        wait(sent());
         return ESP_OK;
     }
 
@@ -123,7 +125,7 @@ struct Copy {
 
     [[nodiscard]] static bool idle() noexcept
     {
-        return done() >= sent();
+        return seq_reached(done(), sent());
     }
 
     static void wait() noexcept
@@ -134,8 +136,8 @@ struct Copy {
 private:
     struct State {
         async_memcpy_handle_t driver{};
-        std::uint32_t sent{};
-        std::uint32_t done{};
+        alignas(cache_line) std::uint32_t sent{};
+        alignas(cache_line) std::uint32_t done{};
         std::size_t bytes{};
     };
 
@@ -155,7 +157,7 @@ private:
 
     static void wait(const std::uint32_t target) noexcept
     {
-        while (done() < target) {
+        while (seq_before(done(), target)) {
             __asm__ __volatile__("nop");
         }
     }

@@ -25,7 +25,7 @@ struct TaskMem {
     static_assert(StackBytes > 0, "stack size must be non-zero");
     static constexpr std::size_t depth = words(StackBytes);
 
-    std::array<StackType_t, depth> stack{};
+    alignas(portBYTE_ALIGNMENT) std::array<StackType_t, depth> stack{};
     StaticTask_t tcb{};
 };
 

@@ -13,6 +13,8 @@
 #include "soc/soc_caps.h"
 
 #include "arc/caps.hpp"
+#include "arc/sdk.hpp"
+#include "arc/seq.hpp"
 
 namespace arc {
 
@@ -211,13 +213,13 @@ struct I80 {
 
     [[nodiscard]] static bool idle() noexcept
     {
-        return done() >= sent();
+        return seq_reached(done(), sent());
     }
 
     static void wait() noexcept
     {
         const auto target = sent();
-        while (done() < target) {
+        while (seq_before(done(), target)) {
             __asm__ __volatile__("nop");
         }
     }
@@ -241,8 +243,8 @@ struct I80 {
 private:
     struct State {
         esp_lcd_panel_io_handle_t io{};
-        alignas(4) std::uint32_t sent{};
-        alignas(4) std::uint32_t done{};
+        alignas(cache_line) std::uint32_t sent{};
+        alignas(cache_line) std::uint32_t done{};
         std::size_t bytes{};
     };
 
