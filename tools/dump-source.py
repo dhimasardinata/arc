@@ -67,6 +67,23 @@ def wanted(path: Path) -> bool:
     return path.suffix in ALLOWED_SUFFIXES
 
 
+def flat_name(path: Path, used: set[str]) -> str:
+    candidate = "__".join(path.parts)
+    if candidate not in used:
+        used.add(candidate)
+        return candidate
+
+    stem = Path(candidate).stem
+    suffix = Path(candidate).suffix
+    index = 2
+    while True:
+        fallback = f"{stem}__{index}{suffix}"
+        if fallback not in used:
+            used.add(fallback)
+            return fallback
+        index += 1
+
+
 def main() -> int:
     out = Path(sys.argv[1]).expanduser().resolve() if len(sys.argv) > 1 else DEFAULT_OUT
     if out == ROOT or ROOT not in out.parents:
@@ -76,18 +93,21 @@ def main() -> int:
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
 
-    copied: list[Path] = []
+    copied: list[tuple[str, Path]] = []
+    used: set[str] = set()
     for rel in sorted(set(tracked_and_local_files())):
         src = ROOT / rel
         if not src.is_file() or not wanted(rel):
             continue
-        dst = out / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
+        name = flat_name(rel, used)
+        dst = out / name
         shutil.copy2(src, dst)
-        copied.append(rel)
+        copied.append((name, rel))
 
     manifest = out / "MANIFEST.txt"
-    manifest.write_text("\n".join(str(path) for path in copied) + "\n", encoding="utf-8")
+    manifest.write_text(
+        "\n".join(f"{name}\t{path}" for name, path in copied) + "\n",
+        encoding="utf-8")
     print(f"dumped {len(copied)} files into {out.relative_to(ROOT)}")
     return 0
 

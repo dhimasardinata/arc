@@ -466,7 +466,7 @@ Dump source/docs into one clean folder:
 python tools/dump-source.py
 ```
 
-The dump output is `dump/files`. It only copies C/C++ sources, headers, README files, CMake/text files, and `partitions*.csv`; it skips shell scripts, generated builds, ESP-IDF, `.espressif`, and all `sdkconfig*` files.
+The dump output is the flat folder `dump/files`. It only contains files, not nested folders. Original paths are encoded into filenames with `__`, and `MANIFEST.txt` maps dump filenames back to source paths. It only copies C/C++ sources, headers, README files, CMake/text files, and `partitions*.csv`; it skips shell scripts, generated builds, ESP-IDF, `.espressif`, and all `sdkconfig*` files.
 
 Monitor:
 
