@@ -44,30 +44,21 @@ void host(void*) noexcept
         }
 
         const auto before = Dma::done();
-        ESP_ERROR_CHECK(arc::Cache::to_device(src.view()));
-        ESP_ERROR_CHECK(Dma::send(
-            dst.data(),
-            src.data(),
-            src.bytes()));
+        ESP_ERROR_CHECK(Dma::copy_coherent(dst.view(), src.view()));
 
-        std::uint32_t spins = 0U;
-        while (Dma::done() == before) {
-            ++spins;
-            __asm__ __volatile__("nop");
-        }
-        ESP_ERROR_CHECK(arc::Cache::from_device(dst.view()));
+        const auto completions = Dma::done() - before;
 
         const auto src_sum = sum({src.data(), src.size()});
         const auto dst_sum = sum({dst.data(), dst.size()});
 
         ESP_LOGI(
             tag,
-            "bytes=%u sent=%u done=%u total=%u spins=%u checksum=%s",
+            "bytes=%u sent=%u done=%u total=%u completions=%u checksum=%s",
             static_cast<unsigned>(bytes),
             static_cast<unsigned>(Dma::sent()),
             static_cast<unsigned>(Dma::done()),
             static_cast<unsigned>(Dma::bytes()),
-            static_cast<unsigned>(spins),
+            static_cast<unsigned>(completions),
             src_sum == dst_sum ? "ok" : "bad");
 
         seed = static_cast<std::uint8_t>(seed + 1U);

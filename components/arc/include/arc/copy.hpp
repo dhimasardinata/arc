@@ -12,6 +12,7 @@
 #include "esp_check.h"
 #include "esp_err.h"
 
+#include "arc/cache.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
 
@@ -108,6 +109,41 @@ struct Copy {
         return copy(dst.data(), src.data(), src.size_bytes());
     }
 
+    static esp_err_t copy_coherent(void* const dst, const void* const src, const std::size_t bytes) noexcept
+    {
+        return copy_coherent_impl<false>(dst, src, bytes);
+    }
+
+    static esp_err_t copy_coherent_strict(
+        void* const dst,
+        const void* const src,
+        const std::size_t bytes) noexcept
+    {
+        return copy_coherent_impl<true>(dst, src, bytes);
+    }
+
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    static esp_err_t copy_coherent(std::span<T> dst, std::span<const T> src) noexcept
+    {
+        if (dst.size() < src.size()) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        return copy_coherent(dst.data(), src.data(), src.size_bytes());
+    }
+
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    static esp_err_t copy_coherent_strict(std::span<T> dst, std::span<const T> src) noexcept
+    {
+        if (dst.size() < src.size()) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        return copy_coherent_strict(dst.data(), src.data(), src.size_bytes());
+    }
+
     [[nodiscard]] static std::uint32_t sent() noexcept
     {
         return __atomic_load_n(&state.sent, __ATOMIC_ACQUIRE);
@@ -159,6 +195,39 @@ private:
     {
         while (seq_before(done(), target)) {
             __asm__ __volatile__("nop");
+        }
+    }
+
+    template <bool Strict>
+    static esp_err_t copy_coherent_impl(
+        void* const dst,
+        const void* const src,
+        const std::size_t bytes) noexcept
+    {
+        if (dst == nullptr || src == nullptr || bytes == 0U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        const auto push = [&]() noexcept -> esp_err_t {
+            if constexpr (Strict) {
+                return Cache::to_device_strict(const_cast<void*>(src), bytes);
+            } else {
+                return Cache::to_device(const_cast<void*>(src), bytes);
+            }
+        }();
+        if (push != ESP_OK) {
+            return push;
+        }
+
+        const auto ret = copy(dst, src, bytes);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+
+        if constexpr (Strict) {
+            return Cache::from_device_strict(dst, bytes);
+        } else {
+            return Cache::from_device(dst, bytes);
         }
     }
 

@@ -14,7 +14,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc.hpp` is lean by default and only exposes feature headers whose backing ESP-IDF components are actually in the build graph.
 - `cmake/arc-deps.cmake` maps Arc feature names to ESP-IDF components so each app can stay explicit without writing a long `REQUIRES` list by hand.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
-- `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site.
+- `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site, while `arc::Copy::copy_coherent(...)` covers the common async-memcpy handoff in one call.
 - `arc::Can` binds the ESP32-S3 TWAI/CAN controller with ISR-backed RX handoff.
 - `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
 - `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
@@ -245,7 +245,7 @@ Feature names map directly to hardware lanes:
 - `udp`
 - `espnow`
 
-`core` already covers the dedicated GPIO path used by `arc::Drive` and `arc::Sense`. Add `gpio` only when you use raw `arc::Gpio`.
+Add `gpio` when you use `arc::Drive`, `arc::Sense`, or raw `arc::Gpio`, because those pin APIs depend on the GPIO driver headers.
 
 For the fastest compile times, keep each app honest: include only the Arc headers you use directly, and request only the matching Arc features in CMake.
 
@@ -789,6 +789,8 @@ Compile-time async DMA memcpy wrapper.
 - `boot()` installs one async memcpy driver instance.
 - `send(dst, src, bytes)` queues a non-blocking DMA copy and returns immediately after submission.
 - `copy(dst, src, bytes)` submits the transfer and spins until the completion counter reaches the target.
+- `copy_coherent(dst, src, bytes)` flushes the source cache, performs the DMA copy, and invalidates the destination cache before returning.
+- `copy_coherent_strict(dst, src, bytes)` does the same thing but requires cache-line aligned buffers and sizes.
 - `sent()`, `done()`, `bytes()`, and `idle()` expose lock-free counters without FreeRTOS queues.
 - `arc::CopyBackend::ahb` pins the backend to AHB-GDMA on ESP32-S3.
 
@@ -903,6 +905,8 @@ Seqlock-style latest-snapshot lane for payloads larger than one word.
 - `write(value)` publishes one complete snapshot
 - `read()` retries until one stable snapshot is observed
 - `try_read(value)` gives you the same read without blocking
+
+`read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
 
@@ -1293,7 +1297,7 @@ The example composes:
 - `src = arc::dmabuf<std::uint8_t>(4096)`
 - `dst = arc::dmabuf<std::uint8_t>(4096)`
 
-The CPU submits a 4096-byte transfer, the DMA memcpy engine moves the payload, and the app verifies completion through `arc::Copy::done()`.
+The CPU submits a 4096-byte transfer, the DMA memcpy engine moves the payload, and the app verifies completion through `arc::Copy::done()`. The example now uses `arc::Copy::copy_coherent(...)` so the normal cache handoff is correct by construction.
 
 ## DVP Example
 

@@ -41,6 +41,7 @@ struct SeqReg {
     {
         T value{};
         while (!try_read(value)) {
+            pause();
         }
         return value;
     }
