@@ -5,6 +5,7 @@ This is a standalone ESP-IDF project under `examples/copy`.
 - The program is written directly in `main/app_main.cpp`.
 - It uses `arc::Copy` to offload memory movement to the ESP32-S3 async DMA memcpy driver.
 - It uses `arc::dmabuf` so source and destination buffers are explicitly DMA-capable.
+- It uses `arc::Cache` so CPU/device ownership of each buffer is visible in code.
 
 ## What It Shows
 
@@ -50,8 +51,10 @@ The program surface stays small:
 using Dma = arc::Copy<8, 64, 0, arc::CopyBackend::ahb>;
 
 Dma::boot();
+arc::Cache::to_device(src.view());
 Dma::send(dst.data(), src.data(), src.bytes());
 Dma::wait();
+arc::Cache::from_device(dst.view());
 ```
 
 The main API pieces are:

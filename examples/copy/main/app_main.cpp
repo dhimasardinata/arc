@@ -44,6 +44,7 @@ void host(void*) noexcept
         }
 
         const auto before = Dma::done();
+        ESP_ERROR_CHECK(arc::Cache::to_device(src.view()));
         ESP_ERROR_CHECK(Dma::send(
             dst.data(),
             src.data(),
@@ -54,6 +55,7 @@ void host(void*) noexcept
             ++spins;
             __asm__ __volatile__("nop");
         }
+        ESP_ERROR_CHECK(arc::Cache::from_device(dst.view()));
 
         const auto src_sum = sum({src.data(), src.size()});
         const auto dst_sum = sum({dst.data(), dst.size()});

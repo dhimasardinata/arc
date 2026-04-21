@@ -4,6 +4,7 @@
 #include "arc/bridge.hpp"
 #include "arc/burst.hpp"
 #include "arc/bus.hpp"
+#include "arc/cache.hpp"
 #include "arc/capture.hpp"
 #include "arc/caps.hpp"
 #include "arc/cfg.hpp"

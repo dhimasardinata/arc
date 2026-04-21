@@ -12,6 +12,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Core 1 is for the realtime plane: statically allocated, pinned, and kept close to the silicon.
 - User programs live in `main/app_main.cpp`.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
+- `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site.
 - `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
 - `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
 - `arc::Pulse` uses MCPWM for higher-grade waveform generation than LEDC when period and edge placement matter.
@@ -98,6 +99,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── adc.hpp
 │               ├── bridge.hpp
 │               ├── bus.hpp
+│               ├── cache.hpp
 │               ├── burst.hpp
 │               ├── capture.hpp
 │               ├── caps.hpp
@@ -144,6 +146,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Xtensa-safe `-mtext-section-literals` for C++ units that host IRAM code
 - `16 MB` flash header and partition layout for `ESP32-S3 N16R8`
 - `8 MB` Octal PSRAM at `80 MHz`, exposed explicitly through caps allocation
+- Explicit cache sync helpers for DMA/PSRAM buffers
 - Static FreeRTOS task allocation for the realtime plane
 - Core 1 idle watchdog detached so a non-yielding loop can own that core
 - Dedicated GPIO output and input on the hot path
@@ -646,6 +649,18 @@ Compile-time async DMA memcpy wrapper.
 - `arc::CopyBackend::ahb` pins the backend to AHB-GDMA on ESP32-S3.
 
 Use this when bytes should move through the DMA memcpy engine instead of burning CPU cycles on a software copy loop.
+
+### `arc::Cache`
+
+Explicit cache coherency helpers for DMA and external-memory paths.
+
+- `to_device(data, bytes)` writes dirty cache lines back before hardware reads a buffer.
+- `from_device(data, bytes)` invalidates cache lines after hardware writes a buffer.
+- `discard(data, bytes)` writes back and invalidates when ownership moves away from the CPU.
+- `line(ptr)` returns the cache line size for one address, or zero when the address is not cacheable.
+- span overloads work directly with `arc::CapsBuf<T>::view()`.
+
+Use this when you are about to hand a buffer to DMA, SPI, I2S, ADC, RMT, or async copy and you want ownership to be explicit instead of implied.
 
 ### `arc::Burst<Pin, Hz, Symbols = 64, Depth = 1, Dma = false>`
 
