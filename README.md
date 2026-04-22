@@ -771,7 +771,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 - Sequence checks use explicit 32-bit modular deltas, so wrap is handled on the queue clock instead of pointer-width signed math.
 - Payloads stay trivially copyable and capacity remains a power of two.
 
-Use this when several OS-side tasks need to feed one telemetry or transport owner without a FreeRTOS queue.
+Use this when several OS-side tasks with the same scheduling priority need to feed one telemetry or transport owner without a FreeRTOS queue. If producer preemption must never block completed work from another producer, use `arc::Fanin`.
 
 ### `arc::Mux<T, Capacity>`
 
@@ -1137,7 +1137,7 @@ Seqlock-style latest-snapshot lane for payloads larger than one word.
 - `read()` retries until one stable snapshot is observed
 - `try_read(value)` gives you the same read without blocking
 
-`write()` masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
+`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. `write()` masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
 
@@ -1186,6 +1186,8 @@ Standard containers can use the same placement rules through one-word allocators
 - `arc::PsramAlloc<T>`
 - `arc::DmaAlloc<T>`
 - `arc::SimdAlloc<T>`
+
+Do not let a capability-allocated `std::vector` reallocate while DMA or a peripheral owns its `.data()` pointer. Reserve capacity before handoff, or prefer `arc::CapsBuf` / `std::array` for active hardware buffers.
 
 ### Placement aliases
 
@@ -1296,7 +1298,7 @@ Shared Wi-Fi foundation for Core 0 transports.
 - `start(mode, power_save)` starts Wi-Fi once and rejects later mode mismatches instead of silently reconfiguring a live radio.
 - `sta()` returns the shared STA netif handle for transports that need IP state.
 - `stop()` stops Wi-Fi without throwing away the prepared configuration.
-- `off()` deinitializes the Wi-Fi driver state so recovery paths can bring the radio back without a CPU reset.
+- `off()` deinitializes the Wi-Fi driver and destroys Arc-owned default STA netif state so recovery paths can bring the radio back without a CPU reset.
 
 Use `arc_requires(... net)` only when directly using `arc::net::Radio`. `udp` and `espnow` already include the same dependencies.
 
@@ -1344,6 +1346,7 @@ Optional hooks:
 - `tick(bus, now)`
 
 UDP holds one failed send as a pending frame before draining more events. This converts socket pressure into queue pressure instead of silently dropping a frame after `try_pop()`.
+Set optional `Policy::stale` to a non-zero tick duration when stale pending telemetry should be discarded before reconnect sends it.
 
 This lets you keep network code in the framework while still expressing program-specific control in the app.
 
@@ -1373,6 +1376,7 @@ Optional hooks:
 - `recv(bus, peer, data, len)`
 
 ESP-NOW holds one failed send as a pending frame before draining more events, matching the UDP backpressure contract.
+Set optional `Policy::stale` to a non-zero tick duration when stale pending telemetry should be discarded before radio recovery sends it.
 
 This is the transport to use when you want Wi-Fi silicon and low latency, but not IP, DHCP, or sockets.
 

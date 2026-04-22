@@ -121,16 +121,27 @@ private:
         }
     }
 
+    [[nodiscard]] static consteval TickType_t stale_default() noexcept
+    {
+        if constexpr (requires { Policy::stale; }) {
+            return Policy::stale;
+        } else {
+            return 0;
+        }
+    }
+
     inline constexpr static TickType_t idle_ticks = idle_default();
+    inline constexpr static TickType_t stale_ticks = stale_default();
 
     struct State {
         Bus* bus;
         esp_netif_t* sta;
         Event pending;
+        TickType_t pending_at;
         bool have_pending;
     };
 
-    constinit static inline State state{nullptr, nullptr, {}, false};
+    constinit static inline State state{nullptr, nullptr, {}, 0, false};
     constinit static inline TaskMem<Policy::stack> stack{};
 
     template <typename Array>
@@ -211,7 +222,7 @@ private:
         }
     }
 
-    static bool send_or_hold(const Event& event) noexcept
+    static bool send_or_hold(const Event& event, const TickType_t now) noexcept
     {
         const auto err = send(event);
         if (err == ESP_OK) {
@@ -219,6 +230,7 @@ private:
         }
 
         state.pending = event;
+        state.pending_at = now;
         state.have_pending = true;
 
         if (err != ESP_ERR_ESPNOW_NO_MEM) {
@@ -226,6 +238,11 @@ private:
         }
 
         return false;
+    }
+
+    [[nodiscard]] static bool pending_stale(const TickType_t now) noexcept
+    {
+        return stale_ticks != 0 && static_cast<TickType_t>(now - state.pending_at) >= stale_ticks;
     }
 
     [[nodiscard]] static esp_err_t send(const Event& event) noexcept
@@ -248,8 +265,13 @@ private:
         }
 
         for (;;) {
+            const auto now = xTaskGetTickCount();
             if constexpr (EspNowTick<Policy, Bus>) {
-                Policy::tick(bus, xTaskGetTickCount());
+                Policy::tick(bus, now);
+            }
+
+            if (state.have_pending && pending_stale(now)) {
+                state.have_pending = false;
             }
 
             if (state.have_pending && send(state.pending) == ESP_OK) {
@@ -258,7 +280,7 @@ private:
 
             Event event{};
             while (!state.have_pending && bus.events.try_pop(event)) {
-                if (!send_or_hold(event)) {
+                if (!send_or_hold(event, now)) {
                     break;
                 }
             }

@@ -5,6 +5,7 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "esp_wifi_default.h"
 
 #include "arc/soc.hpp"
 #include "arc/store.hpp"
@@ -30,8 +31,10 @@ struct Radio {
 
         if (state.sta == nullptr) {
             state.sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+            state.sta_owner = false;
             if (state.sta == nullptr) {
                 state.sta = esp_netif_create_default_wifi_sta();
+                state.sta_owner = state.sta != nullptr;
             }
         }
 
@@ -143,6 +146,11 @@ struct Radio {
             state.prepared = false;
             state.mode = WIFI_MODE_NULL;
             state.power_save = WIFI_PS_NONE;
+            if (state.sta_owner) {
+                esp_netif_destroy_default_wifi(state.sta);
+            }
+            state.sta = nullptr;
+            state.sta_owner = false;
             return ESP_OK;
         }
 
@@ -156,6 +164,12 @@ struct Radio {
         state.started = false;
         state.mode = WIFI_MODE_NULL;
         state.power_save = WIFI_PS_NONE;
+
+        if (state.sta_owner) {
+            esp_netif_destroy_default_wifi(state.sta);
+        }
+        state.sta = nullptr;
+        state.sta_owner = false;
         return ESP_OK;
     }
 
@@ -165,12 +179,14 @@ private:
         bool wifi;
         bool prepared;
         bool started;
+        bool sta_owner;
         wifi_mode_t mode;
         wifi_ps_type_t power_save;
     };
 
     constinit static inline State state{
         nullptr,
+        false,
         false,
         false,
         false,

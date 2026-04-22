@@ -5,6 +5,7 @@
 
 #include "arc/fence.hpp"
 #include "arc/mask.hpp"
+#include "arc/sdk.hpp"
 #include "esp_attr.h"
 
 namespace arc {
@@ -24,7 +25,7 @@ namespace arc {
 }
 
 template <typename T>
-struct SeqReg {
+struct alignas(cache_line) SeqReg {
     static_assert(sizeof(T) > sizeof(std::uint32_t), "prefer arc::Reg<T> for one-word payloads");
     static_assert(std::is_trivially_copyable_v<T>, "seq payload must be trivially copyable");
 

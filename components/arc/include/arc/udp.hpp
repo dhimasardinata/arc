@@ -73,8 +73,18 @@ private:
         }
     }
 
+    [[nodiscard]] static consteval TickType_t stale_default() noexcept
+    {
+        if constexpr (requires { Policy::stale; }) {
+            return Policy::stale;
+        } else {
+            return 0;
+        }
+    }
+
     inline constexpr static TickType_t idle_ticks = idle_default();
     inline constexpr static TickType_t retry_ticks = retry_default();
+    inline constexpr static TickType_t stale_ticks = stale_default();
 
     struct State {
         StaticEventGroup_t events_mem{};
@@ -86,6 +96,7 @@ private:
         sockaddr_storage peer{};
         socklen_t peer_len{};
         Event pending{};
+        TickType_t pending_at{};
         bool have_pending{};
     };
 
@@ -261,6 +272,11 @@ private:
         return false;
     }
 
+    [[nodiscard]] static bool pending_stale(const TickType_t now) noexcept
+    {
+        return stale_ticks != 0 && static_cast<TickType_t>(now - state.pending_at) >= stale_ticks;
+    }
+
     static void run(void* raw) noexcept
     {
         auto& bus = *static_cast<Bus*>(raw);
@@ -291,6 +307,11 @@ private:
 
             Event event{};
             auto sent_any = false;
+            const auto now = xTaskGetTickCount();
+            if (state.have_pending && pending_stale(now)) {
+                state.have_pending = false;
+            }
+
             if (state.have_pending && send(state.pending)) {
                 state.have_pending = false;
                 sent_any = true;
@@ -299,13 +320,13 @@ private:
             while (!state.have_pending && bus.events.try_pop(event)) {
                 if (!send(event)) {
                     state.pending = event;
+                    state.pending_at = now;
                     state.have_pending = true;
                     break;
                 }
                 sent_any = true;
             }
 
-            const auto now = xTaskGetTickCount();
             if constexpr (UdpTick<Policy, Bus>) {
                 Policy::tick(bus, now);
             } else {

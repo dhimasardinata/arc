@@ -13,7 +13,7 @@ template <unsigned Level = XCHAL_EXCM_LEVEL>
 struct Mask {
     static_assert(Level <= 15U, "interrupt level must be within Xtensa range");
 
-    IRAM_ATTR Mask() noexcept
+    [[gnu::always_inline]] inline Mask() noexcept
         : state_(XTOS_SET_INTLEVEL(Level))
     {
         fence();
@@ -22,7 +22,7 @@ struct Mask {
     Mask(const Mask&) = delete;
     Mask& operator=(const Mask&) = delete;
 
-    IRAM_ATTR ~Mask() noexcept
+    [[gnu::always_inline]] inline ~Mask() noexcept
     {
         fence();
         XTOS_RESTORE_INTLEVEL(state_);
