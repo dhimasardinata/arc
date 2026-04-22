@@ -336,32 +336,32 @@ struct Spi {
         return queue_impl(ticket, tx, rx, bytes, wait);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires SpiBytes<T>
     [[nodiscard]] static esp_err_t queue(
         Move& ticket,
-        const std::span<T> tx,
+        const std::span<T, Extent> tx,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
         return queue(ticket, tx.data(), nullptr, tx.size_bytes(), wait);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires SpiBytes<T>
     [[nodiscard]] static esp_err_t queue_strict(
         StrictMove& ticket,
-        const std::span<T> tx,
+        const std::span<T, Extent> tx,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
         return queue_strict(ticket, tx.data(), nullptr, tx.size_bytes(), wait);
     }
 
-    template <typename Tx, typename Rx>
+    template <typename Tx, std::size_t TxExtent, typename Rx, std::size_t RxExtent>
         requires(SpiBytes<Tx> && SpiBytes<Rx> && !std::is_const_v<Rx>)
     [[nodiscard]] static esp_err_t queue(
         Move& ticket,
-        const std::span<Tx> tx,
-        const std::span<Rx> rx,
+        const std::span<Tx, TxExtent> tx,
+        const std::span<Rx, RxExtent> rx,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
         if (tx.size_bytes() != rx.size_bytes()) {
@@ -371,12 +371,12 @@ struct Spi {
         return queue(ticket, tx.data(), rx.data(), tx.size_bytes(), wait);
     }
 
-    template <typename Tx, typename Rx>
+    template <typename Tx, std::size_t TxExtent, typename Rx, std::size_t RxExtent>
         requires(SpiBytes<Tx> && SpiBytes<Rx> && !std::is_const_v<Rx>)
     [[nodiscard]] static esp_err_t queue_strict(
         StrictMove& ticket,
-        const std::span<Tx> tx,
-        const std::span<Rx> rx,
+        const std::span<Tx, TxExtent> tx,
+        const std::span<Rx, RxExtent> rx,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
         if (tx.size_bytes() != rx.size_bytes()) {
@@ -428,32 +428,32 @@ struct Spi {
         return queue_coherent_impl(ticket, tx, rx, bytes, wait);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires SpiBytes<T>
     [[nodiscard]] static esp_err_t queue_coherent(
         Move& ticket,
-        const std::span<T> tx,
+        const std::span<T, Extent> tx,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
         return queue_coherent(ticket, tx.data(), nullptr, tx.size_bytes(), wait);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires SpiBytes<T>
     [[nodiscard]] static esp_err_t queue_coherent_strict(
         StrictMove& ticket,
-        const std::span<T> tx,
+        const std::span<T, Extent> tx,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
         return queue_coherent_strict(ticket, tx.data(), nullptr, tx.size_bytes(), wait);
     }
 
-    template <typename Tx, typename Rx>
+    template <typename Tx, std::size_t TxExtent, typename Rx, std::size_t RxExtent>
         requires(SpiBytes<Tx> && SpiBytes<Rx> && !std::is_const_v<Rx>)
     [[nodiscard]] static esp_err_t queue_coherent(
         Move& ticket,
-        const std::span<Tx> tx,
-        const std::span<Rx> rx,
+        const std::span<Tx, TxExtent> tx,
+        const std::span<Rx, RxExtent> rx,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
         if (tx.size_bytes() != rx.size_bytes()) {
@@ -463,12 +463,12 @@ struct Spi {
         return queue_coherent(ticket, tx.data(), rx.data(), tx.size_bytes(), wait);
     }
 
-    template <typename Tx, typename Rx>
+    template <typename Tx, std::size_t TxExtent, typename Rx, std::size_t RxExtent>
         requires(SpiBytes<Tx> && SpiBytes<Rx> && !std::is_const_v<Rx>)
     [[nodiscard]] static esp_err_t queue_coherent_strict(
         StrictMove& ticket,
-        const std::span<Tx> tx,
-        const std::span<Rx> rx,
+        const std::span<Tx, TxExtent> tx,
+        const std::span<Rx, RxExtent> rx,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
         if (tx.size_bytes() != rx.size_bytes()) {

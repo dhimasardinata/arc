@@ -132,9 +132,9 @@ struct Uart {
         return wrote;
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires UartBytes<T>
-    [[nodiscard]] static Result<std::size_t> write(const std::span<T> data) noexcept
+    [[nodiscard]] static Result<std::size_t> write(const std::span<T, Extent> data) noexcept
     {
         return write(data.data(), data.size_bytes());
     }
@@ -169,10 +169,10 @@ struct Uart {
         return got;
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires(UartBytes<T> && !std::is_const_v<T>)
     [[nodiscard]] static Result<std::size_t> read(
-        const std::span<T> data,
+        const std::span<T, Extent> data,
         const std::uint32_t timeout_ms = 0U) noexcept
     {
         return read(data.data(), data.size_bytes(), timeout_ms);

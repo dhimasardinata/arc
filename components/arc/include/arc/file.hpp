@@ -74,9 +74,9 @@ struct File {
         return got;
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires(FileBytes<T> && !std::is_const_v<T>)
-    [[nodiscard]] Result<std::size_t> read(const std::span<T> data) noexcept
+    [[nodiscard]] Result<std::size_t> read(const std::span<T, Extent> data) noexcept
     {
         return read(data.data(), data.size_bytes());
     }
@@ -95,9 +95,9 @@ struct File {
         return sent;
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires FileBytes<T>
-    [[nodiscard]] Result<std::size_t> write(const std::span<T> data) noexcept
+    [[nodiscard]] Result<std::size_t> write(const std::span<T, Extent> data) noexcept
     {
         return write(data.data(), data.size_bytes());
     }

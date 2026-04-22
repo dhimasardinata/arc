@@ -204,8 +204,8 @@ struct I2s {
         return loaded;
     }
 
-    template <typename T, bool Enabled = kTx>
-    [[nodiscard]] static Result<std::size_t> preload(const std::span<T> src) noexcept
+    template <typename T, std::size_t Extent, bool Enabled = kTx>
+    [[nodiscard]] static Result<std::size_t> preload(const std::span<T, Extent> src) noexcept
         requires(Enabled && std::is_trivially_copyable_v<std::remove_cv_t<T>>)
     {
         return preload(src.data(), src.size_bytes());
@@ -238,9 +238,9 @@ struct I2s {
         return wrote;
     }
 
-    template <typename T, bool Enabled = kTx>
+    template <typename T, std::size_t Extent, bool Enabled = kTx>
     [[nodiscard]] static Result<std::size_t> write(
-        const std::span<T> src,
+        const std::span<T, Extent> src,
         const std::uint32_t timeout_ms = 1000U) noexcept
         requires(Enabled && std::is_trivially_copyable_v<std::remove_cv_t<T>>)
     {
@@ -274,9 +274,9 @@ struct I2s {
         return got;
     }
 
-    template <typename T, bool Enabled = kRx>
+    template <typename T, std::size_t Extent, bool Enabled = kRx>
     [[nodiscard]] static Result<std::size_t> read(
-        const std::span<T> dst,
+        const std::span<T, Extent> dst,
         const std::uint32_t timeout_ms = 1000U) noexcept
         requires(Enabled && !std::is_const_v<T> && std::is_trivially_copyable_v<T>)
     {

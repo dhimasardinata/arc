@@ -113,9 +113,9 @@ struct Tcp {
         return static_cast<std::size_t>(sent);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires TcpBytes<T>
-    [[nodiscard]] Result<std::size_t> send(const std::span<T> data) noexcept
+    [[nodiscard]] Result<std::size_t> send(const std::span<T, Extent> data) noexcept
     {
         return send(data.data(), data.size_bytes());
     }
@@ -141,9 +141,9 @@ struct Tcp {
         return ok();
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires TcpBytes<T>
-    [[nodiscard]] Status send_all(const std::span<T> data) noexcept
+    [[nodiscard]] Status send_all(const std::span<T, Extent> data) noexcept
     {
         return send_all(data.data(), data.size_bytes());
     }
@@ -171,10 +171,10 @@ struct Tcp {
         return static_cast<std::size_t>(got);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires(TcpBytes<T> && !std::is_const_v<T>)
     [[nodiscard]] Result<std::size_t> recv(
-        const std::span<T> data,
+        const std::span<T, Extent> data,
         const std::uint32_t timeout_ms = 0U) noexcept
     {
         return recv(data.data(), data.size_bytes(), timeout_ms);

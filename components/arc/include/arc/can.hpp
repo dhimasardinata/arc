@@ -127,9 +127,10 @@ struct Can {
         start();
     }
 
+    template <std::size_t Extent>
     [[nodiscard]] static Frame frame(
         const std::uint32_t id,
-        const std::span<const std::uint8_t> payload,
+        const std::span<const std::uint8_t, Extent> payload,
         const bool ext = false,
         const bool remote = false) noexcept
     {

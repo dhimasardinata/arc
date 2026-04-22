@@ -76,9 +76,9 @@ struct Copy {
         return send_impl<Hook>(dst, src, bytes, nullptr);
     }
 
-    template <typename Hook = void, typename Dst, typename Src>
+    template <typename Hook = void, typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
-    static esp_err_t send(std::span<Dst> dst, std::span<Src> src) noexcept
+    static esp_err_t send(std::span<Dst, DstExtent> dst, std::span<Src, SrcExtent> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;
@@ -98,9 +98,9 @@ struct Copy {
         return ESP_OK;
     }
 
-    template <typename Dst, typename Src>
+    template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
-    static esp_err_t copy(std::span<Dst> dst, std::span<Src> src) noexcept
+    static esp_err_t copy(std::span<Dst, DstExtent> dst, std::span<Src, SrcExtent> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;
@@ -132,9 +132,9 @@ struct Copy {
         return finish_coherent(ticket);
     }
 
-    template <typename Dst, typename Src>
+    template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
-    static esp_err_t copy_coherent(std::span<Dst> dst, std::span<Src> src) noexcept
+    static esp_err_t copy_coherent(std::span<Dst, DstExtent> dst, std::span<Src, SrcExtent> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;
@@ -143,9 +143,9 @@ struct Copy {
         return copy_coherent(dst.data(), src.data(), src.size_bytes());
     }
 
-    template <typename Dst, typename Src>
+    template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
-    static esp_err_t copy_coherent_strict(std::span<Dst> dst, std::span<Src> src) noexcept
+    static esp_err_t copy_coherent_strict(std::span<Dst, DstExtent> dst, std::span<Src, SrcExtent> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;
@@ -172,12 +172,12 @@ struct Copy {
         return send_coherent_impl(ticket, dst, src, bytes);
     }
 
-    template <typename Dst, typename Src>
+    template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
     static esp_err_t send_coherent(
         Ticket& ticket,
-        std::span<Dst> dst,
-        std::span<Src> src) noexcept
+        std::span<Dst, DstExtent> dst,
+        std::span<Src, SrcExtent> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;
@@ -186,12 +186,12 @@ struct Copy {
         return send_coherent(ticket, dst.data(), src.data(), src.size_bytes());
     }
 
-    template <typename Dst, typename Src>
+    template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
     static esp_err_t send_coherent_strict(
         StrictTicket& ticket,
-        std::span<Dst> dst,
-        std::span<Src> src) noexcept
+        std::span<Dst, DstExtent> dst,
+        std::span<Src, SrcExtent> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;

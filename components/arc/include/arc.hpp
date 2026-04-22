@@ -86,12 +86,20 @@
 #include "arc/ota.hpp"
 #endif
 
+#if __has_include("esp_pm.h")
+#include "arc/pm.hpp"
+#endif
+
 #if __has_include("driver/ledc.h")
 #include "arc/pwm.hpp"
 #endif
 
 #if __has_include("driver/rmt_tx.h")
 #include "arc/burst.hpp"
+#endif
+
+#if __has_include("esp_random.h")
+#include "arc/rng.hpp"
 #endif
 
 #if __has_include("driver/rmt_rx.h")

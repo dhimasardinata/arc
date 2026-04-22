@@ -95,58 +95,58 @@ struct Cache {
         return esp_cache_get_line_size_by_addr(data);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t to_device(const std::span<T> data) noexcept
+    static esp_err_t to_device(const std::span<T, Extent> data) noexcept
     {
         return to_device(data.data(), data.size_bytes());
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t to_device_strict(const std::span<T> data) noexcept
+    static esp_err_t to_device_strict(const std::span<T, Extent> data) noexcept
     {
         return to_device_strict(data.data(), data.size_bytes());
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t from_device(const std::span<T> data) noexcept
+    static esp_err_t from_device(const std::span<T, Extent> data) noexcept
     {
         return from_device(data.data(), data.size_bytes());
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t from_device_strict(const std::span<T> data) noexcept
+    static esp_err_t from_device_strict(const std::span<T, Extent> data) noexcept
     {
         return from_device_strict(data.data(), data.size_bytes());
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t from_device_unaligned(const std::span<T> data) noexcept
+    static esp_err_t from_device_unaligned(const std::span<T, Extent> data) noexcept
     {
         return from_device_unaligned(data.data(), data.size_bytes());
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t discard(const std::span<T> data) noexcept
+    static esp_err_t discard(const std::span<T, Extent> data) noexcept
     {
         return discard(data.data(), data.size_bytes());
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t discard_strict(const std::span<T> data) noexcept
+    static esp_err_t discard_strict(const std::span<T, Extent> data) noexcept
     {
         return discard_strict(data.data(), data.size_bytes());
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t discard_unaligned(const std::span<T> data) noexcept
+    static esp_err_t discard_unaligned(const std::span<T, Extent> data) noexcept
     {
         return discard_unaligned(data.data(), data.size_bytes());
     }

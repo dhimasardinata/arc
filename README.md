@@ -44,6 +44,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Sigma` binds the ESP32-S3 Sigma-Delta Modulator to a compile-time GPIO and sample rate.
 - `arc::Timer` binds the GPTimer block to a compile-time timebase and optional ISR hook.
 - `arc::Sleep` wraps wake causes, timer wake, power-domain policy, light sleep, and deep sleep.
+- `arc::Pm` gives typed ESP-IDF PM locks for CPU/APB/no-light-sleep critical sections when DFS is enabled.
+- `arc::Rng` exposes the ESP32-S3 hardware random source for fixed buffers and typed values.
 - `arc::Temp` reads the ESP32-S3 internal temperature sensor for thermal telemetry.
 - `arc::Tight` runs a masked per-step loop with optional cycle-budget overrun telemetry for the rare path that needs tighter jitter than `arc::App`.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
@@ -308,6 +310,8 @@ Feature names map directly to hardware lanes:
 - `store`
 - `net`
 - `ota`
+- `pm`
+- `rng`
 - `space`
 - `fs`
 - `tcp`
@@ -1108,6 +1112,30 @@ Power-state helper for the Core 0 side.
 - `deep()` enters deep sleep and does not return.
 
 Use this when the most efficient loop is no loop at all.
+
+### `arc::Pm<Type, Arg = 0>`
+
+Typed power-management lock wrapper.
+
+- `init(name)` creates one ESP-IDF PM lock and returns `esp_err_t`.
+- `acquire(name)` creates the lock if needed, then acquires it.
+- `release()` releases one held lock count.
+- `off()` deletes the lock after all active holds are released.
+- `hold(name)` returns a move-only RAII guard.
+- `arc::CpuLock`, `arc::ApbLock`, and `arc::SleepLock` are the normal one-word aliases.
+
+Use this when dynamic frequency scaling or automatic light sleep is enabled and one critical path needs a stable CPU/APB/sleep contract.
+
+### `arc::Rng`
+
+Hardware random source wrapper.
+
+- `word()` returns one 32-bit hardware random word.
+- `fill(data, bytes)` fills a raw buffer.
+- `fill(span)` fills fixed-extent or dynamic-extent mutable spans.
+- `value<T>()` returns one trivially copyable value filled from hardware random bytes.
+
+Use this for local nonces, fuzz seeds, randomized backoff, and binary IDs without plumbing raw ESP-IDF RNG calls through app code.
 
 ### `arc::Temp<Min = -10, Max = 80>`
 

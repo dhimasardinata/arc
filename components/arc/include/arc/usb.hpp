@@ -71,10 +71,10 @@ struct Usb {
         return static_cast<std::size_t>(out);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires UsbBytes<T>
     [[nodiscard]] static Result<std::size_t> write(
-        const std::span<T> data,
+        const std::span<T, Extent> data,
         const std::uint32_t timeout_ms = 0U) noexcept
     {
         return write(data.data(), data.size_bytes(), timeout_ms);
@@ -104,10 +104,10 @@ struct Usb {
         return static_cast<std::size_t>(in);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires(UsbBytes<T> && !std::is_const_v<T>)
     [[nodiscard]] static Result<std::size_t> read(
-        const std::span<T> data,
+        const std::span<T, Extent> data,
         const std::uint32_t timeout_ms = 0U) noexcept
     {
         return read(data.data(), data.size_bytes(), timeout_ms);

@@ -150,10 +150,11 @@ struct Store {
         return nvs_get_str(handle.raw, key, nullptr, &bytes);
     }
 
+    template <std::size_t Extent>
     [[nodiscard]] static esp_err_t load_string(
         const char* ns,
         const char* key,
-        const std::span<char> out,
+        const std::span<char, Extent> out,
         std::size_t* chars = nullptr) noexcept
     {
         if (out.empty()) {

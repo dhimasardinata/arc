@@ -246,29 +246,29 @@ struct I2c {
             timeout_ms);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires I2cBytes<T>
     [[nodiscard]] static esp_err_t send(
-        const std::span<T> data,
+        const std::span<T, Extent> data,
         const int timeout_ms = 1000) noexcept
     {
         return send(data.data(), data.size_bytes(), timeout_ms);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires(I2cBytes<T> && !std::is_const_v<T>)
     [[nodiscard]] static esp_err_t recv(
-        const std::span<T> data,
+        const std::span<T, Extent> data,
         const int timeout_ms = 1000) noexcept
     {
         return recv(data.data(), data.size_bytes(), timeout_ms);
     }
 
-    template <typename Tx, typename Rx>
+    template <typename Tx, std::size_t TxExtent, typename Rx, std::size_t RxExtent>
         requires(I2cBytes<Tx> && I2cBytes<Rx> && !std::is_const_v<Rx>)
     [[nodiscard]] static esp_err_t xfer(
-        const std::span<Tx> tx,
-        const std::span<Rx> rx,
+        const std::span<Tx, TxExtent> tx,
+        const std::span<Rx, RxExtent> rx,
         const int timeout_ms = 1000) noexcept
     {
         return xfer(tx.data(), tx.size_bytes(), rx.data(), rx.size_bytes(), timeout_ms);

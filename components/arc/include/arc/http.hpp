@@ -93,9 +93,9 @@ struct Http {
             static_cast<int>(bytes));
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires HttpBytes<T>
-    [[nodiscard]] esp_err_t body(const std::span<T> data) noexcept
+    [[nodiscard]] esp_err_t body(const std::span<T, Extent> data) noexcept
     {
         return body(data.data(), data.size_bytes());
     }
@@ -145,9 +145,9 @@ struct Http {
         return static_cast<std::size_t>(sent);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires HttpBytes<T>
-    [[nodiscard]] Result<std::size_t> write(const std::span<T> data) noexcept
+    [[nodiscard]] Result<std::size_t> write(const std::span<T, Extent> data) noexcept
     {
         return write(data.data(), data.size_bytes());
     }
@@ -168,9 +168,9 @@ struct Http {
         return static_cast<std::size_t>(got);
     }
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires(HttpBytes<T> && !std::is_const_v<T>)
-    [[nodiscard]] Result<std::size_t> read(const std::span<T> data) noexcept
+    [[nodiscard]] Result<std::size_t> read(const std::span<T, Extent> data) noexcept
     {
         return read(data.data(), data.size_bytes());
     }
