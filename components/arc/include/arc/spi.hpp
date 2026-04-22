@@ -36,10 +36,10 @@ struct SpiBus {
     static_assert(Mosi != -1 || Miso != -1, "SPI bus needs MOSI, MISO, or both");
     static_assert(MaxBytes > 0, "SPI max transfer must be non-zero");
 
-    static void boot()
+    [[nodiscard]] static esp_err_t init() noexcept
     {
         if (state.ready) {
-            return;
+            return ESP_OK;
         }
 
         spi_bus_config_t cfg{};
@@ -57,8 +57,16 @@ struct SpiBus {
         cfg.isr_cpu_id = IsrCpu;
         cfg.intr_flags = IntrFlags;
         cfg.data_io_default_level = false;
-        ESP_ERROR_CHECK(spi_bus_initialize(Host, &cfg, Dma));
-        state.ready = true;
+        const auto err = spi_bus_initialize(Host, &cfg, Dma);
+        if (err == ESP_OK) {
+            state.ready = true;
+        }
+        return err;
+    }
+
+    static void boot()
+    {
+        ESP_ERROR_CHECK(init());
     }
 
     [[nodiscard]] static constexpr spi_host_device_t host() noexcept
@@ -119,13 +127,16 @@ struct Spi {
     using Move = Ticket<false>;
     using StrictMove = Ticket<true>;
 
-    static void boot()
+    [[nodiscard]] static esp_err_t init() noexcept
     {
         if (state.dev != nullptr) {
-            return;
+            return ESP_OK;
         }
 
-        Bus::boot();
+        auto err = Bus::init();
+        if (err != ESP_OK) {
+            return err;
+        }
 
         spi_device_interface_config_t cfg{};
         cfg.command_bits = 0;
@@ -144,7 +155,12 @@ struct Spi {
         cfg.queue_size = Queue;
         cfg.pre_cb = nullptr;
         cfg.post_cb = nullptr;
-        ESP_ERROR_CHECK(spi_bus_add_device(Bus::host(), &cfg, &state.dev));
+        return spi_bus_add_device(Bus::host(), &cfg, &state.dev);
+    }
+
+    static void boot()
+    {
+        ESP_ERROR_CHECK(init());
     }
 
     static void acquire(const TickType_t wait = portMAX_DELAY)

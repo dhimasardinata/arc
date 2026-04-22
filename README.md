@@ -28,8 +28,11 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Copy` offloads memory movement to the async DMA memcpy engine.
 - `arc::Dvp` captures parallel camera frames through the ESP32-S3 LCD_CAM DMA path.
 - `arc::I80Bus` and `arc::I80` drive the ESP32-S3 LCD_CAM Intel 8080 DMA path with exact transfer tickets.
+- `arc::I2cBus` and `arc::I2c` bind ESP32-S3 I2C master buses and devices with recoverable init paths.
 - `arc::SpiBus` and `arc::Spi` drive DMA-capable SPI transfers with ticketed queue/finish ownership.
 - `arc::I2s` owns standard-mode I2S channels and DMA event counters with both raw `esp_err_t` and opt-in `arc::Result` APIs.
+- `arc::Uart` binds ESP32-S3 UART ports, pins, framing, and buffers with fixed storage and typed read/write APIs.
+- `arc::File` gives RAII VFS/POSIX file I/O without leaking `FILE*` ownership into app code.
 - `arc::Count` offloads pulse accumulation to the PCNT block.
 - `arc::dsp` adds hot-loop math kernels that pair naturally with `arc::simdbuf` and Core 1.
 - `arc::Probe` reads the Xtensa cycle counter so hot paths can be measured, not guessed.
@@ -50,6 +53,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Ota` wraps staged OTA writes and slot state without raw handle plumbing.
 - `arc::Store` gives typed NVS blobs and fixed-buffer strings without raw handle plumbing in user code.
 - `arc::net::Radio` is the shared Core 0 Wi-Fi owner, so UDP and ESP-NOW do not each re-create NVS, netif, event loop, and Wi-Fi driver state.
+- `arc::net::Tcp` gives direct TCP socket clients for Core 0 control/config paths.
+- `arc::net::Http` gives RAII ownership for ESP-IDF HTTP client sessions.
 - `arc::net::Udp` is a reusable Core 0 transport plane when you opt into `#include "arc/udp.hpp"`.
 - `arc::net::EspNow` is a reusable Core 0 raw-radio plane when you opt into `#include "arc/espnow.hpp"`.
 
@@ -76,6 +81,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │   │   └── README.md
 │   ├── i2s
 │   │   └── README.md
+│   ├── i2c
+│   │   └── README.md
 │   ├── i80
 │   │   └── README.md
 │   ├── scope
@@ -101,6 +108,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │   ├── sleep
 │   │   └── README.md
 │   ├── timer
+│   │   └── README.md
+│   ├── uart
 │   │   └── README.md
 │   ├── espnow
 │   │   └── README.md
@@ -139,7 +148,10 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── drive.hpp
 │               ├── dvp.hpp
 │               ├── fence.hpp
+│               ├── file.hpp
 │               ├── gpio.hpp
+│               ├── http.hpp
+│               ├── i2c.hpp
 │               ├── i80.hpp
 │               ├── espnow.hpp
 │               ├── i2s.hpp
@@ -162,9 +174,11 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── store.hpp
 │               ├── task.hpp
 │               ├── temp.hpp
+│               ├── tcp.hpp
 │               ├── timer.hpp
 │               ├── topology.hpp
 │               ├── trace.hpp
+│               ├── uart.hpp
 │               ├── udp.hpp
 │               └── wave.hpp
 └── main
@@ -197,8 +211,10 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware async memory copy through the ESP32-S3 DMA memcpy path
 - Hardware LCD_CAM DVP camera input through DMA-backed frame buffers
 - Hardware LCD_CAM Intel 8080 parallel output through DMA-backed panel IO
+- Hardware I2C master bus/device binding for sensors, EEPROMs, displays, and control chips
 - Hardware SPI transfers with explicit bus/device composition and DMA-capable paths
 - Hardware I2S streaming with duplex DMA and event counters
+- Hardware UART serial lanes for GPS, modems, consoles, and legacy links
 - Hardware PWM offload through LEDC for periodic output that should not burn a core
 - Hardware Sigma-Delta pulse-density output with IRAM-safe density updates enabled
 - Hardware timebase and alarms through GPTimer
@@ -207,6 +223,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Lock-free SPSC/MPSC queues and single-word control register
 - Slot-aware OTA helper for staged writes and rollback state
 - Typed NVS persistence and bounded string loading on the Core 0 side
+- RAII file handles for mounted VFS/FAT/SPIFFS/LittleFS paths
+- Direct TCP clients for small control/config protocols
+- RAII HTTP client sessions for REST/config exchanges
 - Bounded MPSC fan-in for multi-task telemetry producers
 - SIMD-friendly math kernels that fit the Core 1 compute plane
 - Cycle-counter instrumentation for hot-path measurement
@@ -264,6 +283,8 @@ Feature names map directly to hardware lanes:
 - `pcnt`
 - `ledc`
 - `gptimer`
+- `http`
+- `i2c`
 - `i2s`
 - `spi`
 - `twai`
@@ -275,7 +296,10 @@ Feature names map directly to hardware lanes:
 - `net`
 - `ota`
 - `space`
+- `fs`
+- `tcp`
 - `udp`
+- `uart`
 - `espnow`
 
 Add `gpio` when you use `arc::Drive`, `arc::Sense`, or raw `arc::Gpio`, because those pin APIs depend on the GPIO driver headers.
@@ -822,6 +846,7 @@ Use this when analog throughput matters more than per-sample polling.
 
 Compile-time SPI bus wrapper.
 
+- `init()` initializes one ESP32-S3 SPI host and returns `esp_err_t`.
 - `boot()` initializes one ESP32-S3 SPI host with DMA-capable transfer sizing.
 - `host()`, `sclk()`, `mosi()`, and `miso()` keep the routing obvious in user code.
 - The SPI ISR is pinned to CPU0 by default so transport work naturally stays off the realtime core.
@@ -832,6 +857,7 @@ Use this when multiple devices should share one bus or when bus routing should s
 
 Compile-time SPI device wrapper.
 
+- `init()` adds one device and returns `esp_err_t`.
 - `boot()` adds one device on top of a compile-time `arc::SpiBus`.
 - `send(...)`, `recv(...)`, `xfer(...)`, and `poll(...)` cover the common synchronous paths.
 - `queue(...)` and `wait(...)` expose the interrupt-driven transaction path when you want multiple jobs in flight.
@@ -841,6 +867,18 @@ Compile-time SPI device wrapper.
 - `acquire()` and `release()` give explicit bus ownership when CS must stay held.
 
 Use this when bytes should move through the SPI engine and DMA path instead of a software bit loop.
+
+### `arc::I2cBus<Port, Sda, Scl, Pullup = true, ...>` and `arc::I2c<Bus, Addr, Hz = 400'000, ...>`
+
+Compile-time I2C master wrapper.
+
+- `I2cBus::init()` brings up one I2C master bus and returns `esp_err_t`.
+- `I2cBus::probe(addr)` checks for a device without forcing a reboot loop.
+- `I2c::init()` mounts one device on a bus and returns `esp_err_t`.
+- `send(...)`, `recv(...)`, and `xfer(...)` cover write, read, and repeated-start write/read transactions.
+- `boot()` remains available when board topology failure should be fail-fast.
+
+Use this for sensors, EEPROMs, small displays, PMICs, and control chips that should stay outside the Core 1 hot loop.
 
 ### `arc::Can<Tx, Rx, Bitrate = 500'000, Queue = 8, RxDepth = 8, ...>`
 
@@ -860,6 +898,7 @@ Use this for robot/industrial control links where the TWAI controller should own
 
 Compile-time standard-mode I2S wrapper.
 
+- `init()` allocates and initializes TX, RX, or duplex channels and returns `esp_err_t`.
 - `boot()` allocates and initializes TX, RX, or duplex channels.
 - `start()` and `stop()` gate the hardware stream without deleting the channels.
 - `preload(...)` primes TX DMA before enabling the lane.
@@ -868,6 +907,17 @@ Compile-time standard-mode I2S wrapper.
 - `sent()`, `recv()`, `send_ovf()`, and `recv_ovf()` expose ISR-side event counters.
 
 Use this when framed serial audio or sample streams should be owned by the I2S block, not by a CPU copy loop.
+
+### `arc::Uart<Port, Tx, Rx, Rts = UART_PIN_NO_CHANGE, Cts = UART_PIN_NO_CHANGE, ...>`
+
+Compile-time UART wrapper.
+
+- `init()` configures the port, pins, framing, buffers, and driver, then returns `esp_err_t`.
+- `boot()` keeps the fail-fast path for required serial links.
+- `write(...)` and `read(...)` expose `arc::Result<std::size_t>` ergonomic overloads.
+- `available(...)`, `wait(...)`, `flush()`, and `baud(...)` expose the common runtime controls.
+
+Use this for GPS receivers, modem AT links, binary serial protocols, and board-level debug channels that should not leak raw UART driver calls into app code.
 
 ### `arc::Dvp<arc::DvpLines<...>, Vsync, Pclk, De, Xclk>`
 
@@ -1107,6 +1157,17 @@ Typed NVS blob and string storage for Core 0 work.
 
 Use this when you want persistent config without hand-written handle lifetime code.
 
+### `arc::File`
+
+RAII file handle for mounted VFS paths.
+
+- `open(path, mode)` returns `arc::Result<arc::File>`.
+- `read(...)` and `write(...)` return byte counts through `arc::Result<std::size_t>`.
+- `flush()`, `seek(...)`, `tell()`, and `close()` wrap the common `FILE*` operations.
+- `native()` exposes the raw handle when an IDF API really needs it.
+
+Use this after FAT, SPIFFS, LittleFS, or another ESP-IDF VFS mount is already active.
+
 ### `arc::Ota`
 
 Typed OTA session wrapper for Core 0 work.
@@ -1157,6 +1218,29 @@ Shared Wi-Fi foundation for Core 0 transports.
 - `sta()` returns the shared STA netif handle for transports that need IP state.
 
 Use `arc_requires(... net)` only when directly using `arc::net::Radio`. `udp` and `espnow` already include the same dependencies.
+
+### `arc::net::Tcp`
+
+Direct TCP client for Core 0 control and configuration paths.
+
+- `dial(host, port, timeout_ms)` opens one socket and returns `arc::Result<arc::net::Tcp>`.
+- `send(...)` and `recv(...)` return byte counts without hiding partial transfers.
+- `send_all(...)` loops until the caller-owned buffer is fully written or an error occurs.
+- `close()` and `native()` keep socket lifetime explicit.
+
+Use this when a small protocol needs TCP but does not justify a framework-owned task.
+
+### `arc::net::Http`
+
+RAII wrapper for ESP-IDF HTTP client sessions.
+
+- `make(config)` returns `arc::Result<arc::net::Http>`.
+- `url(...)`, `method(...)`, `header(...)`, and `body(...)` set request fields.
+- `perform()` covers the simple one-shot request path.
+- `open(...)`, `write(...)`, `fetch()`, `read(...)`, and `close()` expose the streaming path.
+- `status()`, `length()`, and `native()` expose response metadata and the raw handle.
+
+Use this for Core 0 REST/config exchanges where HTTP should stay outside the realtime plane.
 
 ### `arc::net::Udp<Policy, Bus>`
 

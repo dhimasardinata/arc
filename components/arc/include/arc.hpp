@@ -27,6 +27,10 @@
 #include "arc/gpio.hpp"
 #endif
 
+#if __has_include("esp_vfs.h")
+#include "arc/file.hpp"
+#endif
+
 #if __has_include("driver/gpio.h") && __has_include("esp_private/gpio.h") && __has_include("esp_rom_gpio.h") && __has_include("hal/dedic_gpio_cpu_ll.h")
 #include "arc/drive.hpp"
 #include "arc/sense.hpp"
@@ -57,6 +61,14 @@
 
 #if __has_include("driver/i2s_std.h")
 #include "arc/i2s.hpp"
+#endif
+
+#if __has_include("driver/i2c_master.h")
+#include "arc/i2c.hpp"
+#endif
+
+#if __has_include("esp_http_client.h")
+#include "arc/http.hpp"
 #endif
 
 #if __has_include("esp_lcd_io_i80.h") && __has_include("esp_lcd_panel_io.h")
@@ -103,12 +115,20 @@
 #include "arc/temp.hpp"
 #endif
 
+#if __has_include("lwip/netdb.h") && __has_include("lwip/sockets.h")
+#include "arc/tcp.hpp"
+#endif
+
 #if __has_include("esp_event.h") && __has_include("esp_netif.h") && __has_include("esp_wifi.h") && __has_include("nvs_flash.h")
 #include "arc/net.hpp"
 #endif
 
 #if __has_include("driver/gptimer.h")
 #include "arc/timer.hpp"
+#endif
+
+#if __has_include("driver/uart.h")
+#include "arc/uart.hpp"
 #endif
 
 #if __has_include("esp_twai.h") && __has_include("esp_twai_onchip.h")

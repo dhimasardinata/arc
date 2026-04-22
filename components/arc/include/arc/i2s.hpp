@@ -48,10 +48,10 @@ struct I2s {
     static_assert(Desc > 0U, "I2S DMA descriptor count must be non-zero");
     static_assert(Frames > 0U, "I2S DMA frame count must be non-zero");
 
-    static void boot()
+    [[nodiscard]] static esp_err_t init() noexcept
     {
         if (state.booted) {
-            return;
+            return ESP_OK;
         }
 
         i2s_chan_config_t chan = I2S_CHANNEL_DEFAULT_CONFIG(Port, Role);
@@ -63,25 +63,46 @@ struct I2s {
         chan.intr_priority = 0;
 
         if constexpr (kTx && kRx) {
-            ESP_ERROR_CHECK(i2s_new_channel(&chan, &state.tx, &state.rx));
+            const auto err = i2s_new_channel(&chan, &state.tx, &state.rx);
+            if (err != ESP_OK) {
+                return err;
+            }
         } else if constexpr (kTx) {
-            ESP_ERROR_CHECK(i2s_new_channel(&chan, &state.tx, nullptr));
+            const auto err = i2s_new_channel(&chan, &state.tx, nullptr);
+            if (err != ESP_OK) {
+                return err;
+            }
         } else {
-            ESP_ERROR_CHECK(i2s_new_channel(&chan, nullptr, &state.rx));
+            const auto err = i2s_new_channel(&chan, nullptr, &state.rx);
+            if (err != ESP_OK) {
+                return err;
+            }
         }
 
         auto std = config(Hz);
         if constexpr (kTx) {
-            ESP_ERROR_CHECK(i2s_channel_init_std_mode(state.tx, &std));
+            const auto err = i2s_channel_init_std_mode(state.tx, &std);
+            if (err != ESP_OK) {
+                return err;
+            }
             bind_tx();
         }
         if constexpr (kRx) {
-            ESP_ERROR_CHECK(i2s_channel_init_std_mode(state.rx, &std));
+            const auto err = i2s_channel_init_std_mode(state.rx, &std);
+            if (err != ESP_OK) {
+                return err;
+            }
             bind_rx();
         }
 
         state.rate = Hz;
         state.booted = true;
+        return ESP_OK;
+    }
+
+    static void boot()
+    {
+        ESP_ERROR_CHECK(init());
     }
 
     static void start()
