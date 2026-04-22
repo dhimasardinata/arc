@@ -1302,6 +1302,8 @@ Shared Wi-Fi foundation for Core 0 transports.
 - `stop()` stops Wi-Fi without throwing away the prepared configuration.
 - `off()` deinitializes the Wi-Fi driver and destroys Arc-owned default STA netif state only when no transport leases are active.
 
+Long-lived transports release their lease only after their own `stop()` path has closed sockets or callbacks and exited the Core 0 task. `Radio::off()` returning `ESP_ERR_INVALID_STATE` means a transport is still alive, not that Wi-Fi teardown is broken.
+
 Use `arc_requires(... net)` only when directly using `arc::net::Radio`. `udp` and `espnow` already include the same dependencies.
 
 ### `arc::net::Tcp`
@@ -1332,6 +1334,7 @@ Use this for Core 0 REST/config exchanges where HTTP should stay outside the rea
 Reusable Core 0 UDP transport plane.
 
 UDP uses `arc::net::Radio` underneath and takes a radio lease while its Core 0 task is alive, so `Radio::off()` cannot destroy netif or Wi-Fi state beneath registered UDP event handlers.
+`boot()` is idempotent while the transport is active. Call `Udp::stop(wait)` before `Radio::off()` when a program needs deep sleep or radio reconfiguration; it signals the task, wakes the Wi-Fi wait, closes the socket, unregisters Wi-Fi/IP handlers, releases the lease, and self-deletes from the task after cleanup. A finite `wait` returns `ESP_ERR_TIMEOUT` if the task has not finished unwinding.
 
 `Policy` supplies compile-time config:
 
@@ -1363,6 +1366,7 @@ Network is intentionally opt-in. Baseline apps only include `arc.hpp`; UDP apps 
 Reusable Core 0 ESP-NOW plane.
 
 ESP-NOW uses `arc::net::Radio` for the shared Wi-Fi base and takes a radio lease while its Core 0 task is alive. It owns ESP-NOW peer/callback setup while the shared radio owner protects Wi-Fi/netif teardown.
+`boot()` is idempotent while the transport is active. Call `EspNow::stop(wait)` before `Radio::off()` when ESP-NOW must be torn down; it stops the task loop, unregisters ESP-NOW callbacks, deinitializes ESP-NOW, releases the radio lease, and self-deletes after cleanup.
 
 `Policy` supplies compile-time config:
 

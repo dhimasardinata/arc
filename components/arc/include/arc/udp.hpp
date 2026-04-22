@@ -9,6 +9,7 @@
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
 
+#include "esp_err.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -41,6 +42,18 @@ struct Udp {
 
     static void boot(Bus& bus)
     {
+        auto inactive = std::uint32_t{};
+        if (!__atomic_compare_exchange_n(
+                &state.active,
+                &inactive,
+                1U,
+                false,
+                __ATOMIC_ACQ_REL,
+                __ATOMIC_ACQUIRE)) {
+            return;
+        }
+
+        __atomic_store_n(&state.running, 1U, __ATOMIC_RELEASE);
         const auto handle = spawn(
             &run,
             "udp",
@@ -49,7 +62,37 @@ struct Udp {
             Core::core0,
             stack);
 
+        set_task(handle);
+        if (handle == nullptr) {
+            __atomic_store_n(&state.running, 0U, __ATOMIC_RELEASE);
+            __atomic_store_n(&state.active, 0U, __ATOMIC_RELEASE);
+        }
         configASSERT(handle != nullptr);
+    }
+
+    [[nodiscard]] static esp_err_t stop(const TickType_t wait = portMAX_DELAY) noexcept
+    {
+        if (__atomic_load_n(&state.active, __ATOMIC_ACQUIRE) == 0U) {
+            return ESP_OK;
+        }
+
+        __atomic_store_n(&state.running, 0U, __ATOMIC_RELEASE);
+        if (const auto ev = events(); ev != nullptr) {
+            xEventGroupSetBits(ev, wifi_up);
+        }
+
+        if (xTaskGetCurrentTaskHandle() == task()) {
+            return ESP_OK;
+        }
+
+        const auto start = xTaskGetTickCount();
+        while (__atomic_load_n(&state.active, __ATOMIC_ACQUIRE) != 0U) {
+            if (wait != portMAX_DELAY && static_cast<TickType_t>(xTaskGetTickCount() - start) >= wait) {
+                return ESP_ERR_TIMEOUT;
+            }
+            vTaskDelay(1);
+        }
+        return ESP_OK;
     }
 
 private:
@@ -98,10 +141,36 @@ private:
         Event pending{};
         TickType_t pending_at{};
         bool have_pending{};
+        bool leased{};
+        bool wifi_on{};
+        bool ip_on{};
+        TaskHandle_t task{};
+        std::uint32_t running{};
+        std::uint32_t active{};
     };
 
     constinit static inline State state{};
     constinit static inline TaskMem<Policy::stack> stack{};
+
+    [[nodiscard]] static EventGroupHandle_t events() noexcept
+    {
+        return __atomic_load_n(&state.events, __ATOMIC_ACQUIRE);
+    }
+
+    static void set_events(const EventGroupHandle_t events) noexcept
+    {
+        __atomic_store_n(&state.events, events, __ATOMIC_RELEASE);
+    }
+
+    [[nodiscard]] static TaskHandle_t task() noexcept
+    {
+        return __atomic_load_n(&state.task, __ATOMIC_ACQUIRE);
+    }
+
+    static void set_task(const TaskHandle_t task) noexcept
+    {
+        __atomic_store_n(&state.task, task, __ATOMIC_RELEASE);
+    }
 
     static void close_socket() noexcept
     {
@@ -124,13 +193,21 @@ private:
         int32_t id,
         void* data) noexcept
     {
+        if (!running()) {
+            return;
+        }
+        const auto ev = events();
+        if (ev == nullptr) {
+            return;
+        }
+
         if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
             connect();
             return;
         }
 
         if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-            xEventGroupClearBits(state.events, wifi_up);
+            xEventGroupClearBits(ev, wifi_up);
             ESP_LOGW(Policy::tag, "wifi disconnected, retrying");
             connect();
             return;
@@ -139,7 +216,7 @@ private:
         if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
             const auto* event = static_cast<const ip_event_got_ip_t*>(data);
             ESP_LOGI(Policy::tag, "got ip " IPSTR, IP2STR(&event->ip_info.ip));
-            xEventGroupSetBits(state.events, wifi_up);
+            xEventGroupSetBits(ev, wifi_up);
         }
     }
 
@@ -161,20 +238,41 @@ private:
 
         esp_netif_ip_info_t ip{};
         if (esp_netif_get_ip_info(state.sta, &ip) == ESP_OK && ip.ip.addr != 0U) {
-            xEventGroupSetBits(state.events, wifi_up);
+            if (const auto ev = events(); ev != nullptr) {
+                xEventGroupSetBits(ev, wifi_up);
+            }
         }
     }
 
-    static void start_wifi()
+    [[nodiscard]] static bool start_wifi()
     {
-        if (state.events == nullptr) {
-            state.events = xEventGroupCreateStatic(&state.events_mem);
+        auto ev = events();
+        if (ev == nullptr) {
+            ev = xEventGroupCreateStatic(&state.events_mem);
+            set_events(ev);
+        }
+        configASSERT(ev != nullptr);
+        if (ev == nullptr) {
+            return false;
+        }
+        xEventGroupClearBits(ev, wifi_up);
+
+        if (!running()) {
+            return false;
         }
 
         ESP_ERROR_CHECK(Radio::lease());
+        state.leased = true;
+        if (!running()) {
+            return false;
+        }
+
         state.sta = Radio::sta();
         configASSERT(state.sta != nullptr);
         ESP_ERROR_CHECK(Radio::prepare(WIFI_MODE_STA, WIFI_PS_NONE));
+        if (!running()) {
+            return false;
+        }
 
         ESP_ERROR_CHECK(esp_event_handler_instance_register(
             WIFI_EVENT,
@@ -182,12 +280,14 @@ private:
             &on_event,
             nullptr,
             &state.wifi_any));
+        state.wifi_on = true;
         ESP_ERROR_CHECK(esp_event_handler_instance_register(
             IP_EVENT,
             IP_EVENT_STA_GOT_IP,
             &on_event,
             nullptr,
             &state.got_ip));
+        state.ip_on = true;
 
         wifi_config_t wifi{};
         copy_z(wifi.sta.ssid, Policy::ssid);
@@ -201,7 +301,10 @@ private:
         connect();
         raise_if_ip_ready();
 
-        static_cast<void>(xEventGroupWaitBits(state.events, wifi_up, pdFALSE, pdFALSE, portMAX_DELAY));
+        while (running() && (xEventGroupGetBits(ev) & wifi_up) == 0U) {
+            sleep(1);
+        }
+        return running();
     }
 
     [[nodiscard]] static bool ready() noexcept
@@ -277,31 +380,103 @@ private:
         return stale_ticks != 0 && static_cast<TickType_t>(now - state.pending_at) >= stale_ticks;
     }
 
+    [[nodiscard]] static bool running() noexcept
+    {
+        return __atomic_load_n(&state.running, __ATOMIC_ACQUIRE) != 0U;
+    }
+
+    static void sleep(const TickType_t ticks) noexcept
+    {
+        const auto span = ticks == 0U ? TickType_t{1} : ticks;
+        const auto start = xTaskGetTickCount();
+        while (running()) {
+            vTaskDelay(1);
+            if (span != portMAX_DELAY && static_cast<TickType_t>(xTaskGetTickCount() - start) >= span) {
+                return;
+            }
+        }
+    }
+
+    static void unregister_events() noexcept
+    {
+        if (state.ip_on) {
+            static_cast<void>(esp_event_handler_instance_unregister(
+                IP_EVENT,
+                IP_EVENT_STA_GOT_IP,
+                state.got_ip));
+            state.ip_on = false;
+            state.got_ip = nullptr;
+        }
+
+        if (state.wifi_on) {
+            static_cast<void>(esp_event_handler_instance_unregister(
+                WIFI_EVENT,
+                ESP_EVENT_ANY_ID,
+                state.wifi_any));
+            state.wifi_on = false;
+            state.wifi_any = nullptr;
+        }
+    }
+
+    static void cleanup() noexcept
+    {
+        close_socket();
+        unregister_events();
+        state.have_pending = false;
+        state.sta = nullptr;
+
+        if (state.leased) {
+            Radio::release();
+            state.leased = false;
+        }
+
+        set_task(nullptr);
+        __atomic_store_n(&state.running, 0U, __ATOMIC_RELEASE);
+        __atomic_store_n(&state.active, 0U, __ATOMIC_RELEASE);
+    }
+
+    [[noreturn]] static void done() noexcept
+    {
+        cleanup();
+        vTaskDelete(nullptr);
+        __builtin_unreachable();
+    }
+
     static void run(void* raw) noexcept
     {
         auto& bus = *static_cast<Bus*>(raw);
 
         if (!ready()) {
             ESP_LOGE(Policy::tag, "set Wi-Fi and host in menuconfig");
-            vTaskDelete(nullptr);
-            return;
+            done();
         }
 
-        start_wifi();
+        if (!start_wifi()) {
+            done();
+        }
 
         if constexpr (UdpStart<Policy, Bus>) {
             Policy::start(bus);
         }
 
-        for (;;) {
-            if ((xEventGroupGetBits(state.events) & wifi_up) == 0U) {
+        while (running()) {
+            const auto ev = events();
+            configASSERT(ev != nullptr);
+            if (ev == nullptr) {
+                break;
+            }
+            if ((xEventGroupGetBits(ev) & wifi_up) == 0U) {
                 close_socket();
                 static_cast<void>(
-                    xEventGroupWaitBits(state.events, wifi_up, pdFALSE, pdFALSE, portMAX_DELAY));
+                    xEventGroupWaitBits(ev, wifi_up, pdFALSE, pdFALSE, portMAX_DELAY));
+            }
+
+            if (!running()) {
+                break;
             }
 
             if (state.sock < 0 && !open_socket()) {
-                vTaskDelay(retry_ticks);
+                sleep(retry_ticks);
                 continue;
             }
 
@@ -335,9 +510,11 @@ private:
             }
 
             if (!sent_any) {
-                vTaskDelay(idle_ticks);
+                sleep(idle_ticks);
             }
         }
+
+        done();
     }
 };
 
