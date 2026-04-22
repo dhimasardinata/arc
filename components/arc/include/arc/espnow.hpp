@@ -55,12 +55,7 @@ struct EspNowRadio {
 
 private:
     struct State {
-        constexpr State() noexcept
-            : ready(false)
-        {
-        }
-
-        bool ready;
+        bool ready{};
     };
 
     constinit static inline State state{};
