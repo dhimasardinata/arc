@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_event.h"
@@ -123,6 +125,48 @@ struct Radio {
         return state.started;
     }
 
+    [[nodiscard]] static esp_err_t lease() noexcept
+    {
+        if (__atomic_load_n(&state.closing, __ATOMIC_ACQUIRE) != 0U) {
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        __atomic_add_fetch(&state.clients, 1U, __ATOMIC_ACQ_REL);
+
+        if (__atomic_load_n(&state.closing, __ATOMIC_ACQUIRE) != 0U) {
+            release();
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        const auto err = base();
+        if (err != ESP_OK) {
+            release();
+        }
+        return err;
+    }
+
+    static void release() noexcept
+    {
+        auto current = __atomic_load_n(&state.clients, __ATOMIC_ACQUIRE);
+        while (current != 0U) {
+            auto next = current - 1U;
+            if (__atomic_compare_exchange_n(
+                    &state.clients,
+                    &current,
+                    next,
+                    false,
+                    __ATOMIC_ACQ_REL,
+                    __ATOMIC_ACQUIRE)) {
+                return;
+            }
+        }
+    }
+
+    [[nodiscard]] static std::uint32_t leases() noexcept
+    {
+        return __atomic_load_n(&state.clients, __ATOMIC_ACQUIRE);
+    }
+
     [[nodiscard]] static esp_err_t stop() noexcept
     {
         if (!state.started) {
@@ -140,7 +184,27 @@ struct Radio {
 
     [[nodiscard]] static esp_err_t off() noexcept
     {
-        ESP_RETURN_ON_ERROR(stop(), "arc-radio", "wifi stop failed");
+        auto expected = std::uint32_t{};
+        if (!__atomic_compare_exchange_n(
+                &state.closing,
+                &expected,
+                1U,
+                false,
+                __ATOMIC_ACQ_REL,
+                __ATOMIC_ACQUIRE)) {
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        if (leases() != 0U) {
+            __atomic_store_n(&state.closing, 0U, __ATOMIC_RELEASE);
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        const auto stop_err = stop();
+        if (stop_err != ESP_OK) {
+            __atomic_store_n(&state.closing, 0U, __ATOMIC_RELEASE);
+            return stop_err;
+        }
 
         if (!state.wifi) {
             state.prepared = false;
@@ -151,11 +215,13 @@ struct Radio {
             }
             state.sta = nullptr;
             state.sta_owner = false;
+            __atomic_store_n(&state.closing, 0U, __ATOMIC_RELEASE);
             return ESP_OK;
         }
 
         const auto err = esp_wifi_deinit();
         if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
+            __atomic_store_n(&state.closing, 0U, __ATOMIC_RELEASE);
             return err;
         }
 
@@ -170,6 +236,7 @@ struct Radio {
         }
         state.sta = nullptr;
         state.sta_owner = false;
+        __atomic_store_n(&state.closing, 0U, __ATOMIC_RELEASE);
         return ESP_OK;
     }
 
@@ -182,6 +249,8 @@ private:
         bool sta_owner;
         wifi_mode_t mode;
         wifi_ps_type_t power_save;
+        std::uint32_t clients;
+        std::uint32_t closing;
     };
 
     constinit static inline State state{
@@ -192,6 +261,8 @@ private:
         false,
         WIFI_MODE_NULL,
         WIFI_PS_NONE,
+        0U,
+        0U,
     };
 };
 

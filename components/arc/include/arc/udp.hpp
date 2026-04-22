@@ -171,7 +171,7 @@ private:
             state.events = xEventGroupCreateStatic(&state.events_mem);
         }
 
-        ESP_ERROR_CHECK(Radio::base());
+        ESP_ERROR_CHECK(Radio::lease());
         state.sta = Radio::sta();
         configASSERT(state.sta != nullptr);
         ESP_ERROR_CHECK(Radio::prepare(WIFI_MODE_STA, WIFI_PS_NONE));

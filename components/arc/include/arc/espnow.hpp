@@ -152,6 +152,7 @@ private:
 
     static void start_wifi()
     {
+        ESP_ERROR_CHECK(Radio::lease());
         ESP_ERROR_CHECK(Radio::start(WIFI_MODE_STA, WIFI_PS_NONE));
         state.sta = Radio::sta();
         configASSERT(state.sta != nullptr);

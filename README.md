@@ -1126,7 +1126,7 @@ Core-local Xtensa interrupt-level guard.
 - `arc::Critical` is the normal “silence OS-visible interrupts” alias
 - `arc::Silence` raises all the way to level `15`
 
-Use this only around tiny hot sections where determinism matters more than latency. It is not a substitute for architecture.
+Use this only around tiny hot sections where determinism matters more than latency. The guard is force-inlined, so code using it inherits the caller's section; mark callers with `ARC_HOT` / `IRAM_ATTR` when they can run while flash cache is disabled.
 
 ### `arc::SeqReg<T>`
 
@@ -1297,8 +1297,10 @@ Shared Wi-Fi foundation for Core 0 transports.
 - `prepare(mode, power_save)` sets storage, Wi-Fi mode, and power-save policy before a transport writes its own config.
 - `start(mode, power_save)` starts Wi-Fi once and rejects later mode mismatches instead of silently reconfiguring a live radio.
 - `sta()` returns the shared STA netif handle for transports that need IP state.
+- `lease()` and `release()` let long-lived transports pin radio teardown while their event handlers are alive.
+- `leases()` reports active transport pins.
 - `stop()` stops Wi-Fi without throwing away the prepared configuration.
-- `off()` deinitializes the Wi-Fi driver and destroys Arc-owned default STA netif state so recovery paths can bring the radio back without a CPU reset.
+- `off()` deinitializes the Wi-Fi driver and destroys Arc-owned default STA netif state only when no transport leases are active.
 
 Use `arc_requires(... net)` only when directly using `arc::net::Radio`. `udp` and `espnow` already include the same dependencies.
 
@@ -1329,7 +1331,7 @@ Use this for Core 0 REST/config exchanges where HTTP should stay outside the rea
 
 Reusable Core 0 UDP transport plane.
 
-UDP uses `arc::net::Radio` underneath, so it shares the same NVS/netif/event-loop/Wi-Fi driver ownership as ESP-NOW instead of reinitializing global radio state.
+UDP uses `arc::net::Radio` underneath and takes a radio lease while its Core 0 task is alive, so `Radio::off()` cannot destroy netif or Wi-Fi state beneath registered UDP event handlers.
 
 `Policy` supplies compile-time config:
 
@@ -1360,7 +1362,7 @@ Network is intentionally opt-in. Baseline apps only include `arc.hpp`; UDP apps 
 
 Reusable Core 0 ESP-NOW plane.
 
-ESP-NOW uses `arc::net::Radio` for the shared Wi-Fi base and only owns ESP-NOW peer/callback setup. This keeps raw-radio and UDP examples compatible with the same Core 0 radio foundation.
+ESP-NOW uses `arc::net::Radio` for the shared Wi-Fi base and takes a radio lease while its Core 0 task is alive. It owns ESP-NOW peer/callback setup while the shared radio owner protects Wi-Fi/netif teardown.
 
 `Policy` supplies compile-time config:
 
