@@ -43,7 +43,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
 - `arc::Spsc` gives a bounded lock-free lane for one producer and one consumer; `arc::Ring` remains the terse compatibility alias.
-- `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer; `arc::FanIn` is the topology alias.
+- `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer; `arc::Mux` is the terse topology alias.
 - `arc::SeqReg` gives multi-word latest-snapshot handoff without queues or torn reads.
 - `arc::dmabuf`, `arc::simdbuf`, `arc::ahbbuf`, `arc::axibuf`, and friends make DMA/SIMD/descriptor/RTC-capable heap placement explicit.
 - `arc::Space` reports runtime flash, OTA slot, partition, and heap capacity without heap allocation.
@@ -139,13 +139,13 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── din.hpp
 │               ├── dio.hpp
 │               ├── dvp.hpp
-│               ├── fanin.hpp
 │               ├── fence.hpp
 │               ├── gpio.hpp
 │               ├── i80.hpp
 │               ├── espnow.hpp
 │               ├── i2s.hpp
 │               ├── mpsc.hpp
+│               ├── mux.hpp
 │               ├── plane.hpp
 │               ├── ota.hpp
 │               ├── probe.hpp
@@ -714,6 +714,8 @@ Bounded lock-free lane for one producer and one consumer.
 
 - `try_push(event)` is producer-only.
 - `try_pop(event)` is consumer-only.
+- `drain(scratch, fn, max)` batches consumer work without heap allocation.
+- `cap()` exposes the power-of-two static capacity.
 - Payloads stay trivially copyable and capacity remains a power of two.
 
 Use this when event history matters and the ownership contract is exactly one writer and one reader. `arc::Ring<T, Capacity>` is the compatibility alias for the same type.
@@ -724,15 +726,17 @@ Bounded lock-free fan-in for many producers and one consumer.
 
 - `try_push(event)` can be called by multiple producer tasks.
 - `try_pop(event)` is single-consumer and fits Core 0 drain loops.
+- `drain(scratch, fn, max)` batches consumer work without heap allocation.
+- `cap()` exposes the power-of-two static capacity.
 - Payloads stay trivially copyable and capacity remains a power of two.
 
 Use this when several OS-side tasks need to feed one telemetry or transport owner without a FreeRTOS queue.
 
-### `arc::FanIn<T, Capacity>`
+### `arc::Mux<T, Capacity>`
 
 Compatibility alias for `arc::Mpsc<T, Capacity>`.
 
-Use it when the code should read as a topology: many writers fan into one owner. Prefer `arc::Mpsc` when the concurrency contract should be visible at the type site.
+Use it when the code should read as a topology: many inputs into one owner. Prefer `arc::Mpsc` when the concurrency contract should be visible at the type site.
 
 ### `arc::Pwm<Pin, Hz, DutyPermille = 500, Channel = 0, Timer = Channel % 4, Bits = 10>`
 

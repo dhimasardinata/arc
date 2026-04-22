@@ -48,6 +48,25 @@ struct Spsc {
         return load_acquire(&head_) == load_acquire(&tail_);
     }
 
+    [[nodiscard]] static constexpr std::size_t cap() noexcept
+    {
+        return Capacity;
+    }
+
+    template <typename Fn>
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t drain(
+        T& value,
+        Fn&& fn,
+        const std::size_t max = Capacity) noexcept(noexcept(fn(value)))
+    {
+        std::size_t count{};
+        while (count < max && try_pop(value)) {
+            fn(value);
+            ++count;
+        }
+        return count;
+    }
+
 private:
     static constexpr std::uint32_t kMask = static_cast<std::uint32_t>(Capacity - 1U);
 
