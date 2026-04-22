@@ -9,13 +9,11 @@
 #include "arc/fence.hpp"
 #include "arc/mask.hpp"
 #include "arc/mpsc.hpp"
-#include "arc/mux.hpp"
 #include "arc/place.hpp"
 #include "arc/plane.hpp"
 #include "arc/probe.hpp"
 #include "arc/reg.hpp"
 #include "arc/spsc.hpp"
-#include "arc/ring.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
 #include "arc/sketch.hpp"
@@ -30,8 +28,8 @@
 #endif
 
 #if __has_include("driver/gpio.h") && __has_include("esp_private/gpio.h") && __has_include("esp_rom_gpio.h") && __has_include("hal/dedic_gpio_cpu_ll.h")
-#include "arc/din.hpp"
-#include "arc/dio.hpp"
+#include "arc/drive.hpp"
+#include "arc/sense.hpp"
 #endif
 
 #if __has_include("esp_adc/adc_continuous.h")

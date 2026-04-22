@@ -136,8 +136,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── count.hpp
 │               ├── copy.hpp
 │               ├── dsp.hpp
-│               ├── din.hpp
-│               ├── dio.hpp
+│               ├── drive.hpp
 │               ├── dvp.hpp
 │               ├── fence.hpp
 │               ├── gpio.hpp
@@ -145,7 +144,6 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── espnow.hpp
 │               ├── i2s.hpp
 │               ├── mpsc.hpp
-│               ├── mux.hpp
 │               ├── plane.hpp
 │               ├── ota.hpp
 │               ├── probe.hpp
@@ -153,8 +151,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── pwm.hpp
 │               ├── reg.hpp
 │               ├── result.hpp
-│               ├── ring.hpp
 │               ├── scope.hpp
+│               ├── sense.hpp
 │               ├── sleep.hpp
 │               ├── sketch.hpp
 │               ├── sigma.hpp
@@ -736,7 +734,7 @@ Use this when several OS-side tasks need to feed one telemetry or transport owne
 
 Compatibility alias for `arc::Mpsc<T, Capacity>`.
 
-Use it when the code should read as a topology: many inputs into one owner. Prefer `arc::Mpsc` when the concurrency contract should be visible at the type site.
+Use it when the code should read as a topology: many inputs into one owner. It is declared in `arc/mpsc.hpp`; prefer `arc::Mpsc` when the concurrency contract should be visible at the type site.
 
 ### `arc::Pwm<Pin, Hz, DutyPermille = 500, Channel = 0, Timer = Channel % 4, Bits = 10>`
 
@@ -1126,7 +1124,7 @@ Use this when your transport plane needs to stage firmware without leaking raw O
 
 Compatibility alias for `arc::Spsc<T, Capacity>`.
 
-Prefer `arc::Spsc` in new code when the concurrency contract should be visible at the type site.
+It is declared in `arc/spsc.hpp`; prefer `arc::Spsc` in new code when the concurrency contract should be visible at the type site.
 
 ### `arc::Reg<T>`
 

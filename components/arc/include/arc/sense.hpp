@@ -15,7 +15,7 @@
 namespace arc {
 
 template <int Pin, std::uint32_t Chan, Core Bind = Core::core1>
-struct Din {
+struct Sense {
     static_assert(Bind != Core::any, "dedicated GPIO must be bound to a specific core");
     static_assert(Chan < DEDIC_GPIO_CAPS_GET(IN_CHANS_PER_CPU), "invalid dedicated GPIO channel");
 
@@ -54,6 +54,6 @@ struct Din {
 };
 
 template <int Pin, std::uint32_t Chan, Core Bind = Core::core1>
-using Sense = Din<Pin, Chan, Bind>;
+using Din = Sense<Pin, Chan, Bind>;
 
 }  // namespace arc
