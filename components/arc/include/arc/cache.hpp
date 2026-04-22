@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -45,8 +44,9 @@ struct Cache {
             return ESP_ERR_INVALID_ARG;
         }
 
-        assert(aligned(data) && whole_lines(bytes) &&
-               "cache strict sync requires cache-line aligned buffers and sizes");
+        if (!aligned(data) || !whole_lines(bytes)) {
+            return ESP_ERR_INVALID_ARG;
+        }
         return esp_cache_msync(data, bytes, (flags & ~unaligned) | type_data);
     }
 
@@ -62,7 +62,7 @@ struct Cache {
 
     static esp_err_t from_device(void* const data, const std::size_t bytes) noexcept
     {
-        return sync(data, bytes, dir_m2c | unaligned);
+        return from_device_strict(data, bytes);
     }
 
     static esp_err_t from_device_strict(void* const data, const std::size_t bytes) noexcept
@@ -70,14 +70,24 @@ struct Cache {
         return strict(data, bytes, dir_m2c);
     }
 
+    static esp_err_t from_device_unaligned(void* const data, const std::size_t bytes) noexcept
+    {
+        return sync(data, bytes, dir_m2c | unaligned);
+    }
+
     static esp_err_t discard(void* const data, const std::size_t bytes) noexcept
     {
-        return sync(data, bytes, dir_c2m | invalidate | unaligned);
+        return discard_strict(data, bytes);
     }
 
     static esp_err_t discard_strict(void* const data, const std::size_t bytes) noexcept
     {
         return strict(data, bytes, dir_c2m | invalidate);
+    }
+
+    static esp_err_t discard_unaligned(void* const data, const std::size_t bytes) noexcept
+    {
+        return sync(data, bytes, dir_c2m | invalidate | unaligned);
     }
 
     [[nodiscard]] static std::size_t line(const void* const data) noexcept
@@ -115,6 +125,13 @@ struct Cache {
 
     template <typename T>
         requires std::is_trivially_copyable_v<T>
+    static esp_err_t from_device_unaligned(const std::span<T> data) noexcept
+    {
+        return from_device_unaligned(data.data(), data.size_bytes());
+    }
+
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
     static esp_err_t discard(const std::span<T> data) noexcept
     {
         return discard(data.data(), data.size_bytes());
@@ -125,6 +142,13 @@ struct Cache {
     static esp_err_t discard_strict(const std::span<T> data) noexcept
     {
         return discard_strict(data.data(), data.size_bytes());
+    }
+
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    static esp_err_t discard_unaligned(const std::span<T> data) noexcept
+    {
+        return discard_unaligned(data.data(), data.size_bytes());
     }
 };
 

@@ -11,6 +11,8 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/claim.hpp"
+
 namespace arc {
 
 template <typename T>
@@ -35,6 +37,11 @@ struct I2cBus {
             return ESP_OK;
         }
 
+        auto err = Resource::take();
+        if (err != ESP_OK) {
+            return err;
+        }
+
         i2c_master_bus_config_t cfg{};
         cfg.i2c_port = static_cast<decltype(cfg.i2c_port)>(Port);
         cfg.sda_io_num = static_cast<gpio_num_t>(Sda);
@@ -46,13 +53,18 @@ struct I2cBus {
         cfg.flags.enable_internal_pullup = Pullup;
         cfg.flags.allow_pd = false;
 
-        const auto err = i2c_new_master_bus(&cfg, &state.bus);
+        err = i2c_new_master_bus(&cfg, &state.bus);
         if (err == ESP_OK) {
             return ESP_OK;
         }
         if (err == ESP_ERR_INVALID_STATE) {
-            return i2c_master_get_bus_handle(static_cast<decltype(cfg.i2c_port)>(Port), &state.bus);
+            err = i2c_master_get_bus_handle(static_cast<decltype(cfg.i2c_port)>(Port), &state.bus);
+            if (err == ESP_OK) {
+                return ESP_OK;
+            }
         }
+
+        Resource::drop();
         return err;
     }
 
@@ -78,6 +90,22 @@ struct I2cBus {
         return state.bus;
     }
 
+    [[nodiscard]] static esp_err_t off() noexcept
+    {
+        if (state.bus == nullptr) {
+            return ESP_OK;
+        }
+
+        const auto err = i2c_del_master_bus(state.bus);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        state.bus = nullptr;
+        Resource::drop();
+        return ESP_OK;
+    }
+
     [[nodiscard]] static constexpr int port() noexcept
     {
         return Port;
@@ -94,6 +122,10 @@ struct I2cBus {
     }
 
 private:
+    using Resource = Claim<ClaimKind::i2c_bus,
+                           Port,
+                           claim_token<Port, Sda, Scl, Pullup, Glitch, Clock, Intr, Queue>()>;
+
     struct State {
         i2c_master_bus_handle_t bus;
     };
@@ -122,6 +154,11 @@ struct I2c {
             return err;
         }
 
+        err = Resource::take();
+        if (err != ESP_OK) {
+            return err;
+        }
+
         i2c_device_config_t cfg{};
         cfg.dev_addr_length = AddrLen;
         cfg.device_address = Addr;
@@ -129,7 +166,11 @@ struct I2c {
         cfg.scl_wait_us = SclWaitUs;
         cfg.flags.disable_ack_check = !AckCheck;
 
-        return i2c_master_bus_add_device(Bus::native(), &cfg, &state.dev);
+        err = i2c_master_bus_add_device(Bus::native(), &cfg, &state.dev);
+        if (err != ESP_OK) {
+            Resource::drop();
+        }
+        return err;
     }
 
     static void boot()
@@ -223,6 +264,22 @@ struct I2c {
         return state.dev;
     }
 
+    [[nodiscard]] static esp_err_t off() noexcept
+    {
+        if (state.dev == nullptr) {
+            return ESP_OK;
+        }
+
+        const auto err = i2c_master_bus_rm_device(state.dev);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        state.dev = nullptr;
+        Resource::drop();
+        return ESP_OK;
+    }
+
     [[nodiscard]] static constexpr std::uint16_t address() noexcept
     {
         return Addr;
@@ -234,6 +291,10 @@ struct I2c {
     }
 
 private:
+    using Resource = Claim<ClaimKind::i2c_dev,
+                           (Bus::port() * 1024) + static_cast<int>(Addr),
+                           claim_token<Bus::port(), Addr, Hz, AddrLen, SclWaitUs, AckCheck>()>;
+
     struct State {
         i2c_master_dev_handle_t dev;
     };

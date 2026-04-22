@@ -45,11 +45,12 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Timer` binds the GPTimer block to a compile-time timebase and optional ISR hook.
 - `arc::Sleep` wraps wake causes, timer wake, power-domain policy, light sleep, and deep sleep.
 - `arc::Temp` reads the ESP32-S3 internal temperature sensor for thermal telemetry.
-- `arc::Tight` runs a masked per-step loop for the rare path that needs tighter jitter than `arc::App`.
+- `arc::Tight` runs a masked per-step loop with optional cycle-budget overrun telemetry for the rare path that needs tighter jitter than `arc::App`.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
 - `arc::Spsc` gives a bounded lock-free lane for one producer and one consumer; `arc::Ring` remains the terse compatibility alias.
 - `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer; `arc::Mux` is the terse topology alias.
+- `arc::Fanin` gives per-producer SPSC lanes when producer preemption must not block completed work from other producers.
 - `arc::SeqReg` gives multi-word latest-snapshot handoff without queues or torn reads.
 - `arc::dmabuf`, `arc::simdbuf`, `arc::ahbbuf`, `arc::axibuf`, and one-word STL allocators make DMA/SIMD/descriptor/RTC-capable heap placement explicit.
 - `arc::Space` reports runtime flash, OTA slot, partition, and heap capacity without heap allocation.
@@ -143,6 +144,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── burst.hpp
 │               ├── capture.hpp
 │               ├── caps.hpp
+│               ├── claim.hpp
 │               ├── cfg.hpp
 │               ├── clock.hpp
 │               ├── count.hpp
@@ -150,14 +152,15 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── dsp.hpp
 │               ├── drive.hpp
 │               ├── dvp.hpp
+│               ├── fanin.hpp
 │               ├── fence.hpp
 │               ├── file.hpp
 │               ├── fs.hpp
 │               ├── gpio.hpp
 │               ├── http.hpp
+│               ├── espnow.hpp
 │               ├── i2c.hpp
 │               ├── i80.hpp
-│               ├── espnow.hpp
 │               ├── i2s.hpp
 │               ├── mpsc.hpp
 │               ├── plane.hpp
@@ -394,6 +397,8 @@ static_assert(arc::Topology<Board>);
 ```
 
 `arc::Pins` ignores negative sentinel pins like `-1`, so optional CS/MISO-style values can still be represented without false collisions.
+
+Peripheral wrappers also claim physical silicon at `init()` time. Two different `arc::Uart`, `arc::I2cBus`, `arc::I2c`, `arc::SpiBus`, or CS-backed `arc::Spi` template aliases cannot silently own the same hardware with different type parameters; the later claim returns `ESP_ERR_INVALID_STATE`.
 
 ## Start From Zero
 
@@ -716,7 +721,7 @@ Your `Program` type defines:
 
 `arc::Sketch` remains available as a compatibility alias.
 
-### `arc::Tight<Program, StackBytes, Core = core1, Guard = arc::Critical>`
+### `arc::Tight<Program, StackBytes, Core = core1, Guard = arc::Critical, Pri = max, Budget = 0>`
 
 Masked per-step loop for the extreme path.
 
@@ -726,6 +731,8 @@ Your `Program` type defines:
 - `IRAM_ATTR static void step() noexcept`
 
 `Tight` runs `step()` forever and constructs `Guard` around every iteration.
+
+When `Budget` is non-zero, `Tight` counts iterations whose masked step exceeds that cycle budget. `overruns()` returns the counter, and an optional `Program::overrun(cycles) noexcept` hook can consume the exact overrun cost.
 
 Use this only when the step body is tiny and the jitter budget is tighter than what a normal task iteration should tolerate. `arc::Hard` is a compatibility alias.
 
@@ -771,6 +778,18 @@ Use this when several OS-side tasks need to feed one telemetry or transport owne
 Compatibility alias for `arc::Mpsc<T, Capacity>`.
 
 Use it when the code should read as a topology: many inputs into one owner. It is declared in `arc/mpsc.hpp`; prefer `arc::Mpsc` when the concurrency contract should be visible at the type site.
+
+### `arc::Fanin<T, Capacity, Producers>`
+
+Static fan-in made from one SPSC lane per producer and one round-robin consumer.
+
+- `try_push<Producer>(event)` is wait-free for that producer lane.
+- `try_pop(event)` drains any completed producer without waiting behind another producer's half-finished slot.
+- `try_pop(producer, event)` also reports which lane produced the event.
+- `drain(scratch, fn, max)` accepts either `fn(event)` or `fn(producer, event)`.
+- `cap()` is the per-producer lane capacity and `producers()` is the static lane count.
+
+Use this when producer identity is static and tail latency matters more than one global FIFO order.
 
 ### `arc::Pwm<Pin, Hz, DutyPermille = 500, Channel = 0, Timer = Channel % 4, Bits = 10>`
 
@@ -860,7 +879,9 @@ Compile-time SPI bus wrapper.
 
 - `init()` initializes one ESP32-S3 SPI host and returns `esp_err_t`.
 - `boot()` initializes one ESP32-S3 SPI host with DMA-capable transfer sizing.
+- `off()` frees the SPI host when no devices are still mounted.
 - `host()`, `sclk()`, `mosi()`, and `miso()` keep the routing obvious in user code.
+- host claims reject incompatible second aliases for the same physical SPI block.
 - The SPI ISR is pinned to CPU0 by default so transport work naturally stays off the realtime core.
 
 Use this when multiple devices should share one bus or when bus routing should stay explicit and reusable.
@@ -871,10 +892,11 @@ Compile-time SPI device wrapper.
 
 - `init()` adds one device and returns `esp_err_t`.
 - `boot()` adds one device on top of a compile-time `arc::SpiBus`.
+- `off()` removes the device and releases its CS claim.
 - `send(...)`, `recv(...)`, `xfer(...)`, and `poll(...)` cover the common synchronous paths.
 - `queue(...)` and `wait(...)` expose the interrupt-driven transaction path when you want multiple jobs in flight.
 - `Move` and `StrictMove` are ticket objects that own queued transaction storage until `finish(...)`.
-- `queue_coherent(move, tx, rx, bytes)` flushes TX, discards RX, and queues one DMA transfer.
+- `queue_coherent(move, tx, rx, bytes)` flushes TX, safely discards whole RX cache lines, and queues one DMA transfer.
 - `finish_coherent(move)` waits for that exact SPI transfer and invalidates RX before the CPU reads it.
 - `acquire()` and `release()` give explicit bus ownership when CS must stay held.
 
@@ -886,7 +908,9 @@ Compile-time I2C master wrapper.
 
 - `I2cBus::init()` brings up one I2C master bus and returns `esp_err_t`.
 - `I2cBus::probe(addr)` checks for a device without forcing a reboot loop.
+- `I2cBus::off()` deletes the bus once devices are removed.
 - `I2c::init()` mounts one device on a bus and returns `esp_err_t`.
+- `I2c::off()` removes the device and releases its address claim.
 - `send(...)`, `recv(...)`, and `xfer(...)` cover write, read, and repeated-start write/read transactions.
 - `boot()` remains available when board topology failure should be fail-fast.
 
@@ -926,6 +950,7 @@ Compile-time UART wrapper.
 
 - `init()` configures the port, pins, framing, buffers, and driver, then returns `esp_err_t`.
 - `boot()` keeps the fail-fast path for required serial links.
+- `off()` deletes the driver and releases the port claim.
 - `write(...)` and `read(...)` expose `arc::Result<std::size_t>` ergonomic overloads.
 - `available(...)`, `wait(...)`, `flush()`, and `baud(...)` expose the common runtime controls.
 
@@ -994,7 +1019,7 @@ Compile-time async DMA memcpy wrapper.
 - `finish_coherent(ticket)` waits for that exact transfer and invalidates the destination cache before CPU reads it.
 - `ready(ticket)` reports whether that exact transfer has completed.
 - `copy_coherent(dst, src, bytes)` is the blocking one-call form built on the non-blocking ticket path.
-- `copy_coherent_strict(...)` and `send_coherent_strict(...)` require cache-line aligned buffers and sizes.
+- coherent copy destination buffers must cover whole cache lines; the `_strict` variants also require the source side to be cache-line aligned.
 - `sent()`, `done()`, `bytes()`, and `idle()` expose lock-free counters without FreeRTOS queues.
 - `arc::CopyBackend::ahb` pins the backend to AHB-GDMA on ESP32-S3.
 
@@ -1005,8 +1030,9 @@ Use this when bytes should move through the DMA memcpy engine instead of burning
 Explicit cache coherency helpers for DMA and external-memory paths.
 
 - `to_device(data, bytes)` writes dirty cache lines back before hardware reads a buffer.
-- `from_device(data, bytes)` invalidates cache lines after hardware writes a buffer.
-- `discard(data, bytes)` writes back and invalidates when ownership moves away from the CPU.
+- `from_device(data, bytes)` invalidates only whole cache-line-aligned buffers after hardware writes a buffer.
+- `discard(data, bytes)` writes back and invalidates only whole cache-line-aligned buffers when ownership moves away from the CPU.
+- `from_device_unaligned(...)` and `discard_unaligned(...)` are the explicit escape hatches when the caller accepts shared-line invalidation risk.
 - `line(ptr)` returns the cache line size for one address, or zero when the address is not cacheable.
 - span overloads work directly with `arc::CapsBuf<T>::view()`.
 

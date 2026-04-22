@@ -12,6 +12,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/claim.hpp"
 #include "arc/result.hpp"
 
 namespace arc {
@@ -51,6 +52,11 @@ struct Uart {
             return ESP_OK;
         }
 
+        auto err = Resource::take();
+        if (err != ESP_OK) {
+            return err;
+        }
+
         uart_config_t cfg{};
         cfg.baud_rate = Baud;
         cfg.data_bits = Bits;
@@ -62,13 +68,15 @@ struct Uart {
         cfg.flags.allow_pd = false;
         cfg.flags.backup_before_sleep = false;
 
-        auto err = uart_param_config(Port, &cfg);
+        err = uart_param_config(Port, &cfg);
         if (err != ESP_OK) {
+            Resource::drop();
             return err;
         }
 
         err = uart_set_pin(Port, Tx, Rx, Rts, Cts);
         if (err != ESP_OK) {
+            Resource::drop();
             return err;
         }
 
@@ -78,6 +86,7 @@ struct Uart {
             return ESP_OK;
         }
         if (err != ESP_OK) {
+            Resource::drop();
             return err;
         }
 
@@ -188,6 +197,22 @@ struct Uart {
         return uart_set_baudrate(Port, value);
     }
 
+    [[nodiscard]] static esp_err_t off() noexcept
+    {
+        if (!state.ready) {
+            return ESP_OK;
+        }
+
+        const auto err = uart_driver_delete(Port);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        state.ready = false;
+        Resource::drop();
+        return ESP_OK;
+    }
+
     [[nodiscard]] static constexpr uart_port_t port() noexcept
     {
         return Port;
@@ -204,7 +229,11 @@ struct Uart {
     }
 
 private:
-    constinit static inline bool ready{};
+    using Resource = Claim<ClaimKind::uart,
+                           static_cast<int>(Port),
+                           claim_token<Port, Tx, Rx, Rts, Cts, Baud, RxBuf, TxBuf, Queue, Intr, Bits, Parity, Stop, Flow, Clock>()>;
+
+    constinit static inline bool ready{false};
 };
 
 }  // namespace arc

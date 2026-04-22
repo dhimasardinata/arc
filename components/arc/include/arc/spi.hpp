@@ -14,6 +14,7 @@
 #include "soc/soc_caps.h"
 
 #include "arc/cache.hpp"
+#include "arc/claim.hpp"
 
 namespace arc {
 
@@ -42,6 +43,11 @@ struct SpiBus {
             return ESP_OK;
         }
 
+        auto err = Resource::take();
+        if (err != ESP_OK) {
+            return err;
+        }
+
         spi_bus_config_t cfg{};
         cfg.sclk_io_num = Sclk;
         cfg.mosi_io_num = Mosi;
@@ -57,9 +63,11 @@ struct SpiBus {
         cfg.isr_cpu_id = IsrCpu;
         cfg.intr_flags = IntrFlags;
         cfg.data_io_default_level = false;
-        const auto err = spi_bus_initialize(Host, &cfg, Dma);
+        err = spi_bus_initialize(Host, &cfg, Dma);
         if (err == ESP_OK) {
             state.ready = true;
+        } else {
+            Resource::drop();
         }
         return err;
     }
@@ -94,12 +102,32 @@ struct SpiBus {
         return MaxBytes;
     }
 
+    [[nodiscard]] static esp_err_t off() noexcept
+    {
+        if (!state.ready) {
+            return ESP_OK;
+        }
+
+        const auto err = spi_bus_free(Host);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        state.ready = false;
+        Resource::drop();
+        return ESP_OK;
+    }
+
 private:
+    using Resource = Claim<ClaimKind::spi_bus,
+                           static_cast<int>(Host),
+                           claim_token<Host, Sclk, Mosi, Miso, MaxBytes, Dma, Flags, IsrCpu, IntrFlags>()>;
+
     struct State {
-        bool ready{};
+        bool ready;
     };
 
-    constinit static inline State state{};
+    constinit static inline State state{false};
 };
 
 template <typename Bus,
@@ -138,6 +166,13 @@ struct Spi {
             return err;
         }
 
+        if constexpr (Cs >= 0) {
+            err = Resource::take();
+            if (err != ESP_OK) {
+                return err;
+            }
+        }
+
         spi_device_interface_config_t cfg{};
         cfg.command_bits = 0;
         cfg.address_bits = 0;
@@ -155,7 +190,13 @@ struct Spi {
         cfg.queue_size = Queue;
         cfg.pre_cb = nullptr;
         cfg.post_cb = nullptr;
-        return spi_bus_add_device(Bus::host(), &cfg, &state.dev);
+        err = spi_bus_add_device(Bus::host(), &cfg, &state.dev);
+        if (err != ESP_OK) {
+            if constexpr (Cs >= 0) {
+                Resource::drop();
+            }
+        }
+        return err;
     }
 
     static void boot()
@@ -460,14 +501,39 @@ struct Spi {
         return Queue;
     }
 
+    [[nodiscard]] static esp_err_t off() noexcept
+    {
+        if (state.dev == nullptr) {
+            return ESP_OK;
+        }
+
+        release();
+        const auto err = spi_bus_remove_device(state.dev);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        state.dev = nullptr;
+        state.owner = nullptr;
+        state.depth = 0U;
+        if constexpr (Cs >= 0) {
+            Resource::drop();
+        }
+        return ESP_OK;
+    }
+
 private:
+    using Resource = Claim<ClaimKind::spi_dev,
+                           (static_cast<int>(Bus::host()) * (SOC_GPIO_PIN_COUNT + 1)) + Cs + 1,
+                           claim_token<Bus::host(), Cs, Hz, Mode, Queue, Flags, Clock, DutyCyclePos, InputDelayNs>()>;
+
     struct State {
-        spi_device_handle_t dev{};
-        TaskHandle_t owner{};
-        std::uint32_t depth{};
+        spi_device_handle_t dev;
+        TaskHandle_t owner;
+        std::uint32_t depth;
     };
 
-    constinit static inline State state{};
+    constinit static inline State state{nullptr, nullptr, 0U};
 
     template <bool Strict>
     [[nodiscard]] static esp_err_t queue_impl(
