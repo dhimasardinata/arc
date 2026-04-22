@@ -32,6 +32,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::SpiBus` and `arc::Spi` drive DMA-capable SPI transfers with ticketed queue/finish ownership.
 - `arc::I2s` owns standard-mode I2S channels and DMA event counters with both raw `esp_err_t` and opt-in `arc::Result` APIs.
 - `arc::Uart` binds ESP32-S3 UART ports, pins, framing, and buffers with fixed storage and typed read/write APIs.
+- `arc::Usb` binds the ESP32-S3 USB Serial/JTAG lane with typed byte IO.
+- `arc::Sd` mounts ESP32-S3 SD/MMC cards through FAT and keeps raw sector access explicit.
+- `arc::Fs` mounts SPIFFS and FAT-on-flash VFS paths with fixed handle ownership.
 - `arc::File` gives RAII VFS/POSIX file I/O without leaking `FILE*` ownership into app code.
 - `arc::Count` offloads pulse accumulation to the PCNT block.
 - `arc::dsp` adds hot-loop math kernels that pair naturally with `arc::simdbuf` and Core 1.
@@ -149,6 +152,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── dvp.hpp
 │               ├── fence.hpp
 │               ├── file.hpp
+│               ├── fs.hpp
 │               ├── gpio.hpp
 │               ├── http.hpp
 │               ├── i2c.hpp
@@ -164,6 +168,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── reg.hpp
 │               ├── result.hpp
 │               ├── scope.hpp
+│               ├── sd.hpp
 │               ├── sense.hpp
 │               ├── sleep.hpp
 │               ├── sketch.hpp
@@ -180,6 +185,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── trace.hpp
 │               ├── uart.hpp
 │               ├── udp.hpp
+│               ├── usb.hpp
 │               └── wave.hpp
 └── main
     ├── app_main.cpp
@@ -215,6 +221,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware SPI transfers with explicit bus/device composition and DMA-capable paths
 - Hardware I2S streaming with duplex DMA and event counters
 - Hardware UART serial lanes for GPS, modems, consoles, and legacy links
+- Hardware USB Serial/JTAG byte IO for cabled control channels
+- Hardware SD/MMC FAT mounting and raw sector access
 - Hardware PWM offload through LEDC for periodic output that should not burn a core
 - Hardware Sigma-Delta pulse-density output with IRAM-safe density updates enabled
 - Hardware timebase and alarms through GPTimer
@@ -223,6 +231,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Lock-free SPSC/MPSC queues and single-word control register
 - Slot-aware OTA helper for staged writes and rollback state
 - Typed NVS persistence and bounded string loading on the Core 0 side
+- SPIFFS and FAT-on-flash VFS mounting
 - RAII file handles for mounted VFS/FAT/SPIFFS/LittleFS paths
 - Direct TCP clients for small control/config protocols
 - RAII HTTP client sessions for REST/config exchanges
@@ -287,6 +296,7 @@ Feature names map directly to hardware lanes:
 - `i2c`
 - `i2s`
 - `spi`
+- `sd`
 - `twai`
 - `cam`
 - `lcd`
@@ -300,6 +310,7 @@ Feature names map directly to hardware lanes:
 - `tcp`
 - `udp`
 - `uart`
+- `usb`
 - `espnow`
 
 Add `gpio` when you use `arc::Drive`, `arc::Sense`, or raw `arc::Gpio`, because those pin APIs depend on the GPIO driver headers.
@@ -919,6 +930,28 @@ Compile-time UART wrapper.
 
 Use this for GPS receivers, modem AT links, binary serial protocols, and board-level debug channels that should not leak raw UART driver calls into app code.
 
+### `arc::Usb<Tx = 256, Rx = 256>`
+
+Compile-time USB Serial/JTAG wrapper.
+
+- `init()` installs the driver with fixed TX/RX ring sizes and returns `esp_err_t`.
+- `boot()` keeps the fail-fast path for required cabled control.
+- `write(...)` and `read(...)` expose `arc::Result<std::size_t>` byte-count overloads.
+- `connected()`, `installed()`, `wait(...)`, and `off()` expose runtime state and teardown.
+
+Use this for ESP32-S3 USB console/control traffic when the native USB Serial/JTAG peripheral is the lane.
+
+### `arc::Sd<Clk = 14, Cmd = 15, D0 = 2, D1 = 4, D2 = 12, D3 = 13, ...>`
+
+Compile-time SD/MMC FAT wrapper.
+
+- `mount(base)` mounts one SD/MMC card into VFS using the configured bus width and pins.
+- `boot(base)` keeps the fail-fast path for required storage.
+- `read(...)` and `write(...)` expose raw sector operations for preallocated buffers.
+- `status()`, `format()`, `sector()`, `bytes()`, `card()`, and `unmount()` expose card control.
+
+Use this for removable FAT storage and high-volume logs that should stay on Core 0.
+
 ### `arc::Dvp<arc::DvpLines<...>, Vsync, Pclk, De, Xclk>`
 
 Compile-time DVP camera input using the ESP32-S3 LCD_CAM block.
@@ -1167,6 +1200,17 @@ RAII file handle for mounted VFS paths.
 - `native()` exposes the raw handle when an IDF API really needs it.
 
 Use this after FAT, SPIFFS, LittleFS, or another ESP-IDF VFS mount is already active.
+
+### `arc::Fs`
+
+Mounted filesystem helpers for Core 0 storage paths.
+
+- `spiffs(base, label, max_files, format)` mounts one SPIFFS partition.
+- `spiffs_info(...)`, `spiffs_gc(...)`, `spiffs_check(...)`, and `spiffs_off(...)` cover common maintenance.
+- `fat(base, label, max_files, format, alloc)` mounts FAT-on-flash through wear levelling.
+- `fat_ro(...)`, `fat_info(...)`, `fat_format(...)`, `fat_off()`, and `fat_ro_off(...)` keep FAT control explicit.
+
+Use this to create a mounted VFS path before using `arc::File`.
 
 ### `arc::Ota`
 

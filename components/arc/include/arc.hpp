@@ -31,6 +31,10 @@
 #include "arc/file.hpp"
 #endif
 
+#if __has_include("esp_spiffs.h") && __has_include("esp_vfs_fat.h")
+#include "arc/fs.hpp"
+#endif
+
 #if __has_include("driver/gpio.h") && __has_include("esp_private/gpio.h") && __has_include("esp_rom_gpio.h") && __has_include("hal/dedic_gpio_cpu_ll.h")
 #include "arc/drive.hpp"
 #include "arc/sense.hpp"
@@ -95,6 +99,10 @@
 #include "arc/sigma.hpp"
 #endif
 
+#if __has_include("driver/sdmmc_host.h") && __has_include("esp_vfs_fat.h") && __has_include("sdmmc_cmd.h")
+#include "arc/sd.hpp"
+#endif
+
 #if __has_include("esp_sleep.h")
 #include "arc/sleep.hpp"
 #endif
@@ -129,6 +137,10 @@
 
 #if __has_include("driver/uart.h")
 #include "arc/uart.hpp"
+#endif
+
+#if __has_include("driver/usb_serial_jtag.h")
+#include "arc/usb.hpp"
 #endif
 
 #if __has_include("esp_twai.h") && __has_include("esp_twai_onchip.h")
