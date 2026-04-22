@@ -42,6 +42,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Tight` runs a masked per-step loop for the rare path that needs tighter jitter than `arc::App`.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
+- `arc::Spsc` gives a bounded lock-free lane for one producer and one consumer; `arc::Ring` remains the terse compatibility alias.
 - `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer.
 - `arc::SeqReg` gives multi-word latest-snapshot handoff without queues or torn reads.
 - `arc::dmabuf`, `arc::simdbuf`, `arc::ahbbuf`, `arc::axibuf`, and friends make DMA/SIMD/descriptor/RTC-capable heap placement explicit.
@@ -158,6 +159,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── sigma.hpp
 │               ├── spi.hpp
 │               ├── space.hpp
+│               ├── spsc.hpp
 │               ├── store.hpp
 │               ├── task.hpp
 │               ├── temp.hpp
@@ -203,7 +205,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware timebase and alarms through GPTimer
 - Deep-sleep and light-sleep entry with explicit wake-source and power-domain policy
 - Hardware die-temperature telemetry for thermal guard logic
-- Lock-free telemetry ring and single-word control register
+- Lock-free SPSC/MPSC queues and single-word control register
 - Slot-aware OTA helper for staged writes and rollback state
 - Typed NVS persistence and bounded string loading on the Core 0 side
 - Bounded MPSC fan-in for multi-task telemetry producers
@@ -697,7 +699,7 @@ Use this only when the step body is tiny and the jitter budget is tighter than w
 
 Shared state for asymmetric programs.
 
-- `events` is an `arc::Ring<Event, Capacity>`
+- `events` is an `arc::Spsc<Event, Capacity>`
 - `pace` is an `arc::Reg<std::uint32_t>`
 - `control` is an `arc::Reg<Control>`
 
@@ -705,7 +707,17 @@ Use it when Core 1 emits ordered events and Core 0 applies latest-wins control.
 
 `arc::Bus` remains available as a compatibility alias.
 
-### `arc::Mpsc<Event, Capacity>`
+### `arc::Spsc<T, Capacity>`
+
+Bounded lock-free lane for one producer and one consumer.
+
+- `try_push(event)` is producer-only.
+- `try_pop(event)` is consumer-only.
+- Payloads stay trivially copyable and capacity remains a power of two.
+
+Use this when event history matters and the ownership contract is exactly one writer and one reader. `arc::Ring<T, Capacity>` is the compatibility alias for the same type.
+
+### `arc::Mpsc<T, Capacity>`
 
 Bounded lock-free fan-in for many producers and one consumer.
 
@@ -713,7 +725,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 - `try_pop(event)` is single-consumer and fits Core 0 drain loops.
 - Payloads stay trivially copyable and capacity remains a power of two.
 
-Use `arc::Ring` when the lane is strictly SPSC. Use `arc::Mpsc` when several OS-side tasks need to feed one telemetry or transport owner without a FreeRTOS queue.
+Use this when several OS-side tasks need to feed one telemetry or transport owner without a FreeRTOS queue.
 
 ### `arc::Pwm<Pin, Hz, DutyPermille = 500, Channel = 0, Timer = Channel % 4, Bits = 10>`
 
@@ -830,7 +842,7 @@ Compile-time ESP32-S3 TWAI/CAN node wrapper.
 - `frame(id, payload, ext, remote)` builds an owning classic CAN frame.
 - `send(frame, timeout_ms)` queues a frame; keep the frame alive until TX completes.
 - `send_wait(frame, timeout_ms)` queues and waits for completion before returning.
-- `recv(frame)` drains the ISR-backed lock-free RX ring.
+- `recv(frame)` drains the ISR-backed lock-free `arc::Spsc` RX lane.
 - `sent()`, `done()`, `rx()`, `drop()`, `err()`, `bytes()`, and `idle()` expose bus counters.
 
 Use this for robot/industrial control links where the TWAI controller should own bit timing and arbitration, not software.
@@ -1101,10 +1113,9 @@ Use this when your transport plane needs to stage firmware without leaking raw O
 
 ### `arc::Ring<T, Capacity>`
 
-Single-producer single-consumer event lane.
+Compatibility alias for `arc::Spsc<T, Capacity>`.
 
-- use for history you cannot collapse
-- push/pop are lock-free and power-of-two indexed
+Prefer `arc::Spsc` in new code when the concurrency contract should be visible at the type site.
 
 ### `arc::Reg<T>`
 
@@ -1929,7 +1940,7 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 - `arc::Wave` is for deliberate CPU-owned edges, not for the common case of “just blink this periodically”.
 - `arc::Reg` is better than a queue for latest-wins control words.
 - For multi-field control words, prefer explicit fixed-width fields over C++ bitfields.
-- `arc::Ring` is better than a register when event history matters.
+- `arc::Spsc` is better than a register when event history matters and ownership is one writer plus one reader.
 - `arc::net::EspNow` is the transport to reach for before IP when you want radio latency and do not need routers.
 - `arc::Ota` belongs on Core 0 with transports and storage, not in the realtime loop.
 - `arc::Burst`, `arc::Trace`, and `arc::Count` are the first place to go when a pin-level job should move from CPU polling into dedicated hardware.

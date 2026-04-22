@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include "arc/reg.hpp"
-#include "arc/ring.hpp"
+#include "arc/spsc.hpp"
 
 namespace arc {
 
@@ -13,7 +13,7 @@ struct Bus {
     using event_type = Event;
     using control_type = Control;
 
-    Ring<Event, Capacity> events{};
+    Spsc<Event, Capacity> events{};
     Reg<std::uint32_t> pace{};
     Reg<Control> control{};
 };

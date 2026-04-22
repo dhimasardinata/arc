@@ -28,9 +28,9 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
-#include "arc/ring.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
+#include "arc/spsc.hpp"
 
 namespace arc {
 
@@ -251,7 +251,7 @@ struct Can {
 private:
     struct State {
         twai_node_handle_t node{};
-        Ring<Frame, RxDepth> rx{};
+        Spsc<Frame, RxDepth> rx{};
         alignas(cache_line) std::uint32_t sent{};
         alignas(cache_line) std::uint32_t done{};
         alignas(cache_line) std::uint32_t rx_count{};

@@ -13,6 +13,7 @@
 #include "arc/plane.hpp"
 #include "arc/probe.hpp"
 #include "arc/reg.hpp"
+#include "arc/spsc.hpp"
 #include "arc/ring.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"

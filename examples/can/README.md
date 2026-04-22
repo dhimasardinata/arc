@@ -14,7 +14,7 @@ The example:
 
 - starts the CAN node on Core 0
 - sends one classic 8-byte frame every second
-- receives the looped-back frame through the ISR-backed SPSC ring
+- receives the looped-back frame through the ISR-backed `arc::Spsc` lane
 - logs `sent`, `done`, `rx`, `drop`, and `err` counters
 
 ## Build And Run

@@ -89,5 +89,5 @@ The main pieces are:
 
 - Core 1 toggles the LED through dedicated GPIO.
 - Core 1 emits a telemetry frame on each output edge.
-- Core 0 drains the event ring and sends frames with UDP.
+- Core 0 drains the SPSC event lane and sends frames with UDP.
 - Core 0 toggles the control word every few seconds, changing rate, mark, and telemetry stride.
