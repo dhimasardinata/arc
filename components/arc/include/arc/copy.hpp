@@ -13,6 +13,7 @@
 #include "esp_err.h"
 
 #include "arc/cache.hpp"
+#include "arc/init.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
 
@@ -55,7 +56,7 @@ struct Copy {
 
     static void boot()
     {
-        if (state.driver != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -66,6 +67,7 @@ struct Copy {
         config.flags = 0;
 
         install(&config);
+        Init::pass(state.init);
     }
 
     template <typename Hook = void>
@@ -246,6 +248,7 @@ struct Copy {
 private:
     struct State {
         async_memcpy_handle_t driver{};
+        std::uint32_t init{};
         alignas(cache_line) std::uint32_t sent{};
         alignas(cache_line) std::uint32_t done{};
         std::size_t bytes{};

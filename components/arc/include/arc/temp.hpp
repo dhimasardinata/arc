@@ -1,9 +1,13 @@
 #pragma once
 
+#include <cstdint>
+
 #include "driver/temperature_sensor.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "soc/soc_caps.h"
+
+#include "arc/init.hpp"
 
 namespace arc {
 
@@ -70,13 +74,14 @@ private:
     struct State {
         temperature_sensor_handle_t sensor{};
         bool enabled{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
 
     static void create()
     {
-        if (state.sensor != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -84,6 +89,7 @@ private:
         config.clk_src = Source;
         config.flags.allow_pd = AllowPd ? 1U : 0U;
         ESP_ERROR_CHECK(temperature_sensor_install(&config, &state.sensor));
+        Init::pass(state.init);
     }
 };
 

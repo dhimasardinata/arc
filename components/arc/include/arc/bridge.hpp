@@ -7,6 +7,8 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/init.hpp"
+
 namespace arc {
 
 template <int HighPin,
@@ -133,6 +135,7 @@ private:
         std::uint32_t duty{};
         bool enabled{};
         bool running{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
@@ -221,7 +224,7 @@ private:
 
     static void init()
     {
-        if (state.timer != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -291,6 +294,7 @@ private:
         low_dead.negedge_delay_ticks = FallDelayTicks;
         low_dead.flags.invert_output = 1U;
         ESP_ERROR_CHECK(mcpwm_generator_set_dead_time(state.high, state.low, &low_dead));
+        Init::pass(state.init);
     }
 };
 

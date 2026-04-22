@@ -9,6 +9,7 @@
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
 #include "arc/fence.hpp"
+#include "arc/init.hpp"
 #include "arc/mask.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/place.hpp"

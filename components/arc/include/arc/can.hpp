@@ -28,6 +28,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/init.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
@@ -65,7 +66,7 @@ struct Can {
 
     static void boot()
     {
-        if (state.node != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -94,6 +95,7 @@ struct Can {
         callbacks.on_state_change = &on_state;
         callbacks.on_error = &on_error;
         ESP_ERROR_CHECK(twai_node_register_event_callbacks(state.node, &callbacks, nullptr));
+        Init::pass(state.init);
     }
 
     static void start()
@@ -259,6 +261,7 @@ private:
         alignas(cache_line) std::uint32_t errors{};
         std::size_t bytes{};
         bool enabled{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};

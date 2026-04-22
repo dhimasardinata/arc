@@ -7,6 +7,8 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/init.hpp"
+
 namespace arc {
 
 template <int Pin,
@@ -118,6 +120,7 @@ private:
         std::uint32_t duty{};
         bool enabled{};
         bool running{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
@@ -205,7 +208,7 @@ private:
 
     static void init()
     {
-        if (state.timer != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -258,6 +261,7 @@ private:
         ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(
             state.gen,
             MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, state.cmpr, MCPWM_GEN_ACTION_LOW)));
+        Init::pass(state.init);
     }
 };
 

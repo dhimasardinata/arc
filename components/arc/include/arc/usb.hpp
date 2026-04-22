@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "soc/soc_caps.h"
 
+#include "arc/init.hpp"
 #include "arc/result.hpp"
 
 namespace arc {
@@ -27,14 +28,25 @@ struct Usb {
 
     [[nodiscard]] static esp_err_t init() noexcept
     {
+        if (!Init::begin(state.init)) {
+            return ESP_OK;
+        }
+
         if (usb_serial_jtag_is_driver_installed()) {
+            Init::pass(state.init);
             return ESP_OK;
         }
 
         usb_serial_jtag_driver_config_t cfg{};
         cfg.tx_buffer_size = Tx;
         cfg.rx_buffer_size = Rx;
-        return usb_serial_jtag_driver_install(&cfg);
+        const auto err = usb_serial_jtag_driver_install(&cfg);
+        if (err == ESP_OK) {
+            Init::pass(state.init);
+        } else {
+            Init::fail(state.init);
+        }
+        return err;
     }
 
     static void boot()
@@ -109,10 +121,17 @@ struct Usb {
 
     [[nodiscard]] static esp_err_t off() noexcept
     {
-        if (!usb_serial_jtag_is_driver_installed()) {
+        if (!Init::take(state.init)) {
             return ESP_OK;
         }
-        return usb_serial_jtag_driver_uninstall();
+
+        const auto err = usb_serial_jtag_driver_uninstall();
+        if (err == ESP_OK) {
+            Init::fail(state.init);
+        } else {
+            Init::pass(state.init);
+        }
+        return err;
     }
 
     [[nodiscard]] static bool connected() noexcept
@@ -126,6 +145,12 @@ struct Usb {
     }
 
 private:
+    struct State {
+        std::uint32_t init{};
+    };
+
+    constinit static inline State state{};
+
     [[nodiscard]] static constexpr std::uint32_t ticks(const std::uint32_t ms) noexcept
     {
         return static_cast<std::uint32_t>(pdMS_TO_TICKS(ms));

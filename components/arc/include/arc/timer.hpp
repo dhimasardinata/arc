@@ -8,6 +8,8 @@
 #include "esp_attr.h"
 #include "esp_check.h"
 
+#include "arc/init.hpp"
+
 namespace arc {
 
 template <typename Handler>
@@ -126,6 +128,7 @@ private:
         bool enabled{};
         bool running{};
         bool bound{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
@@ -145,7 +148,7 @@ private:
 
     static void create()
     {
-        if (state.timer != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -157,6 +160,7 @@ private:
         config.flags.intr_shared = 0;
         config.flags.allow_pd = 0;
         ESP_ERROR_CHECK(gptimer_new_timer(&config, &state.timer));
+        Init::pass(state.init);
     }
 
     template <typename Handler>

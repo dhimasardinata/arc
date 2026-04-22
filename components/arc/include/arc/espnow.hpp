@@ -40,30 +40,34 @@ concept EspNowRecv = requires(Bus& bus, const std::uint8_t* peer, const std::uin
 struct EspNowRadio {
     static esp_err_t start() noexcept
     {
-        if (state.ready) {
+        if (!Init::begin(state.init)) {
             return ESP_OK;
         }
 
         const auto err = esp_now_init();
         if (err != ESP_OK) {
+            Init::fail(state.init);
             return err;
         }
 
-        state.ready = true;
+        Init::pass(state.init);
         return ESP_OK;
     }
 
     static esp_err_t stop() noexcept
     {
-        if (!state.ready) {
+        if (!Init::take(state.init)) {
             return ESP_OK;
         }
 
         const auto err = esp_now_deinit();
-        if (err == ESP_OK) {
-            state.ready = false;
+        if (err != ESP_OK) {
+            Init::pass(state.init);
+            return err;
         }
-        return err;
+
+        Init::fail(state.init);
+        return ESP_OK;
     }
 
     static esp_err_t off() noexcept
@@ -73,10 +77,10 @@ struct EspNowRadio {
 
 private:
     struct State {
-        bool ready;
+        std::uint32_t init;
     };
 
-    constinit static inline State state{false};
+    constinit static inline State state{0U};
 };
 
 template <typename Policy, typename Bus>

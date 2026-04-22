@@ -15,6 +15,7 @@
 
 #include "arc/cache.hpp"
 #include "arc/claim.hpp"
+#include "arc/init.hpp"
 
 namespace arc {
 
@@ -39,12 +40,13 @@ struct SpiBus {
 
     [[nodiscard]] static esp_err_t init() noexcept
     {
-        if (state.ready) {
+        if (!Init::begin(state.init)) {
             return ESP_OK;
         }
 
         auto err = Resource::take();
         if (err != ESP_OK) {
+            Init::fail(state.init);
             return err;
         }
 
@@ -65,9 +67,10 @@ struct SpiBus {
         cfg.data_io_default_level = false;
         err = spi_bus_initialize(Host, &cfg, Dma);
         if (err == ESP_OK) {
-            state.ready = true;
+            Init::pass(state.init);
         } else {
             Resource::drop();
+            Init::fail(state.init);
         }
         return err;
     }
@@ -104,17 +107,18 @@ struct SpiBus {
 
     [[nodiscard]] static esp_err_t off() noexcept
     {
-        if (!state.ready) {
+        if (!Init::take(state.init)) {
             return ESP_OK;
         }
 
         const auto err = spi_bus_free(Host);
         if (err != ESP_OK) {
+            Init::pass(state.init);
             return err;
         }
 
-        state.ready = false;
         Resource::drop();
+        Init::fail(state.init);
         return ESP_OK;
     }
 
@@ -124,10 +128,10 @@ private:
                            claim_token<Host, Sclk, Mosi, Miso, MaxBytes, Dma, Flags, IsrCpu, IntrFlags>()>;
 
     struct State {
-        bool ready;
+        std::uint32_t init;
     };
 
-    constinit static inline State state{false};
+    constinit static inline State state{0U};
 };
 
 template <typename Bus,
@@ -157,18 +161,20 @@ struct Spi {
 
     [[nodiscard]] static esp_err_t init() noexcept
     {
-        if (state.dev != nullptr) {
+        if (!Init::begin(state.init)) {
             return ESP_OK;
         }
 
         auto err = Bus::init();
         if (err != ESP_OK) {
+            Init::fail(state.init);
             return err;
         }
 
         if constexpr (Cs >= 0) {
             err = Resource::take();
             if (err != ESP_OK) {
+                Init::fail(state.init);
                 return err;
             }
         }
@@ -195,8 +201,13 @@ struct Spi {
             if constexpr (Cs >= 0) {
                 Resource::drop();
             }
+            state.dev = nullptr;
+            Init::fail(state.init);
+            return err;
         }
-        return err;
+
+        Init::pass(state.init);
+        return ESP_OK;
     }
 
     static void boot()
@@ -503,13 +514,14 @@ struct Spi {
 
     [[nodiscard]] static esp_err_t off() noexcept
     {
-        if (state.dev == nullptr) {
+        if (!Init::take(state.init)) {
             return ESP_OK;
         }
 
         release();
         const auto err = spi_bus_remove_device(state.dev);
         if (err != ESP_OK) {
+            Init::pass(state.init);
             return err;
         }
 
@@ -519,6 +531,7 @@ struct Spi {
         if constexpr (Cs >= 0) {
             Resource::drop();
         }
+        Init::fail(state.init);
         return ESP_OK;
     }
 
@@ -531,9 +544,10 @@ private:
         spi_device_handle_t dev;
         TaskHandle_t owner;
         std::uint32_t depth;
+        std::uint32_t init;
     };
 
-    constinit static inline State state{nullptr, nullptr, 0U};
+    constinit static inline State state{nullptr, nullptr, 0U, 0U};
 
     template <bool Strict>
     [[nodiscard]] static esp_err_t queue_impl(

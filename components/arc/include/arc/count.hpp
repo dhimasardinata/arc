@@ -7,6 +7,8 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/init.hpp"
+
 namespace arc {
 
 template <int EdgePin,
@@ -97,13 +99,14 @@ private:
         pcnt_channel_handle_t chan{};
         bool enabled{};
         bool running{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
 
     static void init()
     {
-        if (state.unit != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -143,6 +146,7 @@ private:
 #endif
 
         ESP_ERROR_CHECK(pcnt_unit_clear_count(state.unit));
+        Init::pass(state.init);
     }
 };
 

@@ -12,6 +12,8 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/init.hpp"
+
 namespace arc {
 
 template <int Pin,
@@ -139,13 +141,14 @@ private:
         rmt_channel_handle_t channel{};
         rmt_encoder_handle_t encoder{};
         bool enabled{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
 
     static void init()
     {
-        if (state.channel != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -164,6 +167,7 @@ private:
 
         rmt_copy_encoder_config_t encoder{};
         ESP_ERROR_CHECK(rmt_new_copy_encoder(&encoder, &state.encoder));
+        Init::pass(state.init);
     }
 };
 

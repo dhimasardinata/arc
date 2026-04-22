@@ -1,18 +1,21 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <type_traits>
 
 #include "nvs.h"
 #include "nvs_flash.h"
 
+#include "arc/init.hpp"
+
 namespace arc {
 
 struct Store {
     static esp_err_t boot() noexcept
     {
-        if (ready) {
+        if (!Init::begin(init)) {
             return ESP_OK;
         }
 
@@ -20,13 +23,16 @@ struct Store {
         if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
             err = nvs_flash_erase();
             if (err != ESP_OK) {
+                Init::fail(init);
                 return err;
             }
             err = nvs_flash_init();
         }
 
         if (err == ESP_OK) {
-            ready = true;
+            Init::pass(init);
+        } else {
+            Init::fail(init);
         }
 
         return err;
@@ -174,7 +180,7 @@ struct Store {
     }
 
 private:
-    constinit static inline bool ready{};
+    constinit static inline std::uint32_t init{};
 
     template <typename T>
     [[nodiscard]] static consteval bool blob() noexcept

@@ -11,6 +11,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/init.hpp"
 #include "arc/result.hpp"
 #include "arc/sdk.hpp"
 
@@ -50,7 +51,7 @@ struct I2s {
 
     [[nodiscard]] static esp_err_t init() noexcept
     {
-        if (state.booted) {
+        if (!Init::begin(state.init)) {
             return ESP_OK;
         }
 
@@ -65,16 +66,19 @@ struct I2s {
         if constexpr (kTx && kRx) {
             const auto err = i2s_new_channel(&chan, &state.tx, &state.rx);
             if (err != ESP_OK) {
+                Init::fail(state.init);
                 return err;
             }
         } else if constexpr (kTx) {
             const auto err = i2s_new_channel(&chan, &state.tx, nullptr);
             if (err != ESP_OK) {
+                Init::fail(state.init);
                 return err;
             }
         } else {
             const auto err = i2s_new_channel(&chan, nullptr, &state.rx);
             if (err != ESP_OK) {
+                Init::fail(state.init);
                 return err;
             }
         }
@@ -83,6 +87,8 @@ struct I2s {
         if constexpr (kTx) {
             const auto err = i2s_channel_init_std_mode(state.tx, &std);
             if (err != ESP_OK) {
+                clear();
+                Init::fail(state.init);
                 return err;
             }
             bind_tx();
@@ -90,13 +96,15 @@ struct I2s {
         if constexpr (kRx) {
             const auto err = i2s_channel_init_std_mode(state.rx, &std);
             if (err != ESP_OK) {
+                clear();
+                Init::fail(state.init);
                 return err;
             }
             bind_rx();
         }
 
         state.rate = Hz;
-        state.booted = true;
+        Init::pass(state.init);
         return ESP_OK;
     }
 
@@ -340,8 +348,8 @@ private:
         alignas(cache_line) std::uint32_t recv{};
         alignas(cache_line) std::uint32_t send_ovf{};
         alignas(cache_line) std::uint32_t recv_ovf{};
-        bool booted{};
         bool running{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
@@ -449,6 +457,22 @@ private:
         cb.on_recv = &on_recv;
         cb.on_recv_q_ovf = &on_recv_ovf;
         ESP_ERROR_CHECK(i2s_channel_register_event_callback(state.rx, &cb, nullptr));
+    }
+
+    static void clear() noexcept
+    {
+        if constexpr (kTx) {
+            if (state.tx != nullptr) {
+                (void)i2s_del_channel(state.tx);
+                state.tx = nullptr;
+            }
+        }
+        if constexpr (kRx) {
+            if (state.rx != nullptr) {
+                (void)i2s_del_channel(state.rx);
+                state.rx = nullptr;
+            }
+        }
     }
 };
 

@@ -11,6 +11,7 @@
 #include "soc/soc_caps.h"
 
 #include "arc/fence.hpp"
+#include "arc/init.hpp"
 
 namespace arc {
 
@@ -137,6 +138,7 @@ private:
         std::atomic<std::uint32_t> frames{0U};
         std::atomic<std::uint32_t> overruns{0U};
         bool running{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
@@ -177,7 +179,7 @@ private:
 
     static void init()
     {
-        if (state.handle != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -202,6 +204,7 @@ private:
         cbs.on_conv_done = &on_frame;
         cbs.on_pool_ovf = &on_overflow;
         ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(state.handle, &cbs, nullptr));
+        Init::pass(state.init);
     }
 };
 

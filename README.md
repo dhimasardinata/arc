@@ -399,6 +399,7 @@ static_assert(arc::Topology<Board>);
 `arc::Pins` ignores negative sentinel pins like `-1`, so optional CS/MISO-style values can still be represented without false collisions.
 
 Peripheral wrappers also claim physical silicon at `init()` time. Two different `arc::Uart`, `arc::I2cBus`, `arc::I2c`, `arc::SpiBus`, or CS-backed `arc::Spi` template aliases cannot silently own the same hardware with different type parameters; the later claim returns `ESP_ERR_INVALID_STATE`.
+Identical aliases share a tiny atomic init gate, so two tasks racing the same first `init()` do not double-call the ESP-IDF allocator.
 
 ## Start From Zero
 
@@ -770,6 +771,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 - `cap()` exposes the power-of-two static capacity.
 - Sequence checks use explicit 32-bit modular deltas, so wrap is handled on the queue clock instead of pointer-width signed math.
 - Payloads stay trivially copyable and capacity remains a power of two.
+- Each cell is cache-line isolated to avoid producer/consumer false sharing, so large capacities intentionally spend more internal RAM than a packed queue.
 
 Use this when several OS-side tasks with the same scheduling priority need to feed one telemetry or transport owner without a FreeRTOS queue. If producer preemption must never block completed work from another producer, use `arc::Fanin`.
 
@@ -1020,6 +1022,7 @@ Compile-time async DMA memcpy wrapper.
 - `ready(ticket)` reports whether that exact transfer has completed.
 - `copy_coherent(dst, src, bytes)` is the blocking one-call form built on the non-blocking ticket path.
 - coherent copy destination buffers must cover whole cache lines; the `_strict` variants also require the source side to be cache-line aligned.
+- Non-strict coherent copies are for explicitly shared cache-line handoffs. Do not mutate unrelated data sharing those boundary cache lines while DMA owns the destination.
 - `sent()`, `done()`, `bytes()`, and `idle()` expose lock-free counters without FreeRTOS queues.
 - `arc::CopyBackend::ahb` pins the backend to AHB-GDMA on ESP32-S3.
 
@@ -1033,6 +1036,7 @@ Explicit cache coherency helpers for DMA and external-memory paths.
 - `from_device(data, bytes)` invalidates only whole cache-line-aligned buffers after hardware writes a buffer.
 - `discard(data, bytes)` writes back and invalidates only whole cache-line-aligned buffers when ownership moves away from the CPU.
 - `from_device_unaligned(...)` and `discard_unaligned(...)` are the explicit escape hatches when the caller accepts shared-line invalidation risk.
+- The unaligned escape hatches are unsafe around actively mutated neighbors on the same cache line; use cache-line-aligned buffers or the `_strict` path for live DMA ownership.
 - `line(ptr)` returns the cache line size for one address, or zero when the address is not cacheable.
 - span overloads work directly with `arc::CapsBuf<T>::view()`.
 

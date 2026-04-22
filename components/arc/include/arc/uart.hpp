@@ -13,6 +13,7 @@
 #include "soc/soc_caps.h"
 
 #include "arc/claim.hpp"
+#include "arc/init.hpp"
 #include "arc/result.hpp"
 
 namespace arc {
@@ -48,12 +49,13 @@ struct Uart {
 
     [[nodiscard]] static esp_err_t init() noexcept
     {
-        if (state.ready) {
+        if (!Init::begin(state.init)) {
             return ESP_OK;
         }
 
         auto err = Resource::take();
         if (err != ESP_OK) {
+            Init::fail(state.init);
             return err;
         }
 
@@ -71,26 +73,29 @@ struct Uart {
         err = uart_param_config(Port, &cfg);
         if (err != ESP_OK) {
             Resource::drop();
+            Init::fail(state.init);
             return err;
         }
 
         err = uart_set_pin(Port, Tx, Rx, Rts, Cts);
         if (err != ESP_OK) {
             Resource::drop();
+            Init::fail(state.init);
             return err;
         }
 
         err = uart_driver_install(Port, RxBuf, TxBuf, Queue, nullptr, Intr);
         if (err == ESP_ERR_INVALID_STATE) {
-            state.ready = true;
+            Init::pass(state.init);
             return ESP_OK;
         }
         if (err != ESP_OK) {
             Resource::drop();
+            Init::fail(state.init);
             return err;
         }
 
-        state.ready = true;
+        Init::pass(state.init);
         return ESP_OK;
     }
 
@@ -199,17 +204,18 @@ struct Uart {
 
     [[nodiscard]] static esp_err_t off() noexcept
     {
-        if (!state.ready) {
+        if (!Init::take(state.init)) {
             return ESP_OK;
         }
 
         const auto err = uart_driver_delete(Port);
         if (err != ESP_OK) {
+            Init::pass(state.init);
             return err;
         }
 
-        state.ready = false;
         Resource::drop();
+        Init::fail(state.init);
         return ESP_OK;
     }
 
@@ -233,7 +239,11 @@ private:
                            static_cast<int>(Port),
                            claim_token<Port, Tx, Rx, Rts, Cts, Baud, RxBuf, TxBuf, Queue, Intr, Bits, Parity, Stop, Flow, Clock>()>;
 
-    constinit static inline bool ready{false};
+    struct State {
+        std::uint32_t init;
+    };
+
+    constinit static inline State state{0U};
 };
 
 }  // namespace arc

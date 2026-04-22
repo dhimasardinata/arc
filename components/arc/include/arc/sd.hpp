@@ -11,6 +11,8 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/init.hpp"
+
 namespace arc {
 
 template <int Clk = 14,
@@ -48,7 +50,7 @@ struct Sd {
 
     [[nodiscard]] static esp_err_t mount(const char* const base = "/sd") noexcept
     {
-        if (state.card != nullptr) {
+        if (!Init::begin(state.init)) {
             return ESP_OK;
         }
 
@@ -80,6 +82,9 @@ struct Sd {
         const auto err = esp_vfs_fat_sdmmc_mount(base, &host, &slot, &cfg, &state.card);
         if (err == ESP_OK) {
             state.base = base;
+            Init::pass(state.init);
+        } else {
+            Init::fail(state.init);
         }
         return err;
     }
@@ -91,7 +96,7 @@ struct Sd {
 
     [[nodiscard]] static esp_err_t unmount() noexcept
     {
-        if (state.card == nullptr) {
+        if (!Init::take(state.init)) {
             return ESP_OK;
         }
 
@@ -99,6 +104,9 @@ struct Sd {
         if (err == ESP_OK) {
             state.card = nullptr;
             state.base = nullptr;
+            Init::fail(state.init);
+        } else {
+            Init::pass(state.init);
         }
         return err;
     }
@@ -184,9 +192,10 @@ private:
     struct State {
         sdmmc_card_t* card;
         const char* base;
+        std::uint32_t init;
     };
 
-    constinit static inline State state{nullptr, nullptr};
+    constinit static inline State state{nullptr, nullptr, 0U};
 };
 
 }  // namespace arc

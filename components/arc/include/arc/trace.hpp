@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <span>
 
-#include "arc/fence.hpp"
 #include "driver/rmt_common.h"
 #include "driver/rmt_rx.h"
 #include "esp_attr.h"
@@ -13,6 +12,9 @@
 #include "hal/rmt_types.h"
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
+
+#include "arc/fence.hpp"
+#include "arc/init.hpp"
 
 namespace arc {
 
@@ -133,6 +135,7 @@ private:
         volatile bool last{};
         bool enabled{};
         bool bound{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
@@ -158,7 +161,7 @@ private:
 
     static void init()
     {
-        if (state.channel != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -179,6 +182,7 @@ private:
             ESP_ERROR_CHECK(rmt_rx_register_event_callbacks(state.channel, &cbs, nullptr));
             state.bound = true;
         }
+        Init::pass(state.init);
     }
 };
 

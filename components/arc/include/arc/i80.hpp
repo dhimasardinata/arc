@@ -14,6 +14,7 @@
 
 #include "arc/cache.hpp"
 #include "arc/caps.hpp"
+#include "arc/init.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
 
@@ -50,7 +51,7 @@ struct I80Bus<Lines<DataPins...>, Dc, Wr, MaxBytes, BurstBytes, Source> {
 
     static void boot()
     {
-        if (state.bus != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -68,7 +69,14 @@ struct I80Bus<Lines<DataPins...>, Dc, Wr, MaxBytes, BurstBytes, Source> {
             config.data_gpio_nums[index] = GPIO_NUM_NC;
         }
 
-        ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&config, &state.bus));
+        const auto err = esp_lcd_new_i80_bus(&config, &state.bus);
+        if (err == ESP_OK) {
+            Init::pass(state.init);
+        } else {
+            state.bus = nullptr;
+            Init::fail(state.init);
+        }
+        ESP_ERROR_CHECK(err);
     }
 
     [[nodiscard]] static constexpr std::size_t width() noexcept
@@ -100,6 +108,7 @@ struct I80Bus<Lines<DataPins...>, Dc, Wr, MaxBytes, BurstBytes, Source> {
 private:
     struct State {
         esp_lcd_i80_bus_handle_t bus{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
@@ -132,7 +141,7 @@ struct I80 {
 
     static void boot()
     {
-        if (state.io != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -155,7 +164,14 @@ struct I80 {
         config.flags.swap_color_bytes = SwapBytes ? 1U : 0U;
         config.flags.pclk_active_neg = PclkNeg ? 1U : 0U;
         config.flags.pclk_idle_low = 0U;
-        ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(Bus::native(), &config, &state.io));
+        const auto err = esp_lcd_new_panel_io_i80(Bus::native(), &config, &state.io);
+        if (err == ESP_OK) {
+            Init::pass(state.init);
+        } else {
+            state.io = nullptr;
+            Init::fail(state.init);
+        }
+        ESP_ERROR_CHECK(err);
     }
 
     [[nodiscard]] static esp_err_t param(
@@ -312,6 +328,7 @@ struct I80 {
 private:
     struct State {
         esp_lcd_panel_io_handle_t io{};
+        std::uint32_t init{};
         alignas(cache_line) std::uint32_t sent{};
         alignas(cache_line) std::uint32_t done{};
         std::size_t bytes{};

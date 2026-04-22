@@ -12,6 +12,7 @@
 #include "soc/soc_caps.h"
 
 #include "arc/claim.hpp"
+#include "arc/init.hpp"
 
 namespace arc {
 
@@ -33,12 +34,13 @@ struct I2cBus {
 
     [[nodiscard]] static esp_err_t init() noexcept
     {
-        if (state.bus != nullptr) {
+        if (!Init::begin(state.init)) {
             return ESP_OK;
         }
 
         auto err = Resource::take();
         if (err != ESP_OK) {
+            Init::fail(state.init);
             return err;
         }
 
@@ -55,16 +57,20 @@ struct I2cBus {
 
         err = i2c_new_master_bus(&cfg, &state.bus);
         if (err == ESP_OK) {
+            Init::pass(state.init);
             return ESP_OK;
         }
         if (err == ESP_ERR_INVALID_STATE) {
             err = i2c_master_get_bus_handle(static_cast<decltype(cfg.i2c_port)>(Port), &state.bus);
             if (err == ESP_OK) {
+                Init::pass(state.init);
                 return ESP_OK;
             }
         }
 
+        state.bus = nullptr;
         Resource::drop();
+        Init::fail(state.init);
         return err;
     }
 
@@ -92,17 +98,19 @@ struct I2cBus {
 
     [[nodiscard]] static esp_err_t off() noexcept
     {
-        if (state.bus == nullptr) {
+        if (!Init::take(state.init)) {
             return ESP_OK;
         }
 
         const auto err = i2c_del_master_bus(state.bus);
         if (err != ESP_OK) {
+            Init::pass(state.init);
             return err;
         }
 
         state.bus = nullptr;
         Resource::drop();
+        Init::fail(state.init);
         return ESP_OK;
     }
 
@@ -128,9 +136,10 @@ private:
 
     struct State {
         i2c_master_bus_handle_t bus;
+        std::uint32_t init;
     };
 
-    constinit static inline State state{nullptr};
+    constinit static inline State state{nullptr, 0U};
 };
 
 template <typename Bus,
@@ -145,17 +154,19 @@ struct I2c {
 
     [[nodiscard]] static esp_err_t init() noexcept
     {
-        if (state.dev != nullptr) {
+        if (!Init::begin(state.init)) {
             return ESP_OK;
         }
 
         auto err = Bus::init();
         if (err != ESP_OK) {
+            Init::fail(state.init);
             return err;
         }
 
         err = Resource::take();
         if (err != ESP_OK) {
+            Init::fail(state.init);
             return err;
         }
 
@@ -169,8 +180,13 @@ struct I2c {
         err = i2c_master_bus_add_device(Bus::native(), &cfg, &state.dev);
         if (err != ESP_OK) {
             Resource::drop();
+            state.dev = nullptr;
+            Init::fail(state.init);
+            return err;
         }
-        return err;
+
+        Init::pass(state.init);
+        return ESP_OK;
     }
 
     static void boot()
@@ -266,17 +282,19 @@ struct I2c {
 
     [[nodiscard]] static esp_err_t off() noexcept
     {
-        if (state.dev == nullptr) {
+        if (!Init::take(state.init)) {
             return ESP_OK;
         }
 
         const auto err = i2c_master_bus_rm_device(state.dev);
         if (err != ESP_OK) {
+            Init::pass(state.init);
             return err;
         }
 
         state.dev = nullptr;
         Resource::drop();
+        Init::fail(state.init);
         return ESP_OK;
     }
 
@@ -297,9 +315,10 @@ private:
 
     struct State {
         i2c_master_dev_handle_t dev;
+        std::uint32_t init;
     };
 
-    constinit static inline State state{nullptr};
+    constinit static inline State state{nullptr, 0U};
 };
 
 }  // namespace arc

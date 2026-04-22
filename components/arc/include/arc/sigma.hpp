@@ -8,6 +8,8 @@
 #include "hal/gpio_types.h"
 #include "soc/soc_caps.h"
 
+#include "arc/init.hpp"
+
 namespace arc {
 
 template <int Pin,
@@ -129,6 +131,7 @@ private:
         sdm_channel_handle_t channel{};
         std::int8_t density{static_cast<std::int8_t>(Initial)};
         bool enabled{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
@@ -140,7 +143,7 @@ private:
 
     static bool create()
     {
-        if (state.channel != nullptr) {
+        if (!Init::begin(state.init)) {
             return false;
         }
 
@@ -151,6 +154,7 @@ private:
         config.flags.invert_out = Invert ? 1U : 0U;
         config.flags.allow_pd = AllowPd ? 1U : 0U;
         ESP_ERROR_CHECK(sdm_new_channel(&config, &state.channel));
+        Init::pass(state.init);
         return true;
     }
 };

@@ -9,6 +9,7 @@
 #include "esp_wifi.h"
 #include "esp_wifi_default.h"
 
+#include "arc/init.hpp"
 #include "arc/soc.hpp"
 #include "arc/store.hpp"
 
@@ -19,109 +20,42 @@ struct Radio {
 
     static esp_err_t base() noexcept
     {
-        ESP_RETURN_ON_ERROR(Store::boot(), "arc-radio", "nvs boot failed");
-
-        const auto netif = esp_netif_init();
-        if (netif != ESP_OK && netif != ESP_ERR_INVALID_STATE) {
-            return netif;
+        if (__atomic_load_n(&state.closing, __ATOMIC_ACQUIRE) != 0U) {
+            return ESP_ERR_INVALID_STATE;
         }
 
-        const auto loop = esp_event_loop_create_default();
-        if (loop != ESP_OK && loop != ESP_ERR_INVALID_STATE) {
-            return loop;
-        }
-
-        if (state.sta == nullptr) {
-            state.sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-            state.sta_owner = false;
-            if (state.sta == nullptr) {
-                state.sta = esp_netif_create_default_wifi_sta();
-                state.sta_owner = state.sta != nullptr;
-            }
-        }
-
-        if (state.sta == nullptr) {
-            return ESP_ERR_NO_MEM;
-        }
-
-        if (!state.wifi) {
-            wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
-            const auto err = esp_wifi_init(&init);
-            if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-                return err;
-            }
-            state.wifi = true;
-        }
-
-        return ESP_OK;
+        Gate guard(state.gate);
+        return base_locked();
     }
 
     static esp_err_t start(
         const wifi_mode_t mode = WIFI_MODE_STA,
         const wifi_ps_type_t power_save = WIFI_PS_NONE) noexcept
     {
-        if (!state.prepared || state.mode != mode || state.power_save != power_save) {
-            ESP_RETURN_ON_ERROR(prepare(mode, power_save), "arc-radio", "radio prepare failed");
-        }
-
-        if (state.started) {
-            return ESP_OK;
-        }
-
-        const auto err = esp_wifi_start();
-        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
-            return err;
-        }
-
-        state.started = true;
-        state.mode = mode;
-        state.power_save = power_save;
-        return ESP_OK;
+        Gate guard(state.gate);
+        return start_locked(mode, power_save);
     }
 
     static esp_err_t prepare(
         const wifi_mode_t mode = WIFI_MODE_STA,
         const wifi_ps_type_t power_save = WIFI_PS_NONE) noexcept
     {
-        ESP_RETURN_ON_ERROR(base(), "arc-radio", "radio base failed");
-
-        wifi_mode_t current = WIFI_MODE_NULL;
-        const auto mode_err = esp_wifi_get_mode(&current);
-        if (mode_err != ESP_OK && mode_err != ESP_ERR_WIFI_NOT_INIT) {
-            return mode_err;
-        }
-
-        if (state.started) {
-            if (current != mode) {
-                return ESP_ERR_INVALID_STATE;
-            }
-            state.mode = current;
-
-            if (state.power_save != power_save) {
-                ESP_RETURN_ON_ERROR(esp_wifi_set_ps(power_save), "arc-radio", "wifi ps failed");
-                state.power_save = power_save;
-            }
-
-            return ESP_OK;
-        }
-
-        ESP_RETURN_ON_ERROR(esp_wifi_set_storage(WIFI_STORAGE_RAM), "arc-radio", "wifi storage failed");
-        ESP_RETURN_ON_ERROR(esp_wifi_set_mode(mode), "arc-radio", "wifi mode failed");
-        ESP_RETURN_ON_ERROR(esp_wifi_set_ps(power_save), "arc-radio", "wifi ps failed");
-        state.prepared = true;
-        state.mode = mode;
-        state.power_save = power_save;
-        return ESP_OK;
+        Gate guard(state.gate);
+        return prepare_locked(mode, power_save);
     }
 
     [[nodiscard]] static esp_netif_t* sta() noexcept
     {
-        static_cast<void>(base());
+        if (base() != ESP_OK) {
+            return nullptr;
+        }
+        Gate guard(state.gate);
         return state.sta;
     }
 
     [[nodiscard]] static bool started() noexcept
     {
+        Gate guard(state.gate);
         return state.started;
     }
 
@@ -169,17 +103,8 @@ struct Radio {
 
     [[nodiscard]] static esp_err_t stop() noexcept
     {
-        if (!state.started) {
-            return ESP_OK;
-        }
-
-        const auto err = esp_wifi_stop();
-        if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
-            return err;
-        }
-
-        state.started = false;
-        return ESP_OK;
+        Gate guard(state.gate);
+        return stop_locked();
     }
 
     [[nodiscard]] static esp_err_t off() noexcept
@@ -200,7 +125,8 @@ struct Radio {
             return ESP_ERR_INVALID_STATE;
         }
 
-        const auto stop_err = stop();
+        Gate guard(state.gate);
+        const auto stop_err = stop_locked();
         if (stop_err != ESP_OK) {
             __atomic_store_n(&state.closing, 0U, __ATOMIC_RELEASE);
             return stop_err;
@@ -215,6 +141,7 @@ struct Radio {
             }
             state.sta = nullptr;
             state.sta_owner = false;
+            Init::fail(state.base);
             __atomic_store_n(&state.closing, 0U, __ATOMIC_RELEASE);
             return ESP_OK;
         }
@@ -236,11 +163,137 @@ struct Radio {
         }
         state.sta = nullptr;
         state.sta_owner = false;
+        Init::fail(state.base);
         __atomic_store_n(&state.closing, 0U, __ATOMIC_RELEASE);
         return ESP_OK;
     }
 
 private:
+    static esp_err_t base_locked() noexcept
+    {
+        if (!Init::begin(state.base)) {
+            return ESP_OK;
+        }
+
+        const auto store = Store::boot();
+        if (store != ESP_OK) {
+            Init::fail(state.base);
+            return store;
+        }
+
+        const auto netif = esp_netif_init();
+        if (netif != ESP_OK && netif != ESP_ERR_INVALID_STATE) {
+            Init::fail(state.base);
+            return netif;
+        }
+
+        const auto loop = esp_event_loop_create_default();
+        if (loop != ESP_OK && loop != ESP_ERR_INVALID_STATE) {
+            Init::fail(state.base);
+            return loop;
+        }
+
+        if (state.sta == nullptr) {
+            state.sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+            state.sta_owner = false;
+            if (state.sta == nullptr) {
+                state.sta = esp_netif_create_default_wifi_sta();
+                state.sta_owner = state.sta != nullptr;
+            }
+        }
+
+        if (state.sta == nullptr) {
+            Init::fail(state.base);
+            return ESP_ERR_NO_MEM;
+        }
+
+        if (!state.wifi) {
+            wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
+            const auto err = esp_wifi_init(&init);
+            if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+                Init::fail(state.base);
+                return err;
+            }
+            state.wifi = true;
+        }
+
+        Init::pass(state.base);
+        return ESP_OK;
+    }
+
+    static esp_err_t prepare_locked(
+        const wifi_mode_t mode,
+        const wifi_ps_type_t power_save) noexcept
+    {
+        ESP_RETURN_ON_ERROR(base_locked(), "arc-radio", "radio base failed");
+
+        wifi_mode_t current = WIFI_MODE_NULL;
+        const auto mode_err = esp_wifi_get_mode(&current);
+        if (mode_err != ESP_OK && mode_err != ESP_ERR_WIFI_NOT_INIT) {
+            return mode_err;
+        }
+
+        if (state.started) {
+            if (current != mode) {
+                return ESP_ERR_INVALID_STATE;
+            }
+            state.mode = current;
+
+            if (state.power_save != power_save) {
+                ESP_RETURN_ON_ERROR(esp_wifi_set_ps(power_save), "arc-radio", "wifi ps failed");
+                state.power_save = power_save;
+            }
+
+            return ESP_OK;
+        }
+
+        ESP_RETURN_ON_ERROR(esp_wifi_set_storage(WIFI_STORAGE_RAM), "arc-radio", "wifi storage failed");
+        ESP_RETURN_ON_ERROR(esp_wifi_set_mode(mode), "arc-radio", "wifi mode failed");
+        ESP_RETURN_ON_ERROR(esp_wifi_set_ps(power_save), "arc-radio", "wifi ps failed");
+        state.prepared = true;
+        state.mode = mode;
+        state.power_save = power_save;
+        return ESP_OK;
+    }
+
+    static esp_err_t start_locked(
+        const wifi_mode_t mode,
+        const wifi_ps_type_t power_save) noexcept
+    {
+        if (!state.prepared || state.mode != mode || state.power_save != power_save) {
+            ESP_RETURN_ON_ERROR(prepare_locked(mode, power_save), "arc-radio", "radio prepare failed");
+        }
+
+        if (state.started) {
+            return ESP_OK;
+        }
+
+        const auto err = esp_wifi_start();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
+            return err;
+        }
+
+        state.started = true;
+        state.mode = mode;
+        state.power_save = power_save;
+        return ESP_OK;
+    }
+
+    static esp_err_t stop_locked() noexcept
+    {
+        if (!state.started) {
+            return ESP_OK;
+        }
+
+        const auto err = esp_wifi_stop();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
+            return err;
+        }
+
+        state.started = false;
+        return ESP_OK;
+    }
+
     struct State {
         esp_netif_t* sta;
         bool wifi;
@@ -251,6 +304,8 @@ private:
         wifi_ps_type_t power_save;
         std::uint32_t clients;
         std::uint32_t closing;
+        std::uint32_t gate;
+        std::uint32_t base;
     };
 
     constinit static inline State state{
@@ -261,6 +316,8 @@ private:
         false,
         WIFI_MODE_NULL,
         WIFI_PS_NONE,
+        0U,
+        0U,
         0U,
         0U,
     };

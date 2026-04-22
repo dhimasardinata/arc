@@ -8,6 +8,8 @@
 #include "esp_vfs_fat.h"
 #include "wear_levelling.h"
 
+#include "arc/init.hpp"
+
 namespace arc {
 
 struct Fs {
@@ -76,7 +78,7 @@ struct Fs {
         const bool format = false,
         const std::size_t alloc = 0U) noexcept
     {
-        if (state.wl != WL_INVALID_HANDLE) {
+        if (!Init::begin(state.init)) {
             return ESP_OK;
         }
 
@@ -88,6 +90,9 @@ struct Fs {
         const auto err = esp_vfs_fat_spiflash_mount_rw_wl(base, label, &cfg, &state.wl);
         if (err == ESP_OK) {
             state.base = base;
+            Init::pass(state.init);
+        } else {
+            Init::fail(state.init);
         }
         return err;
     }
@@ -104,7 +109,7 @@ struct Fs {
 
     [[nodiscard]] static esp_err_t fat_off() noexcept
     {
-        if (state.wl == WL_INVALID_HANDLE) {
+        if (!Init::take(state.init)) {
             return ESP_OK;
         }
 
@@ -112,6 +117,9 @@ struct Fs {
         if (err == ESP_OK) {
             state.wl = WL_INVALID_HANDLE;
             state.base = nullptr;
+            Init::fail(state.init);
+        } else {
+            Init::pass(state.init);
         }
         return err;
     }
@@ -141,9 +149,10 @@ private:
     struct State {
         wl_handle_t wl;
         const char* base;
+        std::uint32_t init;
     };
 
-    constinit static inline State state{WL_INVALID_HANDLE, nullptr};
+    constinit static inline State state{WL_INVALID_HANDLE, nullptr, 0U};
 };
 
 }  // namespace arc

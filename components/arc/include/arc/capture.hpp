@@ -10,6 +10,7 @@
 #include "soc/soc_caps.h"
 
 #include "arc/fence.hpp"
+#include "arc/init.hpp"
 
 namespace arc {
 
@@ -157,6 +158,7 @@ private:
         std::atomic<bool> have_fall{false};
         bool enabled{};
         bool running{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
@@ -207,7 +209,7 @@ private:
 
     static void init()
     {
-        if (state.timer != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -230,6 +232,7 @@ private:
         mcpwm_capture_event_callbacks_t cbs{};
         cbs.on_cap = &on_edge;
         ESP_ERROR_CHECK(mcpwm_capture_channel_register_event_callbacks(state.chan, &cbs, nullptr));
+        Init::pass(state.init);
     }
 };
 

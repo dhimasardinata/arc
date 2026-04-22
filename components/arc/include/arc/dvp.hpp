@@ -13,6 +13,7 @@
 #include "soc/soc_caps.h"
 
 #include "arc/caps.hpp"
+#include "arc/init.hpp"
 
 namespace arc {
 
@@ -97,7 +98,7 @@ struct Dvp<DvpLines<DataPins...>,
 
     static void boot()
     {
-        if (state.cam != nullptr) {
+        if (!Init::begin(state.init)) {
             return;
         }
 
@@ -134,7 +135,13 @@ struct Dvp<DvpLines<DataPins...>,
         config.dma_burst_size = BurstBytes;
         config.xclk_freq = XclkHz;
         config.pin = &pins;
-        ESP_ERROR_CHECK(esp_cam_new_dvp_ctlr(&config, &state.cam));
+        const auto err = esp_cam_new_dvp_ctlr(&config, &state.cam);
+        if (err != ESP_OK) {
+            Init::fail(state.init);
+            ESP_ERROR_CHECK(err);
+            return;
+        }
+        Init::pass(state.init);
     }
 
     static void enable()
@@ -269,6 +276,7 @@ private:
         std::size_t bytes{};
         bool enabled{};
         bool running{};
+        std::uint32_t init{};
     };
 
     constinit static inline State state{};
