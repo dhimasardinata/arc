@@ -205,6 +205,69 @@ struct Can {
         return twai_node_get_info(state.node, status, record);
     }
 
+    [[nodiscard]] static esp_err_t filter(
+        const std::uint8_t index,
+        const twai_mask_filter_config_t& config) noexcept
+    {
+        boot();
+        return twai_node_config_mask_filter(state.node, index, &config);
+    }
+
+    [[nodiscard]] static esp_err_t filter(
+        const std::uint8_t index,
+        const std::uint32_t id,
+        const std::uint32_t mask,
+        const bool ext = false,
+        const bool no_classic = false,
+        const bool no_fd = false) noexcept
+    {
+        twai_mask_filter_config_t config{};
+        config.id = id & (ext ? TWAI_EXT_ID_MASK : TWAI_STD_ID_MASK);
+        config.mask = mask & (ext ? TWAI_EXT_ID_MASK : TWAI_STD_ID_MASK);
+        config.is_ext = ext ? 1U : 0U;
+        config.no_classic = no_classic ? 1U : 0U;
+        config.no_fd = no_fd ? 1U : 0U;
+        config.dual_filter = 0U;
+        return filter(index, config);
+    }
+
+    [[nodiscard]] static esp_err_t dual(
+        const std::uint8_t index,
+        const std::uint32_t id1,
+        const std::uint32_t mask1,
+        const std::uint32_t id2,
+        const std::uint32_t mask2,
+        const bool ext = false) noexcept
+    {
+        const auto config = twai_make_dual_filter(id1, mask1, id2, mask2, ext);
+        return filter(index, config);
+    }
+
+    [[nodiscard]] static esp_err_t range(
+        const std::uint8_t index,
+        const twai_range_filter_config_t& config) noexcept
+    {
+        boot();
+        return twai_node_config_range_filter(state.node, index, &config);
+    }
+
+    [[nodiscard]] static esp_err_t range(
+        const std::uint8_t index,
+        const std::uint32_t low,
+        const std::uint32_t high,
+        const bool ext = false,
+        const bool no_classic = false,
+        const bool no_fd = false) noexcept
+    {
+        twai_range_filter_config_t config{};
+        config.range_low = low & (ext ? TWAI_EXT_ID_MASK : TWAI_STD_ID_MASK);
+        config.range_high = high & (ext ? TWAI_EXT_ID_MASK : TWAI_STD_ID_MASK);
+        config.is_ext = ext ? 1U : 0U;
+        config.no_classic = no_classic ? 1U : 0U;
+        config.no_fd = no_fd ? 1U : 0U;
+        return range(index, config);
+    }
+
     [[nodiscard]] static std::uint32_t sent() noexcept
     {
         return __atomic_load_n(&state.sent, __ATOMIC_ACQUIRE);

@@ -24,7 +24,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Pulse` uses MCPWM for higher-grade waveform generation than LEDC when period and edge placement matter.
 - `arc::Bridge` drives complementary MCPWM pairs with explicit dead-time.
 - `arc::Capture` timestamps edges in hardware through the MCPWM capture block.
-- `arc::Scope` streams ADC data through the digital controller and DMA path.
+- `arc::AdcBus`, `arc::AdcOne`, and `arc::Scope` cover calibrated ADC oneshot reads and continuous DMA capture without mixing the ownership models.
 - `arc::Copy` offloads memory movement to the async DMA memcpy engine.
 - `arc::Dvp` captures parallel camera frames through the ESP32-S3 LCD_CAM DMA path.
 - `arc::I80Bus` and `arc::I80` drive the ESP32-S3 LCD_CAM Intel 8080 DMA path with exact transfer tickets.
@@ -859,13 +859,27 @@ Use this when you want real edge timestamps without a CPU spin loop or GPIO ISR 
 
 ### `arc::Adc<Io, Atten = ADC_ATTEN_DB_12, Width = SOC_ADC_DIGI_MAX_BITWIDTH>`
 
-Compile-time ADC pad descriptor for `arc::Scope`.
+Compile-time ADC pad descriptor for `arc::Scope` and `arc::AdcOne`.
 
 - `io()` returns the GPIO number.
 - `atten()` returns the attenuation used for the digital pattern.
 - `width()` returns the configured ADC bit width.
+- `bitwidth()` returns the oneshot driver bit-width enum.
 
 Use this as a pad specifier, not as a runtime object.
+
+### `arc::AdcBus<Unit = ADC_UNIT_1>` and `arc::AdcOne<Bus, Pad, Cali = true>`
+
+Compile-time ADC oneshot wrapper with optional eFuse calibration.
+
+- `AdcBus::init()` owns one ADC oneshot unit handle.
+- `AdcBus::off()` deletes that unit handle when oneshot users are done.
+- `AdcOne::init()` configures one ADC channel on the explicit bus.
+- `raw()` returns a recoverable `arc::Result<int>` raw conversion.
+- `mv()` returns calibrated millivolts through the ESP-IDF calibration scheme.
+- `off()` releases the channel claim and calibration handle.
+
+Use this for battery dividers, thermistors, slow sensors, and board health reads where a DMA stream would be wasteful.
 
 ### `arc::Scope<Hz, FrameBytes = 256, StoreBytes = 1024, Flush = true, Pads...>`
 
@@ -932,6 +946,7 @@ Compile-time ESP32-S3 TWAI/CAN node wrapper.
 - `send(frame, timeout_ms)` queues a frame; keep the frame alive until TX completes.
 - `send_wait(frame, timeout_ms)` queues and waits for completion before returning.
 - `recv(frame)` drains the ISR-backed lock-free `arc::Spsc` RX lane.
+- `filter(...)`, `dual(...)`, and `range(...)` configure hardware acceptance filters while the node is disabled.
 - `sent()`, `done()`, `rx()`, `drop()`, `err()`, `bytes()`, and `idle()` expose bus counters.
 
 Use this for robot/industrial control links where the TWAI controller should own bit timing and arbitration, not software.

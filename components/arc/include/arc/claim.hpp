@@ -12,6 +12,8 @@ enum class ClaimKind : std::uint32_t {
     spi_bus = 0x15c0'0001U,
     spi_dev = 0x15c0'0002U,
     uart = 0x0a47'0001U,
+    adc_bus = 0xadc0'0001U,
+    adc_dev = 0xadc0'0002U,
 };
 
 [[nodiscard]] consteval std::uint32_t claim_mix(
