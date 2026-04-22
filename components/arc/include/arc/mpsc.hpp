@@ -127,4 +127,7 @@ private:
     alignas(cache_line) std::uint32_t tail_{0};
 };
 
+template <typename T, std::size_t Capacity>
+using FanIn = Mpsc<T, Capacity>;
+
 }  // namespace arc

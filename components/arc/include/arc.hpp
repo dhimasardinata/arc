@@ -6,6 +6,7 @@
 #include "arc/cfg.hpp"
 #include "arc/clock.hpp"
 #include "arc/dsp.hpp"
+#include "arc/fanin.hpp"
 #include "arc/fence.hpp"
 #include "arc/mask.hpp"
 #include "arc/mpsc.hpp"

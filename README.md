@@ -43,7 +43,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
 - `arc::Spsc` gives a bounded lock-free lane for one producer and one consumer; `arc::Ring` remains the terse compatibility alias.
-- `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer.
+- `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer; `arc::FanIn` is the topology alias.
 - `arc::SeqReg` gives multi-word latest-snapshot handoff without queues or torn reads.
 - `arc::dmabuf`, `arc::simdbuf`, `arc::ahbbuf`, `arc::axibuf`, and friends make DMA/SIMD/descriptor/RTC-capable heap placement explicit.
 - `arc::Space` reports runtime flash, OTA slot, partition, and heap capacity without heap allocation.
@@ -139,6 +139,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── din.hpp
 │               ├── dio.hpp
 │               ├── dvp.hpp
+│               ├── fanin.hpp
 │               ├── fence.hpp
 │               ├── gpio.hpp
 │               ├── i80.hpp
@@ -726,6 +727,12 @@ Bounded lock-free fan-in for many producers and one consumer.
 - Payloads stay trivially copyable and capacity remains a power of two.
 
 Use this when several OS-side tasks need to feed one telemetry or transport owner without a FreeRTOS queue.
+
+### `arc::FanIn<T, Capacity>`
+
+Compatibility alias for `arc::Mpsc<T, Capacity>`.
+
+Use it when the code should read as a topology: many writers fan into one owner. Prefer `arc::Mpsc` when the concurrency contract should be visible at the type site.
 
 ### `arc::Pwm<Pin, Hz, DutyPermille = 500, Channel = 0, Timer = Channel % 4, Bits = 10>`
 
