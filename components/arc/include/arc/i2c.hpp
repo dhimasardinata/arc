@@ -95,10 +95,10 @@ struct I2cBus {
 
 private:
     struct State {
-        i2c_master_bus_handle_t bus{};
+        i2c_master_bus_handle_t bus;
     };
 
-    constinit static inline State state{};
+    constinit static inline State state{nullptr};
 };
 
 template <typename Bus,
@@ -235,10 +235,10 @@ struct I2c {
 
 private:
     struct State {
-        i2c_master_dev_handle_t dev{};
+        i2c_master_dev_handle_t dev;
     };
 
-    constinit static inline State state{};
+    constinit static inline State state{nullptr};
 };
 
 }  // namespace arc

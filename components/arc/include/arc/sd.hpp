@@ -182,11 +182,11 @@ private:
     }
 
     struct State {
-        sdmmc_card_t* card{};
-        const char* base{};
+        sdmmc_card_t* card;
+        const char* base;
     };
 
-    constinit static inline State state{};
+    constinit static inline State state{nullptr, nullptr};
 };
 
 }  // namespace arc

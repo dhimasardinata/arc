@@ -120,17 +120,63 @@ struct Radio {
         return state.started;
     }
 
+    [[nodiscard]] static esp_err_t stop() noexcept
+    {
+        if (!state.started) {
+            return ESP_OK;
+        }
+
+        const auto err = esp_wifi_stop();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
+            return err;
+        }
+
+        state.started = false;
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t off() noexcept
+    {
+        ESP_RETURN_ON_ERROR(stop(), "arc-radio", "wifi stop failed");
+
+        if (!state.wifi) {
+            state.prepared = false;
+            state.mode = WIFI_MODE_NULL;
+            state.power_save = WIFI_PS_NONE;
+            return ESP_OK;
+        }
+
+        const auto err = esp_wifi_deinit();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
+            return err;
+        }
+
+        state.wifi = false;
+        state.prepared = false;
+        state.started = false;
+        state.mode = WIFI_MODE_NULL;
+        state.power_save = WIFI_PS_NONE;
+        return ESP_OK;
+    }
+
 private:
     struct State {
-        esp_netif_t* sta{};
-        bool wifi{};
-        bool prepared{};
-        bool started{};
-        wifi_mode_t mode{WIFI_MODE_NULL};
-        wifi_ps_type_t power_save{WIFI_PS_NONE};
+        esp_netif_t* sta;
+        bool wifi;
+        bool prepared;
+        bool started;
+        wifi_mode_t mode;
+        wifi_ps_type_t power_save;
     };
 
-    constinit static inline State state{};
+    constinit static inline State state{
+        nullptr,
+        false,
+        false,
+        false,
+        WIFI_MODE_NULL,
+        WIFI_PS_NONE,
+    };
 };
 
 }  // namespace arc::net

@@ -34,7 +34,7 @@ struct Mpsc {
         for (;;) {
             cell = &buffer_[head & kMask];
             const auto seq = load_acquire(&cell->seq);
-            const auto diff = static_cast<std::intptr_t>(seq) - static_cast<std::intptr_t>(head);
+            const auto diff = delta(seq, head);
 
             if (diff == 0) {
                 if (compare_exchange(&head_, &head, head + 1U)) {
@@ -57,7 +57,7 @@ struct Mpsc {
         const auto tail = load_relaxed(&tail_);
         auto& cell = buffer_[tail & kMask];
         const auto seq = load_acquire(&cell.seq);
-        const auto diff = static_cast<std::intptr_t>(seq) - static_cast<std::intptr_t>(tail + 1U);
+        const auto diff = delta(seq, tail + 1U);
 
         if (diff != 0) {
             return false;
@@ -100,6 +100,13 @@ private:
     };
 
     static constexpr std::uint32_t kMask = static_cast<std::uint32_t>(Capacity - 1U);
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::int32_t delta(
+        const std::uint32_t value,
+        const std::uint32_t target) noexcept
+    {
+        return std::bit_cast<std::int32_t>(value - target);
+    }
 
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::uint32_t load_relaxed(
         const std::uint32_t* slot) noexcept

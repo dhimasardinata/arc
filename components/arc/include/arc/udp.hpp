@@ -85,6 +85,8 @@ private:
         int sock{-1};
         sockaddr_storage peer{};
         socklen_t peer_len{};
+        Event pending{};
+        bool have_pending{};
     };
 
     constinit static inline State state{};
@@ -289,8 +291,15 @@ private:
 
             Event event{};
             auto sent_any = false;
-            while (bus.events.try_pop(event)) {
+            if (state.have_pending && send(state.pending)) {
+                state.have_pending = false;
+                sent_any = true;
+            }
+
+            while (!state.have_pending && bus.events.try_pop(event)) {
                 if (!send(event)) {
+                    state.pending = event;
+                    state.have_pending = true;
                     break;
                 }
                 sent_any = true;

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <bit>
+#include <cstdlib>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <new>
 #include <span>
@@ -127,6 +129,77 @@ private:
     T* data_{nullptr};
     std::size_t size_{0U};
 };
+
+template <typename T, std::uint32_t Caps, std::size_t Align = alignof(T)>
+struct CapsAlloc {
+    static_assert(std::has_single_bit(Align), "allocator alignment must be a power of two");
+
+    using value_type = T;
+    using is_always_equal = std::true_type;
+
+    constexpr CapsAlloc() noexcept = default;
+
+    template <typename U>
+    constexpr CapsAlloc(const CapsAlloc<U, Caps, Align>&) noexcept
+    {
+    }
+
+    [[nodiscard]] T* allocate(const std::size_t count)
+    {
+        if (count == 0U) {
+            return nullptr;
+        }
+
+        if (count > (std::numeric_limits<std::size_t>::max() / sizeof(T))) {
+            std::abort();
+        }
+
+        constexpr auto min_align = alignof(T) > sizeof(void*) ? alignof(T) : sizeof(void*);
+        constexpr auto actual_align = Align > min_align ? Align : min_align;
+
+        void* const storage = heap_caps_aligned_calloc(actual_align, count, sizeof(T), Caps);
+        if (storage == nullptr) {
+            std::abort();
+        }
+
+        return static_cast<T*>(storage);
+    }
+
+    void deallocate(T* const pointer, std::size_t) noexcept
+    {
+        heap_caps_free(pointer);
+    }
+
+    template <typename U>
+    struct rebind {
+        using other = CapsAlloc<U, Caps, Align>;
+    };
+};
+
+template <typename T,
+          std::uint32_t Caps,
+          std::size_t Align,
+          typename U,
+          std::uint32_t OtherCaps,
+          std::size_t OtherAlign>
+[[nodiscard]] constexpr bool operator==(
+    const CapsAlloc<T, Caps, Align>&,
+    const CapsAlloc<U, OtherCaps, OtherAlign>&) noexcept
+{
+    return true;
+}
+
+template <typename T>
+using RamAlloc = CapsAlloc<T, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT>;
+
+template <typename T>
+using PsramAlloc = CapsAlloc<T, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT>;
+
+template <typename T>
+using DmaAlloc = CapsAlloc<T, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL, arc::cache_line>;
+
+template <typename T>
+using SimdAlloc = CapsAlloc<T, MALLOC_CAP_SIMD | MALLOC_CAP_INTERNAL, arc::cache_line>;
 
 template <typename T, std::uint32_t Caps, typename... Args>
 [[nodiscard]] inline CapsPtr<T> caps(Args&&... args) noexcept

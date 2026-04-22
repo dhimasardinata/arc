@@ -4,6 +4,7 @@
 #include <type_traits>
 
 #include "arc/fence.hpp"
+#include "arc/mask.hpp"
 #include "esp_attr.h"
 
 namespace arc {
@@ -28,6 +29,12 @@ struct SeqReg {
     static_assert(std::is_trivially_copyable_v<T>, "seq payload must be trivially copyable");
 
     void write(const T& value) noexcept
+    {
+        Critical guard;
+        write_unmasked(value);
+    }
+
+    void write_unmasked(const T& value) noexcept
     {
         const auto seq = __atomic_load_n(&seq_, __ATOMIC_RELAXED);
         __atomic_store_n(&seq_, seq + 1U, __ATOMIC_RELEASE);

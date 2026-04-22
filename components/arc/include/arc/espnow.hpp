@@ -53,12 +53,30 @@ struct EspNowRadio {
         return ESP_OK;
     }
 
+    static esp_err_t stop() noexcept
+    {
+        if (!state.ready) {
+            return ESP_OK;
+        }
+
+        const auto err = esp_now_deinit();
+        if (err == ESP_OK) {
+            state.ready = false;
+        }
+        return err;
+    }
+
+    static esp_err_t off() noexcept
+    {
+        return stop();
+    }
+
 private:
     struct State {
-        bool ready{};
+        bool ready;
     };
 
-    constinit static inline State state{};
+    constinit static inline State state{false};
 };
 
 template <typename Policy, typename Bus>
@@ -106,11 +124,13 @@ private:
     inline constexpr static TickType_t idle_ticks = idle_default();
 
     struct State {
-        Bus* bus{};
-        esp_netif_t* sta{};
+        Bus* bus;
+        esp_netif_t* sta;
+        Event pending;
+        bool have_pending;
     };
 
-    constinit static inline State state{};
+    constinit static inline State state{nullptr, nullptr, {}, false};
     constinit static inline TaskMem<Policy::stack> stack{};
 
     template <typename Array>
@@ -191,6 +211,23 @@ private:
         }
     }
 
+    static bool send_or_hold(const Event& event) noexcept
+    {
+        const auto err = send(event);
+        if (err == ESP_OK) {
+            return true;
+        }
+
+        state.pending = event;
+        state.have_pending = true;
+
+        if (err != ESP_ERR_ESPNOW_NO_MEM) {
+            ESP_LOGE(Policy::tag, "esp-now send err=0x%x", static_cast<unsigned>(err));
+        }
+
+        return false;
+    }
+
     [[nodiscard]] static esp_err_t send(const Event& event) noexcept
     {
         return esp_now_send(
@@ -215,19 +252,15 @@ private:
                 Policy::tick(bus, xTaskGetTickCount());
             }
 
-            Event event{};
-            while (bus.events.try_pop(event)) {
-                const auto err = send(event);
-                if (err == ESP_OK) {
-                    continue;
-                }
+            if (state.have_pending && send(state.pending) == ESP_OK) {
+                state.have_pending = false;
+            }
 
-                if (err == ESP_ERR_ESPNOW_NO_MEM) {
+            Event event{};
+            while (!state.have_pending && bus.events.try_pop(event)) {
+                if (!send_or_hold(event)) {
                     break;
                 }
-
-                ESP_LOGE(Policy::tag, "esp-now send err=0x%x", static_cast<unsigned>(err));
-                break;
             }
 
             vTaskDelay(idle_ticks);

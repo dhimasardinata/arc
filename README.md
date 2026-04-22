@@ -51,7 +51,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Spsc` gives a bounded lock-free lane for one producer and one consumer; `arc::Ring` remains the terse compatibility alias.
 - `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer; `arc::Mux` is the terse topology alias.
 - `arc::SeqReg` gives multi-word latest-snapshot handoff without queues or torn reads.
-- `arc::dmabuf`, `arc::simdbuf`, `arc::ahbbuf`, `arc::axibuf`, and friends make DMA/SIMD/descriptor/RTC-capable heap placement explicit.
+- `arc::dmabuf`, `arc::simdbuf`, `arc::ahbbuf`, `arc::axibuf`, and one-word STL allocators make DMA/SIMD/descriptor/RTC-capable heap placement explicit.
 - `arc::Space` reports runtime flash, OTA slot, partition, and heap capacity without heap allocation.
 - `arc::Ota` wraps staged OTA writes and slot state without raw handle plumbing.
 - `arc::Store` gives typed NVS blobs and fixed-buffer strings without raw handle plumbing in user code.
@@ -761,6 +761,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 - `try_pop(event)` is single-consumer and fits Core 0 drain loops.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation.
 - `cap()` exposes the power-of-two static capacity.
+- Sequence checks use explicit 32-bit modular deltas, so wrap is handled on the queue clock instead of pointer-width signed math.
 - Payloads stay trivially copyable and capacity remains a power of two.
 
 Use this when several OS-side tasks need to feed one telemetry or transport owner without a FreeRTOS queue.
@@ -1106,10 +1107,11 @@ Use this only around tiny hot sections where determinism matters more than laten
 Seqlock-style latest-snapshot lane for payloads larger than one word.
 
 - `write(value)` publishes one complete snapshot
+- `write_unmasked(value)` is the raw cross-core-only fast path when the writer cannot be preempted by a same-core reader
 - `read()` retries until one stable snapshot is observed
 - `try_read(value)` gives you the same read without blocking
 
-`read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
+`write()` masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
 
@@ -1151,6 +1153,13 @@ Typed heap slabs for memory placement that should stay obvious in user code.
 - `arc::axibuf<T>(n)` allocates an AXI DMA descriptor slab
 
 Each returns `arc::CapsBuf<T>` with `data()`, `size()`, `bytes()`, and `view()`.
+
+Standard containers can use the same placement rules through one-word allocators:
+
+- `arc::RamAlloc<T>`
+- `arc::PsramAlloc<T>`
+- `arc::DmaAlloc<T>`
+- `arc::SimdAlloc<T>`
 
 ### Placement aliases
 
@@ -1260,6 +1269,8 @@ Shared Wi-Fi foundation for Core 0 transports.
 - `prepare(mode, power_save)` sets storage, Wi-Fi mode, and power-save policy before a transport writes its own config.
 - `start(mode, power_save)` starts Wi-Fi once and rejects later mode mismatches instead of silently reconfiguring a live radio.
 - `sta()` returns the shared STA netif handle for transports that need IP state.
+- `stop()` stops Wi-Fi without throwing away the prepared configuration.
+- `off()` deinitializes the Wi-Fi driver state so recovery paths can bring the radio back without a CPU reset.
 
 Use `arc_requires(... net)` only when directly using `arc::net::Radio`. `udp` and `espnow` already include the same dependencies.
 
@@ -1306,6 +1317,8 @@ Optional hooks:
 - `start(bus)`
 - `tick(bus, now)`
 
+UDP holds one failed send as a pending frame before draining more events. This converts socket pressure into queue pressure instead of silently dropping a frame after `try_pop()`.
+
 This lets you keep network code in the framework while still expressing program-specific control in the app.
 
 Network is intentionally opt-in. Baseline apps only include `arc.hpp`; UDP apps add:
@@ -1332,6 +1345,8 @@ Optional hooks:
 - `start(bus)`
 - `tick(bus, now)`
 - `recv(bus, peer, data, len)`
+
+ESP-NOW holds one failed send as a pending frame before draining more events, matching the UDP backpressure contract.
 
 This is the transport to use when you want Wi-Fi silicon and low latency, but not IP, DHCP, or sockets.
 

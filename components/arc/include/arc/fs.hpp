@@ -139,11 +139,11 @@ struct Fs {
 
 private:
     struct State {
-        wl_handle_t wl{WL_INVALID_HANDLE};
-        const char* base{};
+        wl_handle_t wl;
+        const char* base;
     };
 
-    constinit static inline State state{};
+    constinit static inline State state{WL_INVALID_HANDLE, nullptr};
 };
 
 }  // namespace arc
