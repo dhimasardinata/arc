@@ -8,6 +8,7 @@
 #include "arc/dsp.hpp"
 #include "arc/fence.hpp"
 #include "arc/mask.hpp"
+#include "arc/mpsc.hpp"
 #include "arc/place.hpp"
 #include "arc/plane.hpp"
 #include "arc/probe.hpp"

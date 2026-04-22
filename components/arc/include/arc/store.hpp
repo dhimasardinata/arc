@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
 #include <type_traits>
 
 #include "nvs.h"
@@ -102,6 +103,74 @@ struct Store {
         }
 
         return nvs_commit(handle.raw);
+    }
+
+    [[nodiscard]] static esp_err_t save_string(
+        const char* ns,
+        const char* key,
+        const char* value) noexcept
+    {
+        if (value == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        Handle handle{};
+        auto err = handle.open(ns, NVS_READWRITE);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        err = nvs_set_str(handle.raw, key, value);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        return nvs_commit(handle.raw);
+    }
+
+    [[nodiscard]] static esp_err_t string_size(
+        const char* ns,
+        const char* key,
+        std::size_t& bytes) noexcept
+    {
+        bytes = 0U;
+
+        Handle handle{};
+        const auto err = handle.open(ns, NVS_READONLY);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        return nvs_get_str(handle.raw, key, nullptr, &bytes);
+    }
+
+    [[nodiscard]] static esp_err_t load_string(
+        const char* ns,
+        const char* key,
+        const std::span<char> out,
+        std::size_t* chars = nullptr) noexcept
+    {
+        if (out.empty()) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        Handle handle{};
+        auto err = handle.open(ns, NVS_READONLY);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        std::size_t bytes = out.size_bytes();
+        err = nvs_get_str(handle.raw, key, out.data(), &bytes);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        if (chars != nullptr) {
+            *chars = bytes == 0U ? 0U : bytes - 1U;
+        }
+
+        return ESP_OK;
     }
 
 private:

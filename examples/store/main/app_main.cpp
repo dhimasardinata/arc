@@ -1,4 +1,6 @@
+#include <array>
 #include <cstdint>
+#include <span>
 
 #include "arc.hpp"
 
@@ -10,6 +12,7 @@ namespace app {
 inline constexpr char tag[] = "arc-store";
 inline constexpr char ns[] = "cfg";
 inline constexpr char key[] = "control";
+inline constexpr char name_key[] = "name";
 
 struct Control {
     std::uint16_t pace;
@@ -51,6 +54,13 @@ inline void boot()
         static_cast<unsigned>(cfg.pace),
         static_cast<unsigned>(cfg.mark),
         static_cast<unsigned>(cfg.flags));
+
+    ESP_ERROR_CHECK(arc::Store::save_string(ns, name_key, "arc-n16r8"));
+
+    std::array<char, 16> name{};
+    std::size_t chars{};
+    ESP_ERROR_CHECK(arc::Store::load_string(ns, name_key, std::span<char>{name}, &chars));
+    ESP_LOGI(tag, "name=%s chars=%u", name.data(), static_cast<unsigned>(chars));
 
     arc::Space::flash(tag, "flash view");
     arc::Space::heap(tag, "heap view");

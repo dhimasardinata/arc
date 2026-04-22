@@ -122,12 +122,22 @@ struct Radio {
 
 private:
     struct State {
-        esp_netif_t* sta{};
-        bool wifi{};
-        bool prepared{};
-        bool started{};
-        wifi_mode_t mode{WIFI_MODE_NULL};
-        wifi_ps_type_t power_save{WIFI_PS_NONE};
+        constexpr State() noexcept
+            : sta(nullptr),
+              wifi(false),
+              prepared(false),
+              started(false),
+              mode(WIFI_MODE_NULL),
+              power_save(WIFI_PS_NONE)
+        {
+        }
+
+        esp_netif_t* sta;
+        bool wifi;
+        bool prepared;
+        bool started;
+        wifi_mode_t mode;
+        wifi_ps_type_t power_save;
     };
 
     constinit static inline State state{};

@@ -42,11 +42,12 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Tight` runs a masked per-step loop for the rare path that needs tighter jitter than `arc::App`.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
+- `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer.
 - `arc::SeqReg` gives multi-word latest-snapshot handoff without queues or torn reads.
 - `arc::dmabuf`, `arc::simdbuf`, `arc::ahbbuf`, `arc::axibuf`, and friends make DMA/SIMD/descriptor/RTC-capable heap placement explicit.
 - `arc::Space` reports runtime flash, OTA slot, partition, and heap capacity without heap allocation.
 - `arc::Ota` wraps staged OTA writes and slot state without raw handle plumbing.
-- `arc::Store` gives typed NVS blobs without raw handle plumbing in user code.
+- `arc::Store` gives typed NVS blobs and fixed-buffer strings without raw handle plumbing in user code.
 - `arc::net::Radio` is the shared Core 0 Wi-Fi owner, so UDP and ESP-NOW do not each re-create NVS, netif, event loop, and Wi-Fi driver state.
 - `arc::net::Udp` is a reusable Core 0 transport plane when you opt into `#include "arc/udp.hpp"`.
 - `arc::net::EspNow` is a reusable Core 0 raw-radio plane when you opt into `#include "arc/espnow.hpp"`.
@@ -142,6 +143,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── i80.hpp
 │               ├── espnow.hpp
 │               ├── i2s.hpp
+│               ├── mpsc.hpp
 │               ├── plane.hpp
 │               ├── ota.hpp
 │               ├── probe.hpp
@@ -203,7 +205,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware die-temperature telemetry for thermal guard logic
 - Lock-free telemetry ring and single-word control register
 - Slot-aware OTA helper for staged writes and rollback state
-- Typed NVS persistence on the Core 0 side
+- Typed NVS persistence and bounded string loading on the Core 0 side
+- Bounded MPSC fan-in for multi-task telemetry producers
 - SIMD-friendly math kernels that fit the Core 1 compute plane
 - Cycle-counter instrumentation for hot-path measurement
 
@@ -702,6 +705,16 @@ Use it when Core 1 emits ordered events and Core 0 applies latest-wins control.
 
 `arc::Bus` remains available as a compatibility alias.
 
+### `arc::Mpsc<Event, Capacity>`
+
+Bounded lock-free fan-in for many producers and one consumer.
+
+- `try_push(event)` can be called by multiple producer tasks.
+- `try_pop(event)` is single-consumer and fits Core 0 drain loops.
+- Payloads stay trivially copyable and capacity remains a power of two.
+
+Use `arc::Ring` when the lane is strictly SPSC. Use `arc::Mpsc` when several OS-side tasks need to feed one telemetry or transport owner without a FreeRTOS queue.
+
 ### `arc::Pwm<Pin, Hz, DutyPermille = 500, Channel = 0, Timer = Channel % 4, Bits = 10>`
 
 Compile-time hardware PWM on ESP32-S3 LEDC.
@@ -1060,12 +1073,15 @@ Use this alongside `idf.py size`, `idf.py size-components`, and `idf.py size-fil
 
 ### `arc::Store`
 
-Typed NVS blob storage for Core 0 work.
+Typed NVS blob and string storage for Core 0 work.
 
 - `boot()` initializes NVS and repairs the partition if IDF reports version/free-page mismatch.
 - `save(ns, key, value)` writes a trivially copyable value.
 - `load(ns, key, value)` reads the exact typed blob back.
 - `load_or(ns, key, fallback)` keeps user code short when missing data should fall back cleanly.
+- `save_string(ns, key, value)` writes a NUL-terminated string.
+- `string_size(ns, key, bytes)` reports the fixed buffer size needed to read a string, including the terminator.
+- `load_string(ns, key, span, chars)` reads into caller-owned storage and reports characters excluding the terminator.
 - `erase(ns, key)` removes one key and commits.
 
 Use this when you want persistent config without hand-written handle lifetime code.
@@ -1874,6 +1890,7 @@ The example shows:
 - `arc::Store::boot()` as the one-time baseline init for NVS
 - `arc::Store::load_or(...)` for a typed control word
 - `arc::Store::save(...)` after mutation
+- `arc::Store::save_string(...)` and `load_string(...)` for fixed-buffer text config
 - `arc::Space::flash(...)` and `arc::Space::heap(...)` so persistence and capacity stay visible together
 
 ## CI
