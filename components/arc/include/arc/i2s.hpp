@@ -6,6 +6,9 @@
 #include <type_traits>
 
 #include "driver/i2s_std.h"
+#if __has_include("driver/i2s_tdm.h")
+#include "driver/i2s_tdm.h"
+#endif
 #include "esp_attr.h"
 #include "esp_check.h"
 #include "soc/gpio_num.h"
@@ -21,6 +24,13 @@ enum class I2sStd : std::uint8_t {
     philips,
     msb,
     pcm,
+};
+
+enum class I2sTdmFmt : std::uint8_t {
+    philips,
+    msb,
+    pcm_short,
+    pcm_long,
 };
 
 template <int Bclk,
@@ -475,5 +485,506 @@ private:
         }
     }
 };
+
+#if __has_include("driver/i2s_tdm.h") && SOC_I2S_SUPPORTS_TDM
+template <int Bclk,
+          int Ws,
+          int Dout = static_cast<int>(I2S_GPIO_UNUSED),
+          int Din = static_cast<int>(I2S_GPIO_UNUSED),
+          std::uint32_t Hz = 48'000,
+          i2s_data_bit_width_t Bits = I2S_DATA_BIT_WIDTH_16BIT,
+          i2s_slot_mode_t Slots = I2S_SLOT_MODE_STEREO,
+          std::uint32_t Mask = static_cast<std::uint32_t>(I2S_TDM_SLOT0) | static_cast<std::uint32_t>(I2S_TDM_SLOT1),
+          I2sTdmFmt Format = I2sTdmFmt::philips,
+          std::uint32_t Total = I2S_TDM_AUTO_SLOT_NUM,
+          int Port = I2S_NUM_AUTO,
+          std::uint32_t Desc = 6,
+          std::uint32_t Frames = 240,
+          int Mclk = static_cast<int>(I2S_GPIO_UNUSED),
+          i2s_role_t Role = I2S_ROLE_MASTER>
+struct I2sTdm {
+    static constexpr bool kTx = Dout >= 0 && Dout < SOC_GPIO_PIN_COUNT;
+    static constexpr bool kRx = Din >= 0 && Din < SOC_GPIO_PIN_COUNT;
+
+    [[nodiscard]] static consteval std::uint32_t span_slots() noexcept
+    {
+        std::uint32_t mask = Mask;
+        std::uint32_t span = 0U;
+        while (mask != 0U) {
+            ++span;
+            mask >>= 1U;
+        }
+        return span;
+    }
+
+    [[nodiscard]] static consteval std::uint32_t effective_total_slots() noexcept
+    {
+        return Total == I2S_TDM_AUTO_SLOT_NUM ? span_slots() : Total;
+    }
+
+    [[nodiscard]] static consteval i2s_mclk_multiple_t mclk_multiple() noexcept
+    {
+        if constexpr (effective_total_slots() > 2U) {
+            return I2S_MCLK_MULTIPLE_512;
+        } else if constexpr (Bits == I2S_DATA_BIT_WIDTH_24BIT) {
+            return I2S_MCLK_MULTIPLE_384;
+        } else {
+            return I2S_MCLK_MULTIPLE_256;
+        }
+    }
+
+    static_assert(Bclk >= 0 && Bclk < SOC_GPIO_PIN_COUNT, "invalid I2S TDM BCLK pin");
+    static_assert(Ws >= 0 && Ws < SOC_GPIO_PIN_COUNT, "invalid I2S TDM WS pin");
+    static_assert(kTx || Dout == static_cast<int>(I2S_GPIO_UNUSED), "invalid I2S TDM DOUT pin");
+    static_assert(kRx || Din == static_cast<int>(I2S_GPIO_UNUSED), "invalid I2S TDM DIN pin");
+    static_assert(kTx || kRx, "I2S TDM lane must expose TX, RX, or both");
+    static_assert(Hz != 0U, "I2S TDM sample rate must be non-zero");
+    static_assert(Desc > 0U, "I2S TDM DMA descriptor count must be non-zero");
+    static_assert(Frames > 0U, "I2S TDM DMA frame count must be non-zero");
+    static_assert(Mask != 0U, "I2S TDM slot mask must not be zero");
+    static_assert((Mask & ~0xFFFFU) == 0U, "I2S TDM slot mask exceeds 16 slots");
+    static_assert(Total == I2S_TDM_AUTO_SLOT_NUM || Total <= 16U, "I2S TDM total slots must not exceed 16");
+    static_assert(Total == I2S_TDM_AUTO_SLOT_NUM || Total >= span_slots(), "I2S TDM total slots must cover the highest active slot");
+
+    [[nodiscard]] static esp_err_t init() noexcept
+    {
+        if (!Init::begin(state.init)) {
+            return ESP_OK;
+        }
+
+        i2s_chan_config_t chan = I2S_CHANNEL_DEFAULT_CONFIG(Port, Role);
+        chan.dma_desc_num = Desc;
+        chan.dma_frame_num = Frames;
+        chan.auto_clear_after_cb = false;
+        chan.auto_clear_before_cb = false;
+        chan.allow_pd = false;
+        chan.intr_priority = 0;
+
+        if constexpr (kTx && kRx) {
+            const auto err = i2s_new_channel(&chan, &state.tx, &state.rx);
+            if (err != ESP_OK) {
+                Init::fail(state.init);
+                return err;
+            }
+        } else if constexpr (kTx) {
+            const auto err = i2s_new_channel(&chan, &state.tx, nullptr);
+            if (err != ESP_OK) {
+                Init::fail(state.init);
+                return err;
+            }
+        } else {
+            const auto err = i2s_new_channel(&chan, nullptr, &state.rx);
+            if (err != ESP_OK) {
+                Init::fail(state.init);
+                return err;
+            }
+        }
+
+        auto tdm = config(Hz);
+        if constexpr (kTx) {
+            const auto err = i2s_channel_init_tdm_mode(state.tx, &tdm);
+            if (err != ESP_OK) {
+                clear();
+                Init::fail(state.init);
+                return err;
+            }
+            bind_tx();
+        }
+        if constexpr (kRx) {
+            const auto err = i2s_channel_init_tdm_mode(state.rx, &tdm);
+            if (err != ESP_OK) {
+                clear();
+                Init::fail(state.init);
+                return err;
+            }
+            bind_rx();
+        }
+
+        state.rate = Hz;
+        Init::pass(state.init);
+        return ESP_OK;
+    }
+
+    static void boot()
+    {
+        ESP_ERROR_CHECK(init());
+    }
+
+    static void start()
+    {
+        boot();
+
+        if (state.running) {
+            return;
+        }
+
+        if constexpr (kTx) {
+            ESP_ERROR_CHECK(i2s_channel_enable(state.tx));
+        }
+        if constexpr (kRx) {
+            ESP_ERROR_CHECK(i2s_channel_enable(state.rx));
+        }
+
+        state.running = true;
+    }
+
+    static void stop()
+    {
+        if (!state.running) {
+            return;
+        }
+
+        if constexpr (kTx) {
+            ESP_ERROR_CHECK(i2s_channel_disable(state.tx));
+        }
+        if constexpr (kRx) {
+            ESP_ERROR_CHECK(i2s_channel_disable(state.rx));
+        }
+
+        state.running = false;
+    }
+
+    static void pause()
+    {
+        stop();
+    }
+
+    static void resume()
+    {
+        start();
+    }
+
+    static void rate(const std::uint32_t value)
+    {
+        boot();
+        const bool was_running = state.running;
+        if (was_running) {
+            stop();
+        }
+
+        auto clk = clock(value);
+        if constexpr (kTx) {
+            ESP_ERROR_CHECK(i2s_channel_reconfig_tdm_clock(state.tx, &clk));
+        }
+        if constexpr (kRx) {
+            ESP_ERROR_CHECK(i2s_channel_reconfig_tdm_clock(state.rx, &clk));
+        }
+        state.rate = value;
+
+        if (was_running) {
+            start();
+        }
+    }
+
+    template <bool Enabled = kTx>
+    [[nodiscard]] static esp_err_t preload(
+        const void* const src,
+        const std::size_t size,
+        std::size_t* const loaded) noexcept
+        requires(Enabled)
+    {
+        boot();
+        return i2s_channel_preload_data(state.tx, src, size, loaded);
+    }
+
+    template <bool Enabled = kTx>
+    [[nodiscard]] static Result<std::size_t> preload(
+        const void* const src,
+        const std::size_t size) noexcept
+        requires(Enabled)
+    {
+        std::size_t loaded{};
+        const auto err = preload(src, size, &loaded);
+        if (err != ESP_OK) {
+            return fail(err);
+        }
+        return loaded;
+    }
+
+    template <typename T, std::size_t Extent, bool Enabled = kTx>
+    [[nodiscard]] static Result<std::size_t> preload(const std::span<T, Extent> src) noexcept
+        requires(Enabled && std::is_trivially_copyable_v<std::remove_cv_t<T>>)
+    {
+        return preload(src.data(), src.size_bytes());
+    }
+
+    template <bool Enabled = kTx>
+    [[nodiscard]] static esp_err_t write(
+        const void* const src,
+        const std::size_t size,
+        std::size_t* const wrote,
+        const std::uint32_t timeout_ms = 1000U) noexcept
+        requires(Enabled)
+    {
+        boot();
+        return i2s_channel_write(state.tx, src, size, wrote, timeout_ms);
+    }
+
+    template <bool Enabled = kTx>
+    [[nodiscard]] static Result<std::size_t> write(
+        const void* const src,
+        const std::size_t size,
+        const std::uint32_t timeout_ms = 1000U) noexcept
+        requires(Enabled)
+    {
+        std::size_t wrote{};
+        const auto err = write(src, size, &wrote, timeout_ms);
+        if (err != ESP_OK) {
+            return fail(err);
+        }
+        return wrote;
+    }
+
+    template <typename T, std::size_t Extent, bool Enabled = kTx>
+    [[nodiscard]] static Result<std::size_t> write(
+        const std::span<T, Extent> src,
+        const std::uint32_t timeout_ms = 1000U) noexcept
+        requires(Enabled && std::is_trivially_copyable_v<std::remove_cv_t<T>>)
+    {
+        return write(src.data(), src.size_bytes(), timeout_ms);
+    }
+
+    template <bool Enabled = kRx>
+    [[nodiscard]] static esp_err_t read(
+        void* const dst,
+        const std::size_t size,
+        std::size_t* const got,
+        const std::uint32_t timeout_ms = 1000U) noexcept
+        requires(Enabled)
+    {
+        boot();
+        return i2s_channel_read(state.rx, dst, size, got, timeout_ms);
+    }
+
+    template <bool Enabled = kRx>
+    [[nodiscard]] static Result<std::size_t> read(
+        void* const dst,
+        const std::size_t size,
+        const std::uint32_t timeout_ms = 1000U) noexcept
+        requires(Enabled)
+    {
+        std::size_t got{};
+        const auto err = read(dst, size, &got, timeout_ms);
+        if (err != ESP_OK) {
+            return fail(err);
+        }
+        return got;
+    }
+
+    template <typename T, std::size_t Extent, bool Enabled = kRx>
+    [[nodiscard]] static Result<std::size_t> read(
+        const std::span<T, Extent> dst,
+        const std::uint32_t timeout_ms = 1000U) noexcept
+        requires(Enabled && !std::is_const_v<T> && std::is_trivially_copyable_v<T>)
+    {
+        return read(dst.data(), dst.size_bytes(), timeout_ms);
+    }
+
+    template <bool Enabled = kTx>
+    [[nodiscard]] static i2s_chan_info_t tx_info() noexcept
+        requires(Enabled)
+    {
+        boot();
+        i2s_chan_info_t info{};
+        ESP_ERROR_CHECK(i2s_channel_get_info(state.tx, &info));
+        return info;
+    }
+
+    template <bool Enabled = kRx>
+    [[nodiscard]] static i2s_chan_info_t rx_info() noexcept
+        requires(Enabled)
+    {
+        boot();
+        i2s_chan_info_t info{};
+        ESP_ERROR_CHECK(i2s_channel_get_info(state.rx, &info));
+        return info;
+    }
+
+    [[nodiscard]] static constexpr bool duplex() noexcept
+    {
+        return kTx && kRx;
+    }
+
+    [[nodiscard]] static constexpr std::uint32_t hz() noexcept
+    {
+        return Hz;
+    }
+
+    [[nodiscard]] static std::uint32_t rate() noexcept
+    {
+        boot();
+        return state.rate;
+    }
+
+    [[nodiscard]] static constexpr std::uint32_t mask() noexcept
+    {
+        return Mask;
+    }
+
+    [[nodiscard]] static constexpr std::uint32_t slots() noexcept
+    {
+        return effective_total_slots();
+    }
+
+    [[nodiscard]] static std::uint32_t sent() noexcept
+    {
+        return __atomic_load_n(&state.sent, __ATOMIC_ACQUIRE);
+    }
+
+    [[nodiscard]] static std::uint32_t recv() noexcept
+    {
+        return __atomic_load_n(&state.recv, __ATOMIC_ACQUIRE);
+    }
+
+    [[nodiscard]] static std::uint32_t send_ovf() noexcept
+    {
+        return __atomic_load_n(&state.send_ovf, __ATOMIC_ACQUIRE);
+    }
+
+    [[nodiscard]] static std::uint32_t recv_ovf() noexcept
+    {
+        return __atomic_load_n(&state.recv_ovf, __ATOMIC_ACQUIRE);
+    }
+
+private:
+    struct State {
+        i2s_chan_handle_t tx{};
+        i2s_chan_handle_t rx{};
+        std::uint32_t rate{};
+        alignas(cache_line) std::uint32_t sent{};
+        alignas(cache_line) std::uint32_t recv{};
+        alignas(cache_line) std::uint32_t send_ovf{};
+        alignas(cache_line) std::uint32_t recv_ovf{};
+        bool running{};
+        std::uint32_t init{};
+    };
+
+    constinit static inline State state{};
+
+    IRAM_ATTR static bool on_sent(i2s_chan_handle_t, i2s_event_data_t*, void*) noexcept
+    {
+        __atomic_add_fetch(&state.sent, 1U, __ATOMIC_RELEASE);
+        return false;
+    }
+
+    IRAM_ATTR static bool on_send_ovf(i2s_chan_handle_t, i2s_event_data_t*, void*) noexcept
+    {
+        __atomic_add_fetch(&state.send_ovf, 1U, __ATOMIC_RELEASE);
+        return false;
+    }
+
+    IRAM_ATTR static bool on_recv(i2s_chan_handle_t, i2s_event_data_t*, void*) noexcept
+    {
+        __atomic_add_fetch(&state.recv, 1U, __ATOMIC_RELEASE);
+        return false;
+    }
+
+    IRAM_ATTR static bool on_recv_ovf(i2s_chan_handle_t, i2s_event_data_t*, void*) noexcept
+    {
+        __atomic_add_fetch(&state.recv_ovf, 1U, __ATOMIC_RELEASE);
+        return false;
+    }
+
+    [[nodiscard]] static constexpr i2s_tdm_slot_config_t slot() noexcept
+    {
+        i2s_tdm_slot_config_t cfg{};
+        cfg.data_bit_width = Bits;
+        cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO;
+        cfg.slot_mode = Slots;
+        cfg.slot_mask = static_cast<i2s_tdm_slot_mask_t>(Mask);
+        cfg.left_align = false;
+        cfg.big_endian = false;
+        cfg.bit_order_lsb = false;
+        cfg.skip_mask = false;
+        cfg.total_slot = effective_total_slots();
+
+        if constexpr (Format == I2sTdmFmt::pcm_short) {
+            cfg.ws_width = 1U;
+            cfg.ws_pol = true;
+            cfg.bit_shift = true;
+        } else if constexpr (Format == I2sTdmFmt::pcm_long) {
+            cfg.ws_width = static_cast<std::uint32_t>(Bits);
+            cfg.ws_pol = true;
+            cfg.bit_shift = true;
+        } else if constexpr (Format == I2sTdmFmt::msb) {
+            cfg.ws_width = I2S_TDM_AUTO_WS_WIDTH;
+            cfg.ws_pol = false;
+            cfg.bit_shift = false;
+        } else {
+            cfg.ws_width = I2S_TDM_AUTO_WS_WIDTH;
+            cfg.ws_pol = false;
+            cfg.bit_shift = true;
+        }
+
+        return cfg;
+    }
+
+    [[nodiscard]] static constexpr i2s_tdm_clk_config_t clock(const std::uint32_t rate) noexcept
+    {
+        i2s_tdm_clk_config_t cfg{};
+        cfg.sample_rate_hz = rate;
+        cfg.clk_src = I2S_CLK_SRC_DEFAULT;
+        cfg.ext_clk_freq_hz = 0U;
+        cfg.mclk_multiple = mclk_multiple();
+        cfg.bclk_div = 8U;
+        return cfg;
+    }
+
+    [[nodiscard]] static constexpr i2s_tdm_gpio_config_t gpio() noexcept
+    {
+        i2s_tdm_gpio_config_t cfg{};
+        cfg.mclk = static_cast<gpio_num_t>(Mclk);
+        cfg.bclk = static_cast<gpio_num_t>(Bclk);
+        cfg.ws = static_cast<gpio_num_t>(Ws);
+        cfg.dout = kTx ? static_cast<gpio_num_t>(Dout) : I2S_GPIO_UNUSED;
+        cfg.din = kRx ? static_cast<gpio_num_t>(Din) : I2S_GPIO_UNUSED;
+        cfg.invert_flags.mclk_inv = false;
+        cfg.invert_flags.bclk_inv = false;
+        cfg.invert_flags.ws_inv = false;
+        return cfg;
+    }
+
+    [[nodiscard]] static constexpr i2s_tdm_config_t config(const std::uint32_t rate) noexcept
+    {
+        i2s_tdm_config_t cfg{};
+        cfg.clk_cfg = clock(rate);
+        cfg.slot_cfg = slot();
+        cfg.gpio_cfg = gpio();
+        return cfg;
+    }
+
+    static void bind_tx()
+    {
+        i2s_event_callbacks_t cb{};
+        cb.on_sent = &on_sent;
+        cb.on_send_q_ovf = &on_send_ovf;
+        ESP_ERROR_CHECK(i2s_channel_register_event_callback(state.tx, &cb, nullptr));
+    }
+
+    static void bind_rx()
+    {
+        i2s_event_callbacks_t cb{};
+        cb.on_recv = &on_recv;
+        cb.on_recv_q_ovf = &on_recv_ovf;
+        ESP_ERROR_CHECK(i2s_channel_register_event_callback(state.rx, &cb, nullptr));
+    }
+
+    static void clear() noexcept
+    {
+        if constexpr (kTx) {
+            if (state.tx != nullptr) {
+                (void)i2s_del_channel(state.tx);
+                state.tx = nullptr;
+            }
+        }
+        if constexpr (kRx) {
+            if (state.rx != nullptr) {
+                (void)i2s_del_channel(state.rx);
+                state.rx = nullptr;
+            }
+        }
+    }
+};
+#endif
 
 }  // namespace arc
