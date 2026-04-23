@@ -134,6 +134,10 @@
 #include "arc/temp.hpp"
 #endif
 
+#if __has_include("driver/touch_sens.h") && __has_include("soc/touch_sensor_channel.h")
+#include "arc/touch.hpp"
+#endif
+
 #if __has_include("lwip/netdb.h") && __has_include("lwip/sockets.h")
 #include "arc/tcp.hpp"
 #endif

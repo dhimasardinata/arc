@@ -47,6 +47,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Pm` gives typed ESP-IDF PM locks for CPU/APB/no-light-sleep critical sections when DFS is enabled.
 - `arc::Rng` exposes the ESP32-S3 hardware random source for fixed buffers and typed values.
 - `arc::Temp` reads the ESP32-S3 internal temperature sensor for thermal telemetry.
+- `arc::TouchBus` and `arc::Touch` bind the ESP32-S3 capacitive touch controller and channels with explicit scan, filter, wake, and channel-data ownership.
 - `arc::Tight` runs a masked per-step loop with optional cycle-budget overrun telemetry for the rare path that needs tighter jitter than `arc::App`.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
@@ -184,6 +185,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── store.hpp
 │               ├── task.hpp
 │               ├── temp.hpp
+│               ├── touch.hpp
 │               ├── tcp.hpp
 │               ├── timer.hpp
 │               ├── topology.hpp
@@ -233,6 +235,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware timebase and alarms through GPTimer
 - Deep-sleep and light-sleep entry with explicit wake-source and power-domain policy
 - Hardware die-temperature telemetry for thermal guard logic
+- Hardware capacitive touch sensing with typed controller/channel ownership, filter hooks, and sleep-wakeup hooks
 - Lock-free SPSC/MPSC queues and single-word control register
 - Slot-aware OTA helper for staged writes and rollback state
 - Typed NVS persistence and bounded string loading on the Core 0 side
@@ -1163,6 +1166,21 @@ Internal ESP32-S3 die-temperature helper.
 - `milli()` returns milli-Celsius for integer telemetry.
 
 Use this as a Core 0 guard rail when radio, CPU, DMA, and waveform peripherals are running hard.
+
+### `arc::TouchBus<...>` and `arc::Touch<Bus, Io, ...>`
+
+Compile-time ESP32-S3 capacitive touch wrapper.
+
+- `TouchBus::init()` creates the touch controller with one explicit sample configuration and returns `esp_err_t`.
+- `enable()`, `disable()`, `start()`, `stop()`, and `scan(timeout_ms)` expose the controller lifecycle without hiding when the hardware is actually measuring.
+- `filter(...)`, `events(...)`, `sleep(...)`, `waterproof(...)`, `proximity(...)`, and `denoise(...)` forward the ESP-IDF controller subfeatures through one typed owner.
+- `Touch::init()` creates one touch channel bound to a compile-time GPIO/channel pair.
+- `raw()`, `smooth()`, `benchmark()`, and `proximity()` expose the channel data plane as recoverable `arc::Result<std::uint32_t>` reads where the target supports that data type.
+- `threshold(value, ...)` and `config(...)` let you retune the active threshold after an initial benchmark scan.
+- `info()` exposes the resolved channel/GPIO metadata from the driver.
+- `Touch::off()` deletes the channel; `TouchBus::off()` tears down the controller after channels are removed.
+
+Use this for touch keys, wake pads, guarded control surfaces, and low-part-count HMI inputs that should stay typed and deterministic.
 
 ### `arc::Mask<Level = XCHAL_EXCM_LEVEL>`
 
