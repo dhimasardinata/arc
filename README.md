@@ -28,6 +28,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Copy` offloads memory movement to the async DMA memcpy engine.
 - `arc::Dvp` captures parallel camera frames through the ESP32-S3 LCD_CAM DMA path.
 - `arc::I80Bus` and `arc::I80` drive the ESP32-S3 LCD_CAM Intel 8080 DMA path with exact transfer tickets.
+- `arc::Rgb` binds the ESP32-S3 RGB LCD engine with explicit timing, frame-buffer ownership, and refresh control.
 - `arc::I2cBus` and `arc::I2c` bind ESP32-S3 I2C master buses and devices with recoverable init paths.
 - `arc::SpiBus` and `arc::Spi` drive DMA-capable SPI transfers with ticketed queue/finish ownership.
 - `arc::I2s` owns standard-mode I2S channels, `arc::I2sTdm` covers multichannel framed lanes, and `arc::I2sPdm` covers one-line PDM RX/TX, with both raw `esp_err_t` and opt-in `arc::Result` APIs.
@@ -1059,6 +1060,24 @@ Compile-time Intel 8080 parallel output using the ESP32-S3 LCD_CAM block.
 - `sent()`, `done()`, `bytes()`, `idle()`, `ready(ticket)`, `wait()`, and `finish(ticket)` expose the DMA queue state.
 
 Use this for display or parallel-device throughput that should be owned by LCD_CAM/DMA, not by a GPIO loop.
+
+### `arc::Rgb<arc::RgbLines<...>, Hsync, Vsync, De, Pclk, Disp, ...>`
+
+Compile-time RGB LCD output using the ESP32-S3 RGB panel path.
+
+- `arc::RgbLines<...>` declares the RGB data bus width in 8-bit steps.
+- `init()` / `boot()` create the panel, register ISR callbacks, then reset and initialize the panel handle.
+- `init(fb0, fb1, fb2)` accepts user-owned static frame buffers, so the realtime plane does not need heap-backed screen memory.
+- `off()` tears the panel down and releases the RGB hardware claim.
+- `draw(...)`, `draw_2d(...)`, and `frame(...)` expose the ESP-LCD panel bitmap path directly.
+- `draw_coherent(...)` and `frame_coherent(...)` flush cache before handing a draw buffer to the RGB path.
+- `refresh()` exposes refresh-on-demand mode, while `restart()` exposes the RGB DMA resync hook.
+- `pclk(value)`, `disp(on)`, `sleep(enable)`, `mirror(x, y)`, `swap(xy)`, `gap(x, y)`, `invert(enable)`, and `yuv(cfg)` expose the live panel controls.
+- `fb(index)` returns the current driver- or user-owned frame buffer pointer, and `buffer<T>(count)` allocates an aligned draw buffer through the RGB driver.
+- `draws()`, `frame_done()`, `vsyncs()`, and `pixels()` expose the ISR-side panel telemetry.
+- 16-bit and 24-bit buses can rely on the ESP-LCD default color-format inference. 8-bit buses must pass an explicit input color format.
+
+Use this for raw RGB TFT panels, LVGL/direct-framebuffer surfaces, and any display path that should stay on the S3 LCD DMA engine instead of a serialized bus.
 
 ### `arc::Copy<Backlog = 4, BurstBytes = 64, Weight = 0, Backend = arc::CopyBackend::auto_dma>`
 
