@@ -30,7 +30,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::I80Bus` and `arc::I80` drive the ESP32-S3 LCD_CAM Intel 8080 DMA path with exact transfer tickets.
 - `arc::I2cBus` and `arc::I2c` bind ESP32-S3 I2C master buses and devices with recoverable init paths.
 - `arc::SpiBus` and `arc::Spi` drive DMA-capable SPI transfers with ticketed queue/finish ownership.
-- `arc::I2s` owns standard-mode I2S channels, and `arc::I2sTdm` covers multichannel framed lanes, with both raw `esp_err_t` and opt-in `arc::Result` APIs.
+- `arc::I2s` owns standard-mode I2S channels, `arc::I2sTdm` covers multichannel framed lanes, and `arc::I2sPdm` covers one-line PDM RX/TX, with both raw `esp_err_t` and opt-in `arc::Result` APIs.
 - `arc::Uart` binds ESP32-S3 UART ports, pins, framing, and buffers with fixed storage and typed read/write APIs.
 - `arc::Usb` binds the ESP32-S3 USB Serial/JTAG lane with typed byte IO.
 - `arc::Sd` mounts ESP32-S3 SD/MMC cards through FAT and keeps raw sector access explicit.
@@ -981,6 +981,20 @@ Compile-time TDM-mode I2S wrapper.
 - The wrapper auto-picks a safer MCLK multiple for wider multichannel frames on ESP32-S3 so common 4-slot / 32-bit layouts do not start from the warning path.
 
 Use this for multichannel codecs, TDM ADCs, and framed sample fabrics where more than two slots must move through one DMA-backed serial lane.
+
+### `arc::I2sPdm<Clk, Dout = I2S_GPIO_UNUSED, Din = I2S_GPIO_UNUSED, Hz = 16'000, ...>`
+
+Compile-time one-line PDM-mode I2S wrapper for ESP32-S3.
+
+- `init()` allocates and initializes TX, RX, or duplex PDM channels and returns `esp_err_t`.
+- `boot()`, `start()`, `stop()`, `pause()`, and `resume()` follow the same lifecycle as the other Arc I2S lanes.
+- `preload(...)`, `write(...)`, and `read(...)` reuse the same DMA-backed byte/span surface as standard mode and TDM.
+- `rate(value)` reconfigures the PDM clock while the lane is stopped, restoring the running state after retune.
+- `mask()` exposes the compile-time RX slot mask, and `data()` exposes whether software sees PCM or raw PDM words.
+- `tx_info()`, `rx_info()`, `sent()`, `recv()`, `send_ovf()`, and `recv_ovf()` expose runtime lane state and ISR-side counters.
+- The wrapper keeps the one-line codec-style path explicit and constrains ESP32-S3 PDM use to I2S0, which is what the hardware actually supports.
+
+Use this for digital MEMS microphones, simple PDM speaker/codec links, and low-part-count audio/control planes that should stay on the DMA-backed I2S hardware path.
 
 ### `arc::Uart<Port, Tx, Rx, Rts = UART_PIN_NO_CHANGE, Cts = UART_PIN_NO_CHANGE, ...>`
 
