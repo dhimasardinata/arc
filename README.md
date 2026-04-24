@@ -41,8 +41,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::dsp` adds hot-loop math kernels that pair naturally with `arc::simdbuf` and Core 1.
 - `arc::Probe` reads the Xtensa cycle counter so hot paths can be measured, not guessed.
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
-- `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency/duty choices.
-- `arc::Sigma` binds the ESP32-S3 Sigma-Delta Modulator to a compile-time GPIO and sample rate.
+- `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency defaults with runtime duty retuning.
+- `arc::Sigma` binds the ESP32-S3 Sigma-Delta Modulator to a compile-time GPIO and sample rate with runtime density retuning.
 - `arc::Timer` binds the GPTimer block to a compile-time timebase and optional ISR hook.
 - `arc::Sleep` wraps wake causes, timer wake, power-domain policy, light sleep, and deep sleep.
 - `arc::Pm` gives typed ESP-IDF PM locks for CPU/APB/no-light-sleep critical sections when DFS is enabled.
@@ -697,6 +697,40 @@ Opt-in C++23/26 runtime error surface based on `std::expected`.
 
 Use this for runtime operations that can fail without invalidating the board topology. Hardware boot/configuration errors still intentionally use fail-fast ESP-IDF checks.
 
+### Failure Policy
+
+Arc keeps two hardware-init surfaces on purpose:
+
+- `init()`, `begin()`, `enable()`, `disable()`, and `set(...)` return `esp_err_t` when a caller can retry, degrade, or report the fault.
+- `boot()`, `start()`, `stop()`, `on()`, and compile-time convenience helpers are fail-fast wrappers for hardware that is considered a board invariant.
+- Data-plane methods that return `esp_err_t` or `arc::Result<T>` use the recoverable path internally. They do not hide an `ESP_ERROR_CHECK()` in their lazy initialization path.
+- Raw `native()` accessors remain fail-fast because they hand out driver handles whose absence means the declared board topology is not usable.
+
+Use fail-fast helpers in the fixed board bring-up path. Use the recoverable names in industrial boot code, optional peripherals, hot-plug style probes, or telemetry paths where a peripheral can be retried after power sequencing settles.
+
+### Topology vs Runtime Values
+
+Pins, peripheral instances, DMA sizing, queue depths, ISR affinity, and fixed bus shape stay as template parameters because changing them creates different hardware ownership. Runtime controls stay runtime:
+
+- `arc::Uart::baud(value)` retunes a live UART without creating a second UART type.
+- `arc::Spi::send/recv/xfer/poll(..., hz)` can override the clock for one transfer.
+- `arc::Pwm::duty(value)` and `arc::Pwm::set(value)` update LEDC duty without instantiating another template.
+- `arc::Sigma::set(value)` updates SDM density without instantiating another template.
+- MCPWM wrappers expose runtime `hz(value)` and `duty(value)` where the hardware supports clean retuning.
+
+Do not create multiple aliases for the same physical peripheral just to vary a runtime knob. Keep one topology type and drive live values through the runtime methods.
+
+### Internal Contracts
+
+Most application code should only see the small surface: `start()`, `send(...)`, `read(...)`, `set(...)`, and typed buffers. The dense internals are deliberately isolated:
+
+- Claim tokens protect hardware ownership across translation units.
+- Cache helpers encode ESP32-S3 DMA/cache-line rules at the call site.
+- Lock-free queues use explicit sequence arithmetic and cache-line isolation.
+- ISR-facing callbacks stay minimal and update counters or queues with release/acquire ordering.
+
+Only extend those internals when you are also preserving their hardware contract. New application features should normally compose the existing lanes instead.
+
 ### `arc::Drive<Pin, Channel, Core>`
 
 Dedicated GPIO output bound at compile time.
@@ -805,11 +839,13 @@ Use this when producer identity is static and tail latency matters more than one
 
 Compile-time hardware PWM on ESP32-S3 LEDC.
 
+- `begin()` configures timer, channel, and pin routing and returns `esp_err_t`.
 - `start()` configures timer, channel, pin routing, and starts output.
 - `on()` reapplies the default duty.
 - `off()` stops output low.
 - `pause()` and `resume()` gate the underlying LEDC timer.
 - `duty<permille>()` updates duty with a compile-time value.
+- `duty(permille)` and `set(permille)` update duty with a runtime value.
 
 Use this when the waveform is periodic and the silicon should generate it. Keep `arc::Wave` for cases where the CPU must own every edge.
 
@@ -817,9 +853,12 @@ Use this when the waveform is periodic and the silicon should generate it. Keep 
 
 Compile-time Sigma-Delta Modulator output.
 
+- `init()` creates the SDM channel and applies the initial density as a recoverable operation.
+- `enable()` and `disable()` gate the channel and return `esp_err_t`.
 - `start()` creates and enables one SDM channel routed to the pin.
 - `write(value)` updates pulse density in the hardware driver.
 - `write<Value>()` range-checks the density at compile time.
+- `set(value)` is the recoverable runtime density update path.
 - `zero()`, `high()`, and `low()` are shorthand targets.
 - `fast(value)` is the thinnest post-boot path and returns `esp_err_t` instead of panicking.
 
@@ -918,6 +957,7 @@ Compile-time SPI device wrapper.
 - `boot()` adds one device on top of a compile-time `arc::SpiBus`.
 - `off()` removes the device and releases its CS claim.
 - `send(...)`, `recv(...)`, `xfer(...)`, and `poll(...)` cover the common synchronous paths.
+- The synchronous transfer helpers accept an optional final `hz` argument for per-transfer clock overrides.
 - `queue(...)` and `wait(...)` expose the interrupt-driven transaction path when you want multiple jobs in flight.
 - `Move` and `StrictMove` are ticket objects that own queued transaction storage until `finish(...)`.
 - `queue_coherent(move, tx, rx, bytes)` flushes TX, safely discards whole RX cache lines, and queues one DMA transfer.
@@ -945,7 +985,9 @@ Use this for sensors, EEPROMs, small displays, PMICs, and control chips that sho
 
 Compile-time ESP32-S3 TWAI/CAN node wrapper.
 
+- `init()` creates one on-chip TWAI node and binds ISR callbacks as a recoverable operation.
 - `boot()` creates one on-chip TWAI node and binds ISR callbacks.
+- `enable()` and `disable()` gate bus participation and return `esp_err_t`.
 - `start()` and `stop()` enable or disable bus participation.
 - `frame(id, payload, ext, remote)` builds an owning classic CAN frame.
 - `send(frame, timeout_ms)` queues a frame; keep the frame alive until TX completes.
@@ -1037,7 +1079,9 @@ Use this for removable FAT storage and high-volume logs that should stay on Core
 Compile-time DVP camera input using the ESP32-S3 LCD_CAM block.
 
 - `arc::DvpLines<...>` declares 8, 10, 12, or 16 data GPIOs.
+- `init()` creates one DVP controller with compile-time sync/data routing and returns `esp_err_t`.
 - `boot()` creates one DVP controller with compile-time sync/data routing.
+- `enable()` and `run()` expose recoverable controller enable/start steps.
 - `start()`, `stop()`, `pause()`, and `resume()` gate the capture lane.
 - `buffer<T>(count)` allocates a DMA-capable camera frame buffer.
 - `grab(frame, &bytes, timeout_ms)` receives one frame into user-owned storage.
@@ -1051,7 +1095,9 @@ Use this for camera or parallel input streams that should land in RAM through LC
 Compile-time Intel 8080 parallel output using the ESP32-S3 LCD_CAM block.
 
 - `arc::Lines<...>` declares 8 or 16 data GPIOs.
+- `I80Bus::init()` creates one DMA-backed I80 bus and returns `esp_err_t`.
 - `I80Bus::boot()` creates one DMA-backed I80 bus.
+- `I80::init()` creates one panel IO endpoint and returns `esp_err_t`.
 - `I80::boot()` creates one panel IO endpoint.
 - `param(cmd, data, bytes)` sends command parameters.
 - `color(cmd, data, bytes)` queues a DMA-backed payload transfer.
@@ -1084,6 +1130,7 @@ Use this for raw RGB TFT panels, LVGL/direct-framebuffer surfaces, and any displ
 
 Compile-time async DMA memcpy wrapper.
 
+- `init()` installs one async memcpy driver instance and returns `esp_err_t`.
 - `boot()` installs one async memcpy driver instance.
 - `send(dst, src, bytes)` queues a non-blocking DMA copy and returns immediately after submission.
 - `copy(dst, src, bytes)` submits the transfer and spins until the completion counter reaches the target.
@@ -1207,9 +1254,12 @@ Use this for local nonces, fuzz seeds, randomized backoff, and binary IDs withou
 
 Internal ESP32-S3 die-temperature helper.
 
+- `init()` installs the temperature sensor and returns `esp_err_t`.
+- `enable()` and `disable()` gate the sensor and return `esp_err_t`.
 - `start()` installs and enables the temperature sensor once.
 - `stop()` disables the sensor without deleting the driver object.
 - `read(value)` writes Celsius into a `float&` and returns `esp_err_t`.
+- `read()` returns Celsius through `arc::Result<float>`.
 - `celsius()` returns Celsius and panics on driver error.
 - `milli()` returns milli-Celsius for integer telemetry.
 

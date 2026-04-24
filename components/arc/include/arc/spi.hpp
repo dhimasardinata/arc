@@ -229,7 +229,10 @@ struct Spi {
 
     [[nodiscard]] static esp_err_t hold(const TickType_t wait = portMAX_DELAY) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
 
         const auto task = xTaskGetCurrentTaskHandle();
         if (__atomic_load_n(&state.owner, __ATOMIC_ACQUIRE) == task) {
@@ -267,29 +270,44 @@ struct Spi {
     [[nodiscard]] static spi_transaction_t job(
         const void* const tx,
         void* const rx,
-        const std::size_t bytes) noexcept
+        const std::size_t bytes,
+        const std::uint32_t hz = 0U) noexcept
     {
         spi_transaction_t trans{};
         trans.length = bytes * 8U;
         trans.rxlength = rx == nullptr ? 0U : bytes * 8U;
-        trans.override_freq_hz = 0U;
+        trans.override_freq_hz = static_cast<int>(hz);
         trans.user = nullptr;
         trans.tx_buffer = tx;
         trans.rx_buffer = rx;
         return trans;
     }
 
-    [[nodiscard]] static esp_err_t send(const void* const tx, const std::size_t bytes) noexcept
+    [[nodiscard]] static esp_err_t send(
+        const void* const tx,
+        const std::size_t bytes,
+        const std::uint32_t hz = 0U) noexcept
     {
-        boot();
-        auto trans = job(tx, nullptr, bytes);
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
+        auto trans = job(tx, nullptr, bytes, hz);
         return spi_device_transmit(state.dev, &trans);
     }
 
-    [[nodiscard]] static esp_err_t recv(void* const rx, const std::size_t bytes) noexcept
+    [[nodiscard]] static esp_err_t recv(
+        void* const rx,
+        const std::size_t bytes,
+        const std::uint32_t hz = 0U) noexcept
     {
-        boot();
-        auto trans = job(nullptr, rx, bytes);
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
+        auto trans = job(nullptr, rx, bytes, hz);
         trans.rxlength = bytes * 8U;
         trans.length = bytes * 8U;
         return spi_device_transmit(state.dev, &trans);
@@ -298,20 +316,30 @@ struct Spi {
     [[nodiscard]] static esp_err_t xfer(
         const void* const tx,
         void* const rx,
-        const std::size_t bytes) noexcept
+        const std::size_t bytes,
+        const std::uint32_t hz = 0U) noexcept
     {
-        boot();
-        auto trans = job(tx, rx, bytes);
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
+        auto trans = job(tx, rx, bytes, hz);
         return spi_device_transmit(state.dev, &trans);
     }
 
     [[nodiscard]] static esp_err_t poll(
         const void* const tx,
         void* const rx,
-        const std::size_t bytes) noexcept
+        const std::size_t bytes,
+        const std::uint32_t hz = 0U) noexcept
     {
-        boot();
-        auto trans = job(tx, rx, bytes);
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
+        auto trans = job(tx, rx, bytes, hz);
         return spi_device_polling_transmit(state.dev, &trans);
     }
 
@@ -319,7 +347,11 @@ struct Spi {
         spi_transaction_t& trans,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return spi_device_queue_trans(state.dev, &trans, wait);
     }
 
@@ -397,7 +429,11 @@ struct Spi {
         spi_transaction_t** const trans,
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         const auto err = spi_device_get_trans_result(state.dev, trans, wait_ticks);
         if (err == ESP_OK && trans != nullptr) {
             static_cast<void>(mark_ticket_done(*trans));
@@ -590,7 +626,11 @@ private:
             return ESP_ERR_INVALID_ARG;
         }
 
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         __atomic_store_n(&ticket.done, ticket_pending, __ATOMIC_RELAXED);
         ticket.trans = job(tx, rx, bytes);
         ticket.trans.user = ticket_marker();

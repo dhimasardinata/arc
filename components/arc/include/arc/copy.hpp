@@ -54,10 +54,10 @@ struct Copy {
     using Ticket = CopyTicket<false>;
     using StrictTicket = CopyTicket<true>;
 
-    static void boot()
+    [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
-            return;
+            return ESP_OK;
         }
 
         async_memcpy_config_t config{};
@@ -66,8 +66,19 @@ struct Copy {
         config.dma_burst_size = BurstBytes;
         config.flags = 0;
 
-        install(&config);
-        Init::pass(state.init);
+        const auto err = install(&config);
+        if (err == ESP_OK) {
+            Init::pass(state.init);
+        } else {
+            state.driver = nullptr;
+            Init::fail(state.init);
+        }
+        return err;
+    }
+
+    static void boot()
+    {
+        ESP_ERROR_CHECK(init());
     }
 
     template <typename Hook = void>
@@ -276,7 +287,10 @@ private:
         const std::size_t bytes,
         std::uint32_t* const target) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
 
         if (dst == nullptr || src == nullptr || bytes == 0U) {
             return ESP_ERR_INVALID_ARG;
@@ -371,27 +385,27 @@ private:
         }
     }
 
-    static void install(const async_memcpy_config_t* const config)
+    [[nodiscard]] static esp_err_t install(const async_memcpy_config_t* const config) noexcept
     {
         if constexpr (Backend == CopyBackend::auto_dma) {
-            ESP_ERROR_CHECK(esp_async_memcpy_install(config, &state.driver));
+            return esp_async_memcpy_install(config, &state.driver);
         } else if constexpr (Backend == CopyBackend::ahb) {
 #if SOC_HAS(AHB_GDMA)
-            ESP_ERROR_CHECK(esp_async_memcpy_install_gdma_ahb(config, &state.driver));
+            return esp_async_memcpy_install_gdma_ahb(config, &state.driver);
 #else
-            ESP_ERROR_CHECK(ESP_ERR_NOT_SUPPORTED);
+            return ESP_ERR_NOT_SUPPORTED;
 #endif
         } else if constexpr (Backend == CopyBackend::axi) {
 #if SOC_HAS(AXI_GDMA)
-            ESP_ERROR_CHECK(esp_async_memcpy_install_gdma_axi(config, &state.driver));
+            return esp_async_memcpy_install_gdma_axi(config, &state.driver);
 #else
-            ESP_ERROR_CHECK(ESP_ERR_NOT_SUPPORTED);
+            return ESP_ERR_NOT_SUPPORTED;
 #endif
         } else {
 #if SOC_CP_DMA_SUPPORTED
-            ESP_ERROR_CHECK(esp_async_memcpy_install_cpdma(config, &state.driver));
+            return esp_async_memcpy_install_cpdma(config, &state.driver);
 #else
-            ESP_ERROR_CHECK(ESP_ERR_NOT_SUPPORTED);
+            return ESP_ERR_NOT_SUPPORTED;
 #endif
         }
     }

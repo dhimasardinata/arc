@@ -8,6 +8,7 @@
 #include "soc/soc_caps.h"
 
 #include "arc/init.hpp"
+#include "arc/result.hpp"
 
 namespace arc {
 
@@ -21,33 +22,87 @@ struct Temp {
 
     static void boot()
     {
-        create();
+        ESP_ERROR_CHECK(init());
+    }
+
+    [[nodiscard]] static esp_err_t init() noexcept
+    {
+        if (!Init::begin(state.init)) {
+            return ESP_OK;
+        }
+
+        temperature_sensor_config_t config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(Min, Max);
+        config.clk_src = Source;
+        config.flags.allow_pd = AllowPd ? 1U : 0U;
+        const auto err = temperature_sensor_install(&config, &state.sensor);
+        if (err == ESP_OK) {
+            Init::pass(state.init);
+        } else {
+            state.sensor = nullptr;
+            Init::fail(state.init);
+        }
+        return err;
+    }
+
+    [[nodiscard]] static esp_err_t enable() noexcept
+    {
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
+        if (!state.enabled) {
+            const auto err = temperature_sensor_enable(state.sensor);
+            if (err != ESP_OK) {
+                return err;
+            }
+            state.enabled = true;
+        }
+        return ESP_OK;
     }
 
     static void start()
     {
-        create();
+        ESP_ERROR_CHECK(enable());
+    }
 
-        if (!state.enabled) {
-            ESP_ERROR_CHECK(temperature_sensor_enable(state.sensor));
-            state.enabled = true;
+    [[nodiscard]] static esp_err_t disable() noexcept
+    {
+        if (state.sensor == nullptr || !state.enabled) {
+            return ESP_OK;
         }
+
+        const auto err = temperature_sensor_disable(state.sensor);
+        if (err != ESP_OK) {
+            return err;
+        }
+        state.enabled = false;
+        return ESP_OK;
     }
 
     static void stop()
     {
-        if (state.sensor == nullptr || !state.enabled) {
-            return;
-        }
-
-        ESP_ERROR_CHECK(temperature_sensor_disable(state.sensor));
-        state.enabled = false;
+        ESP_ERROR_CHECK(disable());
     }
 
     [[nodiscard]] static esp_err_t read(float& value) noexcept
     {
-        create();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return temperature_sensor_get_celsius(state.sensor, &value);
+    }
+
+    [[nodiscard]] static Result<float> read() noexcept
+    {
+        float value = 0.0F;
+        const auto err = read(value);
+        if (err != ESP_OK) {
+            return fail(err);
+        }
+        return value;
     }
 
     [[nodiscard]] static float celsius()
@@ -66,7 +121,7 @@ struct Temp {
 
     [[nodiscard]] static temperature_sensor_handle_t native()
     {
-        create();
+        boot();
         return state.sensor;
     }
 
@@ -78,19 +133,6 @@ private:
     };
 
     constinit static inline State state{};
-
-    static void create()
-    {
-        if (!Init::begin(state.init)) {
-            return;
-        }
-
-        temperature_sensor_config_t config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(Min, Max);
-        config.clk_src = Source;
-        config.flags.allow_pd = AllowPd ? 1U : 0U;
-        ESP_ERROR_CHECK(temperature_sensor_install(&config, &state.sensor));
-        Init::pass(state.init);
-    }
 };
 
 }  // namespace arc

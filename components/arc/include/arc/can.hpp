@@ -64,10 +64,10 @@ struct Can {
         std::uint16_t bytes{};
     };
 
-    static void boot()
+    [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
-            return;
+            return ESP_OK;
         }
 
         twai_onchip_node_config_t config{};
@@ -87,34 +87,74 @@ struct Can {
         config.flags.enable_loopback = Loopback ? 1U : 0U;
         config.flags.enable_listen_only = Listen ? 1U : 0U;
         config.flags.no_receive_rtr = 0U;
-        ESP_ERROR_CHECK(twai_new_node_onchip(&config, &state.node));
+        auto err = twai_new_node_onchip(&config, &state.node);
+        if (err != ESP_OK) {
+            state.node = nullptr;
+            Init::fail(state.init);
+            return err;
+        }
 
         twai_event_callbacks_t callbacks{};
         callbacks.on_tx_done = &on_tx;
         callbacks.on_rx_done = &on_rx;
         callbacks.on_state_change = &on_state;
         callbacks.on_error = &on_error;
-        ESP_ERROR_CHECK(twai_node_register_event_callbacks(state.node, &callbacks, nullptr));
+        err = twai_node_register_event_callbacks(state.node, &callbacks, nullptr);
+        if (err != ESP_OK) {
+            static_cast<void>(twai_node_delete(state.node));
+            state.node = nullptr;
+            Init::fail(state.init);
+            return err;
+        }
+
         Init::pass(state.init);
+        return ESP_OK;
+    }
+
+    static void boot()
+    {
+        ESP_ERROR_CHECK(init());
+    }
+
+    [[nodiscard]] static esp_err_t enable() noexcept
+    {
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
+        if (!state.enabled) {
+            const auto err = twai_node_enable(state.node);
+            if (err != ESP_OK) {
+                return err;
+            }
+            state.enabled = true;
+        }
+        return ESP_OK;
     }
 
     static void start()
     {
-        boot();
-        if (!state.enabled) {
-            ESP_ERROR_CHECK(twai_node_enable(state.node));
-            state.enabled = true;
+        ESP_ERROR_CHECK(enable());
+    }
+
+    [[nodiscard]] static esp_err_t disable() noexcept
+    {
+        if (state.node == nullptr || !state.enabled) {
+            return ESP_OK;
         }
+
+        const auto err = twai_node_disable(state.node);
+        if (err != ESP_OK) {
+            return err;
+        }
+        state.enabled = false;
+        return ESP_OK;
     }
 
     static void stop()
     {
-        if (state.node == nullptr || !state.enabled) {
-            return;
-        }
-
-        ESP_ERROR_CHECK(twai_node_disable(state.node));
-        state.enabled = false;
+        ESP_ERROR_CHECK(disable());
     }
 
     static void pause()
@@ -152,7 +192,10 @@ struct Can {
 
     [[nodiscard]] static esp_err_t send(Frame& frame, const int timeout_ms = 0) noexcept
     {
-        start();
+        const auto ready = enable();
+        if (ready != ESP_OK) {
+            return ready;
+        }
 
         auto native = native_frame(frame);
         const auto err = twai_node_transmit(state.node, &native, timeout_ms);
@@ -182,7 +225,11 @@ struct Can {
 
     [[nodiscard]] static esp_err_t wait(const int timeout_ms = -1) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return twai_node_transmit_wait_all_done(state.node, timeout_ms);
     }
 
@@ -193,7 +240,11 @@ struct Can {
 
     [[nodiscard]] static esp_err_t recover() noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return twai_node_recover(state.node);
     }
 
@@ -201,7 +252,11 @@ struct Can {
         twai_node_status_t* const status,
         twai_node_record_t* const record = nullptr) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return twai_node_get_info(state.node, status, record);
     }
 
@@ -209,7 +264,11 @@ struct Can {
         const std::uint8_t index,
         const twai_mask_filter_config_t& config) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return twai_node_config_mask_filter(state.node, index, &config);
     }
 
@@ -247,7 +306,11 @@ struct Can {
         const std::uint8_t index,
         const twai_range_filter_config_t& config) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return twai_node_config_range_filter(state.node, index, &config);
     }
 

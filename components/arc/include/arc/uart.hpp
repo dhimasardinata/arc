@@ -109,7 +109,11 @@ struct Uart {
         const std::size_t bytes,
         std::size_t* const wrote) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         const auto out = uart_write_bytes(Port, data, bytes);
         if (out < 0) {
             return ESP_FAIL;
@@ -145,7 +149,11 @@ struct Uart {
         std::size_t* const got,
         const std::uint32_t timeout_ms = 0U) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         const auto in = uart_read_bytes(Port, data, bytes, pdMS_TO_TICKS(timeout_ms));
         if (in < 0) {
             return ESP_FAIL;
@@ -180,25 +188,41 @@ struct Uart {
 
     [[nodiscard]] static esp_err_t wait(const std::uint32_t timeout_ms = 1000U) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return uart_wait_tx_done(Port, pdMS_TO_TICKS(timeout_ms));
     }
 
     [[nodiscard]] static esp_err_t flush() noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return uart_flush_input(Port);
     }
 
     [[nodiscard]] static esp_err_t available(std::size_t& bytes) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return uart_get_buffered_data_len(Port, &bytes);
     }
 
     [[nodiscard]] static esp_err_t baud(const std::uint32_t value) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return uart_set_baudrate(Port, value);
     }
 

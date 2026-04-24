@@ -49,10 +49,10 @@ struct I80Bus<Lines<DataPins...>, Dc, Wr, MaxBytes, BurstBytes, Source> {
     static_assert(BurstBytes > 0U, "I80 DMA burst size must be non-zero");
     static_assert(sizeof...(DataPins) == Lines<DataPins...>::width);
 
-    static void boot()
+    [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
-            return;
+            return ESP_OK;
         }
 
         esp_lcd_i80_bus_config_t config{};
@@ -76,7 +76,12 @@ struct I80Bus<Lines<DataPins...>, Dc, Wr, MaxBytes, BurstBytes, Source> {
             state.bus = nullptr;
             Init::fail(state.init);
         }
-        ESP_ERROR_CHECK(err);
+        return err;
+    }
+
+    static void boot()
+    {
+        ESP_ERROR_CHECK(init());
     }
 
     [[nodiscard]] static constexpr std::size_t width() noexcept
@@ -139,13 +144,17 @@ struct I80 {
         std::uint32_t target{};
     };
 
-    static void boot()
+    [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
-            return;
+            return ESP_OK;
         }
 
-        Bus::boot();
+        auto err = Bus::init();
+        if (err != ESP_OK) {
+            Init::fail(state.init);
+            return err;
+        }
 
         esp_lcd_panel_io_i80_config_t config{};
         config.cs_gpio_num = static_cast<gpio_num_t>(Cs);
@@ -164,14 +173,19 @@ struct I80 {
         config.flags.swap_color_bytes = SwapBytes ? 1U : 0U;
         config.flags.pclk_active_neg = PclkNeg ? 1U : 0U;
         config.flags.pclk_idle_low = 0U;
-        const auto err = esp_lcd_new_panel_io_i80(Bus::native(), &config, &state.io);
+        err = esp_lcd_new_panel_io_i80(Bus::native(), &config, &state.io);
         if (err == ESP_OK) {
             Init::pass(state.init);
         } else {
             state.io = nullptr;
             Init::fail(state.init);
         }
-        ESP_ERROR_CHECK(err);
+        return err;
+    }
+
+    static void boot()
+    {
+        ESP_ERROR_CHECK(init());
     }
 
     [[nodiscard]] static esp_err_t param(
@@ -179,7 +193,11 @@ struct I80 {
         const void* const data = nullptr,
         const std::size_t bytes = 0U) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         return esp_lcd_panel_io_tx_param(state.io, cmd, data, bytes);
     }
 
@@ -260,7 +278,11 @@ struct I80 {
         const std::size_t count,
         const std::uint32_t caps = static_cast<std::uint32_t>(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL)) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return {};
+        }
+
         if (count == 0U) {
             return {};
         }
@@ -352,7 +374,11 @@ private:
         const std::size_t bytes,
         Ticket* const ticket) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         Gate guard(state.gate);
         const auto err = esp_lcd_panel_io_tx_color(state.io, cmd, data, bytes);
         if (err == ESP_OK) {

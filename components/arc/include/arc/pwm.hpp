@@ -4,6 +4,7 @@
 
 #include "driver/ledc.h"
 #include "esp_check.h"
+#include "esp_err.h"
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
@@ -44,7 +45,7 @@ struct Pwm {
         return static_cast<std::uint32_t>((std::uint64_t{1} << Bits) - 1ULL);
     }
 
-    static void start()
+    [[nodiscard]] static esp_err_t begin() noexcept
     {
         ledc_timer_config_t timer_cfg{};
         timer_cfg.speed_mode = Mode;
@@ -53,7 +54,10 @@ struct Pwm {
         timer_cfg.freq_hz = Hz;
         timer_cfg.clk_cfg = LEDC_AUTO_CLK;
         timer_cfg.deconfigure = false;
-        ESP_ERROR_CHECK(ledc_timer_config(&timer_cfg));
+        auto err = ledc_timer_config(&timer_cfg);
+        if (err != ESP_OK) {
+            return err;
+        }
 
         ledc_channel_config_t channel_cfg{};
         channel_cfg.gpio_num = Pin;
@@ -65,7 +69,12 @@ struct Pwm {
         channel_cfg.sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD;
         channel_cfg.flags.output_invert = 0;
         channel_cfg.deconfigure = false;
-        ESP_ERROR_CHECK(ledc_channel_config(&channel_cfg));
+        return ledc_channel_config(&channel_cfg);
+    }
+
+    static void start()
+    {
+        ESP_ERROR_CHECK(begin());
     }
 
     static void pause()
@@ -80,7 +89,7 @@ struct Pwm {
 
     static void on()
     {
-        apply(raw(DutyPermille));
+        ESP_ERROR_CHECK(duty(DutyPermille));
     }
 
     static void off()
@@ -92,7 +101,21 @@ struct Pwm {
     static void duty()
     {
         static_assert(Permille <= 1000U, "PWM duty must be in permille");
-        apply(raw(Permille));
+        ESP_ERROR_CHECK(duty(Permille));
+    }
+
+    [[nodiscard]] static esp_err_t duty(const std::uint32_t permille) noexcept
+    {
+        if (permille > 1000U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        return apply(raw(permille));
+    }
+
+    [[nodiscard]] static esp_err_t set(const std::uint32_t permille) noexcept
+    {
+        return duty(permille);
     }
 
 private:
@@ -116,9 +139,9 @@ private:
         return static_cast<std::uint32_t>((static_cast<std::uint64_t>(max()) * permille + 500ULL) / 1000ULL);
     }
 
-    static void apply(const std::uint32_t duty) noexcept
+    [[nodiscard]] static esp_err_t apply(const std::uint32_t duty) noexcept
     {
-        ESP_ERROR_CHECK(ledc_set_duty_and_update(Mode, channel(), duty, 0U));
+        return ledc_set_duty_and_update(Mode, channel(), duty, 0U);
     }
 };
 

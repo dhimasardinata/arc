@@ -39,29 +39,74 @@ struct Sigma {
 
     static void boot()
     {
-        if (create()) {
-            ESP_ERROR_CHECK(fast(static_cast<std::int8_t>(Initial)));
+        ESP_ERROR_CHECK(init());
+    }
+
+    [[nodiscard]] static esp_err_t init() noexcept
+    {
+        if (!Init::begin(state.init)) {
+            return ESP_OK;
         }
+
+        sdm_config_t config{};
+        config.gpio_num = gpio_number();
+        config.clk_src = Source;
+        config.sample_rate_hz = SampleHz;
+        config.flags.invert_out = Invert ? 1U : 0U;
+        config.flags.allow_pd = AllowPd ? 1U : 0U;
+
+        auto err = sdm_new_channel(&config, &state.channel);
+        if (err == ESP_OK) {
+            err = fast(static_cast<std::int8_t>(Initial));
+        }
+        if (err == ESP_OK) {
+            Init::pass(state.init);
+        } else {
+            state.channel = nullptr;
+            Init::fail(state.init);
+        }
+        return err;
+    }
+
+    [[nodiscard]] static esp_err_t enable() noexcept
+    {
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
+        if (!state.enabled) {
+            const auto err = sdm_channel_enable(state.channel);
+            if (err != ESP_OK) {
+                return err;
+            }
+            state.enabled = true;
+        }
+        return ESP_OK;
     }
 
     static void start()
     {
-        boot();
+        ESP_ERROR_CHECK(enable());
+    }
 
-        if (!state.enabled) {
-            ESP_ERROR_CHECK(sdm_channel_enable(state.channel));
-            state.enabled = true;
+    [[nodiscard]] static esp_err_t disable() noexcept
+    {
+        if (state.channel == nullptr || !state.enabled) {
+            return ESP_OK;
         }
+
+        const auto err = sdm_channel_disable(state.channel);
+        if (err != ESP_OK) {
+            return err;
+        }
+        state.enabled = false;
+        return ESP_OK;
     }
 
     static void stop()
     {
-        if (state.channel == nullptr || !state.enabled) {
-            return;
-        }
-
-        ESP_ERROR_CHECK(sdm_channel_disable(state.channel));
-        state.enabled = false;
+        ESP_ERROR_CHECK(disable());
     }
 
     static void pause()
@@ -76,17 +121,14 @@ struct Sigma {
 
     static void write(const int density)
     {
-        create();
-        ESP_ERROR_CHECK(valid(density) ? ESP_OK : ESP_ERR_INVALID_ARG);
-        ESP_ERROR_CHECK(fast(static_cast<std::int8_t>(density)));
+        ESP_ERROR_CHECK(set(density));
     }
 
     template <int Density>
     static void write()
     {
         static_assert(valid(Density), "sigma-delta density must be in [-128, 127]");
-        create();
-        ESP_ERROR_CHECK(fast(static_cast<std::int8_t>(Density)));
+        ESP_ERROR_CHECK(set(Density));
     }
 
     static void density(const int value)
@@ -115,6 +157,20 @@ struct Sigma {
         write<min>();
     }
 
+    [[nodiscard]] static esp_err_t set(const int density) noexcept
+    {
+        if (!valid(density)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
+        return fast(static_cast<std::int8_t>(density));
+    }
+
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline esp_err_t fast(const std::int8_t density) noexcept
     {
         state.density = density;
@@ -141,22 +197,6 @@ private:
         return density >= min && density <= max;
     }
 
-    static bool create()
-    {
-        if (!Init::begin(state.init)) {
-            return false;
-        }
-
-        sdm_config_t config{};
-        config.gpio_num = gpio_number();
-        config.clk_src = Source;
-        config.sample_rate_hz = SampleHz;
-        config.flags.invert_out = Invert ? 1U : 0U;
-        config.flags.allow_pd = AllowPd ? 1U : 0U;
-        ESP_ERROR_CHECK(sdm_new_channel(&config, &state.channel));
-        Init::pass(state.init);
-        return true;
-    }
 };
 
 }  // namespace arc

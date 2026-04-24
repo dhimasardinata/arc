@@ -96,10 +96,10 @@ struct Dvp<DvpLines<DataPins...>,
     static_assert(BurstBytes == 0U || ((BurstBytes & (BurstBytes - 1U)) == 0U), "DVP DMA burst must be zero or a power of two");
     static_assert(ExternalClock || XclkHz != 0U, "DVP generated XCLK must have a non-zero frequency");
 
-    static void boot()
+    [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
-            return;
+            return ESP_OK;
         }
 
         esp_cam_ctlr_dvp_pin_config_t pins{};
@@ -137,29 +137,56 @@ struct Dvp<DvpLines<DataPins...>,
         config.pin = &pins;
         const auto err = esp_cam_new_dvp_ctlr(&config, &state.cam);
         if (err != ESP_OK) {
+            state.cam = nullptr;
             Init::fail(state.init);
-            ESP_ERROR_CHECK(err);
-            return;
+            return err;
         }
         Init::pass(state.init);
+        return ESP_OK;
     }
 
-    static void enable()
+    static void boot()
     {
-        boot();
+        ESP_ERROR_CHECK(init());
+    }
+
+    [[nodiscard]] static esp_err_t enable() noexcept
+    {
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
         if (!state.enabled) {
-            ESP_ERROR_CHECK(esp_cam_ctlr_enable(state.cam));
+            const auto err = esp_cam_ctlr_enable(state.cam);
+            if (err != ESP_OK) {
+                return err;
+            }
             state.enabled = true;
         }
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t run() noexcept
+    {
+        const auto ready = enable();
+        if (ready != ESP_OK) {
+            return ready;
+        }
+
+        if (!state.running) {
+            const auto err = esp_cam_ctlr_start(state.cam);
+            if (err != ESP_OK) {
+                return err;
+            }
+            state.running = true;
+        }
+        return ESP_OK;
     }
 
     static void start()
     {
-        enable();
-        if (!state.running) {
-            ESP_ERROR_CHECK(esp_cam_ctlr_start(state.cam));
-            state.running = true;
-        }
+        ESP_ERROR_CHECK(run());
     }
 
     static void stop()
@@ -187,7 +214,11 @@ struct Dvp<DvpLines<DataPins...>,
         const std::size_t count,
         const std::uint32_t caps = static_cast<std::uint32_t>(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL)) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return {};
+        }
+
         if (count == 0U) {
             return {};
         }
@@ -202,7 +233,10 @@ struct Dvp<DvpLines<DataPins...>,
         std::size_t* const got = nullptr,
         const std::uint32_t timeout_ms = 0U) noexcept
     {
-        start();
+        const auto ready = run();
+        if (ready != ESP_OK) {
+            return ready;
+        }
 
         esp_cam_ctlr_trans_t trans{};
         trans.buffer = frame.data();
@@ -226,7 +260,10 @@ struct Dvp<DvpLines<DataPins...>,
         const color_range_t input = COLOR_RANGE_FULL,
         const color_range_t output = COLOR_RANGE_FULL) noexcept
     {
-        boot();
+        const auto ready = init();
+        if (ready != ESP_OK) {
+            return ready;
+        }
 
         cam_ctlr_format_conv_config_t config{};
         config.src_format = in;
