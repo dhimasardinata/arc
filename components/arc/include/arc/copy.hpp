@@ -249,6 +249,7 @@ private:
     struct State {
         async_memcpy_handle_t driver{};
         std::uint32_t init{};
+        std::uint32_t gate{};
         alignas(cache_line) std::uint32_t sent{};
         alignas(cache_line) std::uint32_t done{};
         std::size_t bytes{};
@@ -281,6 +282,7 @@ private:
             return ESP_ERR_INVALID_ARG;
         }
 
+        Gate guard(state.gate);
         const auto ret = esp_async_memcpy(
             state.driver,
             dst,

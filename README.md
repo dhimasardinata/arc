@@ -764,8 +764,8 @@ Bounded lock-free lane for one producer and one consumer.
 - `try_push(event)` is producer-only.
 - `try_pop(event)` is consumer-only.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation.
-- `cap()` exposes the power-of-two static capacity.
-- Payloads stay trivially copyable and capacity remains a power of two.
+- `cap()` exposes the usable capacity; the backing ring keeps one slot empty.
+- Payloads stay trivially copyable and the backing ring size remains a power of two.
 
 Use this when event history matters and the ownership contract is exactly one writer and one reader. `arc::Ring<T, Capacity>` is the compatibility alias for the same type.
 
@@ -797,7 +797,7 @@ Static fan-in made from one SPSC lane per producer and one round-robin consumer.
 - `try_pop(event)` drains any completed producer without waiting behind another producer's half-finished slot.
 - `try_pop(producer, event)` also reports which lane produced the event.
 - `drain(scratch, fn, max)` accepts either `fn(event)` or `fn(producer, event)`.
-- `cap()` is the per-producer lane capacity and `producers()` is the static lane count.
+- `cap()` is the usable per-producer lane capacity and `producers()` is the static lane count.
 
 Use this when producer identity is static and tail latency matters more than one global FIFO order.
 
@@ -922,6 +922,7 @@ Compile-time SPI device wrapper.
 - `Move` and `StrictMove` are ticket objects that own queued transaction storage until `finish(...)`.
 - `queue_coherent(move, tx, rx, bytes)` flushes TX, safely discards whole RX cache lines, and queues one DMA transfer.
 - `finish_coherent(move)` waits for that exact SPI transfer and invalidates RX before the CPU reads it.
+- Ticketed finishes may be called out of queue order; raw `wait(...)` still exposes the driver's FIFO completion stream.
 - `acquire()` and `release()` give explicit bus ownership when CS must stay held.
 
 Use this when bytes should move through the SPI engine and DMA path instead of a software bit loop.
@@ -1424,6 +1425,7 @@ Direct TCP client for Core 0 control and configuration paths.
 
 - `dial(host, port, timeout_ms)` opens one socket and returns `arc::Result<arc::net::Tcp>`.
 - `send(...)` and `recv(...)` return byte counts without hiding partial transfers.
+- `recv(..., 0)` restores the POSIX-style blocking receive timeout without changing the send timeout.
 - `send_all(...)` loops until the caller-owned buffer is fully written or an error occurs.
 - `close()` and `native()` keep socket lifetime explicit.
 

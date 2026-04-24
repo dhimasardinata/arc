@@ -157,11 +157,9 @@ struct Tcp {
             return fail(ESP_ERR_INVALID_STATE);
         }
 
-        if (timeout_ms != 0U) {
-            const auto err = set_timeout(sock_, timeout_ms);
-            if (err != ESP_OK) {
-                return fail(err);
-            }
+        const auto err = set_recv_timeout(sock_, timeout_ms);
+        if (err != ESP_OK) {
+            return fail(err);
         }
 
         const auto got = ::recv(sock_, data, bytes, 0);
@@ -198,21 +196,47 @@ struct Tcp {
     }
 
 private:
-    [[nodiscard]] static esp_err_t set_timeout(
-        const int sock,
-        const std::uint32_t timeout_ms) noexcept
+    [[nodiscard]] static timeval make_timeout(const std::uint32_t timeout_ms) noexcept
     {
         timeval timeout{};
         timeout.tv_sec = static_cast<decltype(timeout.tv_sec)>(timeout_ms / 1000U);
         timeout.tv_usec = static_cast<decltype(timeout.tv_usec)>((timeout_ms % 1000U) * 1000U);
+        return timeout;
+    }
+
+    [[nodiscard]] static esp_err_t set_recv_timeout(
+        const int sock,
+        const std::uint32_t timeout_ms) noexcept
+    {
+        const auto timeout = make_timeout(timeout_ms);
 
         if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0) {
             return last_error();
         }
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t set_send_timeout(
+        const int sock,
+        const std::uint32_t timeout_ms) noexcept
+    {
+        const auto timeout = make_timeout(timeout_ms);
+
         if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0) {
             return last_error();
         }
         return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t set_timeout(
+        const int sock,
+        const std::uint32_t timeout_ms) noexcept
+    {
+        const auto recv = set_recv_timeout(sock, timeout_ms);
+        if (recv != ESP_OK) {
+            return recv;
+        }
+        return set_send_timeout(sock, timeout_ms);
     }
 
     static void close_sock(const int sock) noexcept

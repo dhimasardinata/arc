@@ -329,6 +329,7 @@ private:
     struct State {
         esp_lcd_panel_io_handle_t io{};
         std::uint32_t init{};
+        std::uint32_t gate{};
         alignas(cache_line) std::uint32_t sent{};
         alignas(cache_line) std::uint32_t done{};
         std::size_t bytes{};
@@ -352,6 +353,7 @@ private:
         Ticket* const ticket) noexcept
     {
         boot();
+        Gate guard(state.gate);
         const auto err = esp_lcd_panel_io_tx_color(state.io, cmd, data, bytes);
         if (err == ESP_OK) {
             const auto target = __atomic_add_fetch(&state.sent, 1U, __ATOMIC_RELEASE);

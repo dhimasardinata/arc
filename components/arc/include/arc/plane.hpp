@@ -9,6 +9,7 @@
 #include "esp_cpu.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "freertos/task.h"
 
 #include "arc/task.hpp"
 
@@ -47,7 +48,8 @@ struct Plane {
 
     static_assert(kRunNoexcept, "realtime workload must be noexcept");
 
-    static void boot(const char* tag, const char* name = "rt") requires BareWork<Workload>
+    static void boot(const char* tag, const char* name = "rt")
+        requires(BareWork<Workload> && !kBound)
     {
         boot(tag, nullptr, name);
     }
@@ -108,6 +110,9 @@ private:
             Workload::setup();
             Workload::run();
         }
+
+        vTaskDelete(nullptr);
+        __builtin_unreachable();
     }
 };
 

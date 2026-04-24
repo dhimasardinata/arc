@@ -149,12 +149,19 @@ struct Spi {
     static_assert(Mode < 4U, "SPI mode must be in [0, 3]");
     static_assert(Queue > 0, "SPI queue depth must be non-zero");
 
-    template <bool Strict = false>
-    struct Ticket {
+    inline constexpr static std::uint32_t ticket_pending = 0U;
+    inline constexpr static std::uint32_t ticket_done = 1U;
+    inline constexpr static std::uint32_t ticket_invalid = 2U;
+
+    struct TicketBase {
+        std::uint32_t done{ticket_invalid};
         spi_transaction_t trans{};
         void* rx{};
         std::size_t rx_bytes{};
     };
+
+    template <bool Strict = false>
+    struct Ticket : TicketBase {};
 
     using Move = Ticket<false>;
     using StrictMove = Ticket<true>;
@@ -391,7 +398,11 @@ struct Spi {
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
         boot();
-        return spi_device_get_trans_result(state.dev, trans, wait_ticks);
+        const auto err = spi_device_get_trans_result(state.dev, trans, wait_ticks);
+        if (err == ESP_OK && trans != nullptr) {
+            static_cast<void>(mark_ticket_done(*trans));
+        }
+        return err;
     }
 
     [[nodiscard]] static esp_err_t finish(
@@ -548,6 +559,24 @@ private:
     };
 
     constinit static inline State state{nullptr, nullptr, 0U, 0U};
+    constinit static inline std::uint32_t ticket_cookie{};
+
+    [[nodiscard]] static void* ticket_marker() noexcept
+    {
+        return &ticket_cookie;
+    }
+
+    [[nodiscard]] static bool mark_ticket_done(spi_transaction_t* const trans) noexcept
+    {
+        if (trans == nullptr || trans->user != ticket_marker()) {
+            return false;
+        }
+
+        auto* const raw = reinterpret_cast<std::uint8_t*>(trans);
+        auto* const ticket = reinterpret_cast<TicketBase*>(raw - offsetof(TicketBase, trans));
+        __atomic_store_n(&ticket->done, ticket_done, __ATOMIC_RELEASE);
+        return true;
+    }
 
     template <bool Strict>
     [[nodiscard]] static esp_err_t queue_impl(
@@ -562,10 +591,16 @@ private:
         }
 
         boot();
+        __atomic_store_n(&ticket.done, ticket_pending, __ATOMIC_RELAXED);
         ticket.trans = job(tx, rx, bytes);
+        ticket.trans.user = ticket_marker();
         ticket.rx = rx;
         ticket.rx_bytes = rx == nullptr ? 0U : bytes;
-        return spi_device_queue_trans(state.dev, &ticket.trans, wait);
+        const auto err = spi_device_queue_trans(state.dev, &ticket.trans, wait);
+        if (err != ESP_OK) {
+            __atomic_store_n(&ticket.done, ticket_invalid, __ATOMIC_RELEASE);
+        }
+        return err;
     }
 
     template <bool Strict>
@@ -573,13 +608,36 @@ private:
         Ticket<Strict>& ticket,
         const TickType_t wait_ticks) noexcept
     {
-        spi_transaction_t* done{};
-        const auto err = wait(&done, wait_ticks);
-        if (err != ESP_OK) {
-            return err;
-        }
+        const auto start = xTaskGetTickCount();
+        auto remaining = wait_ticks;
 
-        return done == &ticket.trans ? ESP_OK : ESP_ERR_INVALID_STATE;
+        for (;;) {
+            const auto status = __atomic_load_n(&ticket.done, __ATOMIC_ACQUIRE);
+            if (status == ticket_done) {
+                return ESP_OK;
+            }
+            if (status != ticket_pending) {
+                return ESP_ERR_INVALID_STATE;
+            }
+
+            spi_transaction_t* done{};
+            const auto err = wait(&done, remaining);
+            if (err != ESP_OK) {
+                return err;
+            }
+            if (!mark_ticket_done(done)) {
+                return ESP_ERR_INVALID_STATE;
+            }
+
+            if (wait_ticks != portMAX_DELAY &&
+                __atomic_load_n(&ticket.done, __ATOMIC_ACQUIRE) == ticket_pending) {
+                const auto elapsed = static_cast<TickType_t>(xTaskGetTickCount() - start);
+                if (elapsed >= wait_ticks) {
+                    return ESP_ERR_TIMEOUT;
+                }
+                remaining = static_cast<TickType_t>(wait_ticks - elapsed);
+            }
+        }
     }
 
     template <bool Strict>

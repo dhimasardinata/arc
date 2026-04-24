@@ -61,7 +61,7 @@ struct Fanin {
 
     [[nodiscard]] static constexpr std::size_t cap() noexcept
     {
-        return Capacity;
+        return Spsc<T, Capacity>::cap();
     }
 
     [[nodiscard]] static constexpr std::size_t producers() noexcept
@@ -73,7 +73,7 @@ struct Fanin {
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t drain(
         T& value,
         Fn&& fn,
-        const std::size_t max = Capacity * Producers) noexcept
+        const std::size_t max = (Capacity - 1U) * Producers) noexcept
     {
         std::size_t count{};
         std::size_t producer{};

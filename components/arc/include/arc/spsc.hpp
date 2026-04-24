@@ -50,14 +50,14 @@ struct Spsc {
 
     [[nodiscard]] static constexpr std::size_t cap() noexcept
     {
-        return Capacity;
+        return Capacity - 1U;
     }
 
     template <typename Fn>
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t drain(
         T& value,
         Fn&& fn,
-        const std::size_t max = Capacity) noexcept(noexcept(fn(value)))
+        const std::size_t max = Capacity - 1U) noexcept(noexcept(fn(value)))
     {
         std::size_t count{};
         while (count < max && try_pop(value)) {
