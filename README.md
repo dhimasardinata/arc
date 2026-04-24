@@ -47,6 +47,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Sleep` wraps wake causes, timer wake, power-domain policy, light sleep, and deep sleep.
 - `arc::Pm` gives typed ESP-IDF PM locks for CPU/APB/no-light-sleep critical sections when DFS is enabled.
 - `arc::Rng` exposes the ESP32-S3 hardware random source for fixed buffers and typed values.
+- `arc::Time` reads the global SYSTIMER-backed microsecond clock for cross-core timestamps.
+- `arc::Wdt` exposes explicit task-watchdog configuration, task/user subscription, and feeding.
+- `arc::Fuse` reads eFuse fields, blocks, MACs, package, and secure-version state.
 - `arc::Temp` reads the ESP32-S3 internal temperature sensor for thermal telemetry.
 - `arc::TouchBus` and `arc::Touch` bind the ESP32-S3 capacitive touch controller and channels with explicit scan, filter, wake, and channel-data ownership.
 - `arc::Tight` runs a masked per-step loop with optional cycle-budget overrun telemetry for the rare path that needs tighter jitter than `arc::App`.
@@ -160,6 +163,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── fence.hpp
 │               ├── file.hpp
 │               ├── fs.hpp
+│               ├── fuse.hpp
 │               ├── gpio.hpp
 │               ├── http.hpp
 │               ├── espnow.hpp
@@ -186,6 +190,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── store.hpp
 │               ├── task.hpp
 │               ├── temp.hpp
+│               ├── time.hpp
 │               ├── touch.hpp
 │               ├── tcp.hpp
 │               ├── timer.hpp
@@ -194,6 +199,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── uart.hpp
 │               ├── udp.hpp
 │               ├── usb.hpp
+│               ├── wdt.hpp
 │               └── wave.hpp
 └── main
     ├── app_main.cpp
@@ -296,6 +302,7 @@ Feature names map directly to hardware lanes:
 - `gpio`
 - `adc`
 - `copy`
+- `fuse`
 - `mcpwm`
 - `rmt`
 - `pcnt`
@@ -317,11 +324,13 @@ Feature names map directly to hardware lanes:
 - `pm`
 - `rng`
 - `space`
+- `time`
 - `fs`
 - `tcp`
 - `udp`
 - `uart`
 - `usb`
+- `wdt`
 - `espnow`
 
 Add `gpio` when you use `arc::Drive`, `arc::Sense`, or raw `arc::Gpio`, because those pin APIs depend on the GPIO driver headers.
@@ -696,6 +705,42 @@ Opt-in C++23/26 runtime error surface based on `std::expected`.
 - `arc::status(err)` converts an `esp_err_t` into `arc::Status`.
 
 Use this for runtime operations that can fail without invalidating the board topology. Hardware boot/configuration errors still intentionally use fail-fast ESP-IDF checks.
+
+### `arc::Time`
+
+Global microsecond clock backed by the ESP32-S3 SYSTIMER through `esp_timer_get_time()`.
+
+- `us()` returns microseconds since boot.
+- `ms()` returns milliseconds since boot.
+- `next()` returns the nearest active esp-timer alarm timestamp.
+- `wake()` returns the nearest alarm that should wake light sleep.
+- `since(start)` and `due(start, span)` keep timeout math unsigned and terse.
+
+Use this when Core 0 and Core 1 need one shared timestamp base. Keep `arc::Clock` for core-local cycle probes and short spin windows.
+
+### `arc::Fuse`
+
+eFuse and MAC read helpers.
+
+- `bits(field)`, `bit(field)`, `read(field, data, bits)`, and `read<T>(field)` cover generated eFuse fields.
+- `count(field)` reads popcount-style eFuse counters.
+- `word(block, reg)` and `block(block, data, offset, bits)` expose raw block reads.
+- `mac(type)`, `factory()`, and `custom()` return six-byte MACs through `arc::Result`.
+- `pkg()`, `secure()`, `empty(block)`, `code(block)`, and `check()` expose common chip state.
+
+Use this for identity, SKU, batch, secure-version, and provisioning reads without scattering raw eFuse headers through app code.
+
+### `arc::Wdt`
+
+Explicit Task Watchdog Timer surface.
+
+- `init(timeout_ms, idle_cores, panic)` configures TWDT and treats an already initialized TWDT as ready.
+- `tune(...)` reconfigures an active TWDT.
+- `watch(task)`, `unwatch(task)`, `feed()`, and `check(task)` cover task subscription.
+- `user(name)` returns a move-only RAII watchdog user; `User::feed()` feeds that user and `User::off()` unsubscribes it.
+- `off()` deinitializes TWDT when no subscribed tasks/users remain.
+
+Use this for loops that must prove forward progress independently of normal scheduler health.
 
 ### Failure Policy
 

@@ -34,6 +34,10 @@
 #include "arc/file.hpp"
 #endif
 
+#if __has_include("esp_efuse.h") && __has_include("esp_efuse_table.h") && __has_include("esp_mac.h")
+#include "arc/fuse.hpp"
+#endif
+
 #if __has_include("esp_spiffs.h") && __has_include("esp_vfs_fat.h")
 #include "arc/fs.hpp"
 #endif
@@ -138,6 +142,10 @@
 #include "arc/temp.hpp"
 #endif
 
+#if __has_include("esp_timer.h")
+#include "arc/time.hpp"
+#endif
+
 #if __has_include("driver/touch_sens.h") && __has_include("soc/touch_sensor_channel.h")
 #include "arc/touch.hpp"
 #endif
@@ -160,6 +168,10 @@
 
 #if __has_include("driver/usb_serial_jtag.h")
 #include "arc/usb.hpp"
+#endif
+
+#if __has_include("esp_task_wdt.h")
+#include "arc/wdt.hpp"
 #endif
 
 #if __has_include("esp_twai.h") && __has_include("esp_twai_onchip.h")

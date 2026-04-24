@@ -49,6 +49,10 @@ struct Soc {
     static constexpr bool aes = SOC_AES_SUPPORTED;
     static constexpr bool sha = SOC_SHA_SUPPORTED;
     static constexpr bool hmac = SOC_HMAC_SUPPORTED;
+    static constexpr bool efuse = SOC_EFUSE_SUPPORTED;
+    static constexpr bool systimer = SOC_SYSTIMER_SUPPORTED;
+    static constexpr bool wdt = SOC_WDT_SUPPORTED;
+    static constexpr bool xt_wdt = SOC_XT_WDT_SUPPORTED;
 
     static constexpr bool light_sleep = SOC_LIGHT_SLEEP_SUPPORTED;
     static constexpr bool deep_sleep = SOC_DEEP_SLEEP_SUPPORTED;
