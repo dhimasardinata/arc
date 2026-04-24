@@ -276,7 +276,7 @@ struct Spi {
         spi_transaction_t trans{};
         trans.length = bytes * 8U;
         trans.rxlength = rx == nullptr ? 0U : bytes * 8U;
-        trans.override_freq_hz = static_cast<int>(hz);
+        trans.override_freq_hz = static_cast<decltype(trans.override_freq_hz)>(hz);
         trans.user = nullptr;
         trans.tx_buffer = tx;
         trans.rx_buffer = rx;
