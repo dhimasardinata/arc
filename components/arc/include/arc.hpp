@@ -26,6 +26,10 @@
 #include "arc/topology.hpp"
 #include "arc/wave.hpp"
 
+#if __has_include("aes/esp_aes.h") && __has_include("aes/esp_aes_gcm.h") && __has_include("psa/crypto.h")
+#include "arc/aes.hpp"
+#endif
+
 #if __has_include("driver/gpio.h")
 #include "arc/gpio.hpp"
 #endif
@@ -134,6 +138,10 @@
 #include "arc/spi.hpp"
 #endif
 
+#if __has_include("psa/crypto.h") && __has_include("sha/sha_core.h")
+#include "arc/sha.hpp"
+#endif
+
 #if __has_include("nvs.h") && __has_include("nvs_flash.h")
 #include "arc/store.hpp"
 #endif
@@ -164,6 +172,10 @@
 
 #if __has_include("driver/uart.h")
 #include "arc/uart.hpp"
+#endif
+
+#if __has_include("ulp_riscv.h")
+#include "arc/ulp.hpp"
 #endif
 
 #if __has_include("driver/usb_serial_jtag.h")

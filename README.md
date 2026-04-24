@@ -48,8 +48,11 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Pm` gives typed ESP-IDF PM locks for CPU/APB/no-light-sleep critical sections when DFS is enabled.
 - `arc::Rng` exposes the ESP32-S3 hardware random source for fixed buffers and typed values.
 - `arc::Time` reads the global SYSTIMER-backed microsecond clock for cross-core timestamps.
+- `arc::Sha` hashes buffers through Espressif's accelerated PSA/mbedTLS SHA path with `arc::Result` output.
+- `arc::Aes` and `arc::Gcm` wrap AES block/stream/GCM operations with explicit key setup and caller-owned buffers.
 - `arc::Wdt` exposes explicit task-watchdog configuration, task/user subscription, and feeding.
 - `arc::Fuse` reads eFuse fields, blocks, MACs, package, and secure-version state.
+- `arc::Ulp` loads and runs ULP RISC-V binaries and gives RTC-shared atomic words for main-core handoff.
 - `arc::Temp` reads the ESP32-S3 internal temperature sensor for thermal telemetry.
 - `arc::TouchBus` and `arc::Touch` bind the ESP32-S3 capacitive touch controller and channels with explicit scan, filter, wake, and channel-data ownership.
 - `arc::Tight` runs a masked per-step loop with optional cycle-budget overrun telemetry for the rare path that needs tighter jitter than `arc::App`.
@@ -144,6 +147,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │           ├── arc.hpp
 │           └── arc
 │               ├── adc.hpp
+│               ├── aes.hpp
 │               ├── bridge.hpp
 │               ├── bus.hpp
 │               ├── cache.hpp
@@ -181,6 +185,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── scope.hpp
 │               ├── sd.hpp
 │               ├── sense.hpp
+│               ├── sha.hpp
 │               ├── sleep.hpp
 │               ├── sketch.hpp
 │               ├── sigma.hpp
@@ -198,6 +203,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── trace.hpp
 │               ├── uart.hpp
 │               ├── udp.hpp
+│               ├── ulp.hpp
 │               ├── usb.hpp
 │               ├── wdt.hpp
 │               └── wave.hpp
@@ -241,6 +247,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware Sigma-Delta pulse-density output with IRAM-safe density updates enabled
 - Hardware timebase and alarms through GPTimer
 - Deep-sleep and light-sleep entry with explicit wake-source and power-domain policy
+- Hardware-backed AES, GCM, and SHA paths through Espressif's crypto drivers
+- ULP RISC-V load/run/control hooks for low-power coprocessor work
 - Hardware die-temperature telemetry for thermal guard logic
 - Hardware capacitive touch sensing with typed controller/channel ownership, filter hooks, and sleep-wakeup hooks
 - Lock-free SPSC/MPSC queues and single-word control register
@@ -301,11 +309,13 @@ Feature names map directly to hardware lanes:
 
 - `gpio`
 - `adc`
+- `aes`
 - `copy`
 - `fuse`
 - `mcpwm`
 - `rmt`
 - `pcnt`
+- `sha`
 - `ledc`
 - `gptimer`
 - `http`
@@ -329,6 +339,7 @@ Feature names map directly to hardware lanes:
 - `tcp`
 - `udp`
 - `uart`
+- `ulp`
 - `usb`
 - `wdt`
 - `espnow`
@@ -681,8 +692,8 @@ Clean generated local state across root and examples:
 Compile-time ESP32-S3 capability map.
 
 - Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
-- Exposes feature booleans such as `wifi`, `ble`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, and `ulp_riscv`.
-- Exposes hardware counts such as `gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, and `sdmmc_slots`.
+- Exposes feature booleans such as `wifi`, `ble`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, and `ulp_riscv`.
+- Exposes hardware counts such as `gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, `sdmmc_slots`, and `rsa_bits`.
 - Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
 
 ### `arc::Pins<...>` and `arc::Topology<Board>`
@@ -717,6 +728,40 @@ Global microsecond clock backed by the ESP32-S3 SYSTIMER through `esp_timer_get_
 - `since(start)` and `due(start, span)` keep timeout math unsigned and terse.
 
 Use this when Core 0 and Core 1 need one shared timestamp base. Keep `arc::Clock` for core-local cycle probes and short spin windows.
+
+### `arc::Sha`
+
+One-shot SHA hashing through Espressif's accelerated PSA/mbedTLS path.
+
+- `Sha::sum<Type>(data, bytes)` returns a fixed-size `std::array` through `arc::Result`.
+- `Sha::sum<Type>(span)` hashes typed contiguous storage using `span::size_bytes()`.
+- `Sha::hash(...)` is the terse SHA-256 default.
+- `Sha::bytes(type)` and `Sha::alg(type)` expose the digest size and PSA algorithm mapping.
+
+Use this for telemetry digests, firmware metadata, and signed-payload staging without pulling raw PSA calls into app code.
+
+### `arc::Aes` and `arc::Gcm`
+
+AES contexts with explicit key setup and caller-owned buffers.
+
+- `Aes::set(key, bytes)` accepts 128/192/256-bit keys and returns `esp_err_t`.
+- `Aes::block(Aes::Way::enc/dec, in, out)` handles one 16-byte block.
+- `Aes::cbc(...)`, `ctr(...)`, and `ofb(...)` expose the hardware-backed streaming modes without allocating.
+- `Gcm::set(key, bytes)`, `seal(...)`, and `open(...)` cover authenticated encryption with caller-owned IV, AAD, output, and tag storage.
+
+Use this when the data plane needs encryption/authentication before handing frames to Core 0 networking.
+
+### `arc::Ulp`
+
+ULP RISC-V control surface.
+
+- `load(binary)` copies a ULP binary into RTC memory.
+- `run(wake)` configures and starts the ULP, while `start()` starts a previously configured binary.
+- `stop()`, `resume()`, `halt()`, and `reset()` map directly to the ULP timer/core controls.
+- `isr(handler, arg, mask)` and `off(handler, arg, mask)` manage main-core interrupt hooks from the ULP.
+- `Ulp::Word` is a 32-bit acquire/release shared word intended for RTC RAM placement.
+
+Use this for always-on sensing, wake decisions, or low-power counters while the main cores sleep.
 
 ### `arc::Fuse`
 
