@@ -106,6 +106,10 @@
 #include "arc/ota.hpp"
 #endif
 
+#if __has_include("esp_private/usb_phy.h")
+#include "arc/otg.hpp"
+#endif
+
 #if __has_include("esp_pm.h")
 #include "arc/pm.hpp"
 #endif

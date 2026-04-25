@@ -34,6 +34,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::I2s` owns standard-mode I2S channels, `arc::I2sTdm` covers multichannel framed lanes, and `arc::I2sPdm` covers one-line PDM RX/TX, with both raw `esp_err_t` and opt-in `arc::Result` APIs.
 - `arc::Uart` binds ESP32-S3 UART ports, pins, framing, and buffers with fixed storage and typed read/write APIs.
 - `arc::Usb` binds the ESP32-S3 USB Serial/JTAG lane with typed byte IO.
+- `arc::Otg` owns the native USB OTG PHY for host/device stack bring-up without pretending to be a USB class framework.
 - `arc::Sd` mounts ESP32-S3 SD/MMC cards through FAT and keeps raw sector access explicit.
 - `arc::Fs` mounts SPIFFS and FAT-on-flash VFS paths with fixed handle ownership.
 - `arc::File` gives RAII VFS/POSIX file I/O without leaking `FILE*` ownership into app code.
@@ -180,6 +181,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── i80.hpp
 │               ├── i2s.hpp
 │               ├── mpsc.hpp
+│               ├── otg.hpp
 │               ├── plane.hpp
 │               ├── ota.hpp
 │               ├── probe.hpp
@@ -248,6 +250,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware I2S streaming with duplex DMA and event counters
 - Hardware UART serial lanes for GPS, modems, consoles, and legacy links
 - Hardware USB Serial/JTAG byte IO for cabled control channels
+- Hardware USB OTG PHY ownership for native host/device stack bring-up
 - Hardware SD/MMC FAT mounting and raw sector access
 - Hardware PWM offload through LEDC for periodic output that should not burn a core
 - Hardware Sigma-Delta pulse-density output with IRAM-safe density updates enabled
@@ -341,6 +344,7 @@ Feature names map directly to hardware lanes:
 - `store`
 - `net`
 - `ota`
+- `otg`
 - `pm`
 - `rng`
 - `space`
@@ -702,7 +706,7 @@ Clean generated local state across root and examples:
 Compile-time ESP32-S3 capability map.
 
 - Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
-- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, and `ulp_riscv`.
+- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_serial_jtag`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, and `ulp_riscv`.
 - Exposes hardware counts such as `gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
 - Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
 
@@ -1185,6 +1189,18 @@ Compile-time USB Serial/JTAG wrapper.
 - `connected()`, `installed()`, `wait(...)`, and `off()` expose runtime state and teardown.
 
 Use this for ESP32-S3 USB console/control traffic when the native USB Serial/JTAG peripheral is the lane.
+
+### `arc::Otg`
+
+RAII owner for the ESP32-S3 native USB OTG PHY.
+
+- `host(...)` and `device(...)` install the internal or external PHY in the requested OTG mode.
+- `make(config)` keeps the full `usb_phy_config_t` path available when board wiring needs every field.
+- `mode(...)` switches the PHY OTG mode through ESP-IDF's USB PHY driver.
+- `status(target)` reads whether a PHY target is free or in use.
+- `off()` releases the PHY, and the destructor does the same for move-owned handles.
+
+Use this as the low-level USB OTG lane owner before a host/device stack takes over the DWC core. ESP-IDF v6.0 in this repo does not ship a TinyUSB component, so Arc exposes the real PHY boundary instead of inventing a partial HID/MSC wrapper.
 
 ### `arc::Sd<Clk = 14, Cmd = 15, D0 = 2, D1 = 4, D2 = 12, D3 = 13, ...>`
 
