@@ -30,7 +30,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::I80Bus` and `arc::I80` drive the ESP32-S3 LCD_CAM Intel 8080 DMA path with exact transfer tickets.
 - `arc::Rgb` binds the ESP32-S3 RGB LCD engine with explicit timing, frame-buffer ownership, and refresh control.
 - `arc::I2cBus` and `arc::I2c` bind ESP32-S3 I2C master buses and devices with recoverable init paths.
-- `arc::SpiBus` and `arc::Spi` drive DMA-capable SPI transfers with ticketed queue/finish ownership.
+- `arc::SpiBus`, `arc::Spi`, and `arc::SpiSlave` drive DMA-capable SPI master/slave transfers with ticketed queue/finish ownership.
 - `arc::I2s` owns standard-mode I2S channels, `arc::I2sTdm` covers multichannel framed lanes, and `arc::I2sPdm` covers one-line PDM RX/TX, with both raw `esp_err_t` and opt-in `arc::Result` APIs.
 - `arc::Uart` binds ESP32-S3 UART ports, pins, framing, and buffers with fixed storage and typed read/write APIs.
 - `arc::Usb` binds the ESP32-S3 USB Serial/JTAG lane with typed byte IO.
@@ -362,6 +362,7 @@ Feature names map directly to hardware lanes:
 - `espnow`
 
 Add `gpio` when you use `arc::Drive`, `arc::Sense`, or raw `arc::Gpio`, because those pin APIs depend on the GPIO driver headers.
+Add `spi` for both master (`arc::SpiBus`, `arc::Spi`) and slave (`arc::SpiSlave`) ownership; they share the same ESP-IDF SPI driver component and the same Arc host claim lane.
 
 For the fastest compile times, keep each app honest: include only the Arc headers you use directly, and request only the matching Arc features in CMake.
 
@@ -443,7 +444,7 @@ static_assert(arc::Topology<Board>);
 
 `arc::Pins` ignores negative sentinel pins like `-1`, so optional CS/MISO-style values can still be represented without false collisions.
 
-Peripheral wrappers also claim physical silicon at `init()` time. Two different `arc::Uart`, `arc::I2cBus`, `arc::I2c`, `arc::SpiBus`, or CS-backed `arc::Spi` template aliases cannot silently own the same hardware with different type parameters; the later claim returns `ESP_ERR_INVALID_STATE`.
+Peripheral wrappers also claim physical silicon at `init()` time. Two different `arc::Uart`, `arc::I2cBus`, `arc::I2c`, `arc::SpiBus`, `arc::SpiSlave`, or CS-backed `arc::Spi` template aliases cannot silently own the same hardware with different type parameters; the later claim returns `ESP_ERR_INVALID_STATE`.
 Identical aliases share a tiny atomic init gate, so two tasks racing the same first `init()` do not double-call the ESP-IDF allocator.
 
 ## Start From Zero
@@ -1110,6 +1111,22 @@ Compile-time SPI device wrapper.
 - `acquire()` and `release()` give explicit bus ownership when CS must stay held.
 
 Use this when bytes should move through the SPI engine and DMA path instead of a software bit loop.
+
+### `arc::SpiSlave<Host, Sclk, Mosi, Miso, Cs, Queue = 4, Mode = 0, ...>`
+
+Compile-time SPI slave wrapper.
+
+- `init()` owns one SPI2/SPI3 host in slave mode and returns `esp_err_t`.
+- `boot()` initializes the slave host and fail-fasts on impossible board topology.
+- `enable()`, `disable()`, `start()`, and `stop()` gate bus participation without deleting the host.
+- `send(...)`, `recv(...)`, and `xfer(...)` cover synchronous transactions initiated by an external master.
+- `queue(...)` and `wait(...)` expose the interrupt-driven slave queue when the master clocks frames asynchronously.
+- `Move` and `StrictMove` are ticket objects that keep queued descriptor storage valid until `finish(...)`.
+- `queue_coherent(move, tx, rx, bytes)` flushes MISO data, discards whole MOSI RX cache lines, and queues one DMA transaction.
+- `finish_coherent(move)` waits for that exact slave transaction and invalidates RX before the CPU reads it.
+- The slave wrapper claims the same physical SPI host lane as `arc::SpiBus`, so master/slave aliases cannot silently collide.
+
+Use this when the ESP32-S3 should be a deterministic peripheral for another controller without leaving SPI ownership in raw C driver calls.
 
 ### `arc::I2cBus<Port, Sda, Scl, Pullup = true, ...>` and `arc::I2c<Bus, Addr, Hz = 400'000, ...>`
 
@@ -2468,7 +2485,7 @@ CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host tes
 - `arc::Bridge` is the right lane when the waveform controls a half-bridge, gate driver, or any complementary output that must respect dead-time.
 - `arc::Capture` is the cleanest way to timestamp edges in hardware before reaching for a GPIO ISR.
 - `arc::Scope` is the lane to reach for when analog sampling should move into DMA instead of a software read loop.
-- `arc::SpiBus` and `arc::Spi` are the lanes to reach for when a sensor, display, or converter should move bytes through the SPI peripheral instead of CPU-owned toggling.
+- `arc::SpiBus`, `arc::Spi`, and `arc::SpiSlave` are the lanes to reach for when a sensor, display, converter, or external controller should move bytes through the SPI peripheral instead of CPU-owned toggling.
 - `arc::I2s` is the right lane when the data is naturally framed and should live on a DMA-backed serial stream.
 - `arc::Wave` is for deliberate CPU-owned edges, not for the common case of “just blink this periodically”.
 - `arc::Reg` is better than a queue for latest-wins control words.

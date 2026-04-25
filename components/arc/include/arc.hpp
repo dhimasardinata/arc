@@ -154,6 +154,10 @@
 #include "arc/spi.hpp"
 #endif
 
+#if __has_include("driver/spi_slave.h")
+#include "arc/spi_slave.hpp"
+#endif
+
 #if __has_include("psa/crypto.h") && __has_include("sha/sha_core.h")
 #include "arc/sha.hpp"
 #endif
