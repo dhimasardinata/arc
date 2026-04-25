@@ -62,6 +62,7 @@ struct Soc {
     static constexpr bool sha512_t = SOC_SHA_SUPPORT_SHA512_T;
     static constexpr bool mpi = SOC_MPI_SUPPORTED;
     static constexpr bool hmac = SOC_HMAC_SUPPORTED;
+    static constexpr bool sign = SOC_DIG_SIGN_SUPPORTED;
     static constexpr bool efuse = SOC_EFUSE_SUPPORTED;
     static constexpr bool systimer = SOC_SYSTIMER_SUPPORTED;
     static constexpr bool wdt = SOC_WDT_SUPPORTED;
@@ -92,6 +93,9 @@ struct Soc {
     static constexpr std::uint32_t systimer_counters = SOC_SYSTIMER_COUNTER_NUM;
     static constexpr std::uint32_t systimer_alarms = SOC_SYSTIMER_ALARM_NUM;
     static constexpr std::uint32_t rsa_bits = SOC_RSA_MAX_BIT_LEN;
+    static constexpr std::uint32_t ds_bits = SOC_DS_SIGNATURE_MAX_BIT_LEN;
+    static constexpr std::uint32_t ds_iv_bytes = SOC_DS_KEY_PARAM_MD_IV_LENGTH;
+    static constexpr std::uint32_t ds_key_us = SOC_DS_KEY_CHECK_MAX_WAIT_US;
     static constexpr std::uint32_t mpi_blocks = SOC_MPI_MEM_BLOCKS_NUM;
     static constexpr std::uint32_t mpi_ops = SOC_MPI_OPERATIONS_NUM;
     static constexpr std::uint32_t twai_controllers = SOC_TWAI_CONTROLLER_NUM;

@@ -86,6 +86,10 @@
 #include "arc/http.hpp"
 #endif
 
+#if __has_include("esp_hmac.h")
+#include "arc/hmac.hpp"
+#endif
+
 #if __has_include("esp_lcd_io_i80.h") && __has_include("esp_lcd_panel_io.h")
 #include "arc/i80.hpp"
 #endif
@@ -140,6 +144,10 @@
 
 #if __has_include("psa/crypto.h") && __has_include("sha/sha_core.h")
 #include "arc/sha.hpp"
+#endif
+
+#if __has_include("esp_ds.h") && __has_include("esp_hmac.h")
+#include "arc/sign.hpp"
 #endif
 
 #if __has_include("nvs.h") && __has_include("nvs_flash.h")

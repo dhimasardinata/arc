@@ -50,6 +50,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Time` reads the global SYSTIMER-backed microsecond clock for cross-core timestamps.
 - `arc::Sha` hashes buffers through Espressif's accelerated PSA/mbedTLS SHA path with `arc::Result` output.
 - `arc::Aes` and `arc::Gcm` wrap AES block/stream/GCM operations with explicit key setup and caller-owned buffers.
+- `arc::Hmac` computes eFuse-keyed SHA-256 HMACs and gates temporary JTAG unlock through the HMAC peripheral.
+- `arc::Sign` drives the Digital Signature peripheral for eFuse-key-backed RSA signatures.
 - `arc::Wdt` exposes explicit task-watchdog configuration, task/user subscription, and feeding.
 - `arc::Fuse` reads eFuse fields, blocks, MACs, package, and secure-version state.
 - `arc::Ulp` loads and runs ULP RISC-V binaries and gives RTC-shared atomic words for main-core handoff.
@@ -169,6 +171,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── fs.hpp
 │               ├── fuse.hpp
 │               ├── gpio.hpp
+│               ├── hmac.hpp
 │               ├── http.hpp
 │               ├── espnow.hpp
 │               ├── i2c.hpp
@@ -186,6 +189,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── sd.hpp
 │               ├── sense.hpp
 │               ├── sha.hpp
+│               ├── sign.hpp
 │               ├── sleep.hpp
 │               ├── sketch.hpp
 │               ├── sigma.hpp
@@ -247,7 +251,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware Sigma-Delta pulse-density output with IRAM-safe density updates enabled
 - Hardware timebase and alarms through GPTimer
 - Deep-sleep and light-sleep entry with explicit wake-source and power-domain policy
-- Hardware-backed AES, GCM, and SHA paths through Espressif's crypto drivers
+- Hardware-backed AES, GCM, SHA, HMAC, and Digital Signature paths through Espressif's crypto drivers
 - ULP RISC-V load/run/control hooks for low-power coprocessor work
 - Hardware die-temperature telemetry for thermal guard logic
 - Hardware capacitive touch sensing with typed controller/channel ownership, filter hooks, and sleep-wakeup hooks
@@ -316,8 +320,10 @@ Feature names map directly to hardware lanes:
 - `rmt`
 - `pcnt`
 - `sha`
+- `sign`
 - `ledc`
 - `gptimer`
+- `hmac`
 - `http`
 - `i2c`
 - `i2s`
@@ -692,8 +698,8 @@ Clean generated local state across root and examples:
 Compile-time ESP32-S3 capability map.
 
 - Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
-- Exposes feature booleans such as `wifi`, `ble`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, and `ulp_riscv`.
-- Exposes hardware counts such as `gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, `sdmmc_slots`, and `rsa_bits`.
+- Exposes feature booleans such as `wifi`, `ble`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, and `ulp_riscv`.
+- Exposes hardware counts such as `gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
 - Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
 
 ### `arc::Pins<...>` and `arc::Topology<Board>`
@@ -750,6 +756,29 @@ AES contexts with explicit key setup and caller-owned buffers.
 - `Gcm::set(key, bytes)`, `seal(...)`, and `open(...)` cover authenticated encryption with caller-owned IV, AAD, output, and tag storage.
 
 Use this when the data plane needs encryption/authentication before handing frames to Core 0 networking.
+
+### `arc::Hmac`
+
+eFuse-keyed SHA-256 HMAC through the ESP32-S3 HMAC peripheral.
+
+- `Hmac::sum(key, data, bytes)` returns a 32-byte `arc::Hmac::Sum` through `arc::Result`.
+- `Hmac::sum(key, span)` hashes typed contiguous storage using `span::size_bytes()`.
+- `Hmac::jtag(key, token)` requests a temporary JTAG unlock with a 32-byte downstream token.
+- `Hmac::off()` invalidates the temporary JTAG result.
+
+Use this when secrets should stay in eFuse and only derived HMAC output should reach firmware.
+
+### `arc::Sign`
+
+Digital Signature peripheral surface for eFuse-key-backed RSA operations.
+
+- `Sign::sign(message, data, key, signature)` performs the blocking raw DS signature operation.
+- `Sign::start(...)` returns a move-only `Sign::Job` for split start/finish flows; `Job::finish()` releases the hardware lock, and the destructor finishes as a last-resort cleanup path.
+- `Sign::busy()` reports the DS peripheral state.
+- `Sign::seal(out, iv, plain, key)` encrypts plaintext DS parameters into the flash-storable `Sign::Data` format.
+- `Sign::bytes(data)` returns the exact prepared-message and signature size for the encrypted RSA key.
+
+Use this for signed telemetry, challenge responses, and provisioning flows where the private RSA material should never be readable by the main cores.
 
 ### `arc::Ulp`
 
