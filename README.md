@@ -1616,10 +1616,14 @@ Shared Wi-Fi foundation for Core 0 transports.
 - `prepare(mode, power_save)` sets storage, Wi-Fi mode, and power-save policy before a transport writes its own config.
 - `start(mode, power_save)` starts Wi-Fi once and rejects later mode mismatches instead of silently reconfiguring a live radio.
 - `sta()` returns the shared STA netif handle for transports that need IP state.
+- `ap()` returns the shared SoftAP netif handle, creating the default AP netif only when AP mode is requested.
+- `set(iface, config)` writes caller-owned `wifi_config_t` without constraining auth policy.
+- `join(config, power_save, connect)` starts STA mode from a full `wifi_config_t`, so WPA3, OWE, PMF, roaming, and enterprise-prepared configs stay expressible.
+- `ap(config, power_save)` starts SoftAP mode, and `apsta(ap_config, sta_config, power_save, connect)` starts combined AP+STA mode.
 - `lease()` and `release()` let long-lived transports pin radio teardown while their event handlers are alive.
 - `leases()` reports active transport pins.
 - `stop()` stops Wi-Fi without throwing away the prepared configuration.
-- `off()` deinitializes the Wi-Fi driver and destroys Arc-owned default STA netif state only when no transport leases are active.
+- `off()` deinitializes the Wi-Fi driver and destroys Arc-owned default STA/AP netif state only when no transport leases are active.
 
 Long-lived transports release their lease only after their own `stop()` path has closed sockets or callbacks and exited the Core 0 task. `Radio::off()` returning `ESP_ERR_INVALID_STATE` means a transport is still alive, not that Wi-Fi teardown is broken.
 
@@ -1682,6 +1686,7 @@ UDP uses `arc::net::Radio` underneath and takes a radio lease while its Core 0 t
 - `pass`
 - `host`
 - `port`
+- Optional station constants: `auth`, `pmf`, `sae`, and `connect_retries`
 
 Optional hooks:
 

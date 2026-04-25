@@ -125,9 +125,49 @@ private:
         }
     }
 
+    [[nodiscard]] static consteval wifi_auth_mode_t auth_default() noexcept
+    {
+        if constexpr (requires { Policy::auth; }) {
+            return Policy::auth;
+        } else {
+            return Policy::pass[0] == '\0' ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
+        }
+    }
+
+    [[nodiscard]] static consteval bool pmf_default() noexcept
+    {
+        if constexpr (requires { Policy::pmf; }) {
+            return Policy::pmf;
+        } else {
+            return false;
+        }
+    }
+
+    [[nodiscard]] static consteval wifi_sae_pwe_method_t sae_default() noexcept
+    {
+        if constexpr (requires { Policy::sae; }) {
+            return Policy::sae;
+        } else {
+            return WPA3_SAE_PWE_BOTH;
+        }
+    }
+
+    [[nodiscard]] static consteval std::uint8_t connect_retries_default() noexcept
+    {
+        if constexpr (requires { Policy::connect_retries; }) {
+            return Policy::connect_retries;
+        } else {
+            return 0U;
+        }
+    }
+
     inline constexpr static TickType_t idle_ticks = idle_default();
     inline constexpr static TickType_t retry_ticks = retry_default();
     inline constexpr static TickType_t stale_ticks = stale_default();
+    inline constexpr static wifi_auth_mode_t auth_mode = auth_default();
+    inline constexpr static bool pmf_required = pmf_default();
+    inline constexpr static wifi_sae_pwe_method_t sae_pwe = sae_default();
+    inline constexpr static std::uint8_t connect_retries = connect_retries_default();
 
     struct State {
         StaticEventGroup_t events_mem{};
@@ -292,9 +332,11 @@ private:
         wifi_config_t wifi{};
         copy_z(wifi.sta.ssid, Policy::ssid);
         copy_z(wifi.sta.password, Policy::pass);
-        wifi.sta.threshold.authmode = Policy::pass[0] == '\0' ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
+        wifi.sta.threshold.authmode = auth_mode;
         wifi.sta.pmf_cfg.capable = true;
-        wifi.sta.pmf_cfg.required = false;
+        wifi.sta.pmf_cfg.required = pmf_required;
+        wifi.sta.sae_pwe_h2e = sae_pwe;
+        wifi.sta.failure_retry_cnt = connect_retries;
 
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi));
         ESP_ERROR_CHECK(Radio::start(WIFI_MODE_STA, WIFI_PS_NONE));
