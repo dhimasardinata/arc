@@ -56,7 +56,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Xts` exposes hardware encrypted flash reads/writes and encrypted-partition alignment checks.
 - `arc::Wdt` exposes explicit task-watchdog configuration, task/user subscription, and feeding.
 - `arc::Fuse` reads eFuse fields, blocks, MACs, package, and secure-version state.
-- `arc::Ulp` loads and runs ULP RISC-V binaries and gives RTC-shared atomic words for main-core handoff.
+- `arc::Ulp` loads and runs ULP RISC-V or FSM binaries and gives RTC-shared atomic words for main-core handoff.
 - `arc::Temp` reads the ESP32-S3 internal temperature sensor for thermal telemetry.
 - `arc::TouchBus` and `arc::Touch` bind the ESP32-S3 capacitive touch controller and channels with explicit scan, filter, wake, and channel-data ownership.
 - `arc::Tight` runs a masked per-step loop with optional cycle-budget overrun telemetry for the rare path that needs tighter jitter than `arc::App`.
@@ -263,7 +263,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware timebase and alarms through GPTimer
 - Deep-sleep and light-sleep entry with explicit wake-source and power-domain policy
 - Hardware-backed AES, GCM, SHA, HMAC, Digital Signature, and XTS flash-encryption paths through Espressif's crypto drivers
-- ULP RISC-V load/run/control hooks for low-power coprocessor work
+- ULP RISC-V and FSM load/run/control hooks for low-power coprocessor work
 - Hardware die-temperature telemetry for thermal guard logic
 - Hardware capacitive touch sensing with typed controller/channel ownership, filter hooks, and sleep-wakeup hooks
 - Lock-free SPSC/MPSC queues and single-word control register
@@ -813,12 +813,14 @@ Use this for encrypted data partitions, provisioning records, or secure boot met
 
 ### `arc::Ulp`
 
-ULP RISC-V control surface.
+ULP RISC-V and legacy FSM control surface.
 
 - `load(binary)` copies a ULP binary into RTC memory.
 - `run(wake)` configures and starts the ULP, while `start()` starts a previously configured binary.
 - `stop()`, `resume()`, `halt()`, and `reset()` map directly to the ULP timer/core controls.
 - `isr(handler, arg, mask)` and `off(handler, arg, mask)` manage main-core interrupt hooks from the ULP.
+- `Ulp::Fsm::load(addr, binary)` loads a legacy FSM binary, and `Ulp::Fsm::macro(addr, program, words)` resolves macro labels before loading instruction arrays.
+- `Ulp::Fsm::period(index, us)`, `run(entry)`, `stop()`, `resume()`, `isr(...)`, and `off(...)` expose the ESP32-S3 FSM timer and wake hooks directly.
 - `Ulp::Word` is a 32-bit acquire/release shared word intended for RTC RAM placement.
 
 Use this for always-on sensing, wake decisions, or low-power counters while the main cores sleep.
