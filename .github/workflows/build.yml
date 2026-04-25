@@ -25,6 +25,7 @@ jobs:
         run: |
           missing=()
           command -v git >/dev/null || missing+=(git)
+          command -v g++ >/dev/null || missing+=(g++)
           command -v wget >/dev/null || missing+=(wget)
           command -v flex >/dev/null || missing+=(flex)
           command -v bison >/dev/null || missing+=(bison)
@@ -97,6 +98,12 @@ jobs:
         run: |
           chmod +x tools/check-repo.sh
           ./tools/check-repo.sh
+
+      - name: Host tests
+        shell: bash
+        run: |
+          chmod +x tools/host-tests.sh
+          ./tools/host-tests.sh
 
       - name: Build all
         shell: bash

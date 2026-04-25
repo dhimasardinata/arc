@@ -59,7 +59,11 @@ if ! grep -qE 'for dir in \. examples/\*; do' .github/workflows/build.yml; then
     die "build workflow must auto-discover examples instead of hardcoding a partial list"
 fi
 
-for file in env.sh examples/*/env.sh; do
+if ! grep -qE '\./tools/host-tests\.sh' .github/workflows/build.yml; then
+    die "build workflow must run host tests before firmware builds"
+fi
+
+for file in env.sh tools/host-tests.sh examples/*/env.sh; do
     [[ -x "$file" ]] || die "$file must stay executable"
 done
 

@@ -941,6 +941,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 - Sequence checks use explicit 32-bit modular deltas, so wrap is handled on the queue clock instead of pointer-width signed math.
 - Payloads stay trivially copyable and capacity remains a power of two.
 - Each cell is cache-line isolated to avoid producer/consumer false sharing, so large capacities intentionally spend more internal RAM than a packed queue.
+- CAS contention uses a tiny capped `nop` backoff in IRAM instead of immediately hammering the shared head cache line.
 
 Use this when several OS-side tasks with the same scheduling priority need to feed one telemetry or transport owner without a FreeRTOS queue. If producer preemption must never block completed work from another producer, use `arc::Fanin`.
 
@@ -2430,6 +2431,8 @@ The workflow also caches:
 GitHub-hosted runners are still ephemeral, so host packages installed by `apt` do not persist across jobs. Arc now only installs host packages if they are actually missing on the runner.
 
 Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared `esp32s3` lock in `cmake/arc-idf.cmake`.
+
+CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host test binary compiles pure Arc logic against tiny ESP attribute stubs and exercises SPSC, MPSC under real producer contention, Fanin round-robin behavior, and DSP/FIR math without flashing hardware.
 
 ## Notes
 

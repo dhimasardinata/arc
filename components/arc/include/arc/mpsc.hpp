@@ -8,6 +8,7 @@
 
 #include "esp_attr.h"
 
+#include "arc/fence.hpp"
 #include "arc/sdk.hpp"
 
 namespace arc {
@@ -30,6 +31,7 @@ struct Mpsc {
     {
         Cell* cell = nullptr;
         auto head = load_relaxed(&head_);
+        Backoff backoff{};
 
         for (;;) {
             cell = &buffer_[head & kMask];
@@ -40,10 +42,12 @@ struct Mpsc {
                 if (compare_exchange(&head_, &head, head + 1U)) {
                     break;
                 }
+                backoff.wait();
             } else if (diff < 0) {
                 return false;
             } else {
                 head = load_relaxed(&head_);
+                backoff.wait();
             }
         }
 
@@ -100,6 +104,21 @@ private:
     };
 
     static constexpr std::uint32_t kMask = static_cast<std::uint32_t>(Capacity - 1U);
+    static constexpr std::uint32_t kBackoffMax = 16U;
+
+    struct Backoff {
+        std::uint32_t spins{1U};
+
+        IRAM_ATTR [[gnu::always_inline]] inline void wait() noexcept
+        {
+            for (std::uint32_t i = 0; i < spins; ++i) {
+                pause();
+            }
+            if (spins < kBackoffMax) {
+                spins <<= 1U;
+            }
+        }
+    };
 
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::int32_t delta(
         const std::uint32_t value,
