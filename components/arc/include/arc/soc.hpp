@@ -16,6 +16,8 @@ struct Soc {
     static constexpr bool bluetooth = SOC_BT_SUPPORTED;
     static constexpr bool ble = SOC_BLE_SUPPORTED;
     static constexpr bool ble5 = SOC_BLE_50_SUPPORTED;
+    static constexpr bool ble_mesh = SOC_BLE_MESH_SUPPORTED;
+    static constexpr bool ble_privacy = SOC_BLE_DEVICE_PRIVACY_SUPPORTED;
 
     static constexpr bool dedicated_gpio = SOC_DEDICATED_GPIO_SUPPORTED;
     static constexpr bool async_memcpy = SOC_ASYNC_MEMCPY_SUPPORTED;

@@ -71,6 +71,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Radio` is the shared Core 0 Wi-Fi owner, so UDP and ESP-NOW do not each re-create NVS, netif, event loop, and Wi-Fi driver state.
 - `arc::net::Tcp` gives direct TCP socket clients for Core 0 control/config paths.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP client sessions.
+- `arc::Ble` gives a NimBLE lifecycle, host-task, GAP, advertising, and scanning bridge without taking over GATT profile design.
 - `arc::net::Udp` is a reusable Core 0 transport plane when you opt into `#include "arc/udp.hpp"`.
 - `arc::net::EspNow` is a reusable Core 0 raw-radio plane when you opt into `#include "arc/espnow.hpp"`.
 
@@ -150,6 +151,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │           └── arc
 │               ├── adc.hpp
 │               ├── aes.hpp
+│               ├── ble.hpp
 │               ├── bridge.hpp
 │               ├── bus.hpp
 │               ├── cache.hpp
@@ -262,6 +264,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - RAII file handles for mounted VFS/FAT/SPIFFS/LittleFS paths
 - Direct TCP clients for small control/config protocols
 - RAII HTTP client sessions for REST/config exchanges
+- BLE 5 host lifecycle, GAP naming, advertising, and scanning through NimBLE
 - Bounded MPSC fan-in for multi-task telemetry producers
 - SIMD-friendly math kernels that fit the Core 1 compute plane
 - Cycle-counter instrumentation for hot-path measurement
@@ -314,6 +317,7 @@ Feature names map directly to hardware lanes:
 - `gpio`
 - `adc`
 - `aes`
+- `ble`
 - `copy`
 - `fuse`
 - `mcpwm`
@@ -698,7 +702,7 @@ Clean generated local state across root and examples:
 Compile-time ESP32-S3 capability map.
 
 - Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
-- Exposes feature booleans such as `wifi`, `ble`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, and `ulp_riscv`.
+- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, and `ulp_riscv`.
 - Exposes hardware counts such as `gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
 - Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
 
@@ -1611,6 +1615,24 @@ RAII wrapper for ESP-IDF HTTP client sessions.
 - `status()`, `length()`, and `native()` expose response metadata and the raw handle.
 
 Use this for Core 0 REST/config exchanges where HTTP should stay outside the realtime plane.
+
+### `arc::Ble`
+
+NimBLE host bridge for ESP32-S3 BLE.
+
+- `init()` initializes NVS through `arc::Store` and starts the NimBLE controller/host stack.
+- `run()` owns `nimble_port_run()` in the current task, while `host<Stack, Core, Priority>(name)` starts it in one static pinned task instead of using NimBLE's heap-created default task.
+- Only one task can own the NimBLE run loop at a time.
+- `stop(wait)`, `join(wait)`, and `active()` expose host-loop shutdown without racing `deinit()`.
+- `deinit()` tears the stack down only after the host lane is inactive.
+- `cfg()` exposes `ble_hs_cfg`, while `hook(reset, sync)` sets the common reset/sync callbacks.
+- `gap()`, `name(...)`, and `appearance(...)` cover the standard GAP identity path.
+- `own(...)` infers the address type, `addr(...)` copies the active address, and `fields(...)` / `reply(...)` install advertising and scan-response fields.
+- `adv(...)`, `adv_stop()`, `scan(...)`, and `scan_stop()` expose the GAP radio procedures without hiding callbacks.
+
+Use this as the BLE Core 0 lane. GATT services, characteristics, pairing policy, and storage callbacks stay in application code because those are product protocol choices.
+
+The `ble` feature maps to `bt` and `nvs_flash`; the app still needs ESP-IDF Bluetooth/NimBLE Kconfig options enabled.
 
 ### `arc::net::Udp<Policy, Bus>`
 

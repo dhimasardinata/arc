@@ -26,6 +26,10 @@
 #include "arc/topology.hpp"
 #include "arc/wave.hpp"
 
+#if __has_include("host/ble_gap.h") && __has_include("nimble/nimble_port.h")
+#include "arc/ble.hpp"
+#endif
+
 #if __has_include("aes/esp_aes.h") && __has_include("aes/esp_aes_gcm.h") && __has_include("psa/crypto.h")
 #include "arc/aes.hpp"
 #endif
