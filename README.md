@@ -53,6 +53,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Aes` and `arc::Gcm` wrap AES block/stream/GCM operations with explicit key setup and caller-owned buffers.
 - `arc::Hmac` computes eFuse-keyed SHA-256 HMACs and gates temporary JTAG unlock through the HMAC peripheral.
 - `arc::Sign` drives the Digital Signature peripheral for eFuse-key-backed RSA signatures.
+- `arc::Xts` exposes hardware encrypted flash reads/writes and encrypted-partition alignment checks.
 - `arc::Wdt` exposes explicit task-watchdog configuration, task/user subscription, and feeding.
 - `arc::Fuse` reads eFuse fields, blocks, MACs, package, and secure-version state.
 - `arc::Ulp` loads and runs ULP RISC-V binaries and gives RTC-shared atomic words for main-core handoff.
@@ -214,6 +215,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── ulp.hpp
 │               ├── usb.hpp
 │               ├── wdt.hpp
+│               ├── xts.hpp
 │               └── wave.hpp
 └── main
     ├── app_main.cpp
@@ -256,7 +258,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware Sigma-Delta pulse-density output with IRAM-safe density updates enabled
 - Hardware timebase and alarms through GPTimer
 - Deep-sleep and light-sleep entry with explicit wake-source and power-domain policy
-- Hardware-backed AES, GCM, SHA, HMAC, and Digital Signature paths through Espressif's crypto drivers
+- Hardware-backed AES, GCM, SHA, HMAC, Digital Signature, and XTS flash-encryption paths through Espressif's crypto drivers
 - ULP RISC-V load/run/control hooks for low-power coprocessor work
 - Hardware die-temperature telemetry for thermal guard logic
 - Hardware capacitive touch sensing with typed controller/channel ownership, filter hooks, and sleep-wakeup hooks
@@ -356,6 +358,7 @@ Feature names map directly to hardware lanes:
 - `ulp`
 - `usb`
 - `wdt`
+- `xts`
 - `espnow`
 
 Add `gpio` when you use `arc::Drive`, `arc::Sense`, or raw `arc::Gpio`, because those pin APIs depend on the GPIO driver headers.
@@ -706,8 +709,9 @@ Clean generated local state across root and examples:
 Compile-time ESP32-S3 capability map.
 
 - Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
-- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_serial_jtag`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, and `ulp_riscv`.
+- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_serial_jtag`, `etm`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, `ecdsa`, `flash_xts`, `ulp_fsm`, and `ulp_riscv`.
 - Exposes hardware counts such as `gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
+- `etm` and `ecdsa` are deliberately represented even when the pinned ESP32-S3 `soc_caps.h` does not advertise those driver surfaces.
 - Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
 
 ### `arc::Pins<...>` and `arc::Topology<Board>`
@@ -787,6 +791,18 @@ Digital Signature peripheral surface for eFuse-key-backed RSA operations.
 - `Sign::bytes(data)` returns the exact prepared-message and signature size for the encrypted RSA key.
 
 Use this for signed telemetry, challenge responses, and provisioning flows where the private RSA material should never be readable by the main cores.
+
+### `arc::Xts`
+
+XTS flash-encryption helpers for ESP32-S3 encrypted flash paths.
+
+- `read(address, out, bytes)` calls `esp_flash_read_encrypted(...)` on the main flash chip.
+- `write(address, data, bytes)` calls `esp_flash_write_encrypted(...)` and rejects unaligned encrypted writes before entering the driver.
+- span overloads keep typed contiguous storage explicit without byte-count out parameters.
+- `encrypted(partition)` exposes the partition-table encryption flag.
+- partition `read(...)` and `write(...)` call `esp_partition_read/write(...)`; encrypted partition writes get the same 16-byte alignment guard before the ESP-IDF call.
+
+Use this for encrypted data partitions, provisioning records, or secure boot metadata that must go through the hardware flash-encryption path instead of raw flash reads.
 
 ### `arc::Ulp`
 

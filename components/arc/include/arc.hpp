@@ -34,6 +34,10 @@
 #include "arc/aes.hpp"
 #endif
 
+#if __has_include("esp_flash.h") && __has_include("esp_partition.h")
+#include "arc/xts.hpp"
+#endif
+
 #if __has_include("driver/gpio.h")
 #include "arc/gpio.hpp"
 #endif

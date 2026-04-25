@@ -19,6 +19,12 @@ struct Soc {
     static constexpr bool ble_mesh = SOC_BLE_MESH_SUPPORTED;
     static constexpr bool ble_privacy = SOC_BLE_DEVICE_PRIVACY_SUPPORTED;
 
+#if defined(SOC_ETM_SUPPORTED)
+    static constexpr bool etm = SOC_ETM_SUPPORTED;
+#else
+    static constexpr bool etm = false;
+#endif
+
     static constexpr bool dedicated_gpio = SOC_DEDICATED_GPIO_SUPPORTED;
     static constexpr bool async_memcpy = SOC_ASYNC_MEMCPY_SUPPORTED;
     static constexpr bool gdma = SOC_GDMA_SUPPORTED;
@@ -65,7 +71,15 @@ struct Soc {
     static constexpr bool mpi = SOC_MPI_SUPPORTED;
     static constexpr bool hmac = SOC_HMAC_SUPPORTED;
     static constexpr bool sign = SOC_DIG_SIGN_SUPPORTED;
+#if defined(SOC_ECDSA_SUPPORTED)
+    static constexpr bool ecdsa = SOC_ECDSA_SUPPORTED;
+#else
+    static constexpr bool ecdsa = false;
+#endif
     static constexpr bool efuse = SOC_EFUSE_SUPPORTED;
+    static constexpr bool flash_xts = SOC_FLASH_ENCRYPTION_XTS_AES;
+    static constexpr bool flash_xts_128 = SOC_FLASH_ENCRYPTION_XTS_AES_128;
+    static constexpr bool flash_xts_256 = SOC_FLASH_ENCRYPTION_XTS_AES_256;
     static constexpr bool systimer = SOC_SYSTIMER_SUPPORTED;
     static constexpr bool wdt = SOC_WDT_SUPPORTED;
     static constexpr bool xt_wdt = SOC_XT_WDT_SUPPORTED;
@@ -73,6 +87,7 @@ struct Soc {
     static constexpr bool light_sleep = SOC_LIGHT_SLEEP_SUPPORTED;
     static constexpr bool deep_sleep = SOC_DEEP_SLEEP_SUPPORTED;
     static constexpr bool ulp = SOC_ULP_SUPPORTED;
+    static constexpr bool ulp_fsm = SOC_ULP_FSM_SUPPORTED;
     static constexpr bool ulp_riscv = SOC_RISCV_COPROC_SUPPORTED;
     static constexpr bool rtc_fast = SOC_RTC_FAST_MEM_SUPPORTED;
     static constexpr bool rtc_slow = SOC_RTC_SLOW_MEM_SUPPORTED;
@@ -98,6 +113,7 @@ struct Soc {
     static constexpr std::uint32_t ds_bits = SOC_DS_SIGNATURE_MAX_BIT_LEN;
     static constexpr std::uint32_t ds_iv_bytes = SOC_DS_KEY_PARAM_MD_IV_LENGTH;
     static constexpr std::uint32_t ds_key_us = SOC_DS_KEY_CHECK_MAX_WAIT_US;
+    static constexpr std::uint32_t flash_xts_block = SOC_FLASH_ENCRYPTED_XTS_AES_BLOCK_MAX;
     static constexpr std::uint32_t mpi_blocks = SOC_MPI_MEM_BLOCKS_NUM;
     static constexpr std::uint32_t mpi_ops = SOC_MPI_OPERATIONS_NUM;
     static constexpr std::uint32_t twai_controllers = SOC_TWAI_CONTROLLER_NUM;
