@@ -4,7 +4,17 @@
 
 #include "esp_cpu.h"
 #include "esp_err.h"
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
 #include "hal/trace_ll.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 #include "sdkconfig.h"
 #include "xt_trax.h"
 #include "xtensa/config/core-isa.h"

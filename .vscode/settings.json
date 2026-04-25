@@ -1,0 +1,5 @@
+{
+  "clangd.arguments": [
+    "--query-driver=/home/*/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp32s3-elf-*,/Users/*/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp32s3-elf-*"
+  ]
+}

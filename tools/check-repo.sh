@@ -36,6 +36,29 @@ while IFS= read -r file; do
     fi
 done < <(git_files | grep -E '(^|/)sdkconfig\.defaults\.psram$' || true)
 
+if sed -n '/idf_component_register(/,/)/p' components/arc/CMakeLists.txt | grep -qw 'mbedtls'; then
+    die "components/arc baseline must not require optional mbedTLS; use arc_requires(aes) or arc_requires(sha)"
+fi
+
+mapfile -t vscode_files < <(git_files .vscode || true)
+for file in "${vscode_files[@]}"; do
+    case "$file" in
+        .vscode/settings.json|.vscode/extensions.json) ;;
+        *) die ".vscode must only contain portable clangd settings: $file" ;;
+    esac
+done
+if grep_files '/home/[^*]|/Users/[^*]|esp-[0-9]' "${vscode_files[@]}" >/dev/null 2>&1; then
+    die ".vscode must not hardcode user-specific clangd toolchain paths"
+fi
+
+mapfile -t clangd_files < <(git_files | grep -E '(^|/)\.clangd$' || true)
+for file in "${clangd_files[@]}"; do
+    [[ "$file" == ".clangd" ]] || die "per-project .clangd files must stay generated/local: $file"
+done
+if grep_files 'MBEDTLS_CONFIG_FILE|TF_PSA_CRYPTO_USER_CONFIG_FILE|esp-idf/components/mbedtls|/\.espressif/|/home/|/Users/' "${clangd_files[@]}" >/dev/null 2>&1; then
+    die ".clangd must not hardcode toolchain paths or optional mbedTLS include paths"
+fi
+
 mapfile -t docs < <(git_files README.md .github examples)
 if grep_files '^[[:space:]]*idf\.py set-target ' "${docs[@]}" >/dev/null 2>&1; then
     die "docs or workflows still tell users to run set-target; Arc is locked to esp32s3"
@@ -63,7 +86,7 @@ if ! grep -qE '\./tools/host-tests\.sh' .github/workflows/build.yml; then
     die "build workflow must run host tests before firmware builds"
 fi
 
-for file in env.sh tools/host-tests.sh examples/*/env.sh; do
+for file in env.sh tools/host-tests.sh tools/dump-source.py tools/clangd-compile-commands.py examples/*/env.sh; do
     [[ -x "$file" ]] || die "$file must stay executable"
 done
 
