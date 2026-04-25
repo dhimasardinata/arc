@@ -194,6 +194,10 @@
 #include "arc/net.hpp"
 #endif
 
+#if __has_include("esp_eap_client.h") && __has_include("esp_wifi.h")
+#include "arc/eap.hpp"
+#endif
+
 #if __has_include("driver/gptimer.h")
 #include "arc/timer.hpp"
 #endif

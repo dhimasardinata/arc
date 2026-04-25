@@ -71,6 +71,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Ota` wraps staged OTA writes and slot state without raw handle plumbing.
 - `arc::Store` gives typed NVS blobs and fixed-buffer strings without raw handle plumbing in user code.
 - `arc::net::Radio` is the shared Core 0 Wi-Fi owner, so UDP and ESP-NOW do not each re-create NVS, netif, event loop, and Wi-Fi driver state.
+- `arc::net::Eap` configures WPA2/WPA3 Enterprise credentials and joins through the shared radio without pulling WPA supplicant into non-enterprise builds.
 - `arc::net::Tcp` gives direct TCP socket clients for Core 0 control/config paths.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP client sessions.
 - `arc::Ble` gives a NimBLE lifecycle, host-task, GAP, advertising, and scanning bridge without taking over GATT profile design.
@@ -169,6 +170,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── dsp.hpp
 │               ├── drive.hpp
 │               ├── dvp.hpp
+│               ├── eap.hpp
 │               ├── fanin.hpp
 │               ├── fence.hpp
 │               ├── file.hpp
@@ -326,6 +328,7 @@ Feature names map directly to hardware lanes:
 - `aes`
 - `ble`
 - `copy`
+- `eap`
 - `fuse`
 - `mcpwm`
 - `rmt`
@@ -1663,6 +1666,18 @@ Long-lived transports release their lease only after their own `stop()` path has
 
 Use `arc_requires(... net)` only when directly using `arc::net::Radio`. `udp` and `espnow` already include the same dependencies.
 
+### `arc::net::Eap`
+
+Opt-in WPA2/WPA3 Enterprise bridge for the shared STA radio.
+
+- `identity(...)`, `user(...)`, `password(...)`, and `newpass(...)` configure PEAP/TTLS/EAP identity material.
+- `ca(...)`, `cert(...)`, `bundle(...)`, `domain(...)`, `time(...)`, and `suiteb(...)` expose certificate validation and Suite-B controls.
+- `methods(...)`, `phase2(...)`, `pac(...)`, `fast(...)`, and `okc(...)` expose the EAP method knobs without hiding ESP-IDF policy.
+- `enable()`, `disable()`, and `clear()` map directly to station enterprise mode and credential lifetime.
+- `join(config, power_save, connect)` applies the STA config, enables EAP, starts Wi-Fi, and optionally calls `esp_wifi_connect()`.
+
+Use `arc_requires(... eap)` only when an app really needs enterprise authentication; normal `net`, `udp`, and `espnow` builds do not pull in WPA supplicant headers.
+
 ### `arc::net::Tcp`
 
 Direct TCP client for Core 0 control and configuration paths.
@@ -2504,6 +2519,7 @@ CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host tes
 - `arc::Scope` is the lane to reach for when analog sampling should move into DMA instead of a software read loop.
 - `arc::I2cBus`, `arc::I2c`, and `arc::I2cSlave` are the lanes to reach for when register-style devices or peer controllers should stay on hardware I2C instead of GPIO bit-banging.
 - `arc::SpiBus`, `arc::Spi`, and `arc::SpiSlave` are the lanes to reach for when a sensor, display, converter, or external controller should move bytes through the SPI peripheral instead of CPU-owned toggling.
+- `arc::net::Eap` is the right opt-in lane for WPA2/WPA3 Enterprise; keep supplicant credentials out of plain PSK builds.
 - `arc::I2s` is the right lane when the data is naturally framed and should live on a DMA-backed serial stream.
 - `arc::Wave` is for deliberate CPU-owned edges, not for the common case of “just blink this periodically”.
 - `arc::Reg` is better than a queue for latest-wins control words.
