@@ -29,7 +29,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Dvp` captures parallel camera frames through the ESP32-S3 LCD_CAM DMA path.
 - `arc::I80Bus` and `arc::I80` drive the ESP32-S3 LCD_CAM Intel 8080 DMA path with exact transfer tickets.
 - `arc::Rgb` binds the ESP32-S3 RGB LCD engine with explicit timing, frame-buffer ownership, and refresh control.
-- `arc::I2cBus` and `arc::I2c` bind ESP32-S3 I2C master buses and devices with recoverable init paths.
+- `arc::I2cBus`, `arc::I2c`, and `arc::I2cSlave` bind ESP32-S3 I2C master/slave buses and devices with recoverable init paths.
 - `arc::SpiBus`, `arc::Spi`, and `arc::SpiSlave` drive DMA-capable SPI master/slave transfers with ticketed queue/finish ownership.
 - `arc::I2s` owns standard-mode I2S channels, `arc::I2sTdm` covers multichannel framed lanes, and `arc::I2sPdm` covers one-line PDM RX/TX, with both raw `esp_err_t` and opt-in `arc::Result` APIs.
 - `arc::Uart` binds ESP32-S3 UART ports, pins, framing, and buffers with fixed storage and typed read/write APIs.
@@ -179,6 +179,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── http.hpp
 │               ├── espnow.hpp
 │               ├── i2c.hpp
+│               ├── i2c_slave.hpp
 │               ├── i80.hpp
 │               ├── i2s.hpp
 │               ├── mpsc.hpp
@@ -199,6 +200,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── sketch.hpp
 │               ├── sigma.hpp
 │               ├── spi.hpp
+│               ├── spi_slave.hpp
 │               ├── space.hpp
 │               ├── spsc.hpp
 │               ├── store.hpp
@@ -247,8 +249,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware async memory copy through the ESP32-S3 DMA memcpy path
 - Hardware LCD_CAM DVP camera input through DMA-backed frame buffers
 - Hardware LCD_CAM Intel 8080 parallel output through DMA-backed panel IO
-- Hardware I2C master bus/device binding for sensors, EEPROMs, displays, and control chips
-- Hardware SPI transfers with explicit bus/device composition and DMA-capable paths
+- Hardware I2C master/slave bus/device binding for sensors, EEPROMs, displays, control chips, and peer controllers
+- Hardware SPI master/slave transfers with explicit bus/device composition and DMA-capable paths
 - Hardware I2S streaming with duplex DMA and event counters
 - Hardware UART serial lanes for GPS, modems, consoles, and legacy links
 - Hardware USB Serial/JTAG byte IO for cabled control channels
@@ -362,6 +364,7 @@ Feature names map directly to hardware lanes:
 - `espnow`
 
 Add `gpio` when you use `arc::Drive`, `arc::Sense`, or raw `arc::Gpio`, because those pin APIs depend on the GPIO driver headers.
+Add `i2c` for both master (`arc::I2cBus`, `arc::I2c`) and slave (`arc::I2cSlave`) ownership; they share the same ESP-IDF I2C driver component and the same Arc port claim lane.
 Add `spi` for both master (`arc::SpiBus`, `arc::Spi`) and slave (`arc::SpiSlave`) ownership; they share the same ESP-IDF SPI driver component and the same Arc host claim lane.
 
 For the fastest compile times, keep each app honest: include only the Arc headers you use directly, and request only the matching Arc features in CMake.
@@ -444,7 +447,7 @@ static_assert(arc::Topology<Board>);
 
 `arc::Pins` ignores negative sentinel pins like `-1`, so optional CS/MISO-style values can still be represented without false collisions.
 
-Peripheral wrappers also claim physical silicon at `init()` time. Two different `arc::Uart`, `arc::I2cBus`, `arc::I2c`, `arc::SpiBus`, `arc::SpiSlave`, or CS-backed `arc::Spi` template aliases cannot silently own the same hardware with different type parameters; the later claim returns `ESP_ERR_INVALID_STATE`.
+Peripheral wrappers also claim physical silicon at `init()` time. Two different `arc::Uart`, `arc::I2cBus`, `arc::I2cSlave`, `arc::I2c`, `arc::SpiBus`, `arc::SpiSlave`, or CS-backed `arc::Spi` template aliases cannot silently own the same hardware with different type parameters; the later claim returns `ESP_ERR_INVALID_STATE`.
 Identical aliases share a tiny atomic init gate, so two tasks racing the same first `init()` do not double-call the ESP-IDF allocator.
 
 ## Start From Zero
@@ -1141,6 +1144,20 @@ Compile-time I2C master wrapper.
 - `boot()` remains available when board topology failure should be fail-fast.
 
 Use this for sensors, EEPROMs, small displays, PMICs, and control chips that should stay outside the Core 1 hot loop.
+
+### `arc::I2cSlave<Port, Sda, Scl, Addr, TxBytes = 256, RxBytes = 256, ...>`
+
+Compile-time I2C slave wrapper.
+
+- `init()` creates one ESP32-S3 I2C slave device and returns `esp_err_t`.
+- `boot()` creates the slave device and fail-fasts on impossible board topology.
+- `listen(on_request, on_receive, user)` registers ISR-context callbacks without hiding that received bytes arrive through the driver callback buffer.
+- `send(...)` writes bytes into the slave TX FIFO/ringbuffer for the external master to read and can report the actual accepted byte count.
+- `reset()` clears pending TX data and resets the hardware TX FIFO.
+- `off()` deletes the slave device and releases the I2C port claim.
+- The slave wrapper claims the same physical I2C port lane as `arc::I2cBus`, so master/slave aliases cannot silently collide.
+
+Use this when the ESP32-S3 should present a small register/status surface to another controller while keeping request/receive ISR hooks explicit.
 
 ### `arc::Can<Tx, Rx, Bitrate = 500'000, Queue = 8, RxDepth = 8, ...>`
 
@@ -2485,6 +2502,7 @@ CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host tes
 - `arc::Bridge` is the right lane when the waveform controls a half-bridge, gate driver, or any complementary output that must respect dead-time.
 - `arc::Capture` is the cleanest way to timestamp edges in hardware before reaching for a GPIO ISR.
 - `arc::Scope` is the lane to reach for when analog sampling should move into DMA instead of a software read loop.
+- `arc::I2cBus`, `arc::I2c`, and `arc::I2cSlave` are the lanes to reach for when register-style devices or peer controllers should stay on hardware I2C instead of GPIO bit-banging.
 - `arc::SpiBus`, `arc::Spi`, and `arc::SpiSlave` are the lanes to reach for when a sensor, display, converter, or external controller should move bytes through the SPI peripheral instead of CPU-owned toggling.
 - `arc::I2s` is the right lane when the data is naturally framed and should live on a DMA-backed serial stream.
 - `arc::Wave` is for deliberate CPU-owned edges, not for the common case of “just blink this periodically”.

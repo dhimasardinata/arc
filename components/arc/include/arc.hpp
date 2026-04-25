@@ -90,6 +90,10 @@
 #include "arc/i2c.hpp"
 #endif
 
+#if __has_include("driver/i2c_slave.h")
+#include "arc/i2c_slave.hpp"
+#endif
+
 #if __has_include("esp_http_client.h")
 #include "arc/http.hpp"
 #endif
