@@ -138,6 +138,10 @@
 #include "arc/trace.hpp"
 #endif
 
+#if __has_include("xt_trax.h") && __has_include("hal/trace_ll.h")
+#include "arc/trax.hpp"
+#endif
+
 #if __has_include("driver/sdm.h")
 #include "arc/sigma.hpp"
 #endif

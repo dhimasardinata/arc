@@ -21,6 +21,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Can` binds the ESP32-S3 TWAI/CAN controller with ISR-backed RX handoff.
 - `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
 - `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
+- `arc::Trax` controls Xtensa TRAX instruction trace memory for on-core execution history when TRAX is enabled in Kconfig.
 - `arc::Pulse` uses MCPWM for higher-grade waveform generation than LEDC when period and edge placement matter.
 - `arc::Bridge` drives complementary MCPWM pairs with explicit dead-time.
 - `arc::Capture` timestamps edges in hardware through the MCPWM capture block.
@@ -214,6 +215,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── timer.hpp
 │               ├── topology.hpp
 │               ├── trace.hpp
+│               ├── trax.hpp
 │               ├── uart.hpp
 │               ├── udp.hpp
 │               ├── ulp.hpp
@@ -356,6 +358,7 @@ Feature names map directly to hardware lanes:
 - `rng`
 - `space`
 - `time`
+- `trax`
 - `fs`
 - `tcp`
 - `udp`
@@ -1378,6 +1381,19 @@ Compile-time RMT RX wrapper for symbol capture.
 - `carrier(...)` and `plain()` toggle RX-side carrier demodulation.
 
 Use this when you need pulse widths, protocol symbols, or edge timing without CPU sampling.
+
+### `arc::Trax`
+
+Thin control lane for the ESP32-S3 Xtensa TRAX trace memory.
+
+- `enable()` selects the current core's trace memory bank, while `enable(bank)` and `both(swap)` expose explicit S3 bank routing.
+- `start(unit)`, `words()`, and `instr()` start capture with word or instruction downcount units.
+- `active()` reports whether the current core is tracing.
+- `stop(delay)` requests trace stop after the chosen post-trigger delay.
+- `core(id)` maps core IDs to the corresponding TRAX bank selector.
+- Calls return `ESP_ERR_NO_MEM` when the firmware was built without ESP32-S3 TRAX memory enabled.
+
+Use this for internal execution-history capture. `arc::Trace` is RMT pin capture; `arc::Trax` is CPU trace memory.
 
 ### `arc::Count<EdgePin, ...>`
 
@@ -2530,6 +2546,7 @@ CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host tes
 - `arc::net::EspNow` is the transport to reach for before IP when you want radio latency and do not need routers.
 - `arc::Ota` belongs on Core 0 with transports and storage, not in the realtime loop.
 - `arc::Burst`, `arc::Trace`, and `arc::Count` are the first place to go when a pin-level job should move from CPU polling into dedicated hardware.
+- `arc::Trax` is for internal CPU trace memory; do not use RMT capture terminology when the signal never leaves the core.
 - `arc::Timer` is the right timebase when cycle counters are too core-local or when you need a true peripheral alarm.
 - `arc::Mask` is for tiny deterministic sections, not for normal app structure.
 - `arc::Tight` is the next step after `arc::App` when you need a masked step loop, not a normal forever-loop task body.
