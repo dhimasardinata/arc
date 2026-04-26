@@ -6,7 +6,9 @@ import argparse
 import json
 import re
 import shlex
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,7 @@ ARC_INCLUDE_DIR = ROOT / "components" / "arc" / "include"
 CXX_SOURCE_SUFFIXES = {".cc", ".cpp", ".cxx", ".c++"}
 HEADER_SUFFIXES = {".h", ".hh", ".hpp", ".hxx"}
 INCLUDE_RE = re.compile(r"^\s*#\s*include\s*([<\"])([^>\"]+)[>\"]")
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 INCLUDE_FLAGS = {"-I", "-isystem", "-iquote", "-idirafter"}
 INCLUDE_PREFIX_FLAGS = tuple(sorted(INCLUDE_FLAGS, key=len, reverse=True))
 PUBLIC_REQ_KEYS = ("reqs", "managed_reqs")
@@ -152,11 +155,11 @@ def include_dirs(entry: dict[str, Any]) -> tuple[Path, ...]:
     return tuple(paths)
 
 
-def direct_quoted_includes(header: Path) -> list[str]:
+def include_directives(header: Path) -> list[str]:
     includes: list[str] = []
     for line in header.read_text(encoding="utf-8").splitlines():
         match = INCLUDE_RE.match(line)
-        if match and match.group(1) == '"':
+        if match:
             includes.append(match.group(2))
     return includes
 
@@ -179,6 +182,64 @@ def under(path: Path, parent: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def arc_header_index() -> dict[str, Path]:
+    headers: dict[str, Path] = {}
+    if not ARC_INCLUDE_DIR.is_dir():
+        return headers
+
+    for header in sorted(ARC_INCLUDE_DIR.rglob("*")):
+        if header.suffix.lower() not in HEADER_SUFFIXES:
+            continue
+        headers[header.resolve().relative_to(ARC_INCLUDE_DIR).as_posix()] = header.resolve()
+    return headers
+
+
+def resolve_arc_include(include: str, current: Path, headers: dict[str, Path]) -> Path | None:
+    direct = headers.get(include)
+    if direct is not None:
+        return direct
+
+    candidate = (current.parent / include).resolve()
+    if not under(candidate, ARC_INCLUDE_DIR) or not candidate.is_file():
+        return None
+
+    try:
+        relative = candidate.relative_to(ARC_INCLUDE_DIR).as_posix()
+    except ValueError:
+        return None
+    return headers.get(relative)
+
+
+def header_external_includes(
+    header: Path,
+    headers: dict[str, Path],
+    cache: dict[Path, tuple[str, ...]],
+    stack: set[Path] | None = None,
+) -> tuple[str, ...]:
+    cached = cache.get(header)
+    if cached is not None:
+        return cached
+
+    if stack is None:
+        stack = set()
+    if header in stack:
+        return ()
+    stack.add(header)
+
+    external: set[str] = set()
+    for include in include_directives(header):
+        nested = resolve_arc_include(include, header, headers)
+        if nested is None:
+            external.add(include)
+            continue
+        external.update(header_external_includes(nested, headers, cache, stack))
+
+    stack.remove(header)
+    resolved = tuple(sorted(external))
+    cache[header] = resolved
+    return resolved
 
 
 def cxx_candidates(commands: list[dict[str, Any]]) -> list[tuple[int, dict[str, Any], tuple[Path, ...]]]:
@@ -252,6 +313,7 @@ def component_info(databases: list[Path]) -> dict[str, dict[str, Any]]:
                     reqs.extend(req for req in value if isinstance(req, str))
 
             components[name] = {
+                "root": Path(root).resolve(),
                 "include_dirs": tuple(include_dirs),
                 "reqs": tuple(reqs),
             }
@@ -259,14 +321,77 @@ def component_info(databases: list[Path]) -> dict[str, dict[str, Any]]:
     return components
 
 
-def include_owner(include: str, components: dict[str, dict[str, Any]]) -> str | None:
+def include_root_for_match(path: Path, include: str) -> Path:
+    root = path.parent
+    for _ in range(len(Path(include).parts) - 1):
+        root = root.parent
+    return root
+
+
+def component_discovered_dirs(info: dict[str, Any]) -> tuple[Path, ...]:
+    cached = info.get("discovered_include_dirs")
+    if isinstance(cached, tuple):
+        return cached
+
+    root = info.get("root")
+    if not isinstance(root, Path) or not root.is_dir():
+        info["discovered_include_dirs"] = ()
+        return ()
+
+    dirs: list[Path] = []
+    for include_dir in root.rglob("include"):
+        if not include_dir.is_dir():
+            continue
+        dirs.append(include_dir.resolve())
+        for child in sorted(include_dir.iterdir()):
+            if child.is_dir():
+                dirs.append(child.resolve())
+
+    resolved = tuple(dict.fromkeys(dirs))
+    info["discovered_include_dirs"] = resolved
+    return resolved
+
+
+def include_owner(
+    include: str,
+    components: dict[str, dict[str, Any]],
+    search_cache: dict[str, str | None],
+) -> str | None:
+    cached = search_cache.get(include)
+    if include in search_cache:
+        return cached
+
     for name, info in components.items():
         dirs = info.get("include_dirs")
         if not isinstance(dirs, tuple):
             continue
         if any((directory / include).is_file() for directory in dirs):
+            search_cache[include] = name
             return name
-    return None
+
+    parts = Path(include).parts
+    matches: list[tuple[int, int, str, Path]] = []
+    for name, info in components.items():
+        root = info.get("root")
+        if not isinstance(root, Path) or not root.is_dir():
+            continue
+
+        for candidate in root.rglob(parts[-1]):
+            if tuple(candidate.parts[-len(parts) :]) != parts:
+                continue
+            include_root = include_root_for_match(candidate, include)
+            matches.append((0 if "esp32s3" in candidate.parts else 1, len(candidate.parts), name, include_root))
+
+    if not matches:
+        search_cache[include] = None
+        return None
+
+    _, _, owner, include_root = min(matches)
+    info = components[owner]
+    dirs = tuple(dict.fromkeys((*info.get("include_dirs", ()), include_root, *component_discovered_dirs(info))))
+    info["include_dirs"] = dirs
+    search_cache[include] = owner
+    return owner
 
 
 def component_public_dirs(
@@ -295,6 +420,7 @@ def missing_include_dirs(
     dirs: tuple[Path, ...],
     components: dict[str, dict[str, Any]],
     cache: dict[tuple[Path, str], bool],
+    owner_cache: dict[str, str | None],
 ) -> tuple[Path, ...] | None:
     available = set(dirs)
     extras: list[Path] = []
@@ -304,9 +430,9 @@ def missing_include_dirs(
         if has_include(include, search_dirs, cache):
             continue
 
-        owner = include_owner(include, components)
+        owner = include_owner(include, components, owner_cache)
         if owner is None:
-            return None
+            continue
 
         for directory in component_public_dirs(owner, components):
             if directory not in available:
@@ -319,14 +445,11 @@ def missing_include_dirs(
     return tuple(extras)
 
 
-def command_for_file(
+def entry_args_for_file(
     entry: dict[str, Any],
     file: Path,
     extra_include_dirs: tuple[Path, ...] = (),
-) -> dict[str, Any]:
-    clone = dict(entry)
-    clone["file"] = str(file)
-
+) -> list[str]:
     args = entry_args(entry)
     source = entry_source(entry)
     if args and source is not None:
@@ -340,51 +463,169 @@ def command_for_file(
             pass
 
         args = [str(file) if arg in source_spellings else arg for arg in args]
-        if "arguments" in clone:
-            clone["arguments"] = args
-            clone.pop("command", None)
-        else:
-            clone["command"] = shlex.join(args)
 
     if args and extra_include_dirs:
         args = [args[0], *(f"-I{path}" for path in extra_include_dirs), *args[1:]]
-        if "arguments" in clone:
-            clone["arguments"] = args
-            clone.pop("command", None)
-        else:
-            clone["command"] = shlex.join(args)
+
+    return args
+
+
+def command_for_file(
+    entry: dict[str, Any],
+    file: Path,
+    extra_include_dirs: tuple[Path, ...] = (),
+) -> dict[str, Any]:
+    clone = dict(entry)
+    clone["file"] = str(file)
+
+    args = entry_args_for_file(entry, file, extra_include_dirs)
+    if not args:
+        return clone
+
+    if "arguments" in clone:
+        clone["arguments"] = args
+        clone.pop("command", None)
+    else:
+        clone["command"] = shlex.join(args)
 
     return clone
 
 
-def arc_header_commands(commands: list[dict[str, Any]], databases: list[Path]) -> list[dict[str, Any]]:
-    if not ARC_INCLUDE_DIR.is_dir():
-        return []
+def strip_ansi(text: str) -> str:
+    return ANSI_RE.sub("", text)
+
+
+def summarize_stderr(stderr: str, status: int) -> str:
+    lines = [strip_ansi(line).strip() for line in stderr.splitlines()]
+    for marker in ("fatal error:", "error:"):
+        for line in lines:
+            if marker in line:
+                return line
+    for line in lines:
+        if line:
+            return line
+    return f"compiler exited with status {status}"
+
+
+def validate_header_command(
+    entry: dict[str, Any],
+    header: Path,
+    extra_include_dirs: tuple[Path, ...] = (),
+) -> str | None:
+    with tempfile.NamedTemporaryFile("w", suffix=".cpp", delete=False) as temp:
+        include = str(header).replace("\\", "\\\\").replace('"', '\\"')
+        temp.write(f'#include "{include}"\nint main() {{ return 0; }}\n')
+        source = Path(temp.name)
+
+    try:
+        args = entry_args_for_file(entry, source, extra_include_dirs)
+        if not args:
+            return "candidate compile command has no arguments"
+
+        filtered: list[str] = []
+        skip_next = False
+        for arg in args:
+            if skip_next:
+                skip_next = False
+                continue
+            if arg == "-o":
+                skip_next = True
+                continue
+            if arg == "-Werror" or arg.startswith("-Werror="):
+                continue
+            filtered.append(arg)
+        filtered.insert(1, "-fsyntax-only")
+        filtered.append("-Wno-error")
+
+        try:
+            proc = subprocess.run(
+                filtered,
+                cwd=entry_directory(entry),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError as err:
+            return str(err)
+
+        if proc.returncode == 0:
+            return None
+        return summarize_stderr(proc.stderr, proc.returncode)
+    finally:
+        source.unlink(missing_ok=True)
+
+
+def arc_header_commands(
+    commands: list[dict[str, Any]],
+    databases: list[Path],
+    validate: bool = False,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    headers = arc_header_index()
+    if not headers:
+        return [], []
 
     candidates = cxx_candidates(commands)
     components = component_info(databases)
     include_cache: dict[tuple[Path, str], bool] = {}
+    owner_cache: dict[str, str | None] = {}
+    dependency_cache: dict[Path, tuple[str, ...]] = {}
     header_commands: list[dict[str, Any]] = []
+    failures: list[str] = []
 
-    for header in sorted(ARC_INCLUDE_DIR.rglob("*")):
-        if header.suffix.lower() not in HEADER_SUFFIXES:
+    for header in sorted(headers.values()):
+        includes = header_external_includes(header, headers, dependency_cache)
+        selected: dict[str, Any] | None = None
+        error: str | None = None
+        attempted: set[tuple[str, tuple[str, ...]]] = set()
+        for _, entry, dirs in candidates:
+            extras = ()
+            if not all(has_include(include, dirs, include_cache) for include in includes):
+                extras = missing_include_dirs(includes, dirs, components, include_cache, owner_cache)
+                if extras is None:
+                    continue
+
+            key = (
+                source_key(entry, DEFAULT_OUTPUT),
+                tuple(str(path) for path in extras),
+            )
+            if key in attempted:
+                continue
+            attempted.add(key)
+
+            if validate:
+                error = validate_header_command(entry, header, extras)
+                if error is not None:
+                    continue
+
+            selected = command_for_file(entry, header, extras)
+            break
+
+        if selected is None and validate:
+            for _, entry, _ in candidates:
+                key = (source_key(entry, DEFAULT_OUTPUT), ())
+                if key in attempted:
+                    continue
+                attempted.add(key)
+
+                error = validate_header_command(entry, header)
+                if error is not None:
+                    continue
+
+                selected = command_for_file(entry, header)
+                break
+
+        if selected is None and not validate and candidates:
+            selected = command_for_file(candidates[0][1], header)
+
+        if selected is None:
+            reason = error or "no candidate compile command satisfied transitive header dependencies"
+            failures.append(f"{display(header)}: {reason}")
             continue
 
-        includes = direct_quoted_includes(header)
-        fallback: tuple[dict[str, Any], tuple[Path, ...]] | None = None
-        for _, entry, dirs in candidates:
-            if all(has_include(include, dirs, include_cache) for include in includes):
-                header_commands.append(command_for_file(entry, header.resolve()))
-                break
-            extras = missing_include_dirs(includes, dirs, components, include_cache)
-            if extras is not None and fallback is None:
-                fallback = (entry, extras)
-        else:
-            if fallback is not None:
-                entry, extras = fallback
-                header_commands.append(command_for_file(entry, header.resolve(), extras))
+        header_commands.append(selected)
 
-    return header_commands
+    return header_commands, failures
 
 
 def main() -> int:
@@ -408,6 +649,11 @@ def main() -> int:
         "--no-arc-headers",
         action="store_true",
         help="Do not add exact compile commands for public Arc headers.",
+    )
+    parser.add_argument(
+        "--validate-arc-headers",
+        action="store_true",
+        help="Syntax-check inferred Arc header commands and fail if any public Arc header cannot be compiled.",
     )
     args = parser.parse_args()
 
@@ -434,8 +680,9 @@ def main() -> int:
         return 1
 
     header_commands: list[dict[str, Any]] = []
+    header_failures: list[str] = []
     if not args.no_arc_headers:
-        header_commands = arc_header_commands(commands, databases)
+        header_commands, header_failures = arc_header_commands(commands, databases, validate=args.validate_arc_headers)
         commands.extend(header_commands)
 
     output = args.output.expanduser()
@@ -444,10 +691,15 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(commands, indent=2) + "\n", encoding="utf-8")
 
+    header_label = "validated" if args.validate_arc_headers else "inferred"
     print(
         f"merged {len(commands)} commands from {len(databases)} databases into {display(output)}"
-        f" ({len(header_commands)} Arc header commands)",
+        f" ({len(header_commands)} {header_label} Arc header commands)",
     )
+    if header_failures:
+        for failure in header_failures:
+            print(f"arc header command failed: {failure}", file=sys.stderr)
+        return 1
     return 0
 
 

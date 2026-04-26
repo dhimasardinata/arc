@@ -17,22 +17,40 @@ namespace arc {
 struct Sha {
     static_assert(SOC_SHA_SUPPORTED, "SHA accelerator is not supported on this target");
 
+    template <esp_sha_type Type>
+    inline static constexpr std::size_t sum_bytes = []() consteval {
+        if constexpr (Type == SHA1) {
+            return 20U;
+        } else if constexpr (Type == SHA2_224 || Type == SHA2_512224) {
+            return 28U;
+        } else if constexpr (Type == SHA2_256 || Type == SHA2_512256) {
+            return 32U;
+        } else if constexpr (Type == SHA2_384) {
+            return 48U;
+        } else if constexpr (Type == SHA2_512) {
+            return 64U;
+        } else {
+            return 0U;
+        }
+    }();
+
     [[nodiscard]] static constexpr std::size_t bytes(const esp_sha_type type) noexcept
     {
         switch (type) {
             case SHA1:
-                return 20U;
+                return sum_bytes<SHA1>;
             case SHA2_224:
-                return 28U;
+                return sum_bytes<SHA2_224>;
             case SHA2_256:
-            case SHA2_512256:
-                return 32U;
+                return sum_bytes<SHA2_256>;
             case SHA2_384:
-                return 48U;
+                return sum_bytes<SHA2_384>;
             case SHA2_512:
-                return 64U;
+                return sum_bytes<SHA2_512>;
             case SHA2_512224:
-                return 28U;
+                return sum_bytes<SHA2_512224>;
+            case SHA2_512256:
+                return sum_bytes<SHA2_512256>;
             default:
                 return 0U;
         }
@@ -61,7 +79,7 @@ struct Sha {
     }
 
     template <esp_sha_type Type>
-    using Sum = std::array<std::uint8_t, bytes(Type)>;
+    using Sum = std::array<std::uint8_t, sum_bytes<Type>>;
 
     [[nodiscard]] static esp_err_t sum(
         const esp_sha_type type,

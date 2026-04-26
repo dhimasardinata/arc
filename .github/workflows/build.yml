@@ -156,6 +156,11 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Validate clangd database
+        shell: bash
+        run: |
+          ./tools/clangd-compile-commands.py --validate-arc-headers -o compile_commands.json
+
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:

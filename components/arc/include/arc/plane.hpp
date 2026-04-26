@@ -9,7 +9,6 @@
 #include "esp_cpu.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "freertos/task.h"
 
 #include "arc/task.hpp"
 
