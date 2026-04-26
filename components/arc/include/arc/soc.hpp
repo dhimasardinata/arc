@@ -91,9 +91,14 @@ struct Soc {
     static constexpr bool ulp_riscv = SOC_RISCV_COPROC_SUPPORTED;
     static constexpr bool rtc_fast = SOC_RTC_FAST_MEM_SUPPORTED;
     static constexpr bool rtc_slow = SOC_RTC_SLOW_MEM_SUPPORTED;
+    static constexpr bool rtc_gpio = SOC_RTCIO_PIN_COUNT > 0;
+    static constexpr bool rtc_gpio_io = SOC_RTCIO_INPUT_OUTPUT_SUPPORTED;
+    static constexpr bool rtc_gpio_hold = SOC_RTCIO_HOLD_SUPPORTED;
+    static constexpr bool rtc_gpio_wake = SOC_RTCIO_WAKE_SUPPORTED;
 
     static constexpr std::uint32_t cpu_interrupts = SOC_CPU_INTR_NUM;
     static constexpr std::uint32_t gpio_pins = SOC_GPIO_PIN_COUNT;
+    static constexpr std::uint32_t rtc_gpio_pins = SOC_RTCIO_PIN_COUNT;
     static constexpr std::uint32_t gpio_input_max = SOC_GPIO_IN_RANGE_MAX;
     static constexpr std::uint32_t gpio_output_max = SOC_GPIO_OUT_RANGE_MAX;
     static constexpr std::uint32_t adc_units = SOC_ADC_PERIPH_NUM;

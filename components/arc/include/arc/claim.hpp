@@ -17,6 +17,7 @@ enum class ClaimKind : std::uint32_t {
     lcd_rgb = 0x1cd0'0001U,
     touch_bus = 0x70c0'0001U,
     touch_chan = 0x70c0'0002U,
+    rtc_gpio = 0x27c0'0001U,
 };
 
 [[nodiscard]] consteval std::uint32_t claim_mix(

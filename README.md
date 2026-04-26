@@ -135,7 +135,7 @@ When those stacks are needed, keep them on Core 0 and compose them with Arc's ty
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg` |
-| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/timer.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::Timer`, `arc::Clock`, `arc::Probe` |
+| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Clock`, `arc::Probe` |
 | Buses and data plane | `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
 | Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
@@ -430,6 +430,7 @@ Feature names map directly to hardware lanes:
 - `otg`
 - `pm`
 - `rng`
+- `rtc`
 - `space`
 - `time`
 - `trax`
@@ -445,6 +446,7 @@ Feature names map directly to hardware lanes:
 - `espnow`
 
 Add `gpio` when you use `arc::Drive`, `arc::Sense`, or raw `arc::Gpio`, because those pin APIs depend on the GPIO driver headers.
+Add `rtc` when you use `arc::RtcGpio` or `arc::RtcPin`; it maps to the public RTC IO driver and should be used for sleep-retained pad state, pad isolation, and RTC wake plumbing.
 Add `i2c` for both master (`arc::I2cBus`, `arc::I2c`) and slave (`arc::I2cSlave`) ownership; they share the same ESP-IDF I2C driver component and the same Arc port claim lane.
 Add `spi` for both master (`arc::SpiBus`, `arc::Spi`) and slave (`arc::SpiSlave`) ownership; they share the same ESP-IDF SPI driver component and the same Arc host claim lane.
 
@@ -819,8 +821,8 @@ Clean generated local state across root and examples:
 Compile-time ESP32-S3 capability map.
 
 - Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
-- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_serial_jtag`, `etm`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, `ecdsa`, `flash_xts`, `ulp_fsm`, and `ulp_riscv`.
-- Exposes hardware counts such as `gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
+- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_serial_jtag`, `etm`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `rtc_gpio`, `rtc_gpio_io`, `rtc_gpio_hold`, `rtc_gpio_wake`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, `ecdsa`, `flash_xts`, `ulp_fsm`, and `ulp_riscv`.
+- Exposes hardware counts such as `gpio_pins`, `rtc_gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
 - `etm` and `ecdsa` are deliberately represented even when the pinned ESP32-S3 `soc_caps.h` does not advertise those driver surfaces.
 - Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
 
@@ -1582,6 +1584,18 @@ Power-state helper for the Core 0 side.
 - `deep()` enters deep sleep and does not return.
 
 Use this when the most efficient loop is no loop at all.
+
+### `arc::RtcGpio` and `arc::RtcPin<Pin>`
+
+Verified RTC IO surface for sleep-domain pads.
+
+- `RtcGpio::valid(pin)` and `RtcGpio::index(pin)` expose the ESP-IDF RTC IO mapping without guessing which GPIO numbers are RTC-capable.
+- `RtcPin<Pin>::init()` claims one physical pad before routing it through RTC IO; `deinit()` releases it after routing back to normal IO MUX.
+- `mode(...)`, `sleep_mode(...)`, `level()`, `write(...)`, `hi()`, and `lo()` cover explicit RTC input/output ownership.
+- `pullup(...)`, `pulldown(...)`, `floating()`, `drive(...)`, `hold()`, `unhold()`, and `isolate()` cover deep-sleep leakage and pad retention work.
+- `wake(...)` and `wake_off()` expose the RTC GPIO wake hooks directly when you need per-pad wake control outside `arc::Sleep`.
+
+Use this when a pad must keep a deterministic state across light/deep sleep, when leakage must be cut before deep sleep, or when the RTC domain should own the pin instead of the digital GPIO matrix.
 
 ### `arc::Pm<Type, Arg = 0>`
 

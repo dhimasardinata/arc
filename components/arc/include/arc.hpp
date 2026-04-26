@@ -144,6 +144,10 @@
 #include "arc/trace.hpp"
 #endif
 
+#if __has_include("driver/rtc_io.h")
+#include "arc/rtc.hpp"
+#endif
+
 #if __has_include("xt_trax.h") && __has_include("hal/trace_ll.h")
 #include "arc/trax.hpp"
 #endif
