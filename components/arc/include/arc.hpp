@@ -12,6 +12,7 @@
 #include "arc/fence.hpp"
 #include "arc/init.hpp"
 #include "arc/mask.hpp"
+#include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/place.hpp"
 #include "arc/plane.hpp"

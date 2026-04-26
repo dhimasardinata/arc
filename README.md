@@ -77,6 +77,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Eap` configures WPA2/WPA3 Enterprise credentials and joins through the shared radio without pulling WPA supplicant into non-enterprise builds.
 - `arc::net::Tcp` gives direct TCP socket clients for Core 0 control/config paths.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP client sessions.
+- `arc::net::Mqtt` gives caller-buffer MQTT 3.1.1 packet encoding, parsing, and topic matching without owning the transport lane.
 - `arc::net::Mdns` adds a thin discovery battery on top of `esp_netif` and the shared Wi-Fi lane when lwIP mDNS headers exist.
 - `arc::Ble` gives a NimBLE lifecycle, host-task, GAP, advertising, and scanning bridge without taking over GATT profile design.
 - `arc::net::Udp` is a reusable Core 0 transport plane when you opt into `#include "arc/udp.hpp"`.
@@ -189,6 +190,7 @@ The umbrella `arc.hpp` only surfaces optional batteries like `Mdns` when the mat
 │               ├── gpio.hpp
 │               ├── hmac.hpp
 │               ├── http.hpp
+│               ├── mqtt.hpp
 │               ├── espnow.hpp
 │               ├── i2c.hpp
 │               ├── i2c_slave.hpp
@@ -1748,6 +1750,17 @@ RAII wrapper for ESP-IDF HTTP client sessions.
 - `status()`, `length()`, and `native()` expose response metadata and the raw handle.
 
 Use this for Core 0 REST/config exchanges where HTTP should stay outside the realtime plane.
+
+### `arc::net::Mqtt`
+
+Thin MQTT 3.1.1 wire codec for caller-owned buffers.
+
+- `connect(...)`, `publish(...)`, `subscribe(...)`, `ping(...)`, and `disconnect(...)` encode packets directly into a caller-provided byte span.
+- `parse(...)` splits one MQTT frame out of a receive buffer without hiding the consumed byte count.
+- `view(packet)`, `connack(packet)`, and `suback(packet)` decode the common packet bodies without heap allocation.
+- `match(filter, topic)` applies MQTT wildcard rules so subscription routing can stay local and explicit.
+
+Use this when you want MQTT batteries on top of `arc::net::Tcp` or another stream lane without giving the framework ownership of reconnect policy, socket lifetime, or tasking.
 
 ### `arc::net::Mdns`
 

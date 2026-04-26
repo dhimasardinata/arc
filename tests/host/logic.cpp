@@ -1,5 +1,6 @@
 #include <array>
 #include <atomic>
+#include <cstring>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -10,6 +11,7 @@
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
 #include "arc/file.hpp"
+#include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
@@ -232,6 +234,80 @@ void test_checked_fanin()
     expect(fan.try_pop(producer, value) && producer == 1U && value == 20, "Audit Fanin pop lane 1");
 }
 
+void test_mqtt()
+{
+    std::array<std::uint8_t, 256> buffer{};
+
+    const auto connect = arc::net::Mqtt::connect(
+        buffer,
+        {
+            .client = "arc-host",
+            .user = "arc",
+            .pass = "secret",
+            .keep_alive = 30U,
+            .clean = true,
+        });
+    expect(connect.has_value(), "MQTT connect encodes");
+    expect((*connect)[0] == 0x10U, "MQTT connect type");
+    expect((*connect)[2] == 0x00U && (*connect)[3] == 0x04U, "MQTT protocol length");
+    expect((*connect)[4] == 'M' && (*connect)[7] == 'T', "MQTT protocol name");
+
+    const std::array<std::uint8_t, 5> payload{1U, 2U, 3U, 4U, 5U};
+    const auto publish = arc::net::Mqtt::publish(
+        buffer,
+        "arc/topic",
+        std::span(payload),
+        7U,
+        arc::net::MqttQos::at_least_once,
+        false,
+        true);
+    expect(publish.has_value(), "MQTT publish encodes");
+
+    const auto packet = arc::net::Mqtt::parse(*publish);
+    expect(packet.has_value(), "MQTT publish parses");
+    expect(packet->type == arc::net::MqttType::publish, "MQTT publish type");
+    expect(packet->retain(), "MQTT publish retain");
+    expect(packet->qos() == arc::net::MqttQos::at_least_once, "MQTT publish qos");
+
+    const auto view = arc::net::Mqtt::view(*packet);
+    expect(view.has_value(), "MQTT publish view");
+    expect(view->packet == 7U, "MQTT publish packet id");
+    expect(view->topic.size() == 9U, "MQTT publish topic bytes");
+    expect(std::memcmp(view->topic.data(), "arc/topic", view->topic.size()) == 0, "MQTT publish topic");
+    expect(view->payload.size() == payload.size(), "MQTT publish payload size");
+    expect(std::memcmp(view->payload.data(), payload.data(), payload.size()) == 0, "MQTT publish payload");
+
+    const std::array subscriptions{
+        arc::net::MqttSubscription{.filter = "arc/+/status", .qos = arc::net::MqttQos::at_least_once},
+        arc::net::MqttSubscription{.filter = "arc/#", .qos = arc::net::MqttQos::at_most_once},
+    };
+    const auto subscribe = arc::net::Mqtt::subscribe(buffer, 9U, std::span(subscriptions));
+    expect(subscribe.has_value(), "MQTT subscribe encodes");
+    expect((*subscribe)[0] == 0x82U, "MQTT subscribe flags");
+    expect((*subscribe)[2] == 0x00U && (*subscribe)[3] == 0x09U, "MQTT subscribe packet id");
+
+    const std::array<std::uint8_t, 4> connack_raw{0x20U, 0x02U, 0x01U, 0x00U};
+    const auto connack_packet = arc::net::Mqtt::parse(connack_raw);
+    expect(connack_packet.has_value(), "MQTT connack parses");
+    const auto connack = arc::net::Mqtt::connack(*connack_packet);
+    expect(connack.has_value(), "MQTT connack view");
+    expect(connack->session, "MQTT connack session");
+    expect(connack->code == 0U, "MQTT connack code");
+
+    const std::array<std::uint8_t, 5> suback_raw{0x90U, 0x03U, 0x00U, 0x09U, 0x01U};
+    const auto suback_packet = arc::net::Mqtt::parse(suback_raw);
+    expect(suback_packet.has_value(), "MQTT suback parses");
+    const auto suback = arc::net::Mqtt::suback(*suback_packet);
+    expect(suback.has_value(), "MQTT suback view");
+    expect(suback->packet == 9U, "MQTT suback packet id");
+    expect(suback->codes.size() == 1U && suback->codes[0] == 0x01U, "MQTT suback code");
+
+    expect(arc::net::Mqtt::match("arc/+/status", "arc/node/status"), "MQTT single wildcard");
+    expect(arc::net::Mqtt::match("arc/#", "arc/node/status"), "MQTT multi wildcard");
+    expect(!arc::net::Mqtt::match("arc/+/status", "arc/node/state"), "MQTT mismatch");
+    expect(!arc::net::Mqtt::match("arc/#", "$SYS/broker"), "MQTT system topic isolation");
+}
+
 void test_dsp()
 {
     const std::array<int, 4> lhs{1, 2, 3, 4};
@@ -361,6 +437,7 @@ int main()
     test_mpsc_threads();
     test_fanin();
     test_checked_fanin();
+    test_mqtt();
     test_dsp();
     test_seqreg();
     test_file();
