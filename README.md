@@ -480,6 +480,7 @@ Arc keeps driver lifetime explicit because ESP-IDF peripheral handles often have
 
 - `arc::Init` is the smallest boot-once state machine: `empty -> busy -> ready`, with `take()` giving exclusive teardown access. Use it for singleton drivers that are configured at boot and rarely stopped.
 - `arc::RefInit` is the shared-resource variant. The first `begin()` owns initialization, later `begin()` or `take()` calls acquire a reference, and only the final `drop()` returns `true` so the caller can tear the hardware down.
+- `arc::RefLease` is the scoped form for borrowed shared references. `take()` acquires a new reference, `adopt()` wraps an existing one, and the final owner must call `release()` and perform teardown explicitly instead of hiding hardware deinit in a destructor.
 - `arc::Gate` is a tiny task-context guard for protecting short control-plane mutations. It asserts in ISR context instead of blocking where FreeRTOS cannot safely sleep.
 
 This keeps static peripheral wrappers cheap while still giving buses, radios, filesystems, and host tasks a path to safe dynamic off/on behavior when an application needs sleep, hot-plug, or staged subsystem startup.

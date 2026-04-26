@@ -242,4 +242,84 @@ private:
     inline constexpr static std::uint32_t max_refs = busy - 1U;
 };
 
+struct RefLease {
+    RefLease() = default;
+
+    RefLease(const RefLease&) = delete;
+    RefLease& operator=(const RefLease&) = delete;
+
+    RefLease(RefLease&& other) noexcept
+        : state_(other.state_)
+    {
+        other.state_ = nullptr;
+    }
+
+    RefLease& operator=(RefLease&& other) noexcept
+    {
+        if (this != &other) {
+            abandon();
+            state_ = other.state_;
+            other.state_ = nullptr;
+        }
+        return *this;
+    }
+
+    ~RefLease()
+    {
+        abandon();
+    }
+
+    [[nodiscard]] static RefLease take(std::uint32_t& state) noexcept
+    {
+        if (!RefInit::take(state)) {
+            return {};
+        }
+        return RefLease(state);
+    }
+
+    [[nodiscard]] static RefLease adopt(std::uint32_t& state) noexcept
+    {
+        return RefLease(state);
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept
+    {
+        return state_ != nullptr;
+    }
+
+    [[nodiscard]] bool release() noexcept
+    {
+        if (state_ == nullptr) {
+            return false;
+        }
+
+        auto& state = *state_;
+        state_ = nullptr;
+        return RefInit::drop(state);
+    }
+
+private:
+    explicit RefLease(std::uint32_t& state) noexcept
+        : state_(&state)
+    {
+    }
+
+    void abandon() noexcept
+    {
+        if (state_ == nullptr) {
+            return;
+        }
+
+        auto& state = *state_;
+        state_ = nullptr;
+        const auto last = RefInit::drop(state);
+        if (last) {
+            RefInit::fail(state);
+            configASSERT(false && "arc::RefLease final owner must call release() and tear down");
+        }
+    }
+
+    std::uint32_t* state_{};
+};
+
 }  // namespace arc

@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <thread>
+#include <utility>
 
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
@@ -598,6 +599,38 @@ void test_refinit()
     arc::RefInit::fail(state);
     expect(arc::RefInit::refs(state) == 0U, "RefInit teardown returns empty");
     expect(!arc::RefInit::take(state), "RefInit take empty resource fails");
+
+    expect(arc::RefInit::begin(state), "RefLease init begin");
+    arc::RefInit::pass(state);
+    {
+        auto lease = arc::RefLease::take(state);
+        expect(static_cast<bool>(lease), "RefLease takes ready resource");
+        expect(arc::RefInit::refs(state) == 2U, "RefLease increments refs");
+
+        auto moved = std::move(lease);
+        expect(!static_cast<bool>(lease), "RefLease move clears source");
+        expect(static_cast<bool>(moved), "RefLease move keeps destination");
+    }
+    expect(arc::RefInit::refs(state) == 1U, "RefLease destructor drops non-final ref");
+
+    auto lease = arc::RefLease::take(state);
+    expect(!lease.release(), "RefLease explicit non-final release");
+    expect(arc::RefInit::refs(state) == 1U, "RefLease release leaves owner ref");
+
+    auto owner = arc::RefLease::adopt(state);
+    expect(owner.release(), "RefLease explicit final release owns teardown");
+    arc::RefInit::fail(state);
+    expect(arc::RefInit::refs(state) == 0U, "RefLease final teardown returns empty");
+
+    expect_abort(
+        []() {
+            std::uint32_t local{};
+            expect(arc::RefInit::begin(local), "RefLease abort begin");
+            arc::RefInit::pass(local);
+            auto final = arc::RefLease::adopt(local);
+            static_cast<void>(final);
+        },
+        "RefLease final destructor aborts");
 }
 
 }  // namespace
