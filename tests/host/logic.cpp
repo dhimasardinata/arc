@@ -591,6 +591,10 @@ void test_file()
 void test_refinit()
 {
     std::uint32_t state{};
+    expect(arc::Init::is_empty(state), "Init starts empty");
+    expect(!arc::Init::is_busy(state), "Init not busy initially");
+    expect(!arc::Init::is_ready(state), "Init not ready initially");
+
     {
         arc::TryGate first(state);
         expect(static_cast<bool>(first), "TryGate takes open gate");
@@ -609,11 +613,16 @@ void test_refinit()
     {
         auto txn = arc::InitTxn::begin(state);
         expect(static_cast<bool>(txn), "InitTxn first begin initializes");
+        expect(arc::Init::is_busy(state), "InitTxn begin marks busy");
     }
+    expect(arc::Init::is_empty(state), "InitTxn destructor restores empty");
     expect(arc::InitTxn::begin(state).pass(), "InitTxn destructor rolls back busy state");
+    expect(arc::Init::is_ready(state), "InitTxn pass marks ready");
     expect(!arc::InitTxn::begin(state), "InitTxn ready state does not initialize");
     expect(arc::Init::take(state), "InitTxn pass leaves ready state");
+    expect(arc::Init::is_busy(state), "Init take marks busy");
     arc::Init::fail(state);
+    expect(arc::Init::is_empty(state), "Init fail restores empty");
 
     auto txn = arc::InitTxn::begin(state);
     expect(static_cast<bool>(txn), "InitTxn move source active");
@@ -625,8 +634,11 @@ void test_refinit()
     {
         auto ref_txn = arc::RefInitTxn::begin(state);
         expect(static_cast<bool>(ref_txn), "RefInitTxn first begin initializes");
+        expect(arc::RefInit::is_busy(state), "RefInitTxn begin marks busy");
     }
+    expect(arc::RefInit::is_empty(state), "RefInitTxn destructor restores empty");
     expect(arc::RefInitTxn::begin(state).pass(), "RefInitTxn destructor rolls back busy state");
+    expect(arc::RefInit::is_ready(state), "RefInitTxn pass marks ready");
     expect(arc::RefInit::refs(state) == 1U, "RefInitTxn pass owns first ref");
     expect(!arc::RefInitTxn::begin(state), "RefInitTxn ready state shares without init");
     expect(arc::RefInit::refs(state) == 2U, "RefInitTxn ready begin increments refs");

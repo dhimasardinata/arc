@@ -173,7 +173,27 @@ struct Init {
         __atomic_store_n(&state, empty, __ATOMIC_RELEASE);
     }
 
+    [[nodiscard]] static bool is_empty(const std::uint32_t& state) noexcept
+    {
+        return load(state) == empty;
+    }
+
+    [[nodiscard]] static bool is_busy(const std::uint32_t& state) noexcept
+    {
+        return load(state) == busy;
+    }
+
+    [[nodiscard]] static bool is_ready(const std::uint32_t& state) noexcept
+    {
+        return load(state) == ready;
+    }
+
 private:
+    [[nodiscard]] static std::uint32_t load(const std::uint32_t& state) noexcept
+    {
+        return __atomic_load_n(&state, __ATOMIC_ACQUIRE);
+    }
+
     inline constexpr static std::uint32_t empty = 0U;
     inline constexpr static std::uint32_t busy = 1U;
     inline constexpr static std::uint32_t ready = 2U;
@@ -374,11 +394,32 @@ struct RefInit {
 
     [[nodiscard]] static std::uint32_t refs(const std::uint32_t& state) noexcept
     {
-        const auto current = __atomic_load_n(&state, __ATOMIC_ACQUIRE);
+        const auto current = load(state);
         return current == busy ? 0U : current;
     }
 
+    [[nodiscard]] static bool is_empty(const std::uint32_t& state) noexcept
+    {
+        return load(state) == empty;
+    }
+
+    [[nodiscard]] static bool is_busy(const std::uint32_t& state) noexcept
+    {
+        return load(state) == busy;
+    }
+
+    [[nodiscard]] static bool is_ready(const std::uint32_t& state) noexcept
+    {
+        const auto current = load(state);
+        return current != empty && current != busy;
+    }
+
 private:
+    [[nodiscard]] static std::uint32_t load(const std::uint32_t& state) noexcept
+    {
+        return __atomic_load_n(&state, __ATOMIC_ACQUIRE);
+    }
+
     inline constexpr static std::uint32_t empty = 0U;
     inline constexpr static std::uint32_t busy = ~std::uint32_t{0};
     inline constexpr static std::uint32_t max_refs = busy - 1U;
