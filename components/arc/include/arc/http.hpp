@@ -3,6 +3,7 @@
 #include <climits>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -56,6 +57,27 @@ struct Http {
             return fail(ESP_ERR_NO_MEM);
         }
         return Http{handle};
+    }
+
+    [[nodiscard]] static Result<Http> https(const esp_http_client_config_t& config) noexcept
+    {
+        if (!secure_url(config.url)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return make(config);
+    }
+
+    [[nodiscard]] static Result<Http> https(
+        const char* const url,
+        const esp_http_client_config_t& base = {}) noexcept
+    {
+        if (!secure_url(url)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        auto config = base;
+        config.url = url;
+        return make(config);
     }
 
     [[nodiscard]] esp_err_t url(const char* const value) noexcept
@@ -210,6 +232,12 @@ struct Http {
     }
 
 private:
+    [[nodiscard]] static bool secure_url(const char* const url) noexcept
+    {
+        constexpr char scheme[] = "https://";
+        return url != nullptr && std::strncmp(url, scheme, sizeof(scheme) - 1U) == 0;
+    }
+
     void cleanup() noexcept
     {
         if (handle_ != nullptr) {

@@ -99,7 +99,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Eap` configures WPA2/WPA3 Enterprise credentials and joins through the shared radio without pulling WPA supplicant into non-enterprise builds.
 - `arc::net::Tcp` gives direct TCP socket clients for Core 0 control/config paths.
 - `arc::net::Tls` gives direct ESP-TLS client sessions for secure caller-buffer transports such as MQTTS without taking over reconnect or protocol policy.
-- `arc::net::Http` gives RAII ownership for ESP-IDF HTTP client sessions.
+- `arc::net::Http` gives RAII ownership for ESP-IDF HTTP/HTTPS client sessions, with explicit HTTPS factories when secure scheme enforcement matters.
 - `arc::net::Mqtt` gives caller-buffer MQTT 3.1.1 packet encoding, parsing, and topic matching without owning the transport lane.
 - `arc::net::Ws` gives WebSocket handshake helpers plus caller-buffer frame encode/parse without owning reconnect or task policy.
 - `arc::net::Coap` gives caller-buffer CoAP datagram encode/parse and option walking without hiding message layout.
@@ -1862,12 +1862,13 @@ Use this under `arc::net::Mqtt`, `arc::net::Ws`, or a custom stream protocol whe
 RAII wrapper for ESP-IDF HTTP client sessions.
 
 - `make(config)` returns `arc::Result<arc::net::Http>`.
+- `https(config)` and `https(url, base)` require an `https://` URL before constructing the same RAII client.
 - `url(...)`, `method(...)`, `header(...)`, and `body(...)` set request fields.
 - `perform()` covers the simple one-shot request path.
 - `open(...)`, `write(...)`, `fetch()`, `read(...)`, and `close()` expose the streaming path.
 - `status()`, `length()`, and `native()` expose response metadata and the raw handle.
 
-Use this for Core 0 REST/config exchanges where HTTP should stay outside the realtime plane.
+Use this for Core 0 REST/config exchanges where HTTP or HTTPS should stay outside the realtime plane. Use `arc::net::Tls` directly when you need a secure raw stream rather than HTTP semantics.
 
 ### `arc::net::Mqtt`
 
