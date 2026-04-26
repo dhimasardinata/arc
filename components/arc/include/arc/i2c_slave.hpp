@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 
@@ -131,8 +132,13 @@ struct I2cSlave {
         const int timeout_ms = 1000) noexcept
     {
         written = 0U;
-        if (data == nullptr || bytes == 0U || bytes > 0xFFFF'FFFFULL) {
+        if (data == nullptr || bytes == 0U) {
             return ESP_ERR_INVALID_ARG;
+        }
+        if constexpr (sizeof(std::size_t) > sizeof(std::uint32_t)) {
+            if (bytes > std::numeric_limits<std::uint32_t>::max()) {
+                return ESP_ERR_INVALID_ARG;
+            }
         }
 
         const auto ready = init();
