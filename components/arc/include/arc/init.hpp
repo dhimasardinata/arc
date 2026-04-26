@@ -165,7 +165,7 @@ struct InitTxn {
         return state_ != nullptr;
     }
 
-    bool pass() noexcept
+    [[nodiscard]] bool pass() noexcept
     {
         if (state_ == nullptr) {
             return false;
@@ -176,7 +176,7 @@ struct InitTxn {
         return true;
     }
 
-    bool fail() noexcept
+    [[nodiscard]] bool fail() noexcept
     {
         if (state_ == nullptr) {
             return false;

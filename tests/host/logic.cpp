@@ -22,6 +22,9 @@
 
 namespace {
 
+static_assert(sizeof(arc::InitTxn) == sizeof(void*));
+static_assert(sizeof(arc::RefLease) == sizeof(void*));
+
 #if defined(__has_feature)
 #if __has_feature(thread_sanitizer)
 #define ARC_HOST_TSAN 1

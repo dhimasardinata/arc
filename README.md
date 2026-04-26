@@ -1,5 +1,11 @@
 # Arc
 
+[![build](https://github.com/dhimasardinata/arc/actions/workflows/build.yml/badge.svg)](https://github.com/dhimasardinata/arc/actions/workflows/build.yml)
+[![license: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](LICENSE)
+![ESP-IDF v6.0](https://img.shields.io/badge/ESP--IDF-v6.0-E7352C.svg)
+![C++ gnu++26](https://img.shields.io/badge/C%2B%2B-gnu%2B%2B26-00599C.svg)
+![target ESP32-S3](https://img.shields.io/badge/target-ESP32--S3-222222.svg)
+
 Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 differently on purpose.
 
 License: `AGPL-3.0-only`. Arc is open source, but intentionally strict copyleft: if you distribute modified firmware or run modified network-accessible services built from Arc, keep the corresponding source available under the same license terms.
@@ -102,6 +108,23 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::EspNow` is a reusable Core 0 raw-radio plane when you opt into `#include "arc/espnow.hpp"`.
 
 The umbrella `arc.hpp` only surfaces optional batteries like `Mdns` when the matching SDK headers are visible through `__has_include(...)`; Arc does not fake protocol availability.
+
+<details>
+<summary>Quick API Map</summary>
+
+| Area | Headers | Primary types |
+| --- | --- | --- |
+| Core plane | `arc/task.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp` | `arc::spawn`, `arc::Plane`, `arc::App`, `arc::Tight` |
+| Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefLease`, `arc::Audit` |
+| Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy` |
+| Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg` |
+| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/timer.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::Timer`, `arc::Clock`, `arc::Probe` |
+| Buses and data plane | `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
+| Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
+| Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
+| Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Xts`, `arc::Fuse`, `arc::Rng` |
+
+</details>
 
 ## Layout
 
@@ -505,6 +528,12 @@ This keeps static peripheral wrappers cheap while still giving buses, radios, fi
 Arc is licensed under `AGPL-3.0-only`, with the license notice in `LICENSE` and the full GNU Affero GPL v3 text in `COPYING`.
 
 The intent is strict open source: you can study, use, modify, and redistribute Arc under AGPLv3-only, but downstream modifications must preserve the same reciprocal source-availability obligations.
+
+### Dependency Compatibility
+
+Arc depends on ESP-IDF components selected through `cmake/arc-deps.cmake`, including FreeRTOS, lwIP, mbedTLS, NimBLE/Bluetooth, FATFS/SPIFFS, and Espressif driver components. Those upstream components are generally permissive or Apache-style licenses, which are compatible with combining into an AGPLv3-only Arc firmware tree.
+
+The practical consequence is not permissive: Arc-derived code remains AGPLv3-only. If a product cannot satisfy AGPL source-availability and reciprocal licensing obligations for its Arc-derived portions, the license is the blocker, not the build system.
 
 ## Start From Zero
 
