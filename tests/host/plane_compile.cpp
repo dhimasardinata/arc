@@ -56,6 +56,11 @@ struct MockWave {
         return 500U;
     }
 
+    static esp_err_t set(const Config&) noexcept
+    {
+        return ESP_OK;
+    }
+
     static void start() noexcept {}
     static void start(const Config&) noexcept {}
 
@@ -73,6 +78,7 @@ static_assert(requires { BarePlane::boot("arc"); });
 static_assert(requires { BoundPlane::template boot<&shared>("arc"); });
 static_assert(requires { App::boot("arc"); });
 static_assert(arc::WaveConfig<MockWave>);
+static_assert(arc::ConfigWave<MockWave>);
 static_assert(arc::DutyWave<MockWave>);
 static_assert(arc::RateWave<MockWave>);
 

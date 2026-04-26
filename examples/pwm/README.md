@@ -68,5 +68,6 @@ The main API pieces are:
 - `arc::Pwm::config()`
 - `arc::Pwm::hz(value)`
 - `arc::Pwm::begin(config)`
+- `arc::Pwm::set(config)`
 - `arc::Pwm::duty<permille>()`
 - `arc::Pwm::duty(value)`

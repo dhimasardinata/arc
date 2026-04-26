@@ -19,6 +19,11 @@ concept WaveConfig = requires {
 };
 
 template <typename T>
+concept ConfigWave = WaveConfig<T> && requires(typename T::Config cfg) {
+    { T::set(cfg) } -> ControlResult;
+};
+
+template <typename T>
 concept DutyWave = WaveConfig<T> && requires(typename T::Config cfg, const std::uint32_t duty) {
     { T::start() } -> std::same_as<void>;
     { T::start(cfg) } -> std::same_as<void>;

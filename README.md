@@ -898,6 +898,7 @@ Do not create multiple aliases for the same physical peripheral just to vary a r
 `arc/concepts.hpp` adds small compile-time contracts for app-side composition without virtual dispatch or heap-owned interfaces.
 
 - `arc::WaveConfig<T>` checks that a static waveform type exposes `Config`, `defaults()`, `config()`, and `permille()`.
+- `arc::ConfigWave<T>` checks the combined recoverable runtime-config surface.
 - `arc::DutyWave<T>` checks the duty-control surface.
 - `arc::RateWave<T>` checks the runtime frequency-control surface.
 
@@ -1040,6 +1041,7 @@ Compile-time hardware PWM on ESP32-S3 LEDC.
 - `hz()` and `permille()` report the live configured values.
 - `config()` returns the live runtime PWM configuration snapshot.
 - `hz(value)` retunes the live PWM frequency through the recoverable path.
+- `set(config)` reapplies both runtime PWM knobs through the recoverable path.
 - `on()` reapplies the current duty instead of the compile-time default.
 - `off()` stops output low.
 - `pause()` and `resume()` gate the underlying LEDC timer.

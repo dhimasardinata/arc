@@ -167,9 +167,14 @@ struct Pwm {
         return duty(permille);
     }
 
+    [[nodiscard]] static esp_err_t set(const Config& cfg) noexcept
+    {
+        return begin(cfg);
+    }
+
     [[nodiscard]] static esp_err_t hz(const std::uint32_t value) noexcept
     {
-        return begin(Config{
+        return set(Config{
             .hz = value,
             .duty = permille(),
         });
