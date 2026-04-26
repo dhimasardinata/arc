@@ -47,22 +47,13 @@ struct Gate {
 
     static void wait() noexcept
     {
-        configASSERT(!in_isr_context() && "arc::Gate cannot block in ISR context");
+        configASSERT(!xPortInIsrContext() && "arc::Gate cannot block in ISR context");
         vTaskDelay(1);
     }
 
 private:
     inline constexpr static std::uint32_t open = 0U;
     inline constexpr static std::uint32_t shut = 1U;
-
-    [[nodiscard]] static bool in_isr_context() noexcept
-    {
-#if defined(ESP_PLATFORM)
-        return xPortInIsrContext();
-#else
-        return false;
-#endif
-    }
 
     std::uint32_t* state_;
 };

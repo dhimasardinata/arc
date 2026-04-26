@@ -24,3 +24,8 @@ inline TaskHandle_t xTaskGetCurrentTaskHandle() noexcept
 {
     return reinterpret_cast<TaskHandle_t>(1);
 }
+
+inline BaseType_t xPortInIsrContext() noexcept
+{
+    return 0;
+}
