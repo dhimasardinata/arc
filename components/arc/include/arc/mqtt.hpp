@@ -367,12 +367,16 @@ struct Mqtt {
             return false;
         }
 
+        const auto* const begin = filter;
         for (;;) {
             if (*filter == '#') {
-                return filter[1] == '\0';
+                return (filter == begin || filter[-1] == '/') && filter[1] == '\0';
             }
 
             if (*filter == '+') {
+                if ((filter != begin && filter[-1] != '/') || (filter[1] != '\0' && filter[1] != '/')) {
+                    return false;
+                }
                 ++filter;
                 while (*topic != '\0' && *topic != '/') {
                     ++topic;

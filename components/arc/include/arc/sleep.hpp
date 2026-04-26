@@ -15,9 +15,9 @@ struct Sleep {
         return esp_sleep_get_wakeup_cause();
     }
 
-    [[nodiscard]] static esp_sleep_source_t causes() noexcept
+    [[nodiscard]] static std::uint32_t causes() noexcept
     {
-        return cause();
+        return static_cast<std::uint32_t>(cause());
     }
 
     [[nodiscard]] static bool woke(const esp_sleep_source_t source) noexcept

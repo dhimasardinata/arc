@@ -307,6 +307,8 @@ void test_mqtt()
     expect(arc::net::Mqtt::match("arc/+/status", "arc/node/status"), "MQTT single wildcard");
     expect(arc::net::Mqtt::match("arc/#", "arc/node/status"), "MQTT multi wildcard");
     expect(arc::net::Mqtt::match("arc/#", "arc"), "MQTT parent wildcard root");
+    expect(!arc::net::Mqtt::match("arc#", "arc"), "MQTT invalid hash placement");
+    expect(!arc::net::Mqtt::match("arc+status", "arc/status"), "MQTT invalid plus placement");
     expect(!arc::net::Mqtt::match("arc/+/status", "arc/node/state"), "MQTT mismatch");
     expect(!arc::net::Mqtt::match("arc/#", "$SYS/broker"), "MQTT system topic isolation");
 }
