@@ -207,6 +207,15 @@ struct Uart {
         return uart_get_buffered_data_len(Port, &bytes);
     }
 
+    [[nodiscard]] static std::uint32_t baud() noexcept
+    {
+        boot();
+
+        std::uint32_t value = 0U;
+        ESP_ERROR_CHECK(uart_get_baudrate(Port, &value));
+        return value;
+    }
+
     [[nodiscard]] static esp_err_t baud(const std::uint32_t value) noexcept
     {
         const auto ready = init();

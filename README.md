@@ -885,6 +885,7 @@ Use fail-fast helpers in the fixed board bring-up path. Use the recoverable name
 Pins, peripheral instances, DMA sizing, queue depths, ISR affinity, and fixed bus shape stay as template parameters because changing them creates different hardware ownership. Runtime controls stay runtime:
 
 - `arc::Uart::baud(value)` retunes a live UART without creating a second UART type.
+- `arc::Uart::baud()` reports the live UART rate, while the template `Baud` stays the declared default.
 - `arc::Spi::send/recv/xfer/poll(..., hz)` can override the clock for one transfer.
 - `arc::Pwm::start(config)` and `arc::Pwm::hz(value)` let LEDC keep compile-time pin/channel ownership while the live waveform config comes from runtime data.
 - `arc::Pwm::duty(value)` and `arc::Pwm::set(value)` update LEDC duty without instantiating another template.
@@ -1293,7 +1294,7 @@ Compile-time UART wrapper.
 - `boot()` keeps the fail-fast path for required serial links.
 - `off()` deletes the driver and releases the port claim.
 - `write(...)` and `read(...)` expose `arc::Result<std::size_t>` ergonomic overloads.
-- `available(...)`, `wait(...)`, `flush()`, and `baud(...)` expose the common runtime controls.
+- `available(...)`, `wait(...)`, `flush()`, `baud()`, and `baud(value)` expose the common runtime controls.
 
 Use this for GPS receivers, modem AT links, binary serial protocols, and board-level debug channels that should not leak raw UART driver calls into app code.
 

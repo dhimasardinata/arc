@@ -11,7 +11,12 @@ using Serial = arc::Uart<UART_NUM_1, 17, 18>;
 inline void boot()
 {
     const auto init = Serial::init();
-    std::printf("arc-uart init=0x%x tx=%d rx=%d\n", static_cast<unsigned>(init), Serial::tx(), Serial::rx());
+    std::printf(
+        "arc-uart init=0x%x tx=%d rx=%d baud=%u\n",
+        static_cast<unsigned>(init),
+        Serial::tx(),
+        Serial::rx(),
+        static_cast<unsigned>(Serial::baud()));
 
     constexpr char msg[] = "arc-uart\n";
     const auto wrote = Serial::write(msg, sizeof(msg) - 1U);
