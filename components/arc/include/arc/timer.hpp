@@ -8,6 +8,7 @@
 #include "esp_attr.h"
 #include "esp_check.h"
 
+#include "arc/detail/cold.hpp"
 #include "arc/init.hpp"
 
 namespace arc {
@@ -102,18 +103,13 @@ struct Timer {
         const bool auto_reload = false) noexcept
     {
         create();
-        gptimer_alarm_config_t config{};
-
-        config.alarm_count = count;
-        config.reload_count = reload;
-        config.flags.auto_reload_on_alarm = auto_reload ? 1U : 0U;
-        ESP_ERROR_CHECK(gptimer_set_alarm_action(state.timer, &config));
+        ESP_ERROR_CHECK(detail::cold::timer_alarm(state.timer, count, reload, auto_reload));
     }
 
     static void off() noexcept
     {
         create();
-        ESP_ERROR_CHECK(gptimer_set_alarm_action(state.timer, nullptr));
+        ESP_ERROR_CHECK(detail::cold::timer_alarm_off(state.timer));
     }
 
     [[nodiscard]] static gptimer_handle_t native()
@@ -146,20 +142,13 @@ private:
         }
     }
 
-    static void create()
+    [[gnu::cold]] static void create()
     {
         if (!Init::begin(state.init)) {
             return;
         }
 
-        gptimer_config_t config{};
-        config.clk_src = Source;
-        config.direction = Direction;
-        config.resolution_hz = Hz;
-        config.intr_priority = 0;
-        config.flags.intr_shared = 0;
-        config.flags.allow_pd = 0;
-        ESP_ERROR_CHECK(gptimer_new_timer(&config, &state.timer));
+        ESP_ERROR_CHECK(detail::cold::timer_create({Hz, Source, Direction}, &state.timer));
         Init::pass(state.init);
     }
 
@@ -170,9 +159,7 @@ private:
 
         if constexpr (TimerAlarm<Handler>) {
             if (!state.bound && !state.enabled) {
-                gptimer_event_callbacks_t cbs{};
-                cbs.on_alarm = &on_alarm<Handler>;
-                ESP_ERROR_CHECK(gptimer_register_event_callbacks(state.timer, &cbs, nullptr));
+                ESP_ERROR_CHECK(detail::cold::timer_bind(state.timer, &on_alarm<Handler>));
                 state.bound = true;
             }
         }

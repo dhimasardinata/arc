@@ -9,6 +9,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/detail/cold.hpp"
 #include "arc/fence.hpp"
 #include "arc/init.hpp"
 
@@ -207,31 +208,17 @@ private:
         return false;
     }
 
-    static void init()
+    [[gnu::cold]] static void init()
     {
         if (!Init::begin(state.init)) {
             return;
         }
 
-        mcpwm_capture_timer_config_t timer{};
-        timer.group_id = Group;
-        timer.clk_src = Source;
-        timer.resolution_hz = Hz;
-        timer.flags.allow_pd = 0U;
-        ESP_ERROR_CHECK(mcpwm_new_capture_timer(&timer, &state.timer));
-
-        mcpwm_capture_channel_config_t chan{};
-        chan.gpio_num = Pin;
-        chan.intr_priority = 0;
-        chan.prescale = Prescale;
-        chan.flags.pos_edge = Rise ? 1U : 0U;
-        chan.flags.neg_edge = Fall ? 1U : 0U;
-        chan.flags.invert_cap_signal = Invert ? 1U : 0U;
-        ESP_ERROR_CHECK(mcpwm_new_capture_channel(state.timer, &chan, &state.chan));
-
-        mcpwm_capture_event_callbacks_t cbs{};
-        cbs.on_cap = &on_edge;
-        ESP_ERROR_CHECK(mcpwm_capture_channel_register_event_callbacks(state.chan, &cbs, nullptr));
+        ESP_ERROR_CHECK(detail::cold::capture_create(
+            {Pin, Hz, Group, Prescale, Rise, Fall, Invert, Source},
+            &state.timer,
+            &state.chan));
+        ESP_ERROR_CHECK(detail::cold::capture_bind(state.chan, &on_edge));
         Init::pass(state.init);
     }
 };

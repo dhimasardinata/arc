@@ -7,6 +7,7 @@
 #include "esp_err.h"
 #include "soc/soc_caps.h"
 
+#include "arc/detail/cold.hpp"
 #include "arc/init.hpp"
 #include "arc/result.hpp"
 
@@ -25,16 +26,13 @@ struct Temp {
         ESP_ERROR_CHECK(init());
     }
 
-    [[nodiscard]] static esp_err_t init() noexcept
+    [[gnu::cold]] [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
             return ESP_OK;
         }
 
-        temperature_sensor_config_t config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(Min, Max);
-        config.clk_src = Source;
-        config.flags.allow_pd = AllowPd ? 1U : 0U;
-        const auto err = temperature_sensor_install(&config, &state.sensor);
+        const auto err = detail::cold::temp_install({Min, Max, AllowPd, Source}, &state.sensor);
         if (err == ESP_OK) {
             Init::pass(state.init);
         } else {

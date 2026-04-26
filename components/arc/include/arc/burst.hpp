@@ -12,6 +12,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/detail/cold.hpp"
 #include "arc/init.hpp"
 
 namespace arc {
@@ -70,13 +71,7 @@ struct Burst {
         const bool always_on = false) noexcept
     {
         init();
-
-        rmt_carrier_config_t config{};
-        config.frequency_hz = frequency_hz;
-        config.duty_cycle = duty_cycle;
-        config.flags.polarity_active_low = active_low ? 1U : 0U;
-        config.flags.always_on = always_on ? 1U : 0U;
-        return rmt_apply_carrier(state.channel, &config);
+        return detail::cold::rmt_carrier(state.channel, frequency_hz, duty_cycle, active_low, always_on);
     }
 
     [[nodiscard]] static esp_err_t plain() noexcept
@@ -97,17 +92,7 @@ struct Burst {
         if (!state.enabled) {
             start();
         }
-
-        rmt_transmit_config_t config{};
-        config.loop_count = loop;
-        config.flags.eot_level = eot ? 1U : 0U;
-        config.flags.queue_nonblocking = nonblocking ? 1U : 0U;
-        return rmt_transmit(
-            state.channel,
-            state.encoder,
-            symbols,
-            count * sizeof(rmt_symbol_word_t),
-            &config);
+        return detail::cold::burst_transmit(state.channel, state.encoder, symbols, count, loop, nonblocking, eot);
     }
 
     template <std::size_t N>
@@ -146,27 +131,16 @@ private:
 
     constinit static inline State state{};
 
-    static void init()
+    [[gnu::cold]] static void init()
     {
         if (!Init::begin(state.init)) {
             return;
         }
 
-        rmt_tx_channel_config_t channel{};
-        channel.gpio_num = static_cast<gpio_num_t>(Pin);
-        channel.clk_src = Source;
-        channel.resolution_hz = Hz;
-        channel.mem_block_symbols = Symbols;
-        channel.trans_queue_depth = Depth;
-        channel.intr_priority = 0;
-        channel.flags.invert_out = 0;
-        channel.flags.with_dma = Dma ? 1U : 0U;
-        channel.flags.allow_pd = 0;
-        channel.flags.init_level = 0;
-        ESP_ERROR_CHECK(rmt_new_tx_channel(&channel, &state.channel));
-
-        rmt_copy_encoder_config_t encoder{};
-        ESP_ERROR_CHECK(rmt_new_copy_encoder(&encoder, &state.encoder));
+        ESP_ERROR_CHECK(detail::cold::burst_create(
+            {Pin, Hz, Symbols, Depth, Dma, Source},
+            &state.channel,
+            &state.encoder));
         Init::pass(state.init);
     }
 };

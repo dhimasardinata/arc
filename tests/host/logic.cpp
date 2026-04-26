@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <thread>
 
@@ -33,10 +34,27 @@ void expect(const bool condition, const char* const message)
     }
 }
 
+template <typename Fn>
+void expect_abort(Fn&& fn, const char* const message)
+{
+    const auto pid = fork();
+    expect(pid >= 0, "fork");
+
+    if (pid == 0) {
+        fn();
+        _exit(0);
+    }
+
+    int status = 0;
+    expect(waitpid(pid, &status, 0) == pid, "waitpid");
+    expect(WIFSIGNALED(status) || (WIFEXITED(status) && WEXITSTATUS(status) != 0), message);
+}
+
 void test_spsc()
 {
     arc::Spsc<int, 4> queue;
     expect(queue.cap() == 3U, "SPSC usable capacity");
+    expect(queue.bytes() == sizeof(queue), "SPSC bytes");
     expect(queue.empty(), "SPSC starts empty");
     expect(queue.try_push(1), "SPSC push 1");
     expect(queue.try_push(2), "SPSC push 2");
@@ -52,10 +70,33 @@ void test_spsc()
     expect(!queue.try_pop(value), "SPSC empty rejects");
 }
 
+void test_checked_spsc()
+{
+    arc::Audit<arc::Spsc<int, 4>> queue;
+    expect(queue.cap() == 3U, "Audit SPSC usable capacity");
+    expect(queue.try_push(1), "Audit SPSC push 1");
+
+    int value{};
+    expect(queue.try_pop(value) && value == 1, "Audit SPSC pop 1");
+
+    expect_abort(
+        []() {
+            arc::Audit<arc::Spsc<int, 4>> lane;
+            expect(lane.try_push(1), "Audit SPSC child first push");
+            std::thread other([&lane]() {
+                static_cast<void>(lane.try_push(2));
+            });
+            other.join();
+        },
+        "Audit SPSC rejects a second producer");
+}
+
 void test_mpsc_single()
 {
     arc::Mpsc<int, 4> queue;
     expect(queue.cap() == 4U, "MPSC capacity");
+    expect(queue.cell_align() == arc::cache_line, "MPSC cache-line alignment");
+    expect(queue.bytes() == sizeof(queue), "MPSC bytes");
     expect(queue.try_push(7), "MPSC push 7");
     expect(queue.try_push(8), "MPSC push 8");
     expect(queue.try_push(9), "MPSC push 9");
@@ -70,6 +111,43 @@ void test_mpsc_single()
     expect(queue.try_pop(value) && value == 10, "MPSC pop 10");
     expect(queue.try_pop(value) && value == 11, "MPSC pop 11");
     expect(!queue.try_pop(value), "MPSC empty rejects");
+}
+
+void test_compact_mpsc()
+{
+    arc::DenseMpsc<std::uint32_t, 1024> queue;
+    expect(queue.cap() == 1024U, "Dense MPSC capacity");
+    expect(queue.cell_align() == alignof(std::uint32_t), "Dense MPSC alignment");
+    expect(queue.cell_bytes() < arc::Mpsc<std::uint32_t, 1024>::cell_bytes(), "Dense MPSC cell shrinks");
+    expect(queue.bytes() < arc::Mpsc<std::uint32_t, 1024>::bytes(), "Dense MPSC bytes shrink");
+    expect(queue.try_push(7U), "Dense MPSC push");
+
+    std::uint32_t value{};
+    expect(queue.try_pop(value) && value == 7U, "Dense MPSC pop");
+}
+
+void test_checked_mpsc()
+{
+    arc::Audit<arc::Mpsc<int, 4>> queue;
+    expect(queue.try_push(1), "Audit MPSC push 1");
+
+    int value{};
+    expect(queue.try_pop(value) && value == 1, "Audit MPSC pop 1");
+
+    expect_abort(
+        []() {
+            arc::Audit<arc::Mpsc<int, 4>> lane;
+            expect(lane.try_push(1), "Audit MPSC child push");
+            int first{};
+            expect(lane.try_pop(first) && first == 1, "Audit MPSC child first pop");
+            expect(lane.try_push(2), "Audit MPSC child second push");
+            std::thread other([&lane]() {
+                int second{};
+                static_cast<void>(lane.try_pop(second));
+            });
+            other.join();
+        },
+        "Audit MPSC rejects a second consumer");
 }
 
 void test_mpsc_threads()
@@ -126,6 +204,7 @@ void test_fanin()
     arc::Fanin<int, 4, 3> fan;
     expect(fan.producers() == 3U, "Fanin producer count");
     expect(fan.cap() == 3U, "Fanin lane capacity");
+    expect(fan.bytes() == sizeof(fan), "Fanin bytes");
     expect(fan.try_push<0>(10), "Fanin push lane 0");
     expect(fan.try_push<1>(20), "Fanin push lane 1");
     expect(fan.try_push<2>(30), "Fanin push lane 2");
@@ -138,6 +217,19 @@ void test_fanin()
     expect(fan.try_pop(producer, value) && producer == 2U && value == 30, "Fanin pop lane 2");
     expect(fan.try_pop(producer, value) && producer == 0U && value == 11, "Fanin round-robin resume");
     expect(!fan.try_pop(producer, value), "Fanin empty rejects");
+}
+
+void test_checked_fanin()
+{
+    arc::Audit<arc::Fanin<int, 4, 2>> fan;
+    expect(fan.producers() == 2U, "Audit Fanin producer count");
+    expect(fan.try_push<0>(10), "Audit Fanin push lane 0");
+    expect(fan.try_push<1>(20), "Audit Fanin push lane 1");
+
+    std::size_t producer{};
+    int value{};
+    expect(fan.try_pop(producer, value) && producer == 0U && value == 10, "Audit Fanin pop lane 0");
+    expect(fan.try_pop(producer, value) && producer == 1U && value == 20, "Audit Fanin pop lane 1");
 }
 
 void test_dsp()
@@ -168,9 +260,6 @@ void test_dsp()
     expect(Filter::step(state, taps, 5) == 5, "DSP FIR clear");
 }
 
-#if !defined(ARC_HOST_TSAN)
-// SeqReg uses a seqlock-style raw snapshot copy. That contract is intentional,
-// but ThreadSanitizer reports it as a data race by construction.
 void test_seqreg()
 {
     struct Snapshot {
@@ -219,7 +308,6 @@ void test_seqreg()
     expect(final.inv == ~20000U, "SeqReg final inverse");
     expect(final.total == static_cast<std::uint64_t>(20000U) * 3U, "SeqReg final total");
 }
-#endif
 
 void test_file()
 {
@@ -266,13 +354,15 @@ void test_file()
 int main()
 {
     test_spsc();
+    test_checked_spsc();
     test_mpsc_single();
+    test_compact_mpsc();
+    test_checked_mpsc();
     test_mpsc_threads();
     test_fanin();
+    test_checked_fanin();
     test_dsp();
-#if !defined(ARC_HOST_TSAN)
     test_seqreg();
-#endif
     test_file();
     std::puts("arc host tests: OK");
 }

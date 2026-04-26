@@ -10,6 +10,7 @@
 #include "esp_adc/adc_continuous.h"
 #include "soc/soc_caps.h"
 
+#include "arc/detail/cold.hpp"
 #include "arc/fence.hpp"
 #include "arc/init.hpp"
 
@@ -177,33 +178,20 @@ private:
         slot.bit_width = static_cast<std::uint8_t>(Pad::width());
     }
 
-    static void init()
+    [[gnu::cold]] static void init()
     {
         if (!Init::begin(state.init)) {
             return;
         }
 
-        adc_continuous_handle_cfg_t cfg{};
-        cfg.max_store_buf_size = StoreBytes;
-        cfg.conv_frame_size = FrameBytes;
-        cfg.flags.flush_pool = Flush ? 1U : 0U;
-        ESP_ERROR_CHECK(adc_continuous_new_handle(&cfg, &state.handle));
+        ESP_ERROR_CHECK(detail::cold::scope_create({FrameBytes, StoreBytes, Flush}, &state.handle));
 
         std::array<adc_digi_pattern_config_t, sizeof...(Pads)> pattern{};
         std::size_t index = 0U;
         (bind<Pads>(pattern[index++]), ...);
 
-        adc_continuous_config_t dig{};
-        dig.pattern_num = static_cast<std::uint32_t>(pattern.size());
-        dig.adc_pattern = pattern.data();
-        dig.sample_freq_hz = Hz;
-        dig.conv_mode = ADC_CONV_SINGLE_UNIT_1;
-        ESP_ERROR_CHECK(adc_continuous_config(state.handle, &dig));
-
-        adc_continuous_evt_cbs_t cbs{};
-        cbs.on_conv_done = &on_frame;
-        cbs.on_pool_ovf = &on_overflow;
-        ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(state.handle, &cbs, nullptr));
+        ESP_ERROR_CHECK(detail::cold::scope_config(state.handle, pattern.data(), pattern.size(), Hz));
+        ESP_ERROR_CHECK(detail::cold::scope_bind(state.handle, &on_frame, &on_overflow));
         Init::pass(state.init);
     }
 };

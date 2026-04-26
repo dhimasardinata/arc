@@ -14,6 +14,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/detail/cold.hpp"
 #include "arc/fence.hpp"
 #include "arc/init.hpp"
 
@@ -61,13 +62,7 @@ struct Trace {
         const bool always_on = false) noexcept
     {
         init();
-
-        rmt_carrier_config_t config{};
-        config.frequency_hz = frequency_hz;
-        config.duty_cycle = duty_cycle;
-        config.flags.polarity_active_low = active_low ? 1U : 0U;
-        config.flags.always_on = always_on ? 1U : 0U;
-        return rmt_apply_carrier(state.channel, &config);
+        return detail::cold::rmt_carrier(state.channel, frequency_hz, duty_cycle, active_low, always_on);
     }
 
     [[nodiscard]] static esp_err_t plain() noexcept
@@ -91,13 +86,7 @@ struct Trace {
     {
         start();
         clear();
-
-        rmt_receive_config_t config{};
-        config.signal_range_min_ns = min_ns;
-        config.signal_range_max_ns = max_ns;
-        config.flags.en_partial_rx = partial ? 1U : 0U;
-
-        return rmt_receive(state.channel, buffer.data(), sizeof(buffer), &config);
+        return detail::cold::trace_receive(state.channel, buffer.data(), sizeof(buffer), min_ns, max_ns, partial);
     }
 
     [[nodiscard]] static bool ready() noexcept
@@ -157,27 +146,16 @@ private:
         return false;
     }
 
-    static void init()
+    [[gnu::cold]] static void init()
     {
         if (!Init::begin(state.init)) {
             return;
         }
 
-        rmt_rx_channel_config_t channel{};
-        channel.gpio_num = static_cast<gpio_num_t>(Pin);
-        channel.clk_src = Source;
-        channel.resolution_hz = Hz;
-        channel.mem_block_symbols = Symbols;
-        channel.intr_priority = 0;
-        channel.flags.invert_in = 0;
-        channel.flags.with_dma = Dma ? 1U : 0U;
-        channel.flags.allow_pd = 0;
-        ESP_ERROR_CHECK(rmt_new_rx_channel(&channel, &state.channel));
+        ESP_ERROR_CHECK(detail::cold::trace_create({Pin, Hz, Symbols, Dma, Source}, &state.channel));
 
         if (!state.bound) {
-            rmt_rx_event_callbacks_t cbs{};
-            cbs.on_recv_done = &on_done;
-            ESP_ERROR_CHECK(rmt_rx_register_event_callbacks(state.channel, &cbs, nullptr));
+            ESP_ERROR_CHECK(detail::cold::trace_bind(state.channel, &on_done));
             state.bound = true;
         }
         Init::pass(state.init);

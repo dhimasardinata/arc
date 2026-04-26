@@ -8,6 +8,8 @@
 
 #include "esp_attr.h"
 
+#include "arc/audit.hpp"
+#include "arc/detail/owner.hpp"
 #include "arc/sdk.hpp"
 
 namespace arc {
@@ -51,6 +53,11 @@ struct Spsc {
     [[nodiscard]] static constexpr std::size_t cap() noexcept
     {
         return Capacity - 1U;
+    }
+
+    [[nodiscard]] static constexpr std::size_t bytes() noexcept
+    {
+        return sizeof(Spsc);
     }
 
     template <typename Fn>
@@ -102,5 +109,60 @@ private:
 
 template <typename T, std::size_t Capacity>
 using Ring = Spsc<T, Capacity>;
+
+template <typename T, std::size_t Capacity>
+struct Audit<Spsc<T, Capacity>> {
+    [[nodiscard]] inline bool try_push(const T& value) noexcept
+    {
+        producer_.assert_single("arc::Audit<Spsc> push must stay single-producer");
+        return lane_.try_push(value);
+    }
+
+    [[nodiscard]] inline bool try_pop(T& value) noexcept
+    {
+        consumer_.assert_single("arc::Audit<Spsc> pop must stay single-consumer");
+        return lane_.try_pop(value);
+    }
+
+    [[nodiscard]] inline bool empty() const noexcept
+    {
+        return lane_.empty();
+    }
+
+    [[nodiscard]] static constexpr std::size_t cap() noexcept
+    {
+        return Spsc<T, Capacity>::cap();
+    }
+
+    [[nodiscard]] static constexpr std::size_t bytes() noexcept
+    {
+        return sizeof(Audit<Spsc<T, Capacity>>);
+    }
+
+    template <typename Fn>
+    [[nodiscard]] inline std::size_t drain(
+        T& value,
+        Fn&& fn,
+        const std::size_t max = Capacity - 1U) noexcept(noexcept(fn(value)))
+    {
+        std::size_t count{};
+        while (count < max && try_pop(value)) {
+            fn(value);
+            ++count;
+        }
+        return count;
+    }
+
+private:
+    Spsc<T, Capacity> lane_{};
+    detail::EndpointOwner producer_{};
+    detail::EndpointOwner consumer_{};
+};
+
+template <typename T, std::size_t Capacity>
+using CheckedSpsc = Audit<Spsc<T, Capacity>>;
+
+template <typename T, std::size_t Capacity>
+using CheckedRing = Audit<Spsc<T, Capacity>>;
 
 }  // namespace arc

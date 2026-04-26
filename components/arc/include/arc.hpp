@@ -1,6 +1,7 @@
 #pragma once
 
 #include "arc/bus.hpp"
+#include "arc/audit.hpp"
 #include "arc/cache.hpp"
 #include "arc/caps.hpp"
 #include "arc/claim.hpp"
@@ -196,6 +197,10 @@
 
 #if __has_include("esp_event.h") && __has_include("esp_netif.h") && __has_include("esp_wifi.h") && __has_include("nvs_flash.h")
 #include "arc/net.hpp"
+#endif
+
+#if __has_include("esp_event.h") && __has_include("esp_netif.h") && __has_include("esp_wifi.h") && __has_include("nvs_flash.h") && __has_include("lwip/apps/mdns.h") && __has_include("esp_netif_net_stack.h")
+#include "arc/mdns.hpp"
 #endif
 
 #if __has_include("esp_eap_client.h") && __has_include("esp_wifi.h")

@@ -8,6 +8,8 @@
 
 #include "esp_attr.h"
 
+#include "arc/audit.hpp"
+#include "arc/detail/owner.hpp"
 #include "arc/spsc.hpp"
 
 namespace arc {
@@ -69,6 +71,11 @@ struct Fanin {
         return Producers;
     }
 
+    [[nodiscard]] static constexpr std::size_t bytes() noexcept
+    {
+        return sizeof(Fanin);
+    }
+
     template <typename Fn>
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t drain(
         T& value,
@@ -104,5 +111,77 @@ private:
     std::array<Spsc<T, Capacity>, Producers> lanes_{};
     std::size_t cursor_{};
 };
+
+template <typename T, std::size_t Capacity, std::size_t Producers>
+struct Audit<Fanin<T, Capacity, Producers>> {
+    template <std::size_t Producer>
+    [[nodiscard]] inline bool try_push(const T& value) noexcept
+    {
+        static_assert(Producer < Producers, "invalid fanin producer");
+        producers_[Producer].assert_single("arc::Audit<Fanin> lane must stay single-producer");
+        return fan_.template try_push<Producer>(value);
+    }
+
+    [[nodiscard]] inline bool try_pop(T& value) noexcept
+    {
+        consumer_.assert_single("arc::Audit<Fanin> pop must stay single-consumer");
+        return fan_.try_pop(value);
+    }
+
+    [[nodiscard]] inline bool try_pop(
+        std::size_t& producer,
+        T& value) noexcept
+    {
+        consumer_.assert_single("arc::Audit<Fanin> pop must stay single-consumer");
+        return fan_.try_pop(producer, value);
+    }
+
+    [[nodiscard]] inline bool empty() const noexcept
+    {
+        return fan_.empty();
+    }
+
+    [[nodiscard]] static constexpr std::size_t cap() noexcept
+    {
+        return Fanin<T, Capacity, Producers>::cap();
+    }
+
+    [[nodiscard]] static constexpr std::size_t producers() noexcept
+    {
+        return Fanin<T, Capacity, Producers>::producers();
+    }
+
+    [[nodiscard]] static constexpr std::size_t bytes() noexcept
+    {
+        return sizeof(Audit<Fanin<T, Capacity, Producers>>);
+    }
+
+    template <typename Fn>
+    [[nodiscard]] inline std::size_t drain(
+        T& value,
+        Fn&& fn,
+        const std::size_t max = (Capacity - 1U) * Producers) noexcept
+    {
+        std::size_t count{};
+        std::size_t producer{};
+        while (count < max && try_pop(producer, value)) {
+            if constexpr (requires { fn(producer, value); }) {
+                fn(producer, value);
+            } else {
+                fn(value);
+            }
+            ++count;
+        }
+        return count;
+    }
+
+private:
+    Fanin<T, Capacity, Producers> fan_{};
+    std::array<detail::EndpointOwner, Producers> producers_{};
+    detail::EndpointOwner consumer_{};
+};
+
+template <typename T, std::size_t Capacity, std::size_t Producers>
+using CheckedFanin = Audit<Fanin<T, Capacity, Producers>>;
 
 }  // namespace arc

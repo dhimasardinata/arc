@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "soc/soc_caps.h"
 
+#include "arc/detail/cold.hpp"
 #include "arc/init.hpp"
 #include "arc/result.hpp"
 
@@ -26,7 +27,7 @@ struct Usb {
     static_assert(Tx > 0U, "USB TX buffer must be non-zero");
     static_assert(Rx > 0U, "USB RX buffer must be non-zero");
 
-    [[nodiscard]] static esp_err_t init() noexcept
+    [[gnu::cold]] [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
             return ESP_OK;
@@ -37,10 +38,7 @@ struct Usb {
             return ESP_OK;
         }
 
-        usb_serial_jtag_driver_config_t cfg{};
-        cfg.tx_buffer_size = Tx;
-        cfg.rx_buffer_size = Rx;
-        const auto err = usb_serial_jtag_driver_install(&cfg);
+        const auto err = detail::cold::usb_install({Tx, Rx});
         if (err == ESP_OK) {
             Init::pass(state.init);
         } else {

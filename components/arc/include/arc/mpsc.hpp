@@ -8,19 +8,29 @@
 
 #include "esp_attr.h"
 
+#include "arc/audit.hpp"
+#include "arc/detail/owner.hpp"
 #include "arc/fence.hpp"
 #include "arc/sdk.hpp"
 
 namespace arc {
 
-template <typename T, std::size_t Capacity>
-struct Mpsc {
+namespace detail {
+
+template <typename T>
+inline constexpr std::size_t dense_mpsc_align =
+    alignof(T) > alignof(std::uint32_t) ? alignof(T) : alignof(std::uint32_t);
+
+template <typename T, std::size_t Capacity, std::size_t CellAlign>
+struct MpscImpl {
     static_assert(Capacity > 1, "MPSC capacity must be greater than one");
     static_assert(std::has_single_bit(Capacity), "MPSC capacity must be a power of two");
     static_assert(Capacity <= (std::size_t{1} << 31U), "MPSC capacity is too large");
     static_assert(std::is_trivially_copyable_v<T>, "MPSC payload must be trivially copyable");
+    static_assert(CellAlign >= alignof(std::uint32_t), "MPSC cell alignment must fit the sequence word");
+    static_assert((CellAlign & (CellAlign - 1U)) == 0U, "MPSC cell alignment must be a power of two");
 
-    constexpr Mpsc() noexcept
+    constexpr MpscImpl() noexcept
     {
         for (std::size_t i = 0; i < Capacity; ++i) {
             buffer_[i].seq = static_cast<std::uint32_t>(i);
@@ -83,6 +93,21 @@ struct Mpsc {
         return Capacity;
     }
 
+    [[nodiscard]] static constexpr std::size_t cell_align() noexcept
+    {
+        return CellAlign;
+    }
+
+    [[nodiscard]] static constexpr std::size_t cell_bytes() noexcept
+    {
+        return sizeof(Cell);
+    }
+
+    [[nodiscard]] static constexpr std::size_t bytes() noexcept
+    {
+        return sizeof(MpscImpl);
+    }
+
     template <typename Fn>
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t drain(
         T& value,
@@ -99,7 +124,7 @@ struct Mpsc {
 
 private:
     struct Cell {
-        alignas(cache_line) std::uint32_t seq{};
+        alignas(CellAlign) std::uint32_t seq{};
         T value{};
     };
 
@@ -172,7 +197,89 @@ private:
     alignas(cache_line) std::uint32_t tail_{0};
 };
 
+}  // namespace detail
+
+template <typename T, std::size_t Capacity>
+using Mpsc = detail::MpscImpl<T, Capacity, cache_line>;
+
+template <typename T, std::size_t Capacity>
+using DenseMpsc = detail::MpscImpl<T, Capacity, detail::dense_mpsc_align<T>>;
+
 template <typename T, std::size_t Capacity>
 using Mux = Mpsc<T, Capacity>;
+
+template <typename T, std::size_t Capacity>
+using DenseMux = DenseMpsc<T, Capacity>;
+
+template <typename T, std::size_t Capacity, std::size_t CellAlign>
+struct Audit<detail::MpscImpl<T, Capacity, CellAlign>> {
+    using Lane = detail::MpscImpl<T, Capacity, CellAlign>;
+
+    [[nodiscard]] inline bool try_push(const T& value) noexcept
+    {
+        return lane_.try_push(value);
+    }
+
+    [[nodiscard]] inline bool try_pop(T& value) noexcept
+    {
+        consumer_.assert_single("arc::Audit<Mpsc> pop must stay single-consumer");
+        return lane_.try_pop(value);
+    }
+
+    [[nodiscard]] inline bool empty() const noexcept
+    {
+        return lane_.empty();
+    }
+
+    [[nodiscard]] static constexpr std::size_t cap() noexcept
+    {
+        return Lane::cap();
+    }
+
+    [[nodiscard]] static constexpr std::size_t cell_align() noexcept
+    {
+        return Lane::cell_align();
+    }
+
+    [[nodiscard]] static constexpr std::size_t cell_bytes() noexcept
+    {
+        return Lane::cell_bytes();
+    }
+
+    [[nodiscard]] static constexpr std::size_t bytes() noexcept
+    {
+        return sizeof(Audit<detail::MpscImpl<T, Capacity, CellAlign>>);
+    }
+
+    template <typename Fn>
+    [[nodiscard]] inline std::size_t drain(
+        T& value,
+        Fn&& fn,
+        const std::size_t max = Capacity) noexcept(noexcept(fn(value)))
+    {
+        std::size_t count{};
+        while (count < max && try_pop(value)) {
+            fn(value);
+            ++count;
+        }
+        return count;
+    }
+
+private:
+    Lane lane_{};
+    detail::EndpointOwner consumer_{};
+};
+
+template <typename T, std::size_t Capacity>
+using CompactMpsc = DenseMpsc<T, Capacity>;
+
+template <typename T, std::size_t Capacity>
+using CompactMux = DenseMux<T, Capacity>;
+
+template <typename T, std::size_t Capacity>
+using CheckedMpsc = Audit<Mpsc<T, Capacity>>;
+
+template <typename T, std::size_t Capacity>
+using CheckedCompactMpsc = Audit<DenseMpsc<T, Capacity>>;
 
 }  // namespace arc

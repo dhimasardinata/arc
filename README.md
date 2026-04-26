@@ -64,7 +64,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
 - `arc::Spsc` gives a bounded lock-free lane for one producer and one consumer; `arc::Ring` remains the terse compatibility alias.
+- `arc::Audit<Topology>` adds opt-in ownership assertions when you want topology misuse to fail fast instead of staying purely contractual.
 - `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer; `arc::Mux` is the terse topology alias.
+- `arc::DenseMpsc` keeps the same algorithm but packs cells tightly when RAM density matters more than cache-line isolation.
 - `arc::Fanin` gives per-producer SPSC lanes when producer preemption must not block completed work from other producers.
 - `arc::SeqReg` gives multi-word latest-snapshot handoff without queues or torn reads.
 - `arc::dmabuf`, `arc::simdbuf`, `arc::ahbbuf`, `arc::axibuf`, and one-word STL allocators make DMA/SIMD/descriptor/RTC-capable heap placement explicit.
@@ -75,9 +77,12 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Eap` configures WPA2/WPA3 Enterprise credentials and joins through the shared radio without pulling WPA supplicant into non-enterprise builds.
 - `arc::net::Tcp` gives direct TCP socket clients for Core 0 control/config paths.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP client sessions.
+- `arc::net::Mdns` adds a thin discovery battery on top of `esp_netif` and the shared Wi-Fi lane when lwIP mDNS headers exist.
 - `arc::Ble` gives a NimBLE lifecycle, host-task, GAP, advertising, and scanning bridge without taking over GATT profile design.
 - `arc::net::Udp` is a reusable Core 0 transport plane when you opt into `#include "arc/udp.hpp"`.
 - `arc::net::EspNow` is a reusable Core 0 raw-radio plane when you opt into `#include "arc/espnow.hpp"`.
+
+The umbrella `arc.hpp` only surfaces optional batteries like `Mdns` when the matching SDK headers are visible through `__has_include(...)`; Arc does not fake protocol availability.
 
 ## Layout
 
@@ -155,6 +160,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │           └── arc
 │               ├── adc.hpp
 │               ├── aes.hpp
+│               ├── audit.hpp
 │               ├── ble.hpp
 │               ├── bridge.hpp
 │               ├── bus.hpp
@@ -172,6 +178,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── drive.hpp
 │               ├── dvp.hpp
 │               ├── eap.hpp
+│               ├── detail
+│               │   ├── cold.hpp
+│               │   └── owner.hpp
 │               ├── fanin.hpp
 │               ├── fence.hpp
 │               ├── file.hpp
@@ -186,6 +195,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 │               ├── i80.hpp
 │               ├── i2s.hpp
 │               ├── mpsc.hpp
+│               ├── mdns.hpp
 │               ├── otg.hpp
 │               ├── plane.hpp
 │               ├── ota.hpp
@@ -341,6 +351,7 @@ Feature names map directly to hardware lanes:
 - `gptimer`
 - `hmac`
 - `http`
+- `mdns`
 - `i2c`
 - `i2s`
 - `spi`
@@ -956,9 +967,12 @@ Bounded lock-free lane for one producer and one consumer.
 - `try_pop(event)` is consumer-only.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation.
 - `cap()` exposes the usable capacity; the backing ring keeps one slot empty.
+- `bytes()` exposes the queue object footprint.
 - Payloads stay trivially copyable and the backing ring size remains a power of two.
 
 Use this when event history matters and the ownership contract is exactly one writer and one reader. `arc::Ring<T, Capacity>` is the compatibility alias for the same type.
+
+`arc::Audit<arc::Spsc<T, Capacity>>` keeps the same API but binds the first producer and consumer it sees and fires `configASSERT` if another task/thread touches that endpoint later.
 
 ### `arc::Mpsc<T, Capacity>`
 
@@ -968,12 +982,15 @@ Bounded lock-free fan-in for many producers and one consumer.
 - `try_pop(event)` is single-consumer and fits Core 0 drain loops.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation.
 - `cap()` exposes the power-of-two static capacity.
+- `cell_align()`, `cell_bytes()`, and `bytes()` expose the queue's RAM geometry.
 - Sequence checks use explicit 32-bit modular deltas, so wrap is handled on the queue clock instead of pointer-width signed math.
 - Payloads stay trivially copyable and capacity remains a power of two.
 - Each cell is cache-line isolated to avoid producer/consumer false sharing, so large capacities intentionally spend more internal RAM than a packed queue.
 - CAS contention uses a tiny capped `nop` backoff in IRAM instead of immediately hammering the shared head cache line.
 
 Use this when several OS-side tasks with the same scheduling priority need to feed one telemetry or transport owner without a FreeRTOS queue. If producer preemption must never block completed work from another producer, use `arc::Fanin`.
+
+`arc::DenseMpsc<T, Capacity>` keeps the same queue semantics but drops cache-line isolation and packs each cell to the payload's natural alignment. Use it when internal RAM density matters more than worst-case false-sharing avoidance. `arc::Audit<arc::Mpsc<T, Capacity>>` adds a fail-fast single-consumer assertion on top of the cache-line-isolated lane, and `arc::Audit<arc::DenseMpsc<T, Capacity>>` combines both trade-offs.
 
 ### `arc::Mux<T, Capacity>`
 
@@ -989,9 +1006,11 @@ Static fan-in made from one SPSC lane per producer and one round-robin consumer.
 - `try_pop(event)` drains any completed producer without waiting behind another producer's half-finished slot.
 - `try_pop(producer, event)` also reports which lane produced the event.
 - `drain(scratch, fn, max)` accepts either `fn(event)` or `fn(producer, event)`.
-- `cap()` is the usable per-producer lane capacity and `producers()` is the static lane count.
+- `cap()` is the usable per-producer lane capacity, `producers()` is the static lane count, and `bytes()` exposes the full object footprint.
 
 Use this when producer identity is static and tail latency matters more than one global FIFO order.
+
+`arc::Audit<arc::Fanin<T, Capacity, Producers>>` keeps the same API and asserts that each lane remains single-producer and the fan-in side stays single-consumer.
 
 ### `arc::Pwm<Pin, Hz, DutyPermille = 500, Channel = 0, Timer = Channel % 4, Bits = 10>`
 
@@ -1519,7 +1538,7 @@ Seqlock-style latest-snapshot lane for payloads larger than one word.
 - `read()` retries until one stable snapshot is observed
 - `try_read(value)` gives you the same read without blocking
 
-`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. `write()` masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
+`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It now publishes into an inactive shadow slot before flipping the even sequence, so readers never copy from the slot a writer is mutating. `write()` still masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
 
@@ -1729,6 +1748,18 @@ RAII wrapper for ESP-IDF HTTP client sessions.
 - `status()`, `length()`, and `native()` expose response metadata and the raw handle.
 
 Use this for Core 0 REST/config exchanges where HTTP should stay outside the realtime plane.
+
+### `arc::net::Mdns`
+
+Thin mDNS owner for the lwIP responder already underneath `esp_netif`.
+
+- `host(name)` binds or renames the STA host advertisement on the shared `arc::net::Radio` interface.
+- `ap(name)` does the same for the AP side when AP mode exists.
+- `host(iface, name)`, `off(iface)`, `active(iface)`, `announce(iface)`, and `restart(iface)` expose the explicit per-netif path.
+- `Service::make(...)` and `Service::ap(...)` return RAII service registrations that remove their slot on destruction.
+- TXT generation stays an opt-in lwIP callback instead of a framework-owned string builder.
+
+Use this when you want discovery batteries without inventing a second Wi-Fi ownership model.
 
 ### `arc::Ble`
 

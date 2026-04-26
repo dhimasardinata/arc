@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <type_traits>
 
@@ -38,11 +39,13 @@ struct alignas(cache_line) SeqReg {
     void write_unmasked(const T& value) noexcept
     {
         const auto seq = __atomic_load_n(&seq_, __ATOMIC_RELAXED);
+        const auto next = seq + 2U;
+        const auto slot = index(next);
         __atomic_store_n(&seq_, seq + 1U, __ATOMIC_RELEASE);
         __atomic_thread_fence(__ATOMIC_SEQ_CST);
-        __builtin_memcpy(&value_, &value, sizeof(T));
+        __builtin_memcpy(&slots_[slot], &value, sizeof(T));
         __atomic_thread_fence(__ATOMIC_SEQ_CST);
-        __atomic_store_n(&seq_, seq + 2U, __ATOMIC_RELEASE);
+        __atomic_store_n(&seq_, next, __ATOMIC_RELEASE);
     }
 
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] T read() const noexcept
@@ -61,15 +64,20 @@ struct alignas(cache_line) SeqReg {
             return false;
         }
 
-        __builtin_memcpy(&value, &value_, sizeof(T));
+        __builtin_memcpy(&value, &slots_[index(head)], sizeof(T));
         __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
         return head == __atomic_load_n(&seq_, __ATOMIC_ACQUIRE);
     }
 
 private:
+    [[nodiscard]] static constexpr std::size_t index(const std::uint32_t seq) noexcept
+    {
+        return (seq >> 1U) & 1U;
+    }
+
     alignas(4) std::uint32_t seq_{0};
-    alignas(4) T value_{};
+    std::array<T, 2> slots_{};
 };
 
 }  // namespace arc
