@@ -179,19 +179,22 @@ private:
     inline constexpr static std::uint32_t ready = 2U;
 };
 
-struct InitTxn {
-    InitTxn() = default;
+namespace detail {
 
-    InitTxn(const InitTxn&) = delete;
-    InitTxn& operator=(const InitTxn&) = delete;
+template <typename Machine>
+struct InitTxnFor {
+    InitTxnFor() = default;
 
-    InitTxn(InitTxn&& other) noexcept
+    InitTxnFor(const InitTxnFor&) = delete;
+    InitTxnFor& operator=(const InitTxnFor&) = delete;
+
+    InitTxnFor(InitTxnFor&& other) noexcept
         : state_(other.state_)
     {
         other.state_ = nullptr;
     }
 
-    InitTxn& operator=(InitTxn&& other) noexcept
+    InitTxnFor& operator=(InitTxnFor&& other) noexcept
     {
         if (this != &other) {
             rollback();
@@ -201,17 +204,17 @@ struct InitTxn {
         return *this;
     }
 
-    ~InitTxn()
+    ~InitTxnFor()
     {
         rollback();
     }
 
-    [[nodiscard]] static InitTxn begin(std::uint32_t& state) noexcept
+    [[nodiscard]] static InitTxnFor begin(std::uint32_t& state) noexcept
     {
-        if (!Init::begin(state)) {
+        if (!Machine::begin(state)) {
             return {};
         }
-        return InitTxn(state);
+        return InitTxnFor(state);
     }
 
     [[nodiscard]] explicit operator bool() const noexcept
@@ -225,7 +228,7 @@ struct InitTxn {
             return false;
         }
 
-        Init::pass(*state_);
+        Machine::pass(*state_);
         state_ = nullptr;
         return true;
     }
@@ -236,13 +239,13 @@ struct InitTxn {
             return false;
         }
 
-        Init::fail(*state_);
+        Machine::fail(*state_);
         state_ = nullptr;
         return true;
     }
 
 private:
-    explicit InitTxn(std::uint32_t& state) noexcept
+    explicit InitTxnFor(std::uint32_t& state) noexcept
         : state_(&state)
     {
     }
@@ -253,12 +256,16 @@ private:
             return;
         }
 
-        Init::fail(*state_);
+        Machine::fail(*state_);
         state_ = nullptr;
     }
 
     std::uint32_t* state_{};
 };
+
+}  // namespace detail
+
+using InitTxn = detail::InitTxnFor<Init>;
 
 struct RefInit {
     [[nodiscard]] static bool begin(std::uint32_t& state) noexcept
@@ -377,86 +384,7 @@ private:
     inline constexpr static std::uint32_t max_refs = busy - 1U;
 };
 
-struct RefInitTxn {
-    RefInitTxn() = default;
-
-    RefInitTxn(const RefInitTxn&) = delete;
-    RefInitTxn& operator=(const RefInitTxn&) = delete;
-
-    RefInitTxn(RefInitTxn&& other) noexcept
-        : state_(other.state_)
-    {
-        other.state_ = nullptr;
-    }
-
-    RefInitTxn& operator=(RefInitTxn&& other) noexcept
-    {
-        if (this != &other) {
-            rollback();
-            state_ = other.state_;
-            other.state_ = nullptr;
-        }
-        return *this;
-    }
-
-    ~RefInitTxn()
-    {
-        rollback();
-    }
-
-    [[nodiscard]] static RefInitTxn begin(std::uint32_t& state) noexcept
-    {
-        if (!RefInit::begin(state)) {
-            return {};
-        }
-        return RefInitTxn(state);
-    }
-
-    [[nodiscard]] explicit operator bool() const noexcept
-    {
-        return state_ != nullptr;
-    }
-
-    [[nodiscard]] bool pass() noexcept
-    {
-        if (state_ == nullptr) {
-            return false;
-        }
-
-        RefInit::pass(*state_);
-        state_ = nullptr;
-        return true;
-    }
-
-    [[nodiscard]] bool fail() noexcept
-    {
-        if (state_ == nullptr) {
-            return false;
-        }
-
-        RefInit::fail(*state_);
-        state_ = nullptr;
-        return true;
-    }
-
-private:
-    explicit RefInitTxn(std::uint32_t& state) noexcept
-        : state_(&state)
-    {
-    }
-
-    void rollback() noexcept
-    {
-        if (state_ == nullptr) {
-            return;
-        }
-
-        RefInit::fail(*state_);
-        state_ = nullptr;
-    }
-
-    std::uint32_t* state_{};
-};
+using RefInitTxn = detail::InitTxnFor<RefInit>;
 
 struct RefLease {
     RefLease() = default;
