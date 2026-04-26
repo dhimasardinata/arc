@@ -115,7 +115,7 @@ The umbrella `arc.hpp` only surfaces optional batteries like `Mdns` when the mat
 | Area | Headers | Primary types |
 | --- | --- | --- |
 | Core plane | `arc/task.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp` | `arc::spawn`, `arc::Plane`, `arc::App`, `arc::Tight` |
-| Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefLease`, `arc::Audit` |
+| Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefLease`, `arc::Audit` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg` |
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/timer.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::Timer`, `arc::Clock`, `arc::Probe` |
@@ -520,6 +520,7 @@ Arc keeps driver lifetime explicit because ESP-IDF peripheral handles often have
 - `arc::RefInit` is the shared-resource variant. The first `begin()` owns initialization, later `begin()` or `take()` calls acquire a reference, and only the final `drop()` returns `true` so the caller can tear the hardware down.
 - `arc::RefLease` is the scoped form for borrowed shared references. `take()` acquires a new reference, `adopt()` wraps an existing one, and the final owner must call `release()` and perform teardown explicitly instead of hiding hardware deinit in a destructor.
 - `arc::Gate` is a tiny task-context guard for protecting short control-plane mutations. It asserts in ISR context instead of blocking where FreeRTOS cannot safely sleep.
+- `arc::TryGate` is the non-blocking form for paths that may probe ownership but must not sleep; failed acquisition is just `false`.
 
 This keeps static peripheral wrappers cheap while still giving buses, radios, filesystems, and host tasks a path to safe dynamic off/on behavior when an application needs sleep, hot-plug, or staged subsystem startup.
 

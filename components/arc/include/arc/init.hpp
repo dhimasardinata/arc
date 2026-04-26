@@ -25,19 +25,24 @@ struct Gate {
     static void take(std::uint32_t& state) noexcept
     {
         for (;;) {
-            auto expected = open;
-            if (__atomic_compare_exchange_n(
-                    &state,
-                    &expected,
-                    shut,
-                    false,
-                    __ATOMIC_ACQ_REL,
-                    __ATOMIC_ACQUIRE)) {
+            if (try_take(state)) {
                 return;
             }
 
             wait();
         }
+    }
+
+    [[nodiscard]] static bool try_take(std::uint32_t& state) noexcept
+    {
+        auto expected = open;
+        return __atomic_compare_exchange_n(
+            &state,
+            &expected,
+            shut,
+            false,
+            __ATOMIC_ACQ_REL,
+            __ATOMIC_ACQUIRE);
     }
 
     static void drop(std::uint32_t& state) noexcept
@@ -56,6 +61,55 @@ private:
     inline constexpr static std::uint32_t shut = 1U;
 
     std::uint32_t* state_;
+};
+
+struct TryGate {
+    explicit TryGate(std::uint32_t& state) noexcept
+        : state_(Gate::try_take(state) ? &state : nullptr)
+    {
+    }
+
+    TryGate(const TryGate&) = delete;
+    TryGate& operator=(const TryGate&) = delete;
+
+    TryGate(TryGate&& other) noexcept
+        : state_(other.state_)
+    {
+        other.state_ = nullptr;
+    }
+
+    TryGate& operator=(TryGate&& other) noexcept
+    {
+        if (this != &other) {
+            reset();
+            state_ = other.state_;
+            other.state_ = nullptr;
+        }
+        return *this;
+    }
+
+    ~TryGate()
+    {
+        reset();
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept
+    {
+        return state_ != nullptr;
+    }
+
+    void reset() noexcept
+    {
+        if (state_ == nullptr) {
+            return;
+        }
+
+        Gate::drop(*state_);
+        state_ = nullptr;
+    }
+
+private:
+    std::uint32_t* state_{};
 };
 
 struct Init {

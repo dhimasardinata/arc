@@ -24,6 +24,7 @@ namespace {
 
 static_assert(sizeof(arc::InitTxn) == sizeof(void*));
 static_assert(sizeof(arc::RefLease) == sizeof(void*));
+static_assert(sizeof(arc::TryGate) == sizeof(void*));
 
 #if defined(__has_feature)
 #if __has_feature(thread_sanitizer)
@@ -589,6 +590,21 @@ void test_file()
 void test_refinit()
 {
     std::uint32_t state{};
+    {
+        arc::TryGate first(state);
+        expect(static_cast<bool>(first), "TryGate takes open gate");
+
+        arc::TryGate second(state);
+        expect(!static_cast<bool>(second), "TryGate rejects shut gate");
+
+        auto moved = std::move(first);
+        expect(!static_cast<bool>(first), "TryGate move clears source");
+        expect(static_cast<bool>(moved), "TryGate move keeps destination");
+        moved.reset();
+    }
+    expect(arc::Gate::try_take(state), "TryGate reset opens gate");
+    arc::Gate::drop(state);
+
     {
         auto txn = arc::InitTxn::begin(state);
         expect(static_cast<bool>(txn), "InitTxn first begin initializes");
