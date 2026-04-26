@@ -18,6 +18,7 @@
 #include "arc/mpsc.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
+#include "arc/stream.hpp"
 #include "arc/ws.hpp"
 
 namespace {
@@ -588,6 +589,63 @@ void test_file()
     expect(std::remove(path) == 0, "File cleanup");
 }
 
+void test_stream()
+{
+    struct Mock {
+        std::array<std::uint8_t, 32> tx{};
+        std::array<std::uint8_t, 32> rx{};
+        std::size_t tx_pos{};
+        std::size_t rx_pos{};
+        std::size_t rx_len{};
+
+        arc::Status send_all(const void* const data, const std::size_t bytes) noexcept
+        {
+            if (tx_pos + bytes > tx.size()) {
+                return arc::Status{arc::fail(ESP_ERR_NO_MEM)};
+            }
+            std::memcpy(tx.data() + tx_pos, data, bytes);
+            tx_pos += bytes;
+            return arc::ok();
+        }
+
+        arc::Result<std::size_t> recv(void* const data, const std::size_t bytes) noexcept
+        {
+            if (rx_pos >= rx_len) {
+                return std::size_t{};
+            }
+
+            const auto n = bytes < 2U ? bytes : 2U;
+            const auto left = rx_len - rx_pos;
+            const auto got = n < left ? n : left;
+            std::memcpy(data, rx.data() + rx_pos, got);
+            rx_pos += got;
+            return got;
+        }
+    };
+
+    static_assert(arc::net::ByteStream<Mock>);
+
+    Mock io{};
+    const std::array<std::uint8_t, 3> payload{1U, 2U, 3U};
+    expect(arc::net::Stream::write_frame16(io, std::span(payload)).has_value(), "Stream frame write");
+    expect(io.tx_pos == 5U, "Stream frame bytes");
+    expect(io.tx[0] == 0U && io.tx[1] == 3U && io.tx[4] == 3U, "Stream frame layout");
+    expect(arc::net::Stream::write_frame16(io, nullptr, 0U).has_value(), "Stream empty frame write");
+    expect(io.tx_pos == 7U && io.tx[5] == 0U && io.tx[6] == 0U, "Stream empty frame layout");
+
+    io.rx = {0U, 3U, 7U, 8U, 9U};
+    io.rx_len = 5U;
+    std::array<std::uint8_t, 4> out{};
+    const auto frame = arc::net::Stream::read_frame16(io, std::span(out));
+    expect(frame.has_value() && *frame == 3U, "Stream frame read");
+    expect((out == std::array<std::uint8_t, 4>{7U, 8U, 9U, 0U}), "Stream frame payload");
+
+    io.rx = {0U, 5U, 1U, 2U, 3U, 4U, 5U};
+    io.rx_pos = 0U;
+    io.rx_len = 7U;
+    expect(!arc::net::Stream::read_frame16(io, std::span(out)), "Stream oversized frame rejects");
+}
+
 void test_refinit()
 {
     std::uint32_t state{};
@@ -718,6 +776,7 @@ int main()
     test_dsp();
     test_seqreg();
     test_file();
+    test_stream();
     test_refinit();
     std::puts("arc host tests: OK");
 }

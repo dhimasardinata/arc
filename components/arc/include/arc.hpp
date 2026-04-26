@@ -25,6 +25,7 @@
 #include "arc/seq.hpp"
 #include "arc/sketch.hpp"
 #include "arc/soc.hpp"
+#include "arc/stream.hpp"
 #include "arc/task.hpp"
 #include "arc/tight.hpp"
 #include "arc/topology.hpp"

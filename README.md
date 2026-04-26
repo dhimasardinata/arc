@@ -10,6 +10,16 @@ Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 diffe
 
 License: `AGPL-3.0-only`. Arc is open source, but intentionally strict copyleft: if you distribute modified firmware or run modified network-accessible services built from Arc, keep the corresponding source available under the same license terms.
 
+Arc is not a convenience wrapper around ESP-IDF. It is a typed substrate for firmware that needs deterministic hot loops, explicit DMA/cache ownership, static task memory, and transport/protocol composition without hidden heap policy.
+
+At a glance:
+
+- Target: ESP32-S3, ESP-IDF `v6.0`, C++ `gnu++26`.
+- Runtime shape: Core 0 owns control, networking, storage, logs, and framework work; Core 1 owns deterministic compute and GPIO.
+- Allocation stance: hot paths use static storage, caller-owned spans, capability-tagged buffers, and no framework-owned protocol heap.
+- Error stance: setup can return `esp_err_t` / `arc::Result<T>`; impossible topology and hot-path contract violations fail early.
+- Transport stance: TCP, TLS, HTTP/HTTPS, UDP, ESP-NOW, MQTT, WebSocket, and CoAP are composable lanes/codecs, not task-owning application frameworks.
+
 ## Why Arc
 
 Arc exists for firmware where "it probably initializes" and "the ISR usually keeps up" are not acceptable engineering contracts.
@@ -129,6 +139,7 @@ When those stacks are needed, keep them on Core 0 and compose them with Arc's ty
 | Buses and data plane | `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
 | Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
+| Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream` |
 | Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Xts`, `arc::Fuse`, `arc::Rng` |
 
 </details>
@@ -1856,6 +1867,17 @@ Direct ESP-TLS client transport for Core 0 secure control and telemetry paths.
 - `close()` and `native()` keep TLS lifetime explicit.
 
 Use this under `arc::net::Mqtt`, `arc::net::Ws`, or a custom stream protocol when you need TLS without adopting a cloud SDK, reconnect loop, or framework-owned task.
+
+### `arc::net::Stream`
+
+Tiny stream composition helpers for transports that expose `send_all(...)` and `recv(...)`.
+
+- `ByteStream<T>` checks the minimal stream surface used by `arc::net::Tcp` and `arc::net::Tls`.
+- `write(...)` forwards a caller-owned buffer to `send_all(...)`.
+- `read_exact(...)` loops until a caller-owned buffer is full or the stream closes/errors.
+- `write_frame16(...)` and `read_frame16(...)` encode/decode a two-byte big-endian length prefix around a caller-owned payload buffer.
+
+Use this when an application protocol needs exact records on top of TCP or TLS but still should not own a reconnect loop, parser task, or heap buffer.
 
 ### `arc::net::Http`
 
