@@ -102,7 +102,7 @@ struct Timer {
         const bool auto_reload = false) noexcept
     {
         create();
-        static gptimer_alarm_config_t config{};
+        gptimer_alarm_config_t config{};
 
         config.alarm_count = count;
         config.reload_count = reload;

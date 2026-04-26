@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -77,9 +78,9 @@ struct Trace {
 
     static void clear() noexcept
     {
-        state.ready = false;
-        state.used = 0;
-        state.last = false;
+        state.used.store(0U, std::memory_order_relaxed);
+        state.last.store(false, std::memory_order_relaxed);
+        state.ready.store(false, std::memory_order_release);
         fence();
     }
 
@@ -91,7 +92,7 @@ struct Trace {
         start();
         clear();
 
-        static rmt_receive_config_t config{};
+        rmt_receive_config_t config{};
         config.signal_range_min_ns = min_ns;
         config.signal_range_max_ns = max_ns;
         config.flags.en_partial_rx = partial ? 1U : 0U;
@@ -101,20 +102,17 @@ struct Trace {
 
     [[nodiscard]] static bool ready() noexcept
     {
-        fence();
-        return state.ready;
+        return state.ready.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] static bool last() noexcept
     {
-        fence();
-        return state.last;
+        return state.last.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] static std::size_t size() noexcept
     {
-        fence();
-        return state.used;
+        return state.used.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] static const rmt_symbol_word_t* data() noexcept
@@ -130,9 +128,9 @@ struct Trace {
 private:
     struct State {
         rmt_channel_handle_t channel{};
-        volatile std::size_t used{};
-        volatile bool ready{};
-        volatile bool last{};
+        std::atomic<std::size_t> used{0U};
+        std::atomic<bool> ready{false};
+        std::atomic<bool> last{false};
         bool enabled{};
         bool bound{};
         std::uint32_t init{};
@@ -147,15 +145,15 @@ private:
         void*) noexcept
     {
         if (event == nullptr) {
-            state.used = 0;
-            state.last = true;
+            state.used.store(0U, std::memory_order_relaxed);
+            state.last.store(true, std::memory_order_relaxed);
         } else {
-            state.used = event->num_symbols;
-            state.last = event->flags.is_last != 0U;
+            state.used.store(event->num_symbols, std::memory_order_relaxed);
+            state.last.store(event->flags.is_last != 0U, std::memory_order_relaxed);
         }
 
         fence();
-        state.ready = true;
+        state.ready.store(true, std::memory_order_release);
         return false;
     }
 
