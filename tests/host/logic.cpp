@@ -586,6 +586,22 @@ void test_file()
 void test_refinit()
 {
     std::uint32_t state{};
+    {
+        auto txn = arc::InitTxn::begin(state);
+        expect(static_cast<bool>(txn), "InitTxn first begin initializes");
+    }
+    expect(arc::InitTxn::begin(state).pass(), "InitTxn destructor rolls back busy state");
+    expect(!arc::InitTxn::begin(state), "InitTxn ready state does not initialize");
+    expect(arc::Init::take(state), "InitTxn pass leaves ready state");
+    arc::Init::fail(state);
+
+    auto txn = arc::InitTxn::begin(state);
+    expect(static_cast<bool>(txn), "InitTxn move source active");
+    auto moved = std::move(txn);
+    expect(!static_cast<bool>(txn), "InitTxn move clears source");
+    expect(static_cast<bool>(moved), "InitTxn move keeps destination");
+    expect(moved.fail(), "InitTxn explicit fail");
+
     expect(arc::RefInit::begin(state), "RefInit first begin initializes");
     arc::RefInit::pass(state);
     expect(arc::RefInit::refs(state) == 1U, "RefInit initializer owns first ref");

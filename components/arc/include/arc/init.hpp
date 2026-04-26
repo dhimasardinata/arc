@@ -125,6 +125,87 @@ private:
     inline constexpr static std::uint32_t ready = 2U;
 };
 
+struct InitTxn {
+    InitTxn() = default;
+
+    InitTxn(const InitTxn&) = delete;
+    InitTxn& operator=(const InitTxn&) = delete;
+
+    InitTxn(InitTxn&& other) noexcept
+        : state_(other.state_)
+    {
+        other.state_ = nullptr;
+    }
+
+    InitTxn& operator=(InitTxn&& other) noexcept
+    {
+        if (this != &other) {
+            rollback();
+            state_ = other.state_;
+            other.state_ = nullptr;
+        }
+        return *this;
+    }
+
+    ~InitTxn()
+    {
+        rollback();
+    }
+
+    [[nodiscard]] static InitTxn begin(std::uint32_t& state) noexcept
+    {
+        if (!Init::begin(state)) {
+            return {};
+        }
+        return InitTxn(state);
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept
+    {
+        return state_ != nullptr;
+    }
+
+    bool pass() noexcept
+    {
+        if (state_ == nullptr) {
+            return false;
+        }
+
+        Init::pass(*state_);
+        state_ = nullptr;
+        return true;
+    }
+
+    bool fail() noexcept
+    {
+        if (state_ == nullptr) {
+            return false;
+        }
+
+        Init::fail(*state_);
+        state_ = nullptr;
+        return true;
+    }
+
+private:
+    explicit InitTxn(std::uint32_t& state) noexcept
+        : state_(&state)
+    {
+    }
+
+    void rollback() noexcept
+    {
+        if (state_ == nullptr) {
+            return;
+        }
+
+        Init::fail(*state_);
+        state_ = nullptr;
+    }
+
+    std::uint32_t* state_{};
+};
+
 struct RefInit {
     [[nodiscard]] static bool begin(std::uint32_t& state) noexcept
     {

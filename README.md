@@ -2,6 +2,21 @@
 
 Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 differently on purpose.
 
+License: `AGPL-3.0-only`. Arc is open source, but intentionally strict copyleft: if you distribute modified firmware or run modified network-accessible services built from Arc, keep the corresponding source available under the same license terms.
+
+## Why Arc
+
+Arc exists for firmware where "it probably initializes" and "the ISR usually keeps up" are not acceptable engineering contracts.
+
+| Problem | Arc's answer |
+| --- | --- |
+| Two files accidentally claim the same UART, SPI, I2C, or pin | Compile-time topology checks plus runtime claim tokens reject incompatible aliases before hardware corruption. |
+| DMA buffers silently land in the wrong memory | Capability-tagged buffers and cache handoff APIs make SRAM/PSRAM/DMA ownership visible at the call site. |
+| Realtime work competes with networking and logs | Core 1 is the deterministic compute plane; Core 0 owns control, transport, storage, and framework work. |
+| Shared peripheral lifetime becomes informal | `arc::Init`, `arc::InitTxn`, `arc::RefInit`, and `arc::RefLease` encode init, rollback, references, and teardown in one atomic word. |
+| Lock-free code accidentally invokes C++ data-race UB | Queue and snapshot lanes use explicit acquire/release sequencing, cache-line layout, and dual-buffer handoff where payload tearing would otherwise be undefined. |
+| ESP-IDF APIs leak raw handles into app code | Arc keeps ownership typed, static, and explicit while still returning `esp_err_t` or `arc::Result<T>` when recovery matters. |
+
 The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 
 - `16 MB` Quad SPI flash
@@ -16,7 +31,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Soc` exposes the ESP32-S3 capability map from `soc_caps.h` as compile-time constants and hard-fails on non-S3 targets.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::Pins` gives one-file board topology checks so duplicate physical pins are caught where hardware truth is declared.
-- `arc::Init`, `arc::RefInit`, and `arc::Gate` provide one-word initialization and shared-resource lifetime state machines for static drivers.
+- `arc::Init`, `arc::InitTxn`, `arc::RefInit`, and `arc::Gate` provide one-word initialization and shared-resource lifetime state machines for static drivers.
 - `arc::Result<T>` is an opt-in `std::expected<T, esp_err_t>` alias for runtime operations that should not hard-panic.
 - `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site, while `arc::Copy::send_coherent(...)` and `finish_coherent(...)` cover the common async-memcpy handoff without blocking useful CPU work.
 - `arc::Can` binds the ESP32-S3 TWAI/CAN controller with ISR-backed RX handoff.
@@ -478,12 +493,18 @@ Identical aliases share a tiny atomic init gate, so two tasks racing the same fi
 
 Arc keeps driver lifetime explicit because ESP-IDF peripheral handles often have process-wide side effects.
 
-- `arc::Init` is the smallest boot-once state machine: `empty -> busy -> ready`, with `take()` giving exclusive teardown access. Use it for singleton drivers that are configured at boot and rarely stopped.
+- `arc::Init` is the smallest boot-once state machine: `empty -> busy -> ready`, with `take()` giving exclusive teardown access. `arc::InitTxn` wraps first initialization so early returns roll back to `empty` instead of leaving a resource stuck in `busy`.
 - `arc::RefInit` is the shared-resource variant. The first `begin()` owns initialization, later `begin()` or `take()` calls acquire a reference, and only the final `drop()` returns `true` so the caller can tear the hardware down.
 - `arc::RefLease` is the scoped form for borrowed shared references. `take()` acquires a new reference, `adopt()` wraps an existing one, and the final owner must call `release()` and perform teardown explicitly instead of hiding hardware deinit in a destructor.
 - `arc::Gate` is a tiny task-context guard for protecting short control-plane mutations. It asserts in ISR context instead of blocking where FreeRTOS cannot safely sleep.
 
 This keeps static peripheral wrappers cheap while still giving buses, radios, filesystems, and host tasks a path to safe dynamic off/on behavior when an application needs sleep, hot-plug, or staged subsystem startup.
+
+## License
+
+Arc is licensed under `AGPL-3.0-only`, with the license notice in `LICENSE` and the full GNU Affero GPL v3 text in `COPYING`.
+
+The intent is strict open source: you can study, use, modify, and redistribute Arc under AGPLv3-only, but downstream modifications must preserve the same reciprocal source-availability obligations.
 
 ## Start From Zero
 
