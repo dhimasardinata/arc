@@ -11,6 +11,7 @@
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
 #include "arc/file.hpp"
+#include "arc/init.hpp"
 #include "arc/coap.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
@@ -581,6 +582,24 @@ void test_file()
     expect(std::remove(path) == 0, "File cleanup");
 }
 
+void test_refinit()
+{
+    std::uint32_t state{};
+    expect(arc::RefInit::begin(state), "RefInit first begin initializes");
+    arc::RefInit::pass(state);
+    expect(arc::RefInit::refs(state) == 1U, "RefInit initializer owns first ref");
+    expect(!arc::RefInit::begin(state), "RefInit second begin shares ready resource");
+    expect(arc::RefInit::refs(state) == 2U, "RefInit shared begin increments refs");
+    expect(arc::RefInit::take(state), "RefInit take existing resource");
+    expect(arc::RefInit::refs(state) == 3U, "RefInit take increments refs");
+    expect(!arc::RefInit::drop(state), "RefInit non-last drop keeps resource live");
+    expect(!arc::RefInit::drop(state), "RefInit second non-last drop keeps resource live");
+    expect(arc::RefInit::drop(state), "RefInit last drop owns teardown");
+    arc::RefInit::fail(state);
+    expect(arc::RefInit::refs(state) == 0U, "RefInit teardown returns empty");
+    expect(!arc::RefInit::take(state), "RefInit take empty resource fails");
+}
+
 }  // namespace
 
 int main()
@@ -599,5 +618,6 @@ int main()
     test_dsp();
     test_seqreg();
     test_file();
+    test_refinit();
     std::puts("arc host tests: OK");
 }

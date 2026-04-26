@@ -20,6 +20,10 @@ inline TaskHandle_t xTaskCreateStaticPinnedToCore(
 
 inline void vTaskDelete(TaskHandle_t) noexcept {}
 
+inline void vTaskSuspend(TaskHandle_t) noexcept {}
+
+inline void vTaskDelay(TickType_t) noexcept {}
+
 inline TaskHandle_t xTaskGetCurrentTaskHandle() noexcept
 {
     return reinterpret_cast<TaskHandle_t>(1);
