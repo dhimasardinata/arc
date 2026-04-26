@@ -78,6 +78,8 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Tcp` gives direct TCP socket clients for Core 0 control/config paths.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP client sessions.
 - `arc::net::Mqtt` gives caller-buffer MQTT 3.1.1 packet encoding, parsing, and topic matching without owning the transport lane.
+- `arc::net::Ws` gives WebSocket handshake helpers plus caller-buffer frame encode/parse without owning reconnect or task policy.
+- `arc::net::Coap` gives caller-buffer CoAP datagram encode/parse and option walking without hiding message layout.
 - `arc::net::Mdns` adds a thin discovery battery on top of `esp_netif` and the shared Wi-Fi lane when lwIP mDNS headers exist.
 - `arc::Ble` gives a NimBLE lifecycle, host-task, GAP, advertising, and scanning bridge without taking over GATT profile design.
 - `arc::net::Udp` is a reusable Core 0 transport plane when you opt into `#include "arc/udp.hpp"`.
@@ -190,6 +192,7 @@ The umbrella `arc.hpp` only surfaces optional batteries like `Mdns` when the mat
 │               ├── gpio.hpp
 │               ├── hmac.hpp
 │               ├── http.hpp
+│               ├── coap.hpp
 │               ├── mqtt.hpp
 │               ├── espnow.hpp
 │               ├── i2c.hpp
@@ -233,6 +236,7 @@ The umbrella `arc.hpp` only surfaces optional batteries like `Mdns` when the mat
 │               ├── ulp.hpp
 │               ├── usb.hpp
 │               ├── wdt.hpp
+│               ├── ws.hpp
 │               ├── xts.hpp
 │               └── wave.hpp
 └── main
@@ -1163,6 +1167,7 @@ Compile-time SPI slave wrapper.
 - `queue_coherent(move, tx, rx, bytes)` flushes MISO data, discards whole MOSI RX cache lines, and queues one DMA transaction.
 - `finish_coherent(move)` waits for that exact slave transaction and invalidates RX before the CPU reads it.
 - The slave wrapper claims the same physical SPI host lane as `arc::SpiBus`, so master/slave aliases cannot silently collide.
+- ESP32-S3 SPI slave DMA still depends on sane external CS timing; if a master hammers CS edges faster than the hardware can settle, diagnose the board timing before blaming the wrapper.
 
 Use this when the ESP32-S3 should be a deterministic peripheral for another controller without leaving SPI ownership in raw C driver calls.
 
@@ -1490,7 +1495,7 @@ Hardware random source wrapper.
 
 Use this for local nonces, fuzz seeds, randomized backoff, and binary IDs without plumbing raw ESP-IDF RNG calls through app code.
 
-### `arc::Temp<Min = -10, Max = 80>`
+### `arc::Temp<Min = -20, Max = 100>`
 
 Internal ESP32-S3 die-temperature helper.
 
@@ -1762,6 +1767,30 @@ Thin MQTT 3.1.1 wire codec for caller-owned buffers.
 
 Use this when you want MQTT batteries on top of `arc::net::Tcp` or another stream lane without giving the framework ownership of reconnect policy, socket lifetime, or tasking.
 
+### `arc::net::Ws`
+
+Thin WebSocket handshake and frame codec for caller-owned buffers.
+
+- `key(out, nonce)` base64-encodes a caller-owned 16-byte nonce into a `Sec-WebSocket-Key`.
+- `accept(out, key)` computes the RFC 6455 `Sec-WebSocket-Accept` response without heap allocation.
+- `text(...)`, `binary(...)`, `ping(...)`, `pong(...)`, and `close(...)` encode one frame into a caller-provided byte span.
+- `parse(frame, scratch)` decodes one frame, and unmasking stays explicit through the caller-provided scratch span.
+- `close_view(frame)` decodes the close code and reason without hiding the wire payload.
+
+Use this when you want WebSocket batteries on top of `arc::net::Tcp` or `arc::net::Http` without giving the framework ownership of handshake policy, reconnect loops, or tasking.
+
+### `arc::net::Coap`
+
+Thin CoAP datagram codec for caller-owned buffers.
+
+- `message(...)` encodes one CoAP datagram from explicit type, code, token, options, and payload.
+- `ping(...)` and `reset(...)` cover the empty-message path without retyping the header fields.
+- `parse(...)` splits token, raw option bytes, and payload out of one received datagram.
+- `next(options, offset, number)` walks decoded options in order without heap allocation or hidden iterators.
+- `option(...)` and `text(...)` build explicit option descriptors for URI path/query and content-format composition.
+
+Use this when you want CoAP on top of UDP or another datagram lane without hiding message IDs, token policy, retransmission policy, or blockwise state.
+
 ### `arc::net::Mdns`
 
 Thin mDNS owner for the lwIP responder already underneath `esp_netif`.
@@ -1771,6 +1800,7 @@ Thin mDNS owner for the lwIP responder already underneath `esp_netif`.
 - `host(iface, name)`, `off(iface)`, `active(iface)`, `announce(iface)`, and `restart(iface)` expose the explicit per-netif path.
 - `Service::make(...)` and `Service::ap(...)` return RAII service registrations that remove their slot on destruction.
 - TXT generation stays an opt-in lwIP callback instead of a framework-owned string builder.
+- `Mdns` uses `arc::Gate` internally, so keep it in task context; blocking from ISR or timer-callback contexts will assert instead of silently deadlocking.
 
 Use this when you want discovery batteries without inventing a second Wi-Fi ownership model.
 
@@ -1853,6 +1883,7 @@ This is the transport to use when you want Wi-Fi silicon and low latency, but no
 ### `arc::Wave<Pin, HalfUs, Mhz>`
 
 Static CPU-owned square-wave generator when you want fixed compile-time timing and explicit spin control on Core 1.
+The hot loop keeps its compile-time constants in registers behind an optimizer barrier instead of forcing volatile stack spills.
 
 ## Outputs
 

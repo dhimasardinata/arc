@@ -13,8 +13,8 @@
 
 namespace arc {
 
-template <int Min = -10,
-          int Max = 80,
+template <int Min = -20,
+          int Max = 100,
           bool AllowPd = false,
           temperature_sensor_clk_src_t Source = TEMPERATURE_SENSOR_CLK_SRC_DEFAULT>
 struct Temp {

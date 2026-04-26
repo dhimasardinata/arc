@@ -11,10 +11,12 @@
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
 #include "arc/file.hpp"
+#include "arc/coap.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
+#include "arc/ws.hpp"
 
 namespace {
 
@@ -308,6 +310,157 @@ void test_mqtt()
     expect(!arc::net::Mqtt::match("arc/#", "$SYS/broker"), "MQTT system topic isolation");
 }
 
+void test_ws()
+{
+    std::array<char, 32> accept_buf{};
+    const auto accept = arc::net::Ws::accept(accept_buf, "dGhlIHNhbXBsZSBub25jZQ==");
+    expect(accept.has_value(), "WS accept encodes");
+    expect(
+        std::memcmp(accept->data(), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", accept->size()) == 0,
+        "WS accept value");
+
+    const std::array<std::uint8_t, 16> nonce{
+        0x01U,
+        0x23U,
+        0x45U,
+        0x67U,
+        0x89U,
+        0xabU,
+        0xcdU,
+        0xefU,
+        0x10U,
+        0x32U,
+        0x54U,
+        0x76U,
+        0x98U,
+        0xbaU,
+        0xdcU,
+        0xfeU,
+    };
+    std::array<char, 32> key_buf{};
+    const auto key = arc::net::Ws::key(key_buf, nonce);
+    expect(key.has_value() && key->size() == 24U, "WS key bytes");
+
+    std::array<std::uint8_t, 128> frame{};
+    const auto text = arc::net::Ws::text(frame, "arc", true, 0x11223344U);
+    expect(text.has_value(), "WS text encodes");
+
+    std::array<std::uint8_t, 32> scratch{};
+    const auto parsed = arc::net::Ws::parse(*text, scratch);
+    expect(parsed.has_value(), "WS text parses");
+    expect(parsed->opcode == arc::net::WsOpcode::text, "WS text opcode");
+    expect(parsed->masked, "WS text masked");
+    expect(parsed->fin, "WS text fin");
+    expect(parsed->payload.size() == 3U, "WS text payload size");
+    expect(std::memcmp(parsed->payload.data(), "arc", parsed->payload.size()) == 0, "WS text payload");
+
+    const std::array<std::uint8_t, 3> ping_data{1U, 2U, 3U};
+    const auto ping = arc::net::Ws::ping(frame, std::span(ping_data));
+    expect(ping.has_value(), "WS ping encodes");
+    const auto ping_frame = arc::net::Ws::parse(*ping);
+    expect(ping_frame.has_value(), "WS ping parses");
+    expect(ping_frame->opcode == arc::net::WsOpcode::ping, "WS ping opcode");
+
+    const std::array<std::uint8_t, 3> reason{'b', 'y', 'e'};
+    const auto close = arc::net::Ws::close(frame, 1000U, std::span(reason));
+    expect(close.has_value(), "WS close encodes");
+    const auto close_frame = arc::net::Ws::parse(*close);
+    expect(close_frame.has_value(), "WS close parses");
+    const auto close_view = arc::net::Ws::close_view(*close_frame);
+    expect(close_view.has_value(), "WS close view");
+    expect(close_view->code == 1000U, "WS close code");
+    expect(close_view->reason.size() == reason.size(), "WS close reason size");
+    expect(std::memcmp(close_view->reason.data(), reason.data(), reason.size()) == 0, "WS close reason");
+}
+
+void test_coap()
+{
+    std::array<std::uint8_t, 256> buffer{};
+    const std::array<std::uint8_t, 2> token{0xdeU, 0xadU};
+    const std::array options{
+        arc::net::Coap::text(
+            static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_path),
+            "sensors"),
+        arc::net::Coap::text(
+            static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_path),
+            "temp"),
+        arc::net::Coap::text(
+            static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_query),
+            "units=c"),
+    };
+
+    const auto request = arc::net::Coap::message(
+        buffer,
+        arc::net::CoapType::confirmable,
+        static_cast<std::uint8_t>(arc::net::CoapCode::get),
+        0x1234U,
+        std::span(token),
+        std::span(options));
+    expect(request.has_value(), "CoAP request encodes");
+
+    const auto parsed = arc::net::Coap::parse(*request);
+    expect(parsed.has_value(), "CoAP request parses");
+    expect(parsed->type == arc::net::CoapType::confirmable, "CoAP request type");
+    expect(parsed->code == static_cast<std::uint8_t>(arc::net::CoapCode::get), "CoAP request code");
+    expect(parsed->id == 0x1234U, "CoAP request id");
+    expect(parsed->token.size() == token.size(), "CoAP token size");
+    expect(std::memcmp(parsed->token.data(), token.data(), token.size()) == 0, "CoAP token");
+
+    std::size_t offset = 0U;
+    std::uint16_t number = 0U;
+    const auto first = arc::net::Coap::next(parsed->options, offset, number);
+    expect(first.has_value(), "CoAP option 1");
+    expect(first->number == static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_path), "CoAP option 1 number");
+    expect(std::memcmp(first->value.data(), "sensors", first->value.size()) == 0, "CoAP option 1 value");
+
+    const auto second = arc::net::Coap::next(parsed->options, offset, number);
+    expect(second.has_value(), "CoAP option 2");
+    expect(second->number == static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_path), "CoAP option 2 number");
+    expect(std::memcmp(second->value.data(), "temp", second->value.size()) == 0, "CoAP option 2 value");
+
+    const auto third = arc::net::Coap::next(parsed->options, offset, number);
+    expect(third.has_value(), "CoAP option 3");
+    expect(third->number == static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_query), "CoAP option 3 number");
+    expect(std::memcmp(third->value.data(), "units=c", third->value.size()) == 0, "CoAP option 3 value");
+
+    const auto none = arc::net::Coap::next(parsed->options, offset, number);
+    expect(!none.has_value() && none.error() == ESP_ERR_NOT_FOUND, "CoAP option end");
+
+    const std::array<std::uint8_t, 1> format{50U};
+    const std::array response_options{
+        arc::net::Coap::option(
+            static_cast<std::uint16_t>(arc::net::CoapOptionNumber::content_format),
+            std::span(format)),
+    };
+    const std::array<std::uint8_t, 4> body{'4', '2', '.', '0'};
+    const auto response = arc::net::Coap::message(
+        buffer,
+        arc::net::CoapType::acknowledgement,
+        static_cast<std::uint8_t>(arc::net::CoapCode::content),
+        0x1234U,
+        std::span(token),
+        std::span(response_options),
+        std::span(body));
+    expect(response.has_value(), "CoAP response encodes");
+
+    const auto parsed_response = arc::net::Coap::parse(*response);
+    expect(parsed_response.has_value(), "CoAP response parses");
+    expect(parsed_response->type == arc::net::CoapType::acknowledgement, "CoAP response type");
+    expect(parsed_response->code == static_cast<std::uint8_t>(arc::net::CoapCode::content), "CoAP response code");
+    expect(parsed_response->payload.size() == body.size(), "CoAP payload size");
+    expect(std::memcmp(parsed_response->payload.data(), body.data(), body.size()) == 0, "CoAP payload");
+
+    const auto ping = arc::net::Coap::ping(buffer, 0x40U);
+    expect(ping.has_value(), "CoAP ping encodes");
+    const auto ping_msg = arc::net::Coap::parse(*ping);
+    expect(ping_msg.has_value(), "CoAP ping parses");
+    expect(ping_msg->type == arc::net::CoapType::confirmable, "CoAP ping type");
+    expect(ping_msg->code == static_cast<std::uint8_t>(arc::net::CoapCode::empty), "CoAP ping code");
+
+    const auto reset = arc::net::Coap::reset(buffer, 0x40U);
+    expect(reset.has_value(), "CoAP reset encodes");
+}
+
 void test_dsp()
 {
     const std::array<int, 4> lhs{1, 2, 3, 4};
@@ -438,6 +591,8 @@ int main()
     test_fanin();
     test_checked_fanin();
     test_mqtt();
+    test_ws();
+    test_coap();
     test_dsp();
     test_seqreg();
     test_file();

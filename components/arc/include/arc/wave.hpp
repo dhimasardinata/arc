@@ -37,10 +37,8 @@ private:
     template <std::uint32_t Value>
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::uint32_t imm() noexcept
     {
-        volatile std::uint32_t value = (Value >> 24U) & 0xFFU;
-        value = (value << 8U) | ((Value >> 16U) & 0xFFU);
-        value = (value << 8U) | ((Value >> 8U) & 0xFFU);
-        value = (value << 8U) | (Value & 0xFFU);
+        std::uint32_t value = Value;
+        __asm__ __volatile__("" : "+r"(value));
         return value;
     }
 };

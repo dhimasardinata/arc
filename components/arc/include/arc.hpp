@@ -5,6 +5,7 @@
 #include "arc/cache.hpp"
 #include "arc/caps.hpp"
 #include "arc/claim.hpp"
+#include "arc/coap.hpp"
 #include "arc/cfg.hpp"
 #include "arc/clock.hpp"
 #include "arc/dsp.hpp"
@@ -26,6 +27,7 @@
 #include "arc/task.hpp"
 #include "arc/tight.hpp"
 #include "arc/topology.hpp"
+#include "arc/ws.hpp"
 #include "arc/wave.hpp"
 
 #if __has_include("host/ble_gap.h") && __has_include("nimble/nimble_port.h")

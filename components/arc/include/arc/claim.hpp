@@ -29,6 +29,7 @@ enum class ClaimKind : std::uint32_t {
 template <auto... Values>
 [[nodiscard]] consteval std::uint32_t claim_token() noexcept
 {
+    // The 32-bit token is deliberate: tiny storage, deterministic init failure on mismatch.
     std::uint32_t out = 2'166'136'261U;
     ((out = claim_mix(out, static_cast<std::uint32_t>(Values))), ...);
     return out == 0U ? 1U : out;
