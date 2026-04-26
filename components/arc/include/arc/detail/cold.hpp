@@ -89,55 +89,6 @@ struct TimerSpec {
     return gptimer_register_event_callbacks(timer, &callbacks, user);
 }
 
-[[gnu::cold, gnu::noinline]] inline esp_err_t timer_alarm(
-    const gptimer_handle_t timer,
-    const std::uint64_t count,
-    const std::uint64_t reload = 0,
-    const bool auto_reload = false) noexcept
-{
-    if (timer == nullptr) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    gptimer_alarm_config_t config{};
-    config.alarm_count = count;
-    config.reload_count = reload;
-    config.flags.auto_reload_on_alarm = auto_reload ? 1U : 0U;
-    return gptimer_set_alarm_action(timer, &config);
-}
-
-[[gnu::cold, gnu::noinline]] inline esp_err_t timer_alarm_off(
-    const gptimer_handle_t timer) noexcept
-{
-    if (timer == nullptr) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    return gptimer_set_alarm_action(timer, nullptr);
-}
-
-#endif
-
-#if __has_include("driver/rmt_common.h")
-
-[[gnu::cold, gnu::noinline]] inline esp_err_t rmt_carrier(
-    const rmt_channel_handle_t channel,
-    const std::uint32_t frequency_hz,
-    const float duty_cycle = 50.0f,
-    const bool active_low = false,
-    const bool always_on = false) noexcept
-{
-    if (channel == nullptr) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    rmt_carrier_config_t config{};
-    config.frequency_hz = frequency_hz;
-    config.duty_cycle = duty_cycle;
-    config.flags.polarity_active_low = active_low ? 1U : 0U;
-    config.flags.always_on = always_on ? 1U : 0U;
-    return rmt_apply_carrier(channel, &config);
-}
-
 #endif
 
 #if __has_include("driver/rmt_tx.h") && __has_include("driver/rmt_encoder.h") && __has_include("soc/gpio_num.h")
@@ -178,26 +129,6 @@ struct BurstSpec {
 
     rmt_copy_encoder_config_t encoder_cfg{};
     return rmt_new_copy_encoder(&encoder_cfg, encoder);
-}
-
-[[gnu::cold, gnu::noinline]] inline esp_err_t burst_transmit(
-    const rmt_channel_handle_t channel,
-    const rmt_encoder_handle_t encoder,
-    const rmt_symbol_word_t* const symbols,
-    const std::size_t count,
-    const int loop = 0,
-    const bool nonblocking = true,
-    const bool eot = false) noexcept
-{
-    if (channel == nullptr || encoder == nullptr || symbols == nullptr) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    rmt_transmit_config_t config{};
-    config.loop_count = loop;
-    config.flags.eot_level = eot ? 1U : 0U;
-    config.flags.queue_nonblocking = nonblocking ? 1U : 0U;
-    return rmt_transmit(channel, encoder, symbols, count * sizeof(rmt_symbol_word_t), &config);
 }
 
 #endif
@@ -246,25 +177,6 @@ struct TraceSpec {
     rmt_rx_event_callbacks_t callbacks{};
     callbacks.on_recv_done = callback;
     return rmt_rx_register_event_callbacks(channel, &callbacks, user);
-}
-
-[[gnu::cold, gnu::noinline]] inline esp_err_t trace_receive(
-    const rmt_channel_handle_t channel,
-    rmt_symbol_word_t* const data,
-    const std::size_t bytes,
-    const std::uint32_t min_ns,
-    const std::uint32_t max_ns,
-    const bool partial = false) noexcept
-{
-    if (channel == nullptr || data == nullptr || bytes == 0U) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    rmt_receive_config_t config{};
-    config.signal_range_min_ns = min_ns;
-    config.signal_range_max_ns = max_ns;
-    config.flags.en_partial_rx = partial ? 1U : 0U;
-    return rmt_receive(channel, data, bytes, &config);
 }
 
 #endif

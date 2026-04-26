@@ -71,7 +71,12 @@ struct Burst {
         const bool always_on = false) noexcept
     {
         init();
-        return detail::cold::rmt_carrier(state.channel, frequency_hz, duty_cycle, active_low, always_on);
+        rmt_carrier_config_t config{};
+        config.frequency_hz = frequency_hz;
+        config.duty_cycle = duty_cycle;
+        config.flags.polarity_active_low = active_low ? 1U : 0U;
+        config.flags.always_on = always_on ? 1U : 0U;
+        return rmt_apply_carrier(state.channel, &config);
     }
 
     [[nodiscard]] static esp_err_t plain() noexcept
@@ -92,7 +97,17 @@ struct Burst {
         if (!state.enabled) {
             start();
         }
-        return detail::cold::burst_transmit(state.channel, state.encoder, symbols, count, loop, nonblocking, eot);
+
+        rmt_transmit_config_t config{};
+        config.loop_count = loop;
+        config.flags.eot_level = eot ? 1U : 0U;
+        config.flags.queue_nonblocking = nonblocking ? 1U : 0U;
+        return rmt_transmit(
+            state.channel,
+            state.encoder,
+            symbols,
+            count * sizeof(rmt_symbol_word_t),
+            &config);
     }
 
     template <std::size_t N>

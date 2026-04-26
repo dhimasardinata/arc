@@ -103,13 +103,17 @@ struct Timer {
         const bool auto_reload = false) noexcept
     {
         create();
-        ESP_ERROR_CHECK(detail::cold::timer_alarm(state.timer, count, reload, auto_reload));
+        gptimer_alarm_config_t config{};
+        config.alarm_count = count;
+        config.reload_count = reload;
+        config.flags.auto_reload_on_alarm = auto_reload ? 1U : 0U;
+        ESP_ERROR_CHECK(gptimer_set_alarm_action(state.timer, &config));
     }
 
     static void off() noexcept
     {
         create();
-        ESP_ERROR_CHECK(detail::cold::timer_alarm_off(state.timer));
+        ESP_ERROR_CHECK(gptimer_set_alarm_action(state.timer, nullptr));
     }
 
     [[nodiscard]] static gptimer_handle_t native()

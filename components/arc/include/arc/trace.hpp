@@ -62,7 +62,12 @@ struct Trace {
         const bool always_on = false) noexcept
     {
         init();
-        return detail::cold::rmt_carrier(state.channel, frequency_hz, duty_cycle, active_low, always_on);
+        rmt_carrier_config_t config{};
+        config.frequency_hz = frequency_hz;
+        config.duty_cycle = duty_cycle;
+        config.flags.polarity_active_low = active_low ? 1U : 0U;
+        config.flags.always_on = always_on ? 1U : 0U;
+        return rmt_apply_carrier(state.channel, &config);
     }
 
     [[nodiscard]] static esp_err_t plain() noexcept
@@ -86,7 +91,11 @@ struct Trace {
     {
         start();
         clear();
-        return detail::cold::trace_receive(state.channel, buffer.data(), sizeof(buffer), min_ns, max_ns, partial);
+        rmt_receive_config_t config{};
+        config.signal_range_min_ns = min_ns;
+        config.signal_range_max_ns = max_ns;
+        config.flags.en_partial_rx = partial ? 1U : 0U;
+        return rmt_receive(state.channel, buffer.data(), sizeof(buffer), &config);
     }
 
     [[nodiscard]] static bool ready() noexcept
