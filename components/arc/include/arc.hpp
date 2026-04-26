@@ -116,6 +116,10 @@
 #include "arc/rgb.hpp"
 #endif
 
+#if __has_include("mbedtls/bignum.h")
+#include "arc/mpi.hpp"
+#endif
+
 #if __has_include("esp_ota_ops.h") && __has_include("esp_partition.h")
 #include "arc/ota.hpp"
 #endif

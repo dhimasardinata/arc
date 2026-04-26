@@ -86,6 +86,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Aes` and `arc::Gcm` wrap AES block/stream/GCM operations with explicit key setup and caller-owned buffers.
 - `arc::Hmac` computes eFuse-keyed SHA-256 HMACs and gates temporary JTAG unlock through the HMAC peripheral.
 - `arc::Sign` drives the Digital Signature peripheral for eFuse-key-backed RSA signatures.
+- `arc::Mpi` owns mbedTLS big integers and uses ESP-IDF's MPI/RSA accelerator path when the target Kconfig enables it.
 - `arc::Xts` exposes hardware encrypted flash reads/writes and encrypted-partition alignment checks.
 - `arc::Wdt` exposes explicit task-watchdog configuration, task/user subscription, and feeding.
 - `arc::Fuse` reads eFuse fields, blocks, MACs, package, and secure-version state.
@@ -140,7 +141,7 @@ When those stacks are needed, keep them on Core 0 and compose them with Arc's ty
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
 | Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream` |
-| Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Xts`, `arc::Fuse`, `arc::Rng` |
+| Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::Xts`, `arc::Fuse`, `arc::Rng` |
 
 </details>
 
@@ -407,6 +408,7 @@ Feature names map directly to hardware lanes:
 - `fuse`
 - `mcpwm`
 - `rmt`
+- `mpi`
 - `pcnt`
 - `sha`
 - `sign`
@@ -903,6 +905,18 @@ Digital Signature peripheral surface for eFuse-key-backed RSA operations.
 - `Sign::bytes(data)` returns the exact prepared-message and signature size for the encrypted RSA key.
 
 Use this for signed telemetry, challenge responses, and provisioning flows where the private RSA material should never be readable by the main cores.
+
+### `arc::Mpi`
+
+Move-only owner for mbedTLS multiple-precision integers.
+
+- `Mpi::from_be(bytes)` and `Mpi::from_le(bytes)` import caller-owned big-endian or little-endian buffers.
+- `write_be(out)` and `write_le(out)` export into caller-owned storage.
+- `bytes()`, `bits()`, `compare(...)`, `native()`, and `clone()` expose shape and interop without hidden allocation policy.
+- `add(...)`, `sub(...)`, `mul(...)`, `mod(...)`, `mul_mod(...)`, `exp_mod(...)`, and `inv_mod(...)` return `arc::MpiResult<arc::Mpi>` carrying raw mbedTLS error codes.
+- `Mpi::lock()` returns an RAII guard for direct ROM/register users of the RSA accelerator; normal `arc::Mpi` operations do not need it because the mbedTLS/ESP-IDF port locks internally.
+
+Use this when firmware needs raw RSA-sized arithmetic, modular exponentiation, challenge math, or verification helpers without dropping into unmanaged `mbedtls_mpi` lifetime code.
 
 ### `arc::Xts`
 
