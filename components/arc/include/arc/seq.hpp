@@ -39,9 +39,9 @@ struct alignas(cache_line) SeqReg {
     {
         const auto seq = __atomic_load_n(&seq_, __ATOMIC_RELAXED);
         __atomic_store_n(&seq_, seq + 1U, __ATOMIC_RELEASE);
-        fence();
+        __atomic_thread_fence(__ATOMIC_SEQ_CST);
         __builtin_memcpy(&value_, &value, sizeof(T));
-        fence();
+        __atomic_thread_fence(__ATOMIC_SEQ_CST);
         __atomic_store_n(&seq_, seq + 2U, __ATOMIC_RELEASE);
     }
 
@@ -62,7 +62,7 @@ struct alignas(cache_line) SeqReg {
         }
 
         __builtin_memcpy(&value, &value_, sizeof(T));
-        fence();
+        __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
         return head == __atomic_load_n(&seq_, __ATOMIC_ACQUIRE);
     }

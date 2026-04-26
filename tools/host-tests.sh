@@ -19,6 +19,7 @@ CXX="${CXX:-g++}"
     -I"$ROOT/tests/host/stubs" \
     -I"$ROOT/components/arc/include" \
     "$ROOT/tests/host/logic.cpp" \
+    "$ROOT/tests/host/plane_compile.cpp" \
     -o "$BUILD/arc-host-logic"
 
 "$BUILD/arc-host-logic"

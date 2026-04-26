@@ -216,15 +216,19 @@ struct Radio {
             return ESP_OK;
         }
 
-        const auto err = esp_wifi_deinit();
-        if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
-            __atomic_store_n(&state.closing, 0U, __ATOMIC_RELEASE);
-            return err;
+        if (state.wifi_owner) {
+            const auto err = esp_wifi_deinit();
+            if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
+                __atomic_store_n(&state.closing, 0U, __ATOMIC_RELEASE);
+                return err;
+            }
         }
 
         state.wifi = false;
+        state.wifi_owner = false;
         state.prepared = false;
         state.started = false;
+        state.started_owner = false;
         state.mode = WIFI_MODE_NULL;
         state.power_save = WIFI_PS_NONE;
 
@@ -285,11 +289,20 @@ private:
         if (!state.wifi) {
             wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
             const auto err = esp_wifi_init(&init);
-            if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            if (err == ESP_OK) {
+                state.wifi = true;
+                state.wifi_owner = true;
+            } else if (err == ESP_ERR_INVALID_STATE
+#ifdef ESP_ERR_WIFI_INIT_STATE
+                       || err == ESP_ERR_WIFI_INIT_STATE
+#endif
+            ) {
+                state.wifi = true;
+                state.wifi_owner = false;
+            } else {
                 Init::fail(state.base);
                 return err;
             }
-            state.wifi = true;
         }
 
         Init::pass(state.base);
@@ -371,11 +384,12 @@ private:
         }
 
         const auto err = esp_wifi_start();
-        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
+        if (err != ESP_OK) {
             return err;
         }
 
         state.started = true;
+        state.started_owner = true;
         state.mode = mode;
         state.power_save = active_power_save;
         return ESP_OK;
@@ -387,12 +401,15 @@ private:
             return ESP_OK;
         }
 
-        const auto err = esp_wifi_stop();
-        if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
-            return err;
+        if (state.started_owner) {
+            const auto err = esp_wifi_stop();
+            if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
+                return err;
+            }
         }
 
         state.started = false;
+        state.started_owner = false;
         return ESP_OK;
     }
 
@@ -400,8 +417,10 @@ private:
         esp_netif_t* sta;
         esp_netif_t* ap;
         bool wifi;
+        bool wifi_owner;
         bool prepared;
         bool started;
+        bool started_owner;
         bool sta_owner;
         bool ap_owner;
         wifi_mode_t mode;
@@ -415,6 +434,8 @@ private:
     constinit static inline State state{
         nullptr,
         nullptr,
+        false,
+        false,
         false,
         false,
         false,

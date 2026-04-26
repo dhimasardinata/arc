@@ -917,6 +917,8 @@ Your `Program` type defines:
 
 `App` turns that into a static pinned task without heap allocation.
 
+`boot()` is idempotent while the task is active.
+
 `arc::Sketch` remains available as a compatibility alias.
 
 ### `arc::Tight<Program, StackBytes, Core = core1, Guard = arc::Critical, Pri = max, Budget = 0>`
@@ -1668,6 +1670,8 @@ or:
 - `setup(state)` and `run(state) noexcept`
 
 Use this when you want explicit stateful realtime workers instead of the simpler `Sketch`.
+
+Bound workloads boot as `Plane<...>::boot<&shared>(tag)` so the shared cross-core state is named at compile time and cannot accidentally come from a temporary or stack object.
 
 ### `arc::net::Radio`
 

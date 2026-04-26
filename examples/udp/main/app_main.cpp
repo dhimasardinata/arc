@@ -119,8 +119,8 @@ constinit inline Link bus{};
 inline void boot()
 {
     app::prime(bus);
-    Core0::boot(bus);
-    Core1::boot(Udp::tag, bus);
+    Core0::boot<&bus>();
+    Core1::boot<&bus>(Udp::tag);
 }
 
 }  // namespace app

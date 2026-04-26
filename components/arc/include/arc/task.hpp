@@ -1,8 +1,10 @@
 #pragma once
 
+#include <concepts>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -19,6 +21,15 @@ enum class Core : BaseType_t {
 {
     return (bytes + sizeof(StackType_t) - 1U) / sizeof(StackType_t);
 }
+
+template <auto* Object>
+using StaticObject = std::remove_cv_t<std::remove_reference_t<decltype(*Object)>>;
+
+template <auto* Object, typename T>
+concept StaticTaskState =
+    Object != nullptr &&
+    std::same_as<StaticObject<Object>, T> &&
+    !std::is_const_v<std::remove_pointer_t<decltype(Object)>>;
 
 template <std::size_t StackBytes>
 struct TaskMem {

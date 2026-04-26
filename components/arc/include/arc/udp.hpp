@@ -40,7 +40,9 @@ struct Udp {
 
     static_assert(Soc::wifi, "arc::net::Udp requires ESP32-S3 Wi-Fi");
 
-    static void boot(Bus& bus)
+    template <auto* Shared>
+    static void boot()
+        requires StaticTaskState<Shared, Bus>
     {
         auto inactive = std::uint32_t{};
         if (!__atomic_compare_exchange_n(
@@ -57,7 +59,7 @@ struct Udp {
         const auto handle = spawn(
             &run,
             "udp",
-            &bus,
+            static_cast<void*>(Shared),
             2,
             Core::core0,
             stack);

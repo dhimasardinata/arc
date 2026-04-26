@@ -93,7 +93,9 @@ struct EspNow {
     static_assert(Policy::peer.size() == ESP_NOW_ETH_ALEN, "ESP-NOW peer must be 6 bytes");
     static_assert(Policy::channel <= 14U, "invalid ESP-NOW channel");
 
-    static void boot(Bus& bus)
+    template <auto* Shared>
+    static void boot()
+        requires StaticTaskState<Shared, Bus>
     {
         auto inactive = std::uint32_t{};
         if (!__atomic_compare_exchange_n(
@@ -110,7 +112,7 @@ struct EspNow {
         const auto handle = spawn(
             &run,
             "espnow",
-            &bus,
+            static_cast<void*>(Shared),
             2,
             Core::core0,
             stack);

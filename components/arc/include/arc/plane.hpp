@@ -53,16 +53,32 @@ struct Plane {
         boot(tag, nullptr, name);
     }
 
-    template <typename Shared = State>
-    static void boot(const char* tag, Shared& state, const char* name = "rt")
-        requires BoundWork<Workload, Shared>
+    template <auto* Shared>
+    static void boot(const char* tag, const char* name = "rt")
+        requires(kBound && StaticTaskState<Shared, State>)
     {
-        boot(tag, static_cast<void*>(&state), name);
+        boot(tag, static_cast<void*>(Shared), name);
     }
 
 private:
+    struct Launch {
+        TaskHandle_t task{};
+        std::uint32_t active{};
+    };
+
     static void boot(const char* tag, void* state, const char* name)
     {
+        auto inactive = std::uint32_t{};
+        if (!__atomic_compare_exchange_n(
+                &launch.active,
+                &inactive,
+                1U,
+                false,
+                __ATOMIC_ACQ_REL,
+                __ATOMIC_ACQUIRE)) {
+            return;
+        }
+
         log_boot(tag);
 
         const auto handle = spawn(
@@ -73,6 +89,10 @@ private:
             Bind,
             mem);
 
+        if (handle == nullptr) {
+            set_task(nullptr);
+            __atomic_store_n(&launch.active, 0U, __ATOMIC_RELEASE);
+        }
         configASSERT(handle != nullptr);
 
         ESP_LOGI(
@@ -83,10 +103,22 @@ private:
     }
 
     constinit static inline TaskMem<StackBytes> mem{};
+    constinit static inline Launch launch{};
+
+    static void set_task(const TaskHandle_t task) noexcept
+    {
+        __atomic_store_n(&launch.task, task, __ATOMIC_RELEASE);
+    }
 
     [[nodiscard]] static std::uint32_t psram_free() noexcept
     {
         return static_cast<std::uint32_t>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    }
+
+    static void cleanup() noexcept
+    {
+        set_task(nullptr);
+        __atomic_store_n(&launch.active, 0U, __ATOMIC_RELEASE);
     }
 
     static void log_boot(const char* tag)
@@ -101,6 +133,8 @@ private:
 
     static void entry([[maybe_unused]] void* context) noexcept
     {
+        set_task(xTaskGetCurrentTaskHandle());
+
         if constexpr (kBound) {
             auto& state = *static_cast<State*>(context);
             Workload::setup(state);
@@ -110,6 +144,7 @@ private:
             Workload::run();
         }
 
+        cleanup();
         vTaskDelete(nullptr);
         __builtin_unreachable();
     }

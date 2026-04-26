@@ -3,14 +3,27 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <unistd.h>
 #include <thread>
 
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
+#include "arc/file.hpp"
 #include "arc/mpsc.hpp"
+#include "arc/seq.hpp"
 #include "arc/spsc.hpp"
 
 namespace {
+
+#if defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define ARC_HOST_TSAN 1
+#endif
+#endif
+
+#if defined(__SANITIZE_THREAD__)
+#define ARC_HOST_TSAN 1
+#endif
 
 void expect(const bool condition, const char* const message)
 {
@@ -155,6 +168,99 @@ void test_dsp()
     expect(Filter::step(state, taps, 5) == 5, "DSP FIR clear");
 }
 
+#if !defined(ARC_HOST_TSAN)
+// SeqReg uses a seqlock-style raw snapshot copy. That contract is intentional,
+// but ThreadSanitizer reports it as a data race by construction.
+void test_seqreg()
+{
+    struct Snapshot {
+        std::uint32_t seq;
+        std::uint32_t inv;
+        std::uint64_t total;
+    };
+
+    arc::SeqReg<Snapshot> reg;
+    reg.write_unmasked(Snapshot{
+        .seq = 0U,
+        .inv = ~0U,
+        .total = 0U,
+    });
+    std::atomic<bool> running{true};
+
+    std::thread writer([&]() {
+        for (std::uint32_t seq = 1; seq <= 20000U; ++seq) {
+            reg.write_unmasked(Snapshot{
+                .seq = seq,
+                .inv = ~seq,
+                .total = static_cast<std::uint64_t>(seq) * 3U,
+            });
+        }
+        running.store(false, std::memory_order_release);
+    });
+
+    std::uint32_t last{};
+    Snapshot snap{};
+    while (running.load(std::memory_order_acquire)) {
+        if (!reg.try_read(snap)) {
+            std::this_thread::yield();
+            continue;
+        }
+
+        expect(snap.inv == ~snap.seq, "SeqReg snapshot inverse");
+        expect(snap.total == static_cast<std::uint64_t>(snap.seq) * 3U, "SeqReg snapshot total");
+        expect(snap.seq >= last, "SeqReg monotonic snapshot");
+        last = snap.seq;
+    }
+
+    writer.join();
+
+    const auto final = reg.read();
+    expect(final.seq == 20000U, "SeqReg final sequence");
+    expect(final.inv == ~20000U, "SeqReg final inverse");
+    expect(final.total == static_cast<std::uint64_t>(20000U) * 3U, "SeqReg final total");
+}
+#endif
+
+void test_file()
+{
+    char path[] = "/tmp/arc-host-file-XXXXXX";
+    const auto fd = mkstemp(path);
+    expect(fd >= 0, "File temp path");
+    expect(close(fd) == 0, "File temp close");
+
+    {
+        auto file = arc::File::open(path, "wb");
+        expect(file.has_value(), "File open write");
+
+        auto handle = std::move(file).value();
+        const std::array<std::uint8_t, 4> payload{1U, 3U, 3U, 7U};
+        const auto wrote = handle.write(payload.data(), payload.size());
+        expect(wrote.has_value() && wrote.value() == payload.size(), "File write bytes");
+        expect(handle.flush() == ESP_OK, "File flush");
+        expect(handle.close() == ESP_OK, "File close write");
+    }
+
+    {
+        auto file = arc::File::open(path, "rb");
+        expect(file.has_value(), "File open read");
+
+        auto handle = std::move(file).value();
+        std::array<std::uint8_t, 4> payload{};
+        const auto read = handle.read(payload.data(), payload.size());
+        expect(read.has_value() && read.value() == payload.size(), "File read bytes");
+        expect((payload == std::array<std::uint8_t, 4>{1U, 3U, 3U, 7U}), "File payload");
+        expect(handle.close() == ESP_OK, "File close read");
+    }
+
+    {
+        auto missing = arc::File::open("/tmp/arc-host-file-missing", "rb");
+        expect(!missing.has_value(), "File missing path");
+        expect(missing.error() == ESP_ERR_NOT_FOUND, "File missing error");
+    }
+
+    expect(std::remove(path) == 0, "File cleanup");
+}
+
 }  // namespace
 
 int main()
@@ -164,5 +270,9 @@ int main()
     test_mpsc_threads();
     test_fanin();
     test_dsp();
+#if !defined(ARC_HOST_TSAN)
+    test_seqreg();
+#endif
+    test_file();
     std::puts("arc host tests: OK");
 }
