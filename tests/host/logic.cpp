@@ -23,6 +23,7 @@
 namespace {
 
 static_assert(sizeof(arc::InitTxn) == sizeof(void*));
+static_assert(sizeof(arc::RefInitTxn) == sizeof(void*));
 static_assert(sizeof(arc::RefLease) == sizeof(void*));
 static_assert(sizeof(arc::TryGate) == sizeof(void*));
 
@@ -620,6 +621,25 @@ void test_refinit()
     expect(!static_cast<bool>(txn), "InitTxn move clears source");
     expect(static_cast<bool>(moved), "InitTxn move keeps destination");
     expect(moved.fail(), "InitTxn explicit fail");
+
+    {
+        auto ref_txn = arc::RefInitTxn::begin(state);
+        expect(static_cast<bool>(ref_txn), "RefInitTxn first begin initializes");
+    }
+    expect(arc::RefInitTxn::begin(state).pass(), "RefInitTxn destructor rolls back busy state");
+    expect(arc::RefInit::refs(state) == 1U, "RefInitTxn pass owns first ref");
+    expect(!arc::RefInitTxn::begin(state), "RefInitTxn ready state shares without init");
+    expect(arc::RefInit::refs(state) == 2U, "RefInitTxn ready begin increments refs");
+    expect(!arc::RefInit::drop(state), "RefInitTxn shared drop");
+    expect(arc::RefInit::drop(state), "RefInitTxn final drop");
+    arc::RefInit::fail(state);
+
+    auto ref_txn = arc::RefInitTxn::begin(state);
+    expect(static_cast<bool>(ref_txn), "RefInitTxn move source active");
+    auto moved_ref = std::move(ref_txn);
+    expect(!static_cast<bool>(ref_txn), "RefInitTxn move clears source");
+    expect(static_cast<bool>(moved_ref), "RefInitTxn move keeps destination");
+    expect(moved_ref.fail(), "RefInitTxn explicit fail");
 
     expect(arc::RefInit::begin(state), "RefInit first begin initializes");
     arc::RefInit::pass(state);
