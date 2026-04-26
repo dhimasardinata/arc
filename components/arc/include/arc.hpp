@@ -199,6 +199,10 @@
 #include "arc/tcp.hpp"
 #endif
 
+#if __has_include("esp_tls.h")
+#include "arc/tls.hpp"
+#endif
+
 #if __has_include("esp_event.h") && __has_include("esp_netif.h") && __has_include("esp_wifi.h") && __has_include("nvs_flash.h")
 #include "arc/net.hpp"
 #endif

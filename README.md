@@ -98,6 +98,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Radio` is the shared Core 0 Wi-Fi owner, so UDP and ESP-NOW do not each re-create NVS, netif, event loop, and Wi-Fi driver state.
 - `arc::net::Eap` configures WPA2/WPA3 Enterprise credentials and joins through the shared radio without pulling WPA supplicant into non-enterprise builds.
 - `arc::net::Tcp` gives direct TCP socket clients for Core 0 control/config paths.
+- `arc::net::Tls` gives direct ESP-TLS client sessions for secure caller-buffer transports such as MQTTS without taking over reconnect or protocol policy.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP client sessions.
 - `arc::net::Mqtt` gives caller-buffer MQTT 3.1.1 packet encoding, parsing, and topic matching without owning the transport lane.
 - `arc::net::Ws` gives WebSocket handshake helpers plus caller-buffer frame encode/parse without owning reconnect or task policy.
@@ -108,6 +109,12 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::EspNow` is a reusable Core 0 raw-radio plane when you opt into `#include "arc/espnow.hpp"`.
 
 The umbrella `arc.hpp` only surfaces optional batteries like `Mdns` when the matching SDK headers are visible through `__has_include(...)`; Arc does not fake protocol availability.
+
+## Deliberate Non-Goals
+
+Arc stays at the deterministic hardware, memory, transport, and wire-codec boundary. It does not try to be Arduino, Matter, RainMaker, LVGL, TinyUSB, AWS IoT, Azure IoT, or a portable HAL for unrelated chips.
+
+When those stacks are needed, keep them on Core 0 and compose them with Arc's typed buffers, transport lanes, and ownership boundaries. Arc's job is to make the silicon-facing substrate hard to misuse, not to own product policy.
 
 <details>
 <summary>Quick API Map</summary>
@@ -121,7 +128,7 @@ The umbrella `arc.hpp` only surfaces optional batteries like `Mdns` when the mat
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/timer.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::Timer`, `arc::Clock`, `arc::Probe` |
 | Buses and data plane | `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
-| Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
+| Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
 | Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Xts`, `arc::Fuse`, `arc::Rng` |
 
 </details>
@@ -417,6 +424,7 @@ Feature names map directly to hardware lanes:
 - `trax`
 - `fs`
 - `tcp`
+- `tls`
 - `udp`
 - `uart`
 - `ulp`
@@ -1836,6 +1844,18 @@ Direct TCP client for Core 0 control and configuration paths.
 - `close()` and `native()` keep socket lifetime explicit.
 
 Use this when a small protocol needs TCP but does not justify a framework-owned task.
+
+### `arc::net::Tls`
+
+Direct ESP-TLS client transport for Core 0 secure control and telemetry paths.
+
+- `dial(host, port, cfg)` opens a blocking TLS session with caller-provided `esp_tls_cfg_t`.
+- `send(...)` and `recv(...)` return byte counts without hiding partial transfers.
+- `send_all(...)` loops until the caller-owned buffer is fully written or an error occurs.
+- `avail()` exposes decrypted bytes already buffered by the TLS record layer.
+- `close()` and `native()` keep TLS lifetime explicit.
+
+Use this under `arc::net::Mqtt`, `arc::net::Ws`, or a custom stream protocol when you need TLS without adopting a cloud SDK, reconnect loop, or framework-owned task.
 
 ### `arc::net::Http`
 
