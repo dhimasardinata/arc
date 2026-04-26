@@ -58,8 +58,13 @@ The main API pieces are:
 
 - `arc::Pwm<Pin, Hz, DutyPermille, Channel, Timer, Bits>`
 - `arc::Pwm::start()`
+- `arc::Pwm::start(config)`
 - `arc::Pwm::on()`
 - `arc::Pwm::off()`
 - `arc::Pwm::pause()`
 - `arc::Pwm::resume()`
+- `arc::Pwm::hz()`
+- `arc::Pwm::permille()`
+- `arc::Pwm::hz(value)`
 - `arc::Pwm::duty<permille>()`
+- `arc::Pwm::duty(value)`

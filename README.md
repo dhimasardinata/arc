@@ -886,6 +886,7 @@ Pins, peripheral instances, DMA sizing, queue depths, ISR affinity, and fixed bu
 
 - `arc::Uart::baud(value)` retunes a live UART without creating a second UART type.
 - `arc::Spi::send/recv/xfer/poll(..., hz)` can override the clock for one transfer.
+- `arc::Pwm::start(config)` and `arc::Pwm::hz(value)` let LEDC keep compile-time pin/channel ownership while the live waveform config comes from runtime data.
 - `arc::Pwm::duty(value)` and `arc::Pwm::set(value)` update LEDC duty without instantiating another template.
 - `arc::Sigma::set(value)` updates SDM density without instantiating another template.
 - MCPWM wrappers expose runtime `hz(value)` and `duty(value)` where the hardware supports clean retuning.
@@ -1023,12 +1024,17 @@ Use this when producer identity is static and tail latency matters more than one
 Compile-time hardware PWM on ESP32-S3 LEDC.
 
 - `begin()` configures timer, channel, and pin routing and returns `esp_err_t`.
+- `begin(config)` applies caller-provided runtime frequency and duty while keeping the pin/channel topology fixed in the type.
 - `start()` configures timer, channel, pin routing, and starts output.
-- `on()` reapplies the default duty.
+- `start(config)` is the fail-fast runtime-config path when frequency or boot duty comes from NVS, Kconfig, or provisioning.
+- `hz()` and `permille()` report the live configured values.
+- `hz(value)` retunes the live PWM frequency through the recoverable path.
+- `on()` reapplies the current duty instead of the compile-time default.
 - `off()` stops output low.
 - `pause()` and `resume()` gate the underlying LEDC timer.
 - `duty<permille>()` updates duty with a compile-time value.
 - `duty(permille)` and `set(permille)` update duty with a runtime value.
+- `frequency()` and `duty_permille()` remain the compile-time defaults for code that wants the declared board configuration.
 
 Use this when the waveform is periodic and the silicon should generate it. Keep `arc::Wave` for cases where the CPU must own every edge.
 

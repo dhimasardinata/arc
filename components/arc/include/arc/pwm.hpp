@@ -25,6 +25,11 @@ struct Pwm {
     static_assert(Timer < SOC_LEDC_TIMER_NUM, "invalid LEDC timer");
     static_assert(Bits >= 1U && Bits <= SOC_LEDC_TIMER_BIT_WIDTH, "invalid LEDC duty resolution");
 
+    struct Config {
+        std::uint32_t hz{Hz};
+        std::uint32_t duty{DutyPermille};
+    };
+
     [[nodiscard]] static constexpr gpio_num_t gpio_number() noexcept
     {
         return static_cast<gpio_num_t>(Pin);
@@ -40,6 +45,21 @@ struct Pwm {
         return DutyPermille;
     }
 
+    [[nodiscard]] static constexpr Config defaults() noexcept
+    {
+        return Config{};
+    }
+
+    [[nodiscard]] static std::uint32_t hz() noexcept
+    {
+        return state.hz;
+    }
+
+    [[nodiscard]] static std::uint32_t permille() noexcept
+    {
+        return state.duty;
+    }
+
     [[nodiscard]] static constexpr std::uint32_t max() noexcept
     {
         return static_cast<std::uint32_t>((std::uint64_t{1} << Bits) - 1ULL);
@@ -47,11 +67,20 @@ struct Pwm {
 
     [[nodiscard]] static esp_err_t begin() noexcept
     {
+        return begin(defaults());
+    }
+
+    [[nodiscard]] static esp_err_t begin(const Config& cfg) noexcept
+    {
+        if (cfg.hz == 0U || cfg.duty > 1000U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         ledc_timer_config_t timer_cfg{};
         timer_cfg.speed_mode = Mode;
         timer_cfg.duty_resolution = resolution();
         timer_cfg.timer_num = timer();
-        timer_cfg.freq_hz = Hz;
+        timer_cfg.freq_hz = cfg.hz;
         timer_cfg.clk_cfg = LEDC_AUTO_CLK;
         timer_cfg.deconfigure = false;
         auto err = ledc_timer_config(&timer_cfg);
@@ -64,17 +93,28 @@ struct Pwm {
         channel_cfg.speed_mode = Mode;
         channel_cfg.channel = channel();
         channel_cfg.timer_sel = timer();
-        channel_cfg.duty = raw(DutyPermille);
+        channel_cfg.duty = raw(cfg.duty);
         channel_cfg.hpoint = 0;
         channel_cfg.sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD;
         channel_cfg.flags.output_invert = 0;
         channel_cfg.deconfigure = false;
-        return ledc_channel_config(&channel_cfg);
+        err = ledc_channel_config(&channel_cfg);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        state = cfg;
+        return ESP_OK;
     }
 
     static void start()
     {
         ESP_ERROR_CHECK(begin());
+    }
+
+    static void start(const Config& cfg)
+    {
+        ESP_ERROR_CHECK(begin(cfg));
     }
 
     static void pause()
@@ -89,7 +129,7 @@ struct Pwm {
 
     static void on()
     {
-        ESP_ERROR_CHECK(duty(DutyPermille));
+        ESP_ERROR_CHECK(duty(permille()));
     }
 
     static void off()
@@ -110,7 +150,11 @@ struct Pwm {
             return ESP_ERR_INVALID_ARG;
         }
 
-        return apply(raw(permille));
+        const auto err = apply(raw(permille));
+        if (err == ESP_OK) {
+            state.duty = permille;
+        }
+        return err;
     }
 
     [[nodiscard]] static esp_err_t set(const std::uint32_t permille) noexcept
@@ -118,7 +162,17 @@ struct Pwm {
         return duty(permille);
     }
 
+    [[nodiscard]] static esp_err_t hz(const std::uint32_t value) noexcept
+    {
+        return begin(Config{
+            .hz = value,
+            .duty = permille(),
+        });
+    }
+
 private:
+    constinit static inline Config state{};
+
     [[nodiscard]] static constexpr ledc_channel_t channel() noexcept
     {
         return static_cast<ledc_channel_t>(Chan);
