@@ -29,7 +29,7 @@ void host(void*) noexcept
             "hi=%d lo=%d hz=%u period=%u ticks duty=%u/1000 red=%u fed=%u",
             high_pin,
             low_pin,
-            20'000U,
+            static_cast<unsigned>(Half::hz()),
             static_cast<unsigned>(Half::period()),
             static_cast<unsigned>(Half::permille()),
             50U,

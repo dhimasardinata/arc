@@ -35,13 +35,14 @@ void host(void*) noexcept
 
         ESP_LOGI(
             tag,
-            "out=%d in=%d ready=%d edge=%s count=%u tick=%u us period=%u us high=%u us low=%u us duty=%u/1000",
+            "out=%d in=%d ready=%d edge=%s count=%u tick=%u us hz=%u period=%u us high=%u us low=%u us duty=%u/1000",
             out_pin,
             in_pin,
             ready ? 1 : 0,
             rise ? "rise" : "fall",
             static_cast<unsigned>(edges),
             static_cast<unsigned>(tick),
+            static_cast<unsigned>(Out::hz()),
             static_cast<unsigned>(period),
             static_cast<unsigned>(high),
             static_cast<unsigned>(low),

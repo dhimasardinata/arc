@@ -61,8 +61,14 @@ The main API pieces are:
 
 - `arc::Pulse<Pin, Hz, DutyPermille, Group, ResolutionHz>`
 - `arc::Pulse::start()`
+- `arc::Pulse::start(config)`
+- `arc::Pulse::hz()`
+- `arc::Pulse::permille()`
+- `arc::Pulse::config()`
 - `arc::Pulse::hz(value)`
 - `arc::Pulse::duty(value)`
+- `arc::Pulse::set(config)`
+- `arc::Pulse::set(permille)`
 - `arc::Pulse::on()`
 - `arc::Pulse::off()`
 - `arc::Pulse::wave()`

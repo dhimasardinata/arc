@@ -53,8 +53,14 @@ The main API pieces are:
 
 - `arc::Bridge<HighPin, LowPin, Hz, DutyPermille, RiseDelayTicks, FallDelayTicks>`
 - `arc::Bridge::start()`
+- `arc::Bridge::start(config)`
+- `arc::Bridge::hz()`
+- `arc::Bridge::permille()`
+- `arc::Bridge::config()`
 - `arc::Bridge::hz(value)`
 - `arc::Bridge::duty(value)`
+- `arc::Bridge::set(config)`
+- `arc::Bridge::set(permille)`
 - `arc::Bridge::wave()`
 - `arc::Bridge::hi()`
 - `arc::Bridge::lo()`

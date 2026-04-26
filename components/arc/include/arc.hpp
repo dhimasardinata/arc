@@ -6,6 +6,7 @@
 #include "arc/caps.hpp"
 #include "arc/claim.hpp"
 #include "arc/coap.hpp"
+#include "arc/concepts.hpp"
 #include "arc/cfg.hpp"
 #include "arc/clock.hpp"
 #include "arc/dsp.hpp"

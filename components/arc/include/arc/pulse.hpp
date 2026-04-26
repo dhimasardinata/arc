@@ -26,11 +26,50 @@ struct Pulse {
     static_assert(DutyPermille <= 1000U, "duty permille must be in [0, 1000]");
     static_assert(Mode == MCPWM_TIMER_COUNT_MODE_UP, "arc::Pulse currently supports up-count mode only");
 
-    static void start()
+    struct Config {
+        std::uint32_t hz{Hz};
+        std::uint32_t duty{DutyPermille};
+    };
+
+    [[nodiscard]] static constexpr std::uint32_t frequency() noexcept
+    {
+        return Hz;
+    }
+
+    [[nodiscard]] static constexpr std::uint32_t duty_permille() noexcept
+    {
+        return DutyPermille;
+    }
+
+    [[nodiscard]] static constexpr Config defaults() noexcept
+    {
+        return Config{};
+    }
+
+    [[nodiscard]] static std::uint32_t hz() noexcept
     {
         init();
-        set_hz(Hz);
-        set_duty(DutyPermille);
+        return state.hz;
+    }
+
+    [[nodiscard]] static Config config() noexcept
+    {
+        init();
+        return Config{
+            .hz = state.hz,
+            .duty = state.duty,
+        };
+    }
+
+    static void start()
+    {
+        start(defaults());
+    }
+
+    static void start(const Config& cfg)
+    {
+        init();
+        ESP_ERROR_CHECK(set(cfg));
         run();
     }
 
@@ -69,21 +108,22 @@ struct Pulse {
     static void wave() noexcept
     {
         init();
-        apply();
+        ESP_ERROR_CHECK(program_wave());
     }
 
     static void hz(const std::uint32_t value) noexcept
     {
         init();
-        set_hz(value);
-        apply();
+        ESP_ERROR_CHECK(set(Config{
+            .hz = value,
+            .duty = permille(),
+        }));
     }
 
     static void duty(const std::uint32_t permille) noexcept
     {
         init();
-        set_duty(permille);
-        apply();
+        ESP_ERROR_CHECK(set(permille));
     }
 
     [[nodiscard]] static constexpr std::uint32_t resolution() noexcept
@@ -109,12 +149,46 @@ struct Pulse {
         return state.duty;
     }
 
+    [[nodiscard]] static esp_err_t set(const Config& cfg) noexcept
+    {
+        if (cfg.hz == 0U || cfg.duty > 1000U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        init();
+
+        const auto err = program_hz(cfg.hz);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        const auto duty_err = program_duty(cfg.duty);
+        if (duty_err != ESP_OK) {
+            return duty_err;
+        }
+
+        return program_wave();
+    }
+
+    [[nodiscard]] static esp_err_t set(const std::uint32_t permille) noexcept
+    {
+        init();
+
+        const auto err = program_duty(permille);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        return program_wave();
+    }
+
 private:
     struct State {
         mcpwm_timer_handle_t timer{};
         mcpwm_oper_handle_t oper{};
         mcpwm_cmpr_handle_t cmpr{};
         mcpwm_gen_handle_t gen{};
+        std::uint32_t hz{};
         std::uint32_t period{};
         std::uint32_t compare{};
         std::uint32_t duty{};
@@ -154,41 +228,62 @@ private:
         return compare;
     }
 
-    static void set_hz(const std::uint32_t hz) noexcept
+    [[nodiscard]] static esp_err_t program_hz(const std::uint32_t hz) noexcept
     {
         const auto period = period_ticks(hz);
-        ESP_ERROR_CHECK(period > 0U ? ESP_OK : ESP_ERR_INVALID_ARG);
+        if (period == 0U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        const auto compare = compare_ticks(period, state.duty);
+        auto err = mcpwm_timer_set_period(state.timer, period);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        err = mcpwm_comparator_set_compare_value(
+            state.cmpr,
+            program_compare(period, state.duty, compare));
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        state.hz = hz;
         state.period = period;
-        ESP_ERROR_CHECK(mcpwm_timer_set_period(state.timer, state.period));
-        state.compare = compare_ticks(state.period, state.duty);
-        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(
-            state.cmpr,
-            program_compare(state.period, state.duty, state.compare)));
+        state.compare = compare;
+        return ESP_OK;
     }
 
-    static void set_duty(const std::uint32_t permille) noexcept
+    [[nodiscard]] static esp_err_t program_duty(const std::uint32_t permille) noexcept
     {
-        ESP_ERROR_CHECK(permille <= 1000U ? ESP_OK : ESP_ERR_INVALID_ARG);
-        state.duty = permille;
-        state.compare = compare_ticks(state.period, state.duty);
-        ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(
+        if (permille > 1000U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        const auto compare = compare_ticks(state.period, permille);
+        const auto err = mcpwm_comparator_set_compare_value(
             state.cmpr,
-            program_compare(state.period, state.duty, state.compare)));
+            program_compare(state.period, permille, compare));
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        state.duty = permille;
+        state.compare = compare;
+        return ESP_OK;
     }
 
-    static void apply() noexcept
+    [[nodiscard]] static esp_err_t program_wave() noexcept
     {
         if (state.duty == 0U) {
-            ESP_ERROR_CHECK(mcpwm_generator_set_force_level(state.gen, 0, true));
-            return;
+            return mcpwm_generator_set_force_level(state.gen, 0, true);
         }
 
         if (state.duty >= 1000U) {
-            ESP_ERROR_CHECK(mcpwm_generator_set_force_level(state.gen, 1, true));
-            return;
+            return mcpwm_generator_set_force_level(state.gen, 1, true);
         }
 
-        ESP_ERROR_CHECK(mcpwm_generator_set_force_level(state.gen, -1, false));
+        return mcpwm_generator_set_force_level(state.gen, -1, false);
     }
 
     static void run()
@@ -198,7 +293,7 @@ private:
             state.enabled = true;
         }
 
-        apply();
+        ESP_ERROR_CHECK(program_wave());
 
         if (!state.running) {
             ESP_ERROR_CHECK(mcpwm_timer_start_stop(state.timer, MCPWM_TIMER_START_NO_STOP));
@@ -212,8 +307,9 @@ private:
             return;
         }
 
+        state.hz = Hz;
         state.duty = DutyPermille;
-        state.period = period_ticks(Hz);
+        state.period = period_ticks(state.hz);
         state.compare = compare_ticks(state.period, state.duty);
 
         mcpwm_timer_config_t timer{};

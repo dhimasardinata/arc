@@ -893,6 +893,16 @@ Pins, peripheral instances, DMA sizing, queue depths, ISR affinity, and fixed bu
 
 Do not create multiple aliases for the same physical peripheral just to vary a runtime knob. Keep one topology type and drive live values through the runtime methods.
 
+### Static Concepts
+
+`arc/concepts.hpp` adds small compile-time contracts for app-side composition without virtual dispatch or heap-owned interfaces.
+
+- `arc::WaveConfig<T>` checks that a static waveform type exposes `Config`, `defaults()`, `config()`, and `permille()`.
+- `arc::DutyWave<T>` checks the duty-control surface.
+- `arc::RateWave<T>` checks the runtime frequency-control surface.
+
+Use these when application code should accept "anything with this static control surface" instead of naming one exact Arc wrapper type.
+
 ### Internal Contracts
 
 Most application code should only see the small surface: `start()`, `send(...)`, `read(...)`, `set(...)`, and typed buffers. The dense internals are deliberately isolated:
@@ -1028,6 +1038,7 @@ Compile-time hardware PWM on ESP32-S3 LEDC.
 - `start()` configures timer, channel, pin routing, and starts output.
 - `start(config)` is the fail-fast runtime-config path when frequency or boot duty comes from NVS, Kconfig, or provisioning.
 - `hz()` and `permille()` report the live configured values.
+- `config()` returns the live runtime PWM configuration snapshot.
 - `hz(value)` retunes the live PWM frequency through the recoverable path.
 - `on()` reapplies the current duty instead of the compile-time default.
 - `off()` stops output low.
@@ -1058,10 +1069,14 @@ Use this when you want hardware pulse-density output or a low-pass-filtered anal
 Compile-time MCPWM waveform wrapper.
 
 - `start()` allocates the timer, operator, comparator, and generator, then starts the hardware waveform.
+- `start(config)` keeps the MCPWM ownership in the type while letting the boot frequency/duty come from runtime data.
+- `hz()` and `permille()` report the live waveform state, while `config()` snapshots both together.
 - `hz(value)` retunes the timer period at runtime.
 - `duty(value)` retunes the duty cycle at runtime.
+- `set(config)` and `set(permille)` expose recoverable retune paths for app code that should not hard-panic on bad runtime values.
 - `on()` and `off()` force a level without tearing down the hardware path.
 - `wave()` returns control to the timer/comparator path after a forced level.
+- `frequency()` and `duty_permille()` remain the declared compile-time defaults.
 
 Use this when LEDC is too small a hammer and you want a stronger waveform block with explicit period and compare control.
 
@@ -1070,12 +1085,16 @@ Use this when LEDC is too small a hammer and you want a stronger waveform block 
 Compile-time MCPWM complementary pair wrapper.
 
 - `start()` allocates one timer, one operator, one comparator, and two generators.
+- `start(config)` keeps the bridge topology static while the boot frequency/duty can come from runtime data.
+- `hz()` and `permille()` report the live switching state, while `config()` snapshots the mutable runtime knobs.
 - `hz(value)` retunes the switching frequency at runtime.
 - `duty(value)` retunes the base duty cycle at runtime.
+- `set(config)` and `set(permille)` expose recoverable retune paths without reallocating the hardware lane.
 - `wave()` restores complementary switching after a forced state.
 - `hi()`, `lo()`, and `off()` force safe states onto the pair without deleting the hardware path.
 - optional trailing fault parameters bind one GPIO fault to the MCPWM brake path in hardware.
 - `recover()` asks the operator to leave a one-shot brake state after the external fault clears.
+- `frequency()`, `duty_permille()`, `rise_delay_ticks()`, and `fall_delay_ticks()` keep the declared compile-time defaults available to board code.
 
 Use this when the output is no longer “just PWM” and you need a half-bridge style pair with explicit dead-time and a CPU-independent shutdown path.
 

@@ -60,6 +60,11 @@ struct Pwm {
         return state.duty;
     }
 
+    [[nodiscard]] static Config config() noexcept
+    {
+        return state;
+    }
+
     [[nodiscard]] static constexpr std::uint32_t max() noexcept
     {
         return static_cast<std::uint32_t>((std::uint64_t{1} << Bits) - 1ULL);
