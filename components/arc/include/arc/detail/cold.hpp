@@ -27,8 +27,16 @@
 #include "driver/rmt_encoder.h"
 #endif
 
+#if __has_include("driver/pulse_cnt.h")
+#include "driver/pulse_cnt.h"
+#endif
+
 #if __has_include("driver/temperature_sensor.h")
 #include "driver/temperature_sensor.h"
+#endif
+
+#if __has_include("driver/uart.h")
+#include "driver/uart.h"
 #endif
 
 #if __has_include("driver/usb_serial_jtag.h")
@@ -41,6 +49,10 @@
 
 #if __has_include("soc/gpio_num.h")
 #include "soc/gpio_num.h"
+#endif
+
+#if __has_include("soc/soc_caps.h")
+#include "soc/soc_caps.h"
 #endif
 
 namespace arc::detail::cold {
@@ -206,6 +218,90 @@ struct TempSpec {
 
 #endif
 
+#if __has_include("driver/pulse_cnt.h")
+
+struct CountSpec {
+    int edge_pin{};
+    int level_pin{};
+    int clear_pin{};
+    int low{};
+    int high{};
+    pcnt_channel_edge_action_t rise{PCNT_CHANNEL_EDGE_ACTION_INCREASE};
+    pcnt_channel_edge_action_t fall{PCNT_CHANNEL_EDGE_ACTION_HOLD};
+    pcnt_channel_level_action_t high_mode{PCNT_CHANNEL_LEVEL_ACTION_KEEP};
+    pcnt_channel_level_action_t low_mode{PCNT_CHANNEL_LEVEL_ACTION_KEEP};
+    std::uint32_t filter_ns{};
+    bool accum{};
+    pcnt_clock_source_t source{PCNT_CLK_SRC_DEFAULT};
+};
+
+[[gnu::cold, gnu::noinline]] inline esp_err_t count_create(
+    const CountSpec spec,
+    pcnt_unit_handle_t* const unit,
+    pcnt_channel_handle_t* const channel) noexcept
+{
+    if (unit == nullptr || channel == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    pcnt_unit_config_t unit_cfg{};
+    unit_cfg.clk_src = spec.source;
+    unit_cfg.low_limit = spec.low;
+    unit_cfg.high_limit = spec.high;
+    unit_cfg.intr_priority = 0;
+    unit_cfg.flags.accum_count = spec.accum ? 1U : 0U;
+    auto err = pcnt_new_unit(&unit_cfg, unit);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    pcnt_chan_config_t chan_cfg{};
+    chan_cfg.edge_gpio_num = spec.edge_pin;
+    chan_cfg.level_gpio_num = spec.level_pin >= 0 ? spec.level_pin : -1;
+    chan_cfg.flags.invert_edge_input = 0;
+    chan_cfg.flags.invert_level_input = 0;
+    chan_cfg.flags.virt_edge_io_level = 0;
+    chan_cfg.flags.virt_level_io_level = spec.level_pin >= 0 ? 0U : 1U;
+    err = pcnt_new_channel(*unit, &chan_cfg, channel);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = pcnt_channel_set_edge_action(*channel, spec.rise, spec.fall);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = pcnt_channel_set_level_action(*channel, spec.high_mode, spec.low_mode);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    if (spec.filter_ns != 0U) {
+        pcnt_glitch_filter_config_t filter{};
+        filter.max_glitch_ns = spec.filter_ns;
+        err = pcnt_unit_set_glitch_filter(*unit, &filter);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+
+#if SOC_PCNT_SUPPORT_CLEAR_SIGNAL
+    if (spec.clear_pin >= 0) {
+        pcnt_clear_signal_config_t clear{};
+        clear.clear_signal_gpio_num = spec.clear_pin;
+        clear.flags.invert_clear_signal = 0;
+        err = pcnt_unit_set_clear_signal(*unit, &clear);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+#endif
+
+    return pcnt_unit_clear_count(*unit);
+}
+
+#endif
+
 #if __has_include("driver/usb_serial_jtag.h")
 
 struct UsbSpec {
@@ -219,6 +315,54 @@ struct UsbSpec {
     config.tx_buffer_size = spec.tx;
     config.rx_buffer_size = spec.rx;
     return usb_serial_jtag_driver_install(&config);
+}
+
+#endif
+
+#if __has_include("driver/uart.h")
+
+struct UartSpec {
+    uart_port_t port{};
+    int tx{};
+    int rx{};
+    int rts{};
+    int cts{};
+    int baud{};
+    int rx_buf{};
+    int tx_buf{};
+    int queue{};
+    int intr{};
+    uart_word_length_t bits{UART_DATA_8_BITS};
+    uart_parity_t parity{UART_PARITY_DISABLE};
+    uart_stop_bits_t stop{UART_STOP_BITS_1};
+    uart_hw_flowcontrol_t flow{UART_HW_FLOWCTRL_DISABLE};
+    uart_sclk_t clock{UART_SCLK_DEFAULT};
+};
+
+[[gnu::cold, gnu::noinline]] inline esp_err_t uart_create(const UartSpec spec) noexcept
+{
+    uart_config_t config{};
+    config.baud_rate = spec.baud;
+    config.data_bits = spec.bits;
+    config.parity = spec.parity;
+    config.stop_bits = spec.stop;
+    config.flow_ctrl = spec.flow;
+    config.rx_flow_ctrl_thresh = 122;
+    config.source_clk = spec.clock;
+    config.flags.allow_pd = false;
+    config.flags.backup_before_sleep = false;
+
+    auto err = uart_param_config(spec.port, &config);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = uart_set_pin(spec.port, spec.tx, spec.rx, spec.rts, spec.cts);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return uart_driver_install(spec.port, spec.rx_buf, spec.tx_buf, spec.queue, nullptr, spec.intr);
 }
 
 #endif

@@ -13,6 +13,7 @@
 #include "soc/soc_caps.h"
 
 #include "arc/claim.hpp"
+#include "arc/detail/cold.hpp"
 #include "arc/init.hpp"
 #include "arc/result.hpp"
 
@@ -47,7 +48,7 @@ struct Uart {
     static_assert(TxBuf >= 0, "UART TX buffer cannot be negative");
     static_assert(Queue >= 0, "UART queue depth cannot be negative");
 
-    [[nodiscard]] static esp_err_t init() noexcept
+    [[gnu::cold]] [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
             return ESP_OK;
@@ -59,32 +60,22 @@ struct Uart {
             return err;
         }
 
-        uart_config_t cfg{};
-        cfg.baud_rate = Baud;
-        cfg.data_bits = Bits;
-        cfg.parity = Parity;
-        cfg.stop_bits = Stop;
-        cfg.flow_ctrl = Flow;
-        cfg.rx_flow_ctrl_thresh = 122;
-        cfg.source_clk = Clock;
-        cfg.flags.allow_pd = false;
-        cfg.flags.backup_before_sleep = false;
-
-        err = uart_param_config(Port, &cfg);
-        if (err != ESP_OK) {
-            Resource::drop();
-            Init::fail(state.init);
-            return err;
-        }
-
-        err = uart_set_pin(Port, Tx, Rx, Rts, Cts);
-        if (err != ESP_OK) {
-            Resource::drop();
-            Init::fail(state.init);
-            return err;
-        }
-
-        err = uart_driver_install(Port, RxBuf, TxBuf, Queue, nullptr, Intr);
+        err = detail::cold::uart_create(
+            {.port = Port,
+             .tx = Tx,
+             .rx = Rx,
+             .rts = Rts,
+             .cts = Cts,
+             .baud = Baud,
+             .rx_buf = RxBuf,
+             .tx_buf = TxBuf,
+             .queue = Queue,
+             .intr = Intr,
+             .bits = Bits,
+             .parity = Parity,
+             .stop = Stop,
+             .flow = Flow,
+             .clock = Clock});
         if (err == ESP_ERR_INVALID_STATE) {
             Init::pass(state.init);
             return ESP_OK;

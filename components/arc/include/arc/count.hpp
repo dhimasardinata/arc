@@ -7,6 +7,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/detail/cold.hpp"
 #include "arc/init.hpp"
 
 namespace arc {
@@ -104,48 +105,29 @@ private:
 
     constinit static inline State state{};
 
-    static void init()
+    [[gnu::cold]] static void init()
     {
         if (!Init::begin(state.init)) {
             return;
         }
 
-        pcnt_unit_config_t unit_cfg{};
-        unit_cfg.clk_src = Source;
-        unit_cfg.low_limit = Low;
-        unit_cfg.high_limit = High;
-        unit_cfg.intr_priority = 0;
-        unit_cfg.flags.accum_count = Accum ? 1U : 0U;
-        ESP_ERROR_CHECK(pcnt_new_unit(&unit_cfg, &state.unit));
-
-        pcnt_chan_config_t chan_cfg{};
-        chan_cfg.edge_gpio_num = EdgePin;
-        chan_cfg.level_gpio_num = LevelPin >= 0 ? LevelPin : -1;
-        chan_cfg.flags.invert_edge_input = 0;
-        chan_cfg.flags.invert_level_input = 0;
-        chan_cfg.flags.virt_edge_io_level = 0;
-        chan_cfg.flags.virt_level_io_level = LevelPin >= 0 ? 0U : 1U;
-        ESP_ERROR_CHECK(pcnt_new_channel(state.unit, &chan_cfg, &state.chan));
-
-        ESP_ERROR_CHECK(pcnt_channel_set_edge_action(state.chan, Rise, Fall));
-        ESP_ERROR_CHECK(pcnt_channel_set_level_action(state.chan, HighMode, LowMode));
-
-        if constexpr (FilterNs != 0U) {
-            pcnt_glitch_filter_config_t filter{};
-            filter.max_glitch_ns = FilterNs;
-            ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(state.unit, &filter));
-        }
-
-#if SOC_PCNT_SUPPORT_CLEAR_SIGNAL
-        if constexpr (ClearPin >= 0) {
-            pcnt_clear_signal_config_t clear{};
-            clear.clear_signal_gpio_num = ClearPin;
-            clear.flags.invert_clear_signal = 0;
-            ESP_ERROR_CHECK(pcnt_unit_set_clear_signal(state.unit, &clear));
-        }
-#endif
-
-        ESP_ERROR_CHECK(pcnt_unit_clear_count(state.unit));
+        ESP_ERROR_CHECK(detail::cold::count_create(
+            {
+                .edge_pin = EdgePin,
+                .level_pin = LevelPin,
+                .clear_pin = ClearPin,
+                .low = Low,
+                .high = High,
+                .rise = Rise,
+                .fall = Fall,
+                .high_mode = HighMode,
+                .low_mode = LowMode,
+                .filter_ns = FilterNs,
+                .accum = Accum,
+                .source = Source,
+            },
+            &state.unit,
+            &state.chan));
         Init::pass(state.init);
     }
 };
