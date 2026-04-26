@@ -196,7 +196,6 @@ private:
     {
         return density >= min && density <= max;
     }
-
 };
 
 }  // namespace arc

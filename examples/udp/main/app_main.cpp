@@ -8,7 +8,11 @@ using Led = arc::Drive<app::cfg::led, 0>;
 using Link = arc::Link<app::Edge, app::Control, 256>;
 
 struct Pulse {
-    static void setup(Link&) { Led::out(); Led::off(); }
+    static void setup(Link&)
+    {
+        Led::out();
+        Led::off();
+    }
 
     IRAM_ATTR static void run(Link& bus) noexcept
     {

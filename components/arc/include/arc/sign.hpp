@@ -99,9 +99,9 @@ struct Sign {
     [[nodiscard]] static constexpr bool valid(const Length length) noexcept
     {
         return length == ESP_DS_RSA_1024 ||
-               length == ESP_DS_RSA_2048 ||
-               length == ESP_DS_RSA_3072 ||
-               length == ESP_DS_RSA_4096;
+            length == ESP_DS_RSA_2048 ||
+            length == ESP_DS_RSA_3072 ||
+            length == ESP_DS_RSA_4096;
     }
 
     [[nodiscard]] static constexpr std::size_t bytes(const Length length) noexcept

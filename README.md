@@ -23,7 +23,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
 - `arc::Trax` controls Xtensa TRAX instruction trace memory for on-core execution history when TRAX is enabled in Kconfig.
 - `arc::Pulse` uses MCPWM for higher-grade waveform generation than LEDC when period and edge placement matter.
-- `arc::Bridge` drives complementary MCPWM pairs with explicit dead-time.
+- `arc::Bridge` drives complementary MCPWM pairs with explicit dead-time and optional hardware brake input.
 - `arc::Capture` timestamps edges in hardware through the MCPWM capture block.
 - `arc::AdcBus`, `arc::AdcOne`, and `arc::Scope` cover calibrated ADC oneshot reads and continuous DMA capture without mixing the ownership models.
 - `arc::Copy` offloads memory movement to the async DMA memcpy engine.
@@ -247,7 +247,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Hardware symbol streaming through RMT
 - Hardware symbol capture through RMT RX
 - Hardware MCPWM waveform generation with runtime frequency and duty retuning
-- Hardware complementary MCPWM pairs with explicit dead-time
+- Hardware complementary MCPWM pairs with explicit dead-time and brake/fault shutdown
 - Hardware MCPWM edge capture for period/high/low measurement
 - Hardware ADC streaming through the digital controller and DMA
 - Hardware async memory copy through the ESP32-S3 DMA memcpy path
@@ -1032,7 +1032,7 @@ Compile-time MCPWM waveform wrapper.
 
 Use this when LEDC is too small a hammer and you want a stronger waveform block with explicit period and compare control.
 
-### `arc::Bridge<HighPin, LowPin, Hz, DutyPermille = 500, RiseDelayTicks = 0, FallDelayTicks = 0>`
+### `arc::Bridge<HighPin, LowPin, Hz, DutyPermille = 500, RiseDelayTicks = 0, FallDelayTicks = 0, ...>`
 
 Compile-time MCPWM complementary pair wrapper.
 
@@ -1041,8 +1041,10 @@ Compile-time MCPWM complementary pair wrapper.
 - `duty(value)` retunes the base duty cycle at runtime.
 - `wave()` restores complementary switching after a forced state.
 - `hi()`, `lo()`, and `off()` force safe states onto the pair without deleting the hardware path.
+- optional trailing fault parameters bind one GPIO fault to the MCPWM brake path in hardware.
+- `recover()` asks the operator to leave a one-shot brake state after the external fault clears.
 
-Use this when the output is no longer “just PWM” and you need a half-bridge style pair with explicit dead-time.
+Use this when the output is no longer “just PWM” and you need a half-bridge style pair with explicit dead-time and a CPU-independent shutdown path.
 
 ### `arc::Capture<Pin, Hz = 1'000'000, Group = 0, Prescale = 1, Rise = true, Fall = true>`
 
@@ -1099,7 +1101,9 @@ Compile-time SPI bus wrapper.
 - `init()` initializes one ESP32-S3 SPI host and returns `esp_err_t`.
 - `boot()` initializes one ESP32-S3 SPI host with DMA-capable transfer sizing.
 - `off()` frees the SPI host when no devices are still mounted.
-- `host()`, `sclk()`, `mosi()`, and `miso()` keep the routing obvious in user code.
+- `host()`, `sclk()`, `mosi()`, `miso()`, `quadwp()`, and `quadhd()` keep the routing obvious in user code.
+- optional trailing bus pins enable the native quad WP/HD and octal data4..data7 routes without changing existing aliases.
+- `Spi::dual`, `Spi::quad`, and `Spi::octal` are transaction flags for multiline data transfers.
 - host claims reject incompatible second aliases for the same physical SPI block.
 - The SPI ISR is pinned to CPU0 by default so transport work naturally stays off the realtime core.
 
@@ -1429,6 +1433,8 @@ Use this when you want a real hardware timebase or periodic alarm instead of a b
 Power-state helper for the Core 0 side.
 
 - `after_us(value)` and `after<Value>()` arm timer wake.
+- `ext0<Pin, High>()` arms single RTC-GPIO wake.
+- `ext1<Mode, Pins...>()`, `ext1_off<Pins...>()`, and `ext1_status()` cover multi-pin RTC wake.
 - `causes()` returns the wake-source bitmask from the previous sleep.
 - `woke(source)` tests one wake source.
 - `keep(domain)`, `auto_power(domain)`, and `power_down(domain)` set sleep power-domain policy.

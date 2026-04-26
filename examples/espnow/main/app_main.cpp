@@ -66,7 +66,11 @@ inline void prime(Link& bus)
 }
 
 struct Pulse {
-    static void setup(Link&) { Led::out(); Led::off(); }
+    static void setup(Link&)
+    {
+        Led::out();
+        Led::off();
+    }
 
     IRAM_ATTR static void run(Link& bus) noexcept
     {
@@ -125,7 +129,12 @@ struct Radio {
     inline constexpr static TickType_t idle = pdMS_TO_TICKS(1);
     inline constexpr static std::uint8_t channel = app::channel;
     inline constexpr static std::array<std::uint8_t, 6> peer{
-        0xffU, 0xffU, 0xffU, 0xffU, 0xffU, 0xffU,
+        0xffU,
+        0xffU,
+        0xffU,
+        0xffU,
+        0xffU,
+        0xffU,
     };
 
     static void start(Link& bus) noexcept

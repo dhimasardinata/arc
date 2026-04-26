@@ -48,27 +48,27 @@ struct Trax {
         return ESP_ERR_NO_MEM;
 #else
         switch (bank) {
-        case Bank::pro:
-            trace_ll_set_mem_block(0, TRACEMEM_MUX_BLK0_NUM);
-            return ESP_OK;
-        case Bank::app:
-            trace_ll_set_mem_block(1, TRACEMEM_MUX_BLK0_NUM);
-            return ESP_OK;
-        case Bank::pro_app:
+            case Bank::pro:
+                trace_ll_set_mem_block(0, TRACEMEM_MUX_BLK0_NUM);
+                return ESP_OK;
+            case Bank::app:
+                trace_ll_set_mem_block(1, TRACEMEM_MUX_BLK0_NUM);
+                return ESP_OK;
+            case Bank::pro_app:
 #if defined(CONFIG_ESP32S3_TRAX_TWOBANKS)
-            trace_ll_set_mem_block(0, TRACEMEM_MUX_BLK0_NUM);
-            trace_ll_set_mem_block(1, TRACEMEM_MUX_BLK1_NUM);
-            return ESP_OK;
+                trace_ll_set_mem_block(0, TRACEMEM_MUX_BLK0_NUM);
+                trace_ll_set_mem_block(1, TRACEMEM_MUX_BLK1_NUM);
+                return ESP_OK;
 #else
-            return ESP_ERR_INVALID_ARG;
+                return ESP_ERR_INVALID_ARG;
 #endif
-        case Bank::app_pro:
+            case Bank::app_pro:
 #if defined(CONFIG_ESP32S3_TRAX_TWOBANKS)
-            trace_ll_set_mem_block(1, TRACEMEM_MUX_BLK0_NUM);
-            trace_ll_set_mem_block(0, TRACEMEM_MUX_BLK1_NUM);
-            return ESP_OK;
+                trace_ll_set_mem_block(1, TRACEMEM_MUX_BLK0_NUM);
+                trace_ll_set_mem_block(0, TRACEMEM_MUX_BLK1_NUM);
+                return ESP_OK;
 #else
-            return ESP_ERR_INVALID_ARG;
+                return ESP_ERR_INVALID_ARG;
 #endif
         }
 

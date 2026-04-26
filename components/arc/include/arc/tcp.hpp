@@ -248,17 +248,17 @@ private:
     [[nodiscard]] static esp_err_t last_error() noexcept
     {
         switch (errno) {
-        case 0:
-            return ESP_FAIL;
-        case EAGAIN:
-        case ETIMEDOUT:
-            return ESP_ERR_TIMEOUT;
-        case EINVAL:
-            return ESP_ERR_INVALID_ARG;
-        case ENOMEM:
-            return ESP_ERR_NO_MEM;
-        default:
-            return ESP_FAIL;
+            case 0:
+                return ESP_FAIL;
+            case EAGAIN:
+            case ETIMEDOUT:
+                return ESP_ERR_TIMEOUT;
+            case EINVAL:
+                return ESP_ERR_INVALID_ARG;
+            case ENOMEM:
+                return ESP_ERR_NO_MEM;
+            default:
+                return ESP_FAIL;
         }
     }
 

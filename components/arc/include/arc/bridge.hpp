@@ -20,16 +20,28 @@ template <int HighPin,
           int Group = 0,
           std::uint32_t ResolutionHz = 10'000'000,
           mcpwm_timer_clock_source_t Source = MCPWM_TIMER_CLK_SRC_DEFAULT,
-          mcpwm_timer_count_mode_t Mode = MCPWM_TIMER_COUNT_MODE_UP>
+          mcpwm_timer_count_mode_t Mode = MCPWM_TIMER_COUNT_MODE_UP,
+          int FaultPin = -1,
+          bool FaultActiveHigh = true,
+          mcpwm_operator_brake_mode_t BrakeMode = MCPWM_OPER_BRAKE_MODE_CBC,
+          mcpwm_generator_action_t BrakeHighAction = MCPWM_GEN_ACTION_LOW,
+          mcpwm_generator_action_t BrakeLowAction = MCPWM_GEN_ACTION_LOW,
+          bool RecoverOnEmpty = true,
+          bool RecoverOnPeak = false>
 struct Bridge {
     static_assert(HighPin >= 0 && HighPin < SOC_GPIO_PIN_COUNT, "invalid MCPWM high pin");
     static_assert(LowPin >= 0 && LowPin < SOC_GPIO_PIN_COUNT, "invalid MCPWM low pin");
+    static_assert((FaultPin >= 0 && FaultPin < SOC_GPIO_PIN_COUNT) || FaultPin == -1, "invalid MCPWM fault pin");
     static_assert(HighPin != LowPin, "bridge outputs must use distinct pins");
+    static_assert(FaultPin == -1 || (FaultPin != HighPin && FaultPin != LowPin), "bridge fault pin must be distinct");
     static_assert(Group >= 0, "invalid MCPWM group");
     static_assert(Hz != 0U, "MCPWM frequency must be non-zero");
     static_assert(ResolutionHz >= Hz, "MCPWM resolution must be at least the output frequency");
     static_assert(DutyPermille <= 1000U, "duty permille must be in [0, 1000]");
     static_assert(Mode == MCPWM_TIMER_COUNT_MODE_UP, "arc::Bridge currently supports up-count mode only");
+    static_assert(
+        BrakeMode == MCPWM_OPER_BRAKE_MODE_CBC || BrakeMode == MCPWM_OPER_BRAKE_MODE_OST,
+        "invalid MCPWM brake mode");
 
     static void start()
     {
@@ -123,6 +135,16 @@ struct Bridge {
         return state.duty;
     }
 
+    [[nodiscard]] static esp_err_t recover() noexcept
+    {
+        if constexpr (FaultPin < 0) {
+            return ESP_ERR_INVALID_STATE;
+        } else {
+            init();
+            return mcpwm_operator_recover_from_fault(state.oper, state.fault);
+        }
+    }
+
 private:
     struct State {
         mcpwm_timer_handle_t timer{};
@@ -130,6 +152,7 @@ private:
         mcpwm_cmpr_handle_t cmpr{};
         mcpwm_gen_handle_t high{};
         mcpwm_gen_handle_t low{};
+        mcpwm_fault_handle_t fault{};
         std::uint32_t period{};
         std::uint32_t compare{};
         std::uint32_t duty{};
@@ -256,6 +279,22 @@ private:
         ESP_ERROR_CHECK(mcpwm_new_operator(&oper, &state.oper));
         ESP_ERROR_CHECK(mcpwm_operator_connect_timer(state.oper, state.timer));
 
+        if constexpr (FaultPin >= 0) {
+            mcpwm_gpio_fault_config_t fault{};
+            fault.group_id = Group;
+            fault.intr_priority = 0;
+            fault.gpio_num = FaultPin;
+            fault.flags.active_level = FaultActiveHigh ? 1U : 0U;
+            ESP_ERROR_CHECK(mcpwm_new_gpio_fault(&fault, &state.fault));
+
+            mcpwm_brake_config_t brake{};
+            brake.fault = state.fault;
+            brake.brake_mode = BrakeMode;
+            brake.flags.cbc_recover_on_tez = RecoverOnEmpty ? 1U : 0U;
+            brake.flags.cbc_recover_on_tep = RecoverOnPeak ? 1U : 0U;
+            ESP_ERROR_CHECK(mcpwm_operator_set_brake_on_fault(state.oper, &brake));
+        }
+
         mcpwm_comparator_config_t cmp{};
         cmp.intr_priority = 0;
         cmp.flags.update_cmp_on_tez = 1U;
@@ -275,6 +314,15 @@ private:
         low.gen_gpio_num = LowPin;
         low.flags.invert_pwm = 0U;
         ESP_ERROR_CHECK(mcpwm_new_generator(state.oper, &low, &state.low));
+
+        if constexpr (FaultPin >= 0) {
+            ESP_ERROR_CHECK(mcpwm_generator_set_action_on_brake_event(
+                state.high,
+                MCPWM_GEN_BRAKE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, BrakeMode, BrakeHighAction)));
+            ESP_ERROR_CHECK(mcpwm_generator_set_action_on_brake_event(
+                state.low,
+                MCPWM_GEN_BRAKE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, BrakeMode, BrakeLowAction)));
+        }
 
         ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(
             state.high,

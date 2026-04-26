@@ -571,9 +571,7 @@ private:
         void* const fb1,
         void* const fb2) noexcept
     {
-        return (fb0 != nullptr ? 1U : 0U)
-            + (fb1 != nullptr ? 1U : 0U)
-            + (fb2 != nullptr ? 1U : 0U);
+        return (fb0 != nullptr ? 1U : 0U) + (fb1 != nullptr ? 1U : 0U) + (fb2 != nullptr ? 1U : 0U);
     }
 
     [[nodiscard]] static constexpr esp_lcd_rgb_timing_t timing() noexcept

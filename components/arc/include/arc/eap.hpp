@@ -92,14 +92,14 @@ struct Eap {
     [[nodiscard]] static esp_err_t phase2(const Phase2 value) noexcept
     {
         switch (value) {
-        case ESP_EAP_TTLS_PHASE2_EAP:
-        case ESP_EAP_TTLS_PHASE2_MSCHAPV2:
-        case ESP_EAP_TTLS_PHASE2_MSCHAP:
-        case ESP_EAP_TTLS_PHASE2_PAP:
-        case ESP_EAP_TTLS_PHASE2_CHAP:
-            break;
-        default:
-            return ESP_ERR_INVALID_ARG;
+            case ESP_EAP_TTLS_PHASE2_EAP:
+            case ESP_EAP_TTLS_PHASE2_MSCHAPV2:
+            case ESP_EAP_TTLS_PHASE2_MSCHAP:
+            case ESP_EAP_TTLS_PHASE2_PAP:
+            case ESP_EAP_TTLS_PHASE2_CHAP:
+                break;
+            default:
+                return ESP_ERR_INVALID_ARG;
         }
 
         return esp_eap_client_set_ttls_phase2_method(value);

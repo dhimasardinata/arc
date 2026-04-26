@@ -155,16 +155,16 @@ private:
     [[nodiscard]] static esp_err_t last_error() noexcept
     {
         switch (errno) {
-        case 0:
-            return ESP_FAIL;
-        case EINVAL:
-            return ESP_ERR_INVALID_ARG;
-        case ENOENT:
-            return ESP_ERR_NOT_FOUND;
-        case ENOMEM:
-            return ESP_ERR_NO_MEM;
-        default:
-            return ESP_FAIL;
+            case 0:
+                return ESP_FAIL;
+            case EINVAL:
+                return ESP_ERR_INVALID_ARG;
+            case ENOENT:
+                return ESP_ERR_NOT_FOUND;
+            case ENOMEM:
+                return ESP_ERR_NO_MEM;
+            default:
+                return ESP_FAIL;
         }
     }
 

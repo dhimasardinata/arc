@@ -1,0 +1,17 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = [
+    ".cache",
+    ".espressif",
+    ".rustup",
+    "build",
+    "dump",
+    "esp-idf",
+    "examples/*/build",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

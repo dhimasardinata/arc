@@ -105,9 +105,7 @@ def main() -> int:
         copied.append((name, rel))
 
     manifest = out / "MANIFEST.txt"
-    manifest.write_text(
-        "\n".join(f"{name}\t{path}" for name, path in copied) + "\n",
-        encoding="utf-8")
+    manifest.write_text("\n".join(f"{name}\t{path}" for name, path in copied) + "\n", encoding="utf-8")
     print(f"dumped {len(copied)} files into {out.relative_to(ROOT)}")
     return 0
 

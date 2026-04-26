@@ -165,7 +165,7 @@ struct Sd {
             return 0U;
         }
         return static_cast<std::uint64_t>(state.card->csd.capacity) *
-               static_cast<std::uint64_t>(state.card->csd.sector_size);
+            static_cast<std::uint64_t>(state.card->csd.sector_size);
     }
 
     [[nodiscard]] static constexpr int width() noexcept

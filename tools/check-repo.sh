@@ -24,6 +24,8 @@ grep_files() {
 
 git diff --check --cached >/dev/null 2>&1 || die "staged diff contains whitespace errors"
 
+./tools/format.sh --check || die "format check failed; run ./tools/format.sh"
+
 while IFS= read -r file; do
     if [[ -e "$file" ]]; then
         die "tracked sdkconfig or sdkconfig.old files are not allowed: $file"
@@ -86,7 +88,7 @@ if ! grep -qE '\./tools/host-tests\.sh' .github/workflows/build.yml; then
     die "build workflow must run host tests before firmware builds"
 fi
 
-for file in env.sh tools/host-tests.sh tools/dump-source.py tools/clangd-compile-commands.py examples/*/env.sh; do
+for file in env.sh tools/host-tests.sh tools/dump-source.py tools/clangd-compile-commands.py tools/format.sh tools/install-git-hooks.sh examples/*/env.sh; do
     [[ -x "$file" ]] || die "$file must stay executable"
 done
 

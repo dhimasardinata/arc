@@ -30,12 +30,33 @@ template <spi_host_device_t Host,
           spi_dma_chan_t Dma = SPI_DMA_CH_AUTO,
           std::uint32_t Flags = 0U,
           esp_intr_cpu_affinity_t IsrCpu = ESP_INTR_CPU_AFFINITY_0,
-          int IntrFlags = 0>
+          int IntrFlags = 0,
+          int QuadWp = -1,
+          int QuadHd = -1,
+          int Data4 = -1,
+          int Data5 = -1,
+          int Data6 = -1,
+          int Data7 = -1,
+          bool DataDefault = false>
 struct SpiBus {
     static_assert(Sclk >= 0 && Sclk < SOC_GPIO_PIN_COUNT, "invalid SPI SCLK pin");
     static_assert((Mosi >= 0 && Mosi < SOC_GPIO_PIN_COUNT) || Mosi == -1, "invalid SPI MOSI pin");
     static_assert((Miso >= 0 && Miso < SOC_GPIO_PIN_COUNT) || Miso == -1, "invalid SPI MISO pin");
+    static_assert((QuadWp >= 0 && QuadWp < SOC_GPIO_PIN_COUNT) || QuadWp == -1, "invalid SPI WP pin");
+    static_assert((QuadHd >= 0 && QuadHd < SOC_GPIO_PIN_COUNT) || QuadHd == -1, "invalid SPI HD pin");
+    static_assert((Data4 >= 0 && Data4 < SOC_GPIO_PIN_COUNT) || Data4 == -1, "invalid SPI data4 pin");
+    static_assert((Data5 >= 0 && Data5 < SOC_GPIO_PIN_COUNT) || Data5 == -1, "invalid SPI data5 pin");
+    static_assert((Data6 >= 0 && Data6 < SOC_GPIO_PIN_COUNT) || Data6 == -1, "invalid SPI data6 pin");
+    static_assert((Data7 >= 0 && Data7 < SOC_GPIO_PIN_COUNT) || Data7 == -1, "invalid SPI data7 pin");
     static_assert(Mosi != -1 || Miso != -1, "SPI bus needs MOSI, MISO, or both");
+    static_assert((QuadWp == -1 && QuadHd == -1) || (QuadWp != -1 && QuadHd != -1), "quad SPI needs both WP and HD pins");
+    static_assert(
+        (Data4 == -1 && Data5 == -1 && Data6 == -1 && Data7 == -1) ||
+            (Data4 != -1 && Data5 != -1 && Data6 != -1 && Data7 != -1),
+        "octal SPI needs all data4..data7 pins");
+    static_assert(
+        Data4 == -1 || (QuadWp != -1 && QuadHd != -1),
+        "octal SPI also needs the quad WP and HD pins");
     static_assert(MaxBytes > 0, "SPI max transfer must be non-zero");
 
     [[nodiscard]] static esp_err_t init() noexcept
@@ -54,17 +75,17 @@ struct SpiBus {
         cfg.sclk_io_num = Sclk;
         cfg.mosi_io_num = Mosi;
         cfg.miso_io_num = Miso;
-        cfg.quadwp_io_num = -1;
-        cfg.quadhd_io_num = -1;
-        cfg.data4_io_num = -1;
-        cfg.data5_io_num = -1;
-        cfg.data6_io_num = -1;
-        cfg.data7_io_num = -1;
+        cfg.quadwp_io_num = QuadWp;
+        cfg.quadhd_io_num = QuadHd;
+        cfg.data4_io_num = Data4;
+        cfg.data5_io_num = Data5;
+        cfg.data6_io_num = Data6;
+        cfg.data7_io_num = Data7;
         cfg.max_transfer_sz = MaxBytes;
         cfg.flags = Flags;
         cfg.isr_cpu_id = IsrCpu;
         cfg.intr_flags = IntrFlags;
-        cfg.data_io_default_level = false;
+        cfg.data_io_default_level = DataDefault;
         err = spi_bus_initialize(Host, &cfg, Dma);
         if (err == ESP_OK) {
             Init::pass(state.init);
@@ -100,6 +121,26 @@ struct SpiBus {
         return Miso;
     }
 
+    [[nodiscard]] static constexpr int quadwp() noexcept
+    {
+        return QuadWp;
+    }
+
+    [[nodiscard]] static constexpr int quadhd() noexcept
+    {
+        return QuadHd;
+    }
+
+    [[nodiscard]] static constexpr bool quad() noexcept
+    {
+        return QuadWp != -1 && QuadHd != -1;
+    }
+
+    [[nodiscard]] static constexpr bool octal() noexcept
+    {
+        return Data4 != -1;
+    }
+
     [[nodiscard]] static constexpr int max_bytes() noexcept
     {
         return MaxBytes;
@@ -125,7 +166,22 @@ struct SpiBus {
 private:
     using Resource = Claim<ClaimKind::spi_bus,
                            static_cast<int>(Host),
-                           claim_token<Host, Sclk, Mosi, Miso, MaxBytes, Dma, Flags, IsrCpu, IntrFlags>()>;
+                           claim_token<Host,
+                                       Sclk,
+                                       Mosi,
+                                       Miso,
+                                       MaxBytes,
+                                       Dma,
+                                       Flags,
+                                       IsrCpu,
+                                       IntrFlags,
+                                       QuadWp,
+                                       QuadHd,
+                                       Data4,
+                                       Data5,
+                                       Data6,
+                                       Data7,
+                                       DataDefault>()>;
 
     struct State {
         std::uint32_t init;
@@ -152,6 +208,9 @@ struct Spi {
     inline constexpr static std::uint32_t ticket_pending = 0U;
     inline constexpr static std::uint32_t ticket_done = 1U;
     inline constexpr static std::uint32_t ticket_invalid = 2U;
+    inline constexpr static std::uint32_t dual = SPI_TRANS_MODE_DIO;
+    inline constexpr static std::uint32_t quad = SPI_TRANS_MODE_QIO;
+    inline constexpr static std::uint32_t octal = SPI_TRANS_MODE_OCT;
 
     struct TicketBase {
         std::uint32_t done{ticket_invalid};
@@ -271,9 +330,11 @@ struct Spi {
         const void* const tx,
         void* const rx,
         const std::size_t bytes,
-        const std::uint32_t hz = 0U) noexcept
+        const std::uint32_t hz = 0U,
+        const std::uint32_t flags = 0U) noexcept
     {
         spi_transaction_t trans{};
+        trans.flags = flags;
         trans.length = bytes * 8U;
         trans.rxlength = rx == nullptr ? 0U : bytes * 8U;
         trans.override_freq_hz = static_cast<decltype(trans.override_freq_hz)>(hz);
@@ -286,28 +347,30 @@ struct Spi {
     [[nodiscard]] static esp_err_t send(
         const void* const tx,
         const std::size_t bytes,
-        const std::uint32_t hz = 0U) noexcept
+        const std::uint32_t hz = 0U,
+        const std::uint32_t flags = 0U) noexcept
     {
         const auto ready = init();
         if (ready != ESP_OK) {
             return ready;
         }
 
-        auto trans = job(tx, nullptr, bytes, hz);
+        auto trans = job(tx, nullptr, bytes, hz, flags);
         return spi_device_transmit(state.dev, &trans);
     }
 
     [[nodiscard]] static esp_err_t recv(
         void* const rx,
         const std::size_t bytes,
-        const std::uint32_t hz = 0U) noexcept
+        const std::uint32_t hz = 0U,
+        const std::uint32_t flags = 0U) noexcept
     {
         const auto ready = init();
         if (ready != ESP_OK) {
             return ready;
         }
 
-        auto trans = job(nullptr, rx, bytes, hz);
+        auto trans = job(nullptr, rx, bytes, hz, flags);
         trans.rxlength = bytes * 8U;
         trans.length = bytes * 8U;
         return spi_device_transmit(state.dev, &trans);
@@ -317,14 +380,15 @@ struct Spi {
         const void* const tx,
         void* const rx,
         const std::size_t bytes,
-        const std::uint32_t hz = 0U) noexcept
+        const std::uint32_t hz = 0U,
+        const std::uint32_t flags = 0U) noexcept
     {
         const auto ready = init();
         if (ready != ESP_OK) {
             return ready;
         }
 
-        auto trans = job(tx, rx, bytes, hz);
+        auto trans = job(tx, rx, bytes, hz, flags);
         return spi_device_transmit(state.dev, &trans);
     }
 
@@ -332,14 +396,15 @@ struct Spi {
         const void* const tx,
         void* const rx,
         const std::size_t bytes,
-        const std::uint32_t hz = 0U) noexcept
+        const std::uint32_t hz = 0U,
+        const std::uint32_t flags = 0U) noexcept
     {
         const auto ready = init();
         if (ready != ESP_OK) {
             return ready;
         }
 
-        auto trans = job(tx, rx, bytes, hz);
+        auto trans = job(tx, rx, bytes, hz, flags);
         return spi_device_polling_transmit(state.dev, &trans);
     }
 
