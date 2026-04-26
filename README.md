@@ -1449,6 +1449,7 @@ Compile-time GPTimer wrapper for a hardware timebase.
 - `read()` returns the current counter value.
 - `zero()` sets the counter.
 - `stop()`, `pause()`, and `resume()` gate the timer.
+- Rebinding the same timer instance to a different `Handler` trips a debug assert instead of silently leaving the original ISR installed.
 
 `Handler` supplies:
 
@@ -1463,7 +1464,7 @@ Power-state helper for the Core 0 side.
 - `after_us(value)` and `after<Value>()` arm timer wake.
 - `ext0<Pin, High>()` arms single RTC-GPIO wake.
 - `ext1<Mode, Pins...>()`, `ext1_off<Pins...>()`, and `ext1_status()` cover multi-pin RTC wake.
-- `causes()` returns the wake-source bitmask from the previous sleep.
+- `cause()` returns the previous wake source from standard ESP-IDF wakeup state.
 - `woke(source)` tests one wake source.
 - `keep(domain)`, `auto_power(domain)`, and `power_down(domain)` set sleep power-domain policy.
 - `light()` enters light sleep and returns after wake.
@@ -1811,7 +1812,7 @@ NimBLE host bridge for ESP32-S3 BLE.
 - `init()` initializes NVS through `arc::Store` and starts the NimBLE controller/host stack.
 - `run()` owns `nimble_port_run()` in the current task, while `host<Stack, Core, Priority>(name)` starts it in one static pinned task instead of using NimBLE's heap-created default task.
 - Only one task can own the NimBLE run loop at a time.
-- `stop(wait)`, `join(wait)`, and `active()` expose host-loop shutdown without racing `deinit()`.
+- `stop(wait)`, `join(wait)`, and `active()` expose host-loop shutdown without racing `deinit()`, and the static host task is reaped by the caller after it unwinds instead of reusing task memory early.
 - `deinit()` tears the stack down only after the host lane is inactive.
 - `cfg()` exposes `ble_hs_cfg`, while `hook(reset, sync)` sets the common reset/sync callbacks.
 - `gap()`, `name(...)`, and `appearance(...)` cover the standard GAP identity path.
@@ -1827,7 +1828,7 @@ The `ble` feature maps to `bt` and `nvs_flash`; the app still needs ESP-IDF Blue
 Reusable Core 0 UDP transport plane.
 
 UDP uses `arc::net::Radio` underneath and takes a radio lease while its Core 0 task is alive, so `Radio::off()` cannot destroy netif or Wi-Fi state beneath registered UDP event handlers.
-`boot()` is idempotent while the transport is active. Call `Udp::stop(wait)` before `Radio::off()` when a program needs deep sleep or radio reconfiguration; it signals the task, wakes the Wi-Fi wait, closes the socket, unregisters Wi-Fi/IP handlers, releases the lease, and self-deletes from the task after cleanup. A finite `wait` returns `ESP_ERR_TIMEOUT` if the task has not finished unwinding.
+`boot()` is idempotent while the transport is active. Call `Udp::stop(wait)` before `Radio::off()` when a program needs deep sleep or radio reconfiguration; it signals the task, wakes the Wi-Fi wait, closes the socket, unregisters Wi-Fi/IP handlers, releases the lease, then lets the caller reap the parked static task before that task memory is reused. A finite `wait` returns `ESP_ERR_TIMEOUT` if the task has not finished unwinding.
 
 `Policy` supplies compile-time config:
 
@@ -1860,7 +1861,7 @@ Network is intentionally opt-in. Baseline apps only include `arc.hpp`; UDP apps 
 Reusable Core 0 ESP-NOW plane.
 
 ESP-NOW uses `arc::net::Radio` for the shared Wi-Fi base and takes a radio lease while its Core 0 task is alive. It owns ESP-NOW peer/callback setup while the shared radio owner protects Wi-Fi/netif teardown.
-`boot()` is idempotent while the transport is active. Call `EspNow::stop(wait)` before `Radio::off()` when ESP-NOW must be torn down; it stops the task loop, unregisters ESP-NOW callbacks, deinitializes ESP-NOW, releases the radio lease, and self-deletes after cleanup.
+`boot()` is idempotent while the transport is active. Call `EspNow::stop(wait)` before `Radio::off()` when ESP-NOW must be torn down; it stops the task loop, unregisters ESP-NOW callbacks, deinitializes ESP-NOW, releases the radio lease, then lets the caller reap the parked static task before that task memory is reused.
 
 `Policy` supplies compile-time config:
 
@@ -2258,7 +2259,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 The example composes:
 
 - `ARC_RTC` retained state for a boot counter
-- `arc::Sleep::causes()` and `arc::Sleep::woke(...)`
+- `arc::Sleep::cause()` and `arc::Sleep::woke(...)`
 - `arc::Sleep::after<2'000'000>()`
 - `arc::Sleep::deep()`
 

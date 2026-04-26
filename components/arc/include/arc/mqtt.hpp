@@ -390,6 +390,9 @@ struct Mqtt {
             if (*filter == '\0' && *topic == '\0') {
                 return true;
             }
+            if (*filter == '/' && filter[1] == '#' && filter[2] == '\0' && *topic == '\0') {
+                return true;
+            }
             if (*filter == '/' && *topic == '/') {
                 ++filter;
                 ++topic;

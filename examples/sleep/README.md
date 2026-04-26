@@ -46,7 +46,7 @@ arc::Sleep::deep();
 
 Useful calls:
 
-- `arc::Sleep::causes()`
+- `arc::Sleep::cause()`
 - `arc::Sleep::woke(ESP_SLEEP_WAKEUP_TIMER)`
 - `arc::Sleep::light()`
 - `arc::Sleep::deep()`

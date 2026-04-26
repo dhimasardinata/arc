@@ -125,6 +125,7 @@ struct Timer {
 private:
     struct State {
         gptimer_handle_t timer{};
+        detail::cold::TimerAlarmCallback alarm{};
         bool enabled{};
         bool running{};
         bool bound{};
@@ -162,10 +163,16 @@ private:
         create();
 
         if constexpr (TimerAlarm<Handler>) {
-            if (!state.bound && !state.enabled) {
-                ESP_ERROR_CHECK(detail::cold::timer_bind(state.timer, &on_alarm<Handler>));
-                state.bound = true;
+            constexpr auto callback = detail::cold::TimerAlarmCallback{&on_alarm<Handler>};
+            if (state.bound) {
+                configASSERT(state.alarm == callback);
+                return;
             }
+
+            configASSERT(!state.enabled);
+            ESP_ERROR_CHECK(detail::cold::timer_bind(state.timer, callback));
+            state.alarm = callback;
+            state.bound = true;
         }
     }
 

@@ -44,6 +44,8 @@ struct Udp {
     static void boot()
         requires StaticTaskState<Shared, Bus>
     {
+        static_cast<void>(reap());
+
         auto inactive = std::uint32_t{};
         if (!__atomic_compare_exchange_n(
                 &state.active,
@@ -55,6 +57,7 @@ struct Udp {
             return;
         }
 
+        __atomic_store_n(&state.parked, 0U, __ATOMIC_RELEASE);
         __atomic_store_n(&state.running, 1U, __ATOMIC_RELEASE);
         const auto handle = spawn(
             &run,
@@ -68,6 +71,7 @@ struct Udp {
         if (handle == nullptr) {
             __atomic_store_n(&state.running, 0U, __ATOMIC_RELEASE);
             __atomic_store_n(&state.active, 0U, __ATOMIC_RELEASE);
+            __atomic_store_n(&state.parked, 0U, __ATOMIC_RELEASE);
         }
         configASSERT(handle != nullptr);
     }
@@ -88,7 +92,7 @@ struct Udp {
         }
 
         const auto start = xTaskGetTickCount();
-        while (__atomic_load_n(&state.active, __ATOMIC_ACQUIRE) != 0U) {
+        while (!reap()) {
             if (wait != portMAX_DELAY && static_cast<TickType_t>(xTaskGetTickCount() - start) >= wait) {
                 return ESP_ERR_TIMEOUT;
             }
@@ -189,6 +193,7 @@ private:
         TaskHandle_t task{};
         std::uint32_t running{};
         std::uint32_t active{};
+        std::uint32_t parked{};
     };
 
     constinit static inline State state{};
@@ -474,16 +479,44 @@ private:
             state.leased = false;
         }
 
+        __atomic_store_n(&state.running, 0U, __ATOMIC_RELEASE);
+        __atomic_store_n(&state.parked, 1U, __ATOMIC_RELEASE);
+    }
+
+    [[nodiscard]] static bool reap() noexcept
+    {
+        if (__atomic_load_n(&state.active, __ATOMIC_ACQUIRE) == 0U) {
+            return true;
+        }
+
+        auto parked = std::uint32_t{1U};
+        if (!__atomic_compare_exchange_n(
+                &state.parked,
+                &parked,
+                2U,
+                false,
+                __ATOMIC_ACQ_REL,
+                __ATOMIC_ACQUIRE)) {
+            return false;
+        }
+
+        const auto handle = task();
+        configASSERT(handle == nullptr || xTaskGetCurrentTaskHandle() != handle);
+        if (handle != nullptr) {
+            vTaskDelete(handle);
+        }
+
         set_task(nullptr);
         __atomic_store_n(&state.running, 0U, __ATOMIC_RELEASE);
         __atomic_store_n(&state.active, 0U, __ATOMIC_RELEASE);
+        __atomic_store_n(&state.parked, 0U, __ATOMIC_RELEASE);
+        return true;
     }
 
     [[noreturn]] static void done() noexcept
     {
         cleanup();
-        vTaskDelete(nullptr);
-        __builtin_unreachable();
+        park_task();
     }
 
     static void run(void* raw) noexcept

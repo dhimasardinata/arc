@@ -64,10 +64,13 @@ private:
     struct Launch {
         TaskHandle_t task{};
         std::uint32_t active{};
+        std::uint32_t parked{};
     };
 
     static void boot(const char* tag, void* state, const char* name)
     {
+        static_cast<void>(reap());
+
         auto inactive = std::uint32_t{};
         if (!__atomic_compare_exchange_n(
                 &launch.active,
@@ -79,6 +82,7 @@ private:
             return;
         }
 
+        __atomic_store_n(&launch.parked, 0U, __ATOMIC_RELEASE);
         log_boot(tag);
 
         const auto handle = spawn(
@@ -89,9 +93,11 @@ private:
             Bind,
             mem);
 
+        set_task(handle);
         if (handle == nullptr) {
             set_task(nullptr);
             __atomic_store_n(&launch.active, 0U, __ATOMIC_RELEASE);
+            __atomic_store_n(&launch.parked, 0U, __ATOMIC_RELEASE);
         }
         configASSERT(handle != nullptr);
 
@@ -115,10 +121,33 @@ private:
         return static_cast<std::uint32_t>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     }
 
-    static void cleanup() noexcept
+    [[nodiscard]] static bool reap() noexcept
     {
+        if (__atomic_load_n(&launch.active, __ATOMIC_ACQUIRE) == 0U) {
+            return true;
+        }
+
+        auto parked = std::uint32_t{1U};
+        if (!__atomic_compare_exchange_n(
+                &launch.parked,
+                &parked,
+                2U,
+                false,
+                __ATOMIC_ACQ_REL,
+                __ATOMIC_ACQUIRE)) {
+            return false;
+        }
+
+        const auto handle = __atomic_load_n(&launch.task, __ATOMIC_ACQUIRE);
+        configASSERT(handle == nullptr || xTaskGetCurrentTaskHandle() != handle);
+        if (handle != nullptr) {
+            vTaskDelete(handle);
+        }
+
         set_task(nullptr);
         __atomic_store_n(&launch.active, 0U, __ATOMIC_RELEASE);
+        __atomic_store_n(&launch.parked, 0U, __ATOMIC_RELEASE);
+        return true;
     }
 
     static void log_boot(const char* tag)
@@ -144,9 +173,8 @@ private:
             Workload::run();
         }
 
-        cleanup();
-        vTaskDelete(nullptr);
-        __builtin_unreachable();
+        __atomic_store_n(&launch.parked, 1U, __ATOMIC_RELEASE);
+        park_task();
     }
 };
 

@@ -15,11 +15,11 @@ inline void boot()
 {
     ++boots;
 
-    const auto causes = arc::Sleep::causes();
+    const auto cause = arc::Sleep::cause();
     std::printf(
-        "arc-sleep boot=%lu causes=0x%08lx timer=%s\n",
+        "arc-sleep boot=%lu cause=%lu timer=%s\n",
         static_cast<unsigned long>(boots),
-        static_cast<unsigned long>(causes),
+        static_cast<unsigned long>(cause),
         arc::Sleep::woke(ESP_SLEEP_WAKEUP_TIMER) ? "yes" : "no");
 
     ESP_ERROR_CHECK(arc::Sleep::after<nap_us>());

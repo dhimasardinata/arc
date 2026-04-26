@@ -60,4 +60,12 @@ template <std::size_t StackBytes>
         static_cast<BaseType_t>(core));
 }
 
+[[noreturn]] inline void park_task() noexcept
+{
+    vTaskSuspend(nullptr);
+    for (;;) {
+        vTaskSuspend(nullptr);
+    }
+}
+
 }  // namespace arc

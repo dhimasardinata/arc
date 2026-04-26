@@ -47,9 +47,15 @@ struct Ble {
 
     [[nodiscard]] static esp_err_t stop(const TickType_t wait = portMAX_DELAY) noexcept
     {
-        const auto err = nimble_port_stop();
-        if (const auto out = code(err); out != ESP_OK) {
-            return out;
+        if (!active()) {
+            return ESP_OK;
+        }
+
+        if (!parked()) {
+            const auto err = nimble_port_stop();
+            if (const auto out = code(err); out != ESP_OK) {
+                return out;
+            }
         }
 
         return join(wait);
@@ -74,11 +80,15 @@ struct Ble {
 
     [[nodiscard]] static esp_err_t run() noexcept
     {
-        if (!claim()) {
+        static_cast<void>(reap());
+        if (!claim(false)) {
             return ESP_ERR_INVALID_STATE;
         }
 
-        loop();
+        set_task(xTaskGetCurrentTaskHandle());
+        nimble_port_run();
+        set_task(nullptr);
+        release();
         return ESP_OK;
     }
 
@@ -94,7 +104,8 @@ struct Ble {
             return ESP_ERR_INVALID_STATE;
         }
 
-        if (!claim()) {
+        static_cast<void>(reap());
+        if (!claim(true)) {
             return ESP_ERR_INVALID_STATE;
         }
 
@@ -106,10 +117,12 @@ struct Ble {
             Cpu,
             Slot<StackBytes, Cpu, Priority>::mem);
         if (handle == nullptr) {
+            set_task(nullptr);
             release();
             return ESP_ERR_NO_MEM;
         }
 
+        set_task(handle);
         return ESP_OK;
     }
 
@@ -129,6 +142,9 @@ struct Ble {
 
         const auto start = xTaskGetTickCount();
         while (active()) {
+            if (hosted() && reap()) {
+                return ESP_OK;
+            }
             if (wait != portMAX_DELAY && static_cast<TickType_t>(xTaskGetTickCount() - start) >= wait) {
                 return ESP_ERR_TIMEOUT;
             }
@@ -299,42 +315,78 @@ private:
     template <std::size_t StackBytes, Core Cpu, UBaseType_t Priority>
     static void entry(void*) noexcept
     {
-        loop();
-        vTaskDelete(nullptr);
-        __builtin_unreachable();
+        set_task(xTaskGetCurrentTaskHandle());
+        nimble_port_run();
+        __atomic_store_n(&state.parked, 1U, __ATOMIC_RELEASE);
+        park_task();
     }
 
-    [[nodiscard]] static bool claim() noexcept
+    [[nodiscard]] static bool claim(const bool hosted_task) noexcept
     {
         auto inactive = std::uint32_t{};
-        return __atomic_compare_exchange_n(
+        const auto claimed = __atomic_compare_exchange_n(
             &state.active,
             &inactive,
             1U,
             false,
             __ATOMIC_ACQ_REL,
             __ATOMIC_ACQUIRE);
+        if (claimed) {
+            __atomic_store_n(&state.hosted, hosted_task ? 1U : 0U, __ATOMIC_RELEASE);
+            __atomic_store_n(&state.parked, 0U, __ATOMIC_RELEASE);
+        }
+        return claimed;
     }
 
     static void release() noexcept
     {
+        __atomic_store_n(&state.hosted, 0U, __ATOMIC_RELEASE);
+        __atomic_store_n(&state.parked, 0U, __ATOMIC_RELEASE);
         __atomic_store_n(&state.active, 0U, __ATOMIC_RELEASE);
     }
 
-    static void loop() noexcept
+    [[nodiscard]] static bool hosted() noexcept
     {
-        {
-            Gate guard(state.gate);
-            state.task = xTaskGetCurrentTaskHandle();
+        return __atomic_load_n(&state.hosted, __ATOMIC_ACQUIRE) != 0U;
+    }
+
+    [[nodiscard]] static bool parked() noexcept
+    {
+        return __atomic_load_n(&state.parked, __ATOMIC_ACQUIRE) != 0U;
+    }
+
+    [[nodiscard]] static bool reap() noexcept
+    {
+        if (!active() || !hosted()) {
+            return !active();
         }
 
-        nimble_port_run();
-
-        {
-            Gate guard(state.gate);
-            state.task = nullptr;
+        auto parked = std::uint32_t{1U};
+        if (!__atomic_compare_exchange_n(
+                &state.parked,
+                &parked,
+                2U,
+                false,
+                __ATOMIC_ACQ_REL,
+                __ATOMIC_ACQUIRE)) {
+            return false;
         }
+
+        const auto handle = task();
+        configASSERT(handle == nullptr || xTaskGetCurrentTaskHandle() != handle);
+        if (handle != nullptr) {
+            vTaskDelete(handle);
+        }
+
+        set_task(nullptr);
         release();
+        return true;
+    }
+
+    static void set_task(const TaskHandle_t task_handle) noexcept
+    {
+        Gate guard(state.gate);
+        state.task = task_handle;
     }
 
     [[nodiscard]] static TaskHandle_t task() noexcept
@@ -346,11 +398,15 @@ private:
     struct State {
         std::uint32_t gate;
         std::uint32_t active;
+        std::uint32_t hosted;
+        std::uint32_t parked;
         TaskHandle_t task;
         bool ready;
     };
 
     constinit static inline State state{
+        0U,
+        0U,
         0U,
         0U,
         nullptr,

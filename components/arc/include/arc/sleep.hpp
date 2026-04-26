@@ -10,14 +10,19 @@
 namespace arc {
 
 struct Sleep {
-    [[nodiscard]] static std::uint32_t causes() noexcept
+    [[nodiscard]] static esp_sleep_source_t cause() noexcept
     {
-        return esp_sleep_get_wakeup_causes();
+        return esp_sleep_get_wakeup_cause();
+    }
+
+    [[nodiscard]] static esp_sleep_source_t causes() noexcept
+    {
+        return cause();
     }
 
     [[nodiscard]] static bool woke(const esp_sleep_source_t source) noexcept
     {
-        return (causes() & (std::uint32_t{1} << static_cast<std::uint32_t>(source))) != 0U;
+        return cause() == source;
     }
 
     [[nodiscard]] static esp_err_t after_us(const std::uint64_t us) noexcept
