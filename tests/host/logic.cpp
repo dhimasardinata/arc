@@ -259,6 +259,13 @@ void test_fanin()
     expect(fan.pop(std::span(out)) == 5U, "Fanin batch pop count");
     expect(out[0] == 10 && out[1] == 20 && out[2] == 21 && out[3] == 1 && out[4] == 2, "Fanin batch lane order");
     expect(fan.empty(), "Fanin batch drains empty");
+
+    const std::array lane{100, 101, 102, 103};
+    expect(fan.push<1>(std::span(lane)) == 3U, "Fanin batch push caps lane");
+    expect(fan.size<1>() == 3U && fan.space<1>() == 0U, "Fanin lane size and space");
+    out = {};
+    expect(fan.pop(std::span(out)) == 3U, "Fanin batch pushed pop count");
+    expect(out[0] == 100 && out[1] == 101 && out[2] == 102, "Fanin batch pushed order");
 }
 
 void test_checked_fanin()
@@ -277,6 +284,11 @@ void test_checked_fanin()
     expect(fan.try_push<1>(40), "Audit Fanin batch lane 1");
     std::array<int, 2> out{};
     expect(fan.pop(std::span(out)) == 2U && out[0] == 30 && out[1] == 40, "Audit Fanin batch pop");
+
+    const std::array lane{50, 51, 52};
+    expect(fan.push<0>(std::span(lane)) == 3U, "Audit Fanin batch push");
+    expect(fan.size<0>() == 3U && fan.space<0>() == 0U, "Audit Fanin lane size and space");
+    expect(fan.pop(std::span(out).first(2U)) == 2U && out[0] == 50 && out[1] == 51, "Audit Fanin partial batch pop");
 }
 
 void test_mqtt()
@@ -667,6 +679,11 @@ void test_stream()
     expect(io.tx[0] == 0U && io.tx[1] == 3U && io.tx[4] == 3U, "Stream frame layout");
     expect(arc::net::Stream::write_frame16(io, nullptr, 0U).has_value(), "Stream empty frame write");
     expect(io.tx_pos == 7U && io.tx[5] == 0U && io.tx[6] == 0U, "Stream empty frame layout");
+
+    std::array<std::uint8_t, 8> encoded{};
+    const auto coded = arc::net::Stream::frame16(std::span(encoded), std::span(payload));
+    expect(coded.has_value() && coded->size() == 5U, "Stream frame encode");
+    expect((*coded)[0] == 0U && (*coded)[1] == 3U && (*coded)[4] == 3U, "Stream frame encode layout");
 
     io.rx = {0U, 3U, 7U, 8U, 9U};
     io.rx_len = 5U;

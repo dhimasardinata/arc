@@ -335,18 +335,19 @@ void bench_fanin()
     print(arc);
 
     arc::Fanin<std::uint32_t, 1024, 4> batch_fan;
+    std::array<std::uint32_t, 1023> batch_in{};
     std::array<std::uint32_t, 4092> batch_out{};
     sum = 0U;
-    const auto arc_batch = measure("arc::Fanin batch", ops * 8ULL, [&]() {
+    const auto arc_batch = measure("arc::Fanin batch in/out", ops * 8ULL, [&]() {
         for (std::uint32_t base = 0; base < ops; base += 1023U) {
             const auto batch = (ops - base) < 1023U ? (ops - base) : 1023U;
             for (std::uint32_t i = 0; i < batch; ++i) {
-                const auto value = base + i;
-                expect(batch_fan.try_push<0>(value), "Fanin batch push 0");
-                expect(batch_fan.try_push<1>(value), "Fanin batch push 1");
-                expect(batch_fan.try_push<2>(value), "Fanin batch push 2");
-                expect(batch_fan.try_push<3>(value), "Fanin batch push 3");
+                batch_in[i] = base + i;
             }
+            expect(batch_fan.push<0>(std::span{batch_in}.first(batch)) == batch, "Fanin batch push 0");
+            expect(batch_fan.push<1>(std::span{batch_in}.first(batch)) == batch, "Fanin batch push 1");
+            expect(batch_fan.push<2>(std::span{batch_in}.first(batch)) == batch, "Fanin batch push 2");
+            expect(batch_fan.push<3>(std::span{batch_in}.first(batch)) == batch, "Fanin batch push 3");
             const auto got = batch_fan.pop(std::span{batch_out}.first(batch * 4U));
             expect(got == batch * 4U, "Fanin batch pop");
             for (std::size_t i = 0; i < got; ++i) {
@@ -666,6 +667,18 @@ void bench_stream()
     });
     sink += stream.pos + stream.checksum;
     print(framed);
+
+    std::array<std::uint8_t, 40> frame_out{};
+    const auto encoded = measure("arc::Stream frame16 encode", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(next_seed());
+            barrier();
+            const auto frame = arc::net::Stream::frame16(std::span(frame_out), std::span(payload));
+            expect(frame.has_value() && frame->size() == payload.size() + 2U, "Stream frame16 encode");
+            sink += (*frame)[i % frame->size()];
+        }
+    });
+    print(encoded);
 
     SourceStream source;
     for (std::size_t i = 0; i < source.data.size(); ++i) {

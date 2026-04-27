@@ -29,6 +29,29 @@ struct Fanin {
         return lanes_[Producer].try_push(value);
     }
 
+    template <std::size_t Producer, typename U, std::size_t Extent>
+        requires(std::is_same_v<std::remove_cv_t<U>, T>)
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(
+        const std::span<U, Extent> data) noexcept
+    {
+        static_assert(Producer < Producers, "invalid fanin producer");
+        return lanes_[Producer].push(data);
+    }
+
+    template <std::size_t Producer>
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t size() const noexcept
+    {
+        static_assert(Producer < Producers, "invalid fanin producer");
+        return lanes_[Producer].size();
+    }
+
+    template <std::size_t Producer>
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t space() const noexcept
+    {
+        static_assert(Producer < Producers, "invalid fanin producer");
+        return lanes_[Producer].space();
+    }
+
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(T& value) noexcept
     {
         std::size_t producer{};
@@ -146,6 +169,27 @@ struct Audit<Fanin<T, Capacity, Producers>> {
         static_assert(Producer < Producers, "invalid fanin producer");
         producers_[Producer].assert_single("arc::Audit<Fanin> lane must stay single-producer");
         return fan_.template try_push<Producer>(value);
+    }
+
+    template <std::size_t Producer, typename U, std::size_t Extent>
+        requires(std::is_same_v<std::remove_cv_t<U>, T>)
+    [[nodiscard]] inline std::size_t push(const std::span<U, Extent> data) noexcept
+    {
+        static_assert(Producer < Producers, "invalid fanin producer");
+        producers_[Producer].assert_single("arc::Audit<Fanin> lane must stay single-producer");
+        return fan_.template push<Producer>(data);
+    }
+
+    template <std::size_t Producer>
+    [[nodiscard]] inline std::size_t size() const noexcept
+    {
+        return fan_.template size<Producer>();
+    }
+
+    template <std::size_t Producer>
+    [[nodiscard]] inline std::size_t space() const noexcept
+    {
+        return fan_.template space<Producer>();
     }
 
     [[nodiscard]] inline bool try_pop(T& value) noexcept

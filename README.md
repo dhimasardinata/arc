@@ -100,7 +100,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Audit<Topology>` adds opt-in ownership assertions when you want topology misuse to fail fast instead of staying purely contractual.
 - `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer; `arc::Mux` is the terse topology alias.
 - `arc::DenseMpsc` keeps the same algorithm but packs cells tightly when RAM density matters more than cache-line isolation.
-- `arc::Fanin` gives per-producer SPSC lanes when producer preemption must not block completed work from other producers.
+- `arc::Fanin` gives per-producer SPSC lanes and batch push/pop paths when producer preemption must not block completed work from other producers.
 - `arc::SeqReg` gives multi-word latest-snapshot handoff without queues or torn reads.
 - `arc::dmabuf`, `arc::simdbuf`, `arc::ahbbuf`, `arc::axibuf`, and one-word STL allocators make DMA/SIMD/descriptor/RTC-capable heap placement explicit.
 - `arc::Space` reports runtime flash, OTA slot, partition, and heap capacity without heap allocation.
@@ -1188,9 +1188,11 @@ Use it when the code should read as a topology: many inputs into one owner. It i
 Static fan-in made from one SPSC lane per producer and one round-robin consumer.
 
 - `try_push<Producer>(event)` is wait-free for that producer lane.
+- `push<Producer>(span)` batches producer-side writes into one static lane.
 - `try_pop(event)` drains any completed producer without waiting behind another producer's half-finished slot.
 - `try_pop(producer, event)` also reports which lane produced the event.
 - `pop(span)` batches consumer-side fan-in when producer identity is not needed per item.
+- `size<Producer>()` and `space<Producer>()` expose per-lane occupancy and producer room.
 - `drain(scratch, fn, max)` accepts either `fn(event)` or `fn(producer, event)`.
 - `cap()` is the usable per-producer lane capacity, `producers()` is the static lane count, and `bytes()` exposes the full object footprint.
 
@@ -1972,6 +1974,7 @@ Tiny stream composition helpers for transports that expose `send_all(...)` and `
 - `write(...)` forwards a caller-owned buffer to `send_all(...)`.
 - `read_exact(...)` loops until a caller-owned buffer is full or the stream closes/errors.
 - `write_frame16(...)` and `read_frame16(...)` encode/decode a two-byte big-endian length prefix around a caller-owned payload buffer.
+- `frame16(out, payload)` encodes the same record into a caller-owned scratch buffer when the next layer wants a contiguous frame before sending.
 
 Use this when an application protocol needs exact records on top of TCP or TLS but still should not own a reconnect loop, parser task, or heap buffer.
 

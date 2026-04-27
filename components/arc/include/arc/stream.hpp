@@ -4,6 +4,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <type_traits>
 
@@ -99,6 +100,35 @@ struct Stream {
     [[nodiscard]] static Status write_frame16(Io& io, const std::span<T, Extent> data) noexcept
     {
         return write_frame16(io, data.data(), data.size_bytes());
+    }
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> frame16(
+        std::span<std::uint8_t> out,
+        const void* const data,
+        const std::size_t bytes) noexcept
+    {
+        if ((data == nullptr && bytes != 0U) || bytes > 0xffffU) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (out.size() < bytes + 2U) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+
+        out[0] = static_cast<std::uint8_t>(bytes >> 8U);
+        out[1] = static_cast<std::uint8_t>(bytes);
+        if (bytes != 0U) {
+            std::memcpy(out.data() + 2U, data, bytes);
+        }
+        return out.first(bytes + 2U);
+    }
+
+    template <typename T, std::size_t OutExtent, std::size_t InExtent>
+        requires StreamBytes<T>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> frame16(
+        const std::span<std::uint8_t, OutExtent> out,
+        const std::span<T, InExtent> data) noexcept
+    {
+        return frame16(out, data.data(), data.size_bytes());
     }
 
     template <ByteStream Io>
