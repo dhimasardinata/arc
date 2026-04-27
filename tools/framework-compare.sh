@@ -32,6 +32,44 @@ if [[ -f arduino-esp32/idf_component.yml ]]; then
     awk -F\" '/idf:/{print "Arduino IDF     " $2}' arduino-esp32/idf_component.yml
 fi
 
+cat <<'MATRIX'
+
+== feature coverage matrix ==
+Legend: native = first-class surface, compose = usable through lower layer, external = bring stack/library, no = not a goal here.
+
+Area                         Arc              raw ESP-IDF       Arduino-ESP32     ESPHome/product DSL
+Core/task topology           native typed     native C/RTOS     simplified        generated/runtime
+ESP32-S3 target lock         native strict    configurable      board package     board package
+Pin/topology conflict guard  native claims    manual            manual            generated config
+Dedicated GPIO hot path      native typed     native LL/HAL     limited/manual    no
+DMA/cache ownership          native typed     manual APIs       mostly hidden     no
+Capability heap buffers      native RAII      heap_caps manual  limited/manual    no
+Lock-free SPSC/MPSC/Fanin    native           manual/external   external          no
+SeqReg latest snapshot       native           external/manual   external          no
+Static pinned tasks          native           native manual     limited/manual    generated
+SPI/I2C/UART/I2S             native typed     native drivers    native friendly   components
+SPI/I2C slave ownership      native typed     native drivers    limited/manual    limited/no
+ADC oneshot/continuous DMA   native typed     native drivers    simplified        sensor components
+LCD I80/RGB/DVP DMA          native typed     native drivers    libraries/manual  limited/external
+MCPWM/LEDC/RMT/PCNT/SDM     native typed     native drivers    mixed wrappers    components/limited
+TWAI/CAN                     native typed     native driver     library/manual    component-limited
+USB Serial/JTAG              native typed     native driver     native friendly   no/limited
+USB OTG PHY                  native low-level native/private    TinyUSB-facing    no
+Filesystem/File/SD/NVS/OTA   native RAII      native drivers    native friendly   native product glue
+Wi-Fi owner                  native Core 0    native APIs       native friendly   native product glue
+WPA Enterprise               native bridge    native APIs       available/manual  limited
+ESP-NOW/UDP/TCP/TLS/HTTP     native lanes     native/lwIP       native friendly   components
+MQTT/WebSocket/CoAP codecs   native no-heap   mqtt/http libs    libraries         components
+BLE host/GAP                 native NimBLE    native stacks     native friendly   components
+AES/SHA/HMAC/DS/MPI/XTS      native typed     native/mbedTLS    available/manual  limited
+ULP/RTC GPIO/Sleep/PM/WDT    native typed     native APIs       mixed/manual      sleep components
+Touch/temp/fuse/rng/space    native typed     native APIs       mixed/manual      components
+Cloud/Matter/LVGL/TinyUSB    external         external/native   libraries         native/product
+Cross-target portability     no, S3 only      high within IDF   high within core  high within DSL
+Beginner velocity            low              medium            high              very high
+Realtime determinism         high             possible/manual   low/medium        low/medium
+MATRIX
+
 echo
 echo "== Arc host benchmark =="
 "$ROOT/tools/host-bench.sh"

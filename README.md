@@ -141,11 +141,51 @@ Arc is closest to raw ESP-IDF, not Arduino. It deliberately keeps ESP-IDF's driv
 
 Use raw ESP-IDF when the app needs full upstream surface area more than Arc's type discipline. Use Arduino when iteration speed and library availability matter more than deterministic ownership. Use Arc when a board has a fixed ESP32-S3 topology and the cost of a hidden allocation, cache bug, task migration, or peripheral double-init is unacceptable.
 
+<details>
+<summary>Feature Coverage Matrix</summary>
+
+Legend: `native` means the stack has a first-class surface for that area; `manual` means possible but app code owns the dangerous details; `external` means bring another stack/library; `limited` means partial or board/package dependent.
+
+| Area | Arc | Raw ESP-IDF | Arduino-ESP32 | ESPHome / product DSL |
+| --- | --- | --- | --- | --- |
+| Core/task topology | native typed static tasks, planes, `Tight` loops | native FreeRTOS primitives, manual policy | simplified task access, app usually sketch-shaped | generated runtime |
+| ESP32-S3 targeting | strict S3 contract | configurable across Espressif targets | board package selection | board package selection |
+| Pin/topology conflicts | native `Pins` and `Claim` tokens | manual discipline | manual discipline | generated YAML validation |
+| Dedicated GPIO hot path | native typed `Drive`/`Sense` | LL/HAL possible manually | limited/manual | no |
+| DMA/cache ownership | native `Cache`, DMA tickets, coherent helpers | available but manual | mostly hidden or library-specific | no |
+| Capability heap buffers | native RAII `CapsBuf`, `dmabuf`, `simdbuf`, descriptor buffers | `heap_caps_*` manual | limited/manual | no |
+| Lock-free lanes | native `Spsc`, `Mpsc`, `DenseMpsc`, `Fanin` | manual/external | external | no |
+| Latest snapshot handoff | native `Reg`, dual-slot `SeqReg` | manual/external | external | no |
+| Static pinned tasks | native `TaskMem`, `Plane`, `App`, `Ble::host` | native FreeRTOS manual | possible/manual | generated |
+| SPI/I2C/UART/I2S | native typed owners | native drivers | friendly wrappers | components |
+| SPI/I2C slave | native ownership and claims | native drivers | limited/manual | limited/no |
+| ADC oneshot/continuous DMA | native oneshot, calibration, DMA scope | native drivers | simplified | sensor components |
+| LCD I80/RGB/DVP DMA | native typed DMA ownership | native drivers | libraries/manual | limited/external |
+| MCPWM/LEDC/RMT/PCNT/SDM | native typed wrappers | native drivers | mixed wrappers/libraries | components/limited |
+| TWAI/CAN | native typed owner | native driver | library/manual | component-limited |
+| USB Serial/JTAG | native typed byte IO | native driver | friendly wrapper | limited/no |
+| USB OTG PHY | native low-level PHY owner | native/private-ish | TinyUSB-facing paths | no |
+| Filesystem/File/SD/NVS/OTA | native RAII wrappers | native drivers | friendly wrappers | product-native |
+| Wi-Fi owner | native shared Core 0 radio | native APIs | friendly wrappers | product-native |
+| WPA Enterprise | native EAP bridge | native APIs | available/manual | limited |
+| ESP-NOW/UDP/TCP/TLS/HTTP | native lanes/transports | native/lwIP/esp-tls/http | friendly wrappers | components |
+| MQTT/WebSocket/CoAP | native no-heap codecs, caller-owned transport | mqtt/http libs or manual codecs | libraries | components |
+| BLE host/GAP | native NimBLE lifecycle bridge | native Bluedroid/NimBLE | friendly wrappers | components |
+| AES/SHA/HMAC/DS/MPI/XTS | native typed crypto/security wrappers | native/mbedTLS APIs | available/manual | limited |
+| ULP/RTC GPIO/Sleep/PM/WDT | native typed wrappers where S3 support is verified | native APIs | mixed/manual | sleep components |
+| Touch/temp/fuse/rng/space telemetry | native typed wrappers | native APIs | mixed/manual | components |
+| Cloud/Matter/LVGL/TinyUSB class stacks | external by design | external/native components | libraries | product-native |
+| Cross-target portability | no, S3 only | high within ESP-IDF | high within Arduino core | high within DSL |
+| Beginner velocity | low | medium | high | very high |
+| Realtime determinism | high by design | possible with discipline | low/medium | low/medium |
+
+</details>
+
 Arc benchmark policy is strict:
 
 - Host benchmarks compare Arc primitives/codecs against local standard-library baselines only where both sides are compiled in the same binary.
 - `tools/ensure-frameworks.sh` creates local ignored framework checkouts beside `esp-idf/`, including `arduino-esp32/`.
-- `tools/framework-compare.sh` runs the Arc host benchmark, reports local raw ESP-IDF and Arduino-ESP32 versions, and compiles a real Arduino `Print.cpp` host comparison where that source is host-buildable.
+- `tools/framework-compare.sh` prints the feature matrix, runs the Arc host benchmark, reports local raw ESP-IDF and Arduino-ESP32 versions, and compiles a real Arduino `Print.cpp` host comparison where that source is host-buildable.
 - Raw ESP-IDF benchmarks must live as pinned ESP-IDF examples or components and report firmware size, build config, target, and measured hardware path.
 - Arduino or PlatformIO benchmarks must pin the core/platform version and board package in CI before any number is published.
 - No README number should compare against Arduino, ESPHome, PlatformIO, or raw ESP-IDF unless that exact competitor source is checked in or installed by CI and run in the same workflow.
