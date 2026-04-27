@@ -127,6 +127,29 @@ Arc stays at the deterministic hardware, memory, transport, and wire-codec bound
 
 When those stacks are needed, keep them on Core 0 and compose them with Arc's typed buffers, transport lanes, and ownership boundaries. Arc's job is to make the silicon-facing substrate hard to misuse, not to own product policy.
 
+## Framework Comparison
+
+Arc is closest to raw ESP-IDF, not Arduino. It deliberately keeps ESP-IDF's driver model, target specificity, and `esp_err_t` failure surface, then adds typed ownership, topology claims, memory-placement types, and Core 0/Core 1 architecture on top.
+
+| Stack | Best at | Trade-off vs Arc |
+| --- | --- | --- |
+| Raw ESP-IDF | Maximum upstream coverage, newest Espressif APIs, official driver behavior, direct Kconfig/CMake control. | App code must manually police handle lifetime, pin conflicts, DMA-capable memory, cache ownership, task placement, and protocol buffer ownership. |
+| Arc on ESP-IDF | Deterministic ESP32-S3 firmware where topology, memory capabilities, DMA/cache handoff, task placement, and lock-free lanes should be explicit in types. | Intentionally S3-locked, stricter, less beginner-friendly, and not a batteries-included product framework. |
+| Arduino-ESP32 | Fast sketches, broad library ecosystem, simple GPIO/Wi-Fi demos, and lower onboarding cost. Espressif's Arduino-ESP32 documentation currently tracks the 3.x core on ESP-IDF 5.5-era bases. | Less direct control over scheduler, memory placement, driver lifetime, CMake graph, and zero-allocation realtime boundaries. |
+| PlatformIO ESP-IDF / Arduino | Multi-board project management and convenient package workflows around ESP-IDF or Arduino projects. | Another build/package abstraction layer sits above the real ESP-IDF/Arduino stack; deterministic firmware still has to solve the same ownership and timing problems. |
+| ESPHome / product DSL stacks | Configuration-driven devices, sensors, home automation integrations, OTA/user features. | Excellent product glue, but not intended for tight Core 1 loops, explicit DMA/cache protocols, or compile-time hardware topology proofs. |
+
+Use raw ESP-IDF when the app needs full upstream surface area more than Arc's type discipline. Use Arduino when iteration speed and library availability matter more than deterministic ownership. Use Arc when a board has a fixed ESP32-S3 topology and the cost of a hidden allocation, cache bug, task migration, or peripheral double-init is unacceptable.
+
+Arc benchmark policy is strict:
+
+- Host benchmarks compare Arc primitives/codecs against local standard-library baselines only where both sides are compiled in the same binary.
+- Raw ESP-IDF benchmarks must live as pinned ESP-IDF examples or components and report firmware size, build config, target, and measured hardware path.
+- Arduino or PlatformIO benchmarks must pin the core/platform version and board package in CI before any number is published.
+- No README number should compare against Arduino, ESPHome, PlatformIO, or raw ESP-IDF unless that exact competitor source is checked in or installed by CI and run in the same workflow.
+
+Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/), [Arduino-ESP32 documentation](https://docs.espressif.com/projects/arduino-esp32/), [Arduino as an ESP-IDF component](https://docs.espressif.com/projects/arduino-esp32/en/latest/esp-idf_component.html), [PlatformIO ESP-IDF framework docs](https://docs.platformio.org/en/latest/frameworks/espidf.html), and [ESPHome ESP32 platform docs](https://esphome.io/components/esp32.html).
+
 <details>
 <summary>Quick API Map</summary>
 
@@ -2771,7 +2794,7 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 
 CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host test binary compiles pure Arc logic against tiny ESP attribute stubs and exercises SPSC, MPSC under real producer contention, Fanin round-robin behavior, wire codecs, stream helpers, SeqReg snapshots, and DSP/FIR math without flashing hardware.
 
-CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports host-runner throughput for Arc SPSC/MPSC/SeqReg/DSP/codecs plus standard-library baselines where a fair local baseline exists. It is not marketed as an ESP32-S3 cycle benchmark; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start.
+CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports host-runner throughput for Arc SPSC/MPSC/SeqReg/DSP/codecs plus standard-library baselines where a fair local baseline exists. It is not marketed as an ESP32-S3 cycle benchmark or as an Arduino/raw-IDF shootout; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start.
 
 ## Notes
 
