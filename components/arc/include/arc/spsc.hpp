@@ -4,6 +4,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <type_traits>
 
@@ -43,10 +44,8 @@ struct Spsc {
         const auto room = writable(head, load_acquire(&tail_));
         const auto count = data.size() < room ? data.size() : room;
 
-        for (std::size_t i = 0; i < count; ++i) {
-            buffer_[wrap(head + static_cast<std::uint32_t>(i))] = data[i];
-        }
         if (count != 0U) {
+            copy_in(head, data.data(), count);
             store_release(&head_, wrap(head + static_cast<std::uint32_t>(count)));
         }
         return count;
@@ -73,10 +72,8 @@ struct Spsc {
         const auto count = readable(load_acquire(&head_), tail);
         const auto take = out.size() < count ? out.size() : count;
 
-        for (std::size_t i = 0; i < take; ++i) {
-            out[i] = buffer_[wrap(tail + static_cast<std::uint32_t>(i))];
-        }
         if (take != 0U) {
+            copy_out(out.data(), tail, take);
             store_release(&tail_, wrap(tail + static_cast<std::uint32_t>(take)));
         }
         return take;
@@ -167,6 +164,30 @@ private:
         const std::uint32_t tail) noexcept
     {
         return (tail - head - 1U) & kMask;
+    }
+
+    inline void copy_in(
+        const std::uint32_t head,
+        const T* const src,
+        const std::size_t count) noexcept
+    {
+        const auto first = count < (Capacity - head) ? count : (Capacity - head);
+        std::memcpy(buffer_.data() + head, src, first * sizeof(T));
+        if (first != count) {
+            std::memcpy(buffer_.data(), src + first, (count - first) * sizeof(T));
+        }
+    }
+
+    inline void copy_out(
+        T* const dst,
+        const std::uint32_t tail,
+        const std::size_t count) noexcept
+    {
+        const auto first = count < (Capacity - tail) ? count : (Capacity - tail);
+        std::memcpy(dst, buffer_.data() + tail, first * sizeof(T));
+        if (first != count) {
+            std::memcpy(dst + first, buffer_.data(), (count - first) * sizeof(T));
+        }
     }
 
     std::array<T, Capacity> buffer_{};

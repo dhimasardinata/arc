@@ -325,10 +325,12 @@ int main()
     bench_write_set<8>(arc_sink, byte_base, byte_print, bulk_base, bulk_print);
     bench_write_set<32>(arc_sink, byte_base, byte_print, bulk_base, bulk_print);
     bench_write_set<128>(arc_sink, byte_base, byte_print, bulk_base, bulk_print);
+    bench_write_set<256>(arc_sink, byte_base, byte_print, bulk_base, bulk_print);
 
     bench_frame_set<8>(arc_sink, byte_base, bulk_base);
     bench_frame_set<32>(arc_sink, byte_base, bulk_base);
     bench_frame_set<128>(arc_sink, byte_base, bulk_base);
+    bench_frame_set<256>(arc_sink, byte_base, bulk_base);
 
     constexpr std::uint32_t rounds = 500'000U;
     bench("Arduino Print::print u32", rounds, [&]() {

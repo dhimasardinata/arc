@@ -133,6 +133,38 @@ void bench_spsc()
     sink += sum;
     print(arc_burst);
 
+    arc::Spsc<std::uint32_t, 2048> varied_queue;
+    std::array<std::uint32_t, 1024> varied_in{};
+    std::array<std::uint32_t, 1024> varied_out{};
+    sum = 0U;
+    std::uint64_t expected{};
+    const auto arc_varied = measure("arc::Spsc batch varied", ops * 2ULL, [&]() {
+        for (std::uint32_t sent = 0; sent < ops;) {
+            const auto want = ((next_seed() >> 16U) & 255U) + 1U;
+            const auto batch = (ops - sent) < want ? (ops - sent) : want;
+            for (std::uint32_t i = 0; i < batch; ++i) {
+                const auto value = sent + i;
+                varied_in[i] = value;
+                expected += value;
+            }
+            expect(varied_queue.push(std::span{varied_in}.first(batch)) == batch, "SPSC varied push");
+            const auto first = batch / 2U;
+            const auto second = batch - first;
+            expect(varied_queue.pop(std::span{varied_out}.first(first)) == first, "SPSC varied first pop");
+            for (std::uint32_t i = 0; i < first; ++i) {
+                sum += varied_out[i];
+            }
+            expect(varied_queue.pop(std::span{varied_out}.first(second)) == second, "SPSC varied second pop");
+            for (std::uint32_t i = 0; i < second; ++i) {
+                sum += varied_out[i];
+            }
+            sent += batch;
+        }
+    });
+    expect(sum == expected, "SPSC varied sum");
+    sink += sum;
+    print(arc_varied);
+
     arc::Spsc<std::uint32_t, 1024> single_burst_queue;
     sum = 0U;
     const auto arc_single_burst = measure("arc::Spsc single burst", ops * 2ULL, [&]() {
@@ -557,6 +589,33 @@ void bench_stream()
         }
     };
 
+    struct FrameSourceStream {
+        std::size_t pos{};
+
+        arc::Status send_all(const void*, std::size_t) noexcept
+        {
+            return arc::ok();
+        }
+
+        arc::Result<std::size_t> recv(void* const dst, const std::size_t bytes) noexcept
+        {
+            auto* out = static_cast<std::uint8_t*>(dst);
+            const auto chunk = bytes > 7U ? 7U : bytes;
+            for (std::size_t i = 0; i < chunk; ++i) {
+                const auto frame = pos % 34U;
+                if (frame == 0U) {
+                    out[i] = 0U;
+                } else if (frame == 1U) {
+                    out[i] = 32U;
+                } else {
+                    out[i] = static_cast<std::uint8_t>(frame - 2U);
+                }
+                ++pos;
+            }
+            return chunk;
+        }
+    };
+
     constexpr std::uint32_t rounds = 500'000U;
     std::array<std::uint8_t, 32> payload{};
     for (std::size_t i = 0; i < payload.size(); ++i) {
@@ -597,6 +656,18 @@ void bench_stream()
         }
     });
     print(read);
+
+    FrameSourceStream frame_source;
+    const auto read_frame = measure("arc::Stream read_frame16", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            std::array<std::uint8_t, 32> out{};
+            barrier();
+            const auto got = arc::net::Stream::read_frame16(frame_source, std::span(out));
+            expect(got.has_value() && *got == out.size(), "Stream read_frame16");
+            sink += out[i & 31U];
+        }
+    });
+    print(read_frame);
 }
 
 }  // namespace
