@@ -123,7 +123,7 @@ void bench_mpsc()
 
     const auto arc = measure("arc::Mpsc 4p", total, [&]() {
         for (std::uint32_t producer = 0; producer < producers; ++producer) {
-            threads[producer] = std::thread([producer, &queue, &ready]() {
+            threads[producer] = std::thread([producer, producers, &queue, &ready]() {
                 ready.fetch_add(1U, std::memory_order_release);
                 while (ready.load(std::memory_order_acquire) != producers) {
                     std::this_thread::yield();
@@ -163,7 +163,7 @@ void bench_mpsc()
     sum = 0U;
     const auto standard = measure("mutex deque 4p", total, [&]() {
         for (std::uint32_t producer = 0; producer < producers; ++producer) {
-            baseline_threads[producer] = std::thread([producer, &baseline, &lock, &baseline_ready]() {
+            baseline_threads[producer] = std::thread([producer, producers, &baseline, &lock, &baseline_ready]() {
                 baseline_ready.fetch_add(1U, std::memory_order_release);
                 while (baseline_ready.load(std::memory_order_acquire) != producers) {
                     std::this_thread::yield();
