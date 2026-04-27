@@ -11,6 +11,7 @@ managed_components/
 compile_commands.json
 .espressif/
 esp-idf/
+arduino-esp32/
 .cache/
 .rustup/
 .codex

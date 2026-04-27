@@ -144,6 +144,8 @@ Use raw ESP-IDF when the app needs full upstream surface area more than Arc's ty
 Arc benchmark policy is strict:
 
 - Host benchmarks compare Arc primitives/codecs against local standard-library baselines only where both sides are compiled in the same binary.
+- `tools/ensure-frameworks.sh` creates local ignored framework checkouts beside `esp-idf/`, including `arduino-esp32/`.
+- `tools/framework-compare.sh` runs the Arc host benchmark, reports local raw ESP-IDF and Arduino-ESP32 versions, and compiles a real Arduino `Print.cpp` host comparison where that source is host-buildable.
 - Raw ESP-IDF benchmarks must live as pinned ESP-IDF examples or components and report firmware size, build config, target, and measured hardware path.
 - Arduino or PlatformIO benchmarks must pin the core/platform version and board package in CI before any number is published.
 - No README number should compare against Arduino, ESPHome, PlatformIO, or raw ESP-IDF unless that exact competitor source is checked in or installed by CI and run in the same workflow.
