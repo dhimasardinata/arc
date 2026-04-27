@@ -111,6 +111,12 @@ jobs:
           chmod +x tools/host-tests.sh
           ./tools/host-tests.sh
 
+      - name: Host benchmarks
+        shell: bash
+        run: |
+          chmod +x tools/host-bench.sh
+          ./tools/host-bench.sh
+
       - name: Build all
         shell: bash
         run: |

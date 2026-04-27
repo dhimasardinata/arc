@@ -2769,7 +2769,9 @@ GitHub-hosted runners are still ephemeral, so host packages installed by `apt` d
 
 Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared `esp32s3` lock in `cmake/arc-idf.cmake`.
 
-CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host test binary compiles pure Arc logic against tiny ESP attribute stubs and exercises SPSC, MPSC under real producer contention, Fanin round-robin behavior, and DSP/FIR math without flashing hardware.
+CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host test binary compiles pure Arc logic against tiny ESP attribute stubs and exercises SPSC, MPSC under real producer contention, Fanin round-robin behavior, wire codecs, stream helpers, SeqReg snapshots, and DSP/FIR math without flashing hardware.
+
+CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports host-runner throughput for Arc SPSC/MPSC/SeqReg/DSP/codecs plus standard-library baselines where a fair local baseline exists. It is not marketed as an ESP32-S3 cycle benchmark; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start.
 
 ## Notes
 
