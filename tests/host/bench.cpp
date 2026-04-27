@@ -334,6 +334,30 @@ void bench_fanin()
     sink += sum;
     print(arc);
 
+    arc::Fanin<std::uint32_t, 1024, 4> batch_fan;
+    std::array<std::uint32_t, 4092> batch_out{};
+    sum = 0U;
+    const auto arc_batch = measure("arc::Fanin batch", ops * 8ULL, [&]() {
+        for (std::uint32_t base = 0; base < ops; base += 1023U) {
+            const auto batch = (ops - base) < 1023U ? (ops - base) : 1023U;
+            for (std::uint32_t i = 0; i < batch; ++i) {
+                const auto value = base + i;
+                expect(batch_fan.try_push<0>(value), "Fanin batch push 0");
+                expect(batch_fan.try_push<1>(value), "Fanin batch push 1");
+                expect(batch_fan.try_push<2>(value), "Fanin batch push 2");
+                expect(batch_fan.try_push<3>(value), "Fanin batch push 3");
+            }
+            const auto got = batch_fan.pop(std::span{batch_out}.first(batch * 4U));
+            expect(got == batch * 4U, "Fanin batch pop");
+            for (std::size_t i = 0; i < got; ++i) {
+                sum += batch_out[i];
+            }
+        }
+    });
+    expect(sum == 4ULL * ((static_cast<std::uint64_t>(ops - 1U) * ops) / 2U), "Fanin batch sum");
+    sink += sum;
+    print(arc_batch);
+
     std::array<std::deque<std::uint32_t>, 4> queues{};
     sum = 0U;
     const auto standard = measure("std::deque fanin 4", ops * 8ULL, [&]() {

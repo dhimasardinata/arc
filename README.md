@@ -185,7 +185,7 @@ Arc benchmark policy is strict:
 
 - Host benchmarks compare Arc primitives/codecs against local standard-library baselines only where both sides are compiled in the same binary.
 - `tools/ensure-frameworks.sh` creates local ignored framework checkouts beside `esp-idf/`, including `arduino-esp32/`.
-- `tools/framework-compare.sh` prints the feature matrix, runs the Arc host benchmark, reports local raw ESP-IDF and Arduino-ESP32 versions, and compiles a real Arduino `Print.cpp` host comparison where that source is host-buildable.
+- `tools/framework-compare.sh` reports local raw ESP-IDF and Arduino-ESP32 versions, runs or explicitly skips the Arc host benchmark depending on the caller, and compiles real host-buildable Arduino `Print.cpp` plus ESP-IDF mbedTLS paths for same-binary write/frame/base64 measurements.
 - Raw ESP-IDF benchmarks must live as pinned ESP-IDF examples or components and report firmware size, build config, target, and measured hardware path.
 - Arduino or PlatformIO benchmarks must pin the core/platform version and board package in CI before any number is published.
 - No README number should compare against Arduino, ESPHome, PlatformIO, or raw ESP-IDF unless that exact competitor source is checked in or installed by CI and run in the same workflow.
@@ -1148,6 +1148,8 @@ Bounded lock-free lane for one producer and one consumer.
 
 - `try_push(event)` is producer-only.
 - `try_pop(event)` is consumer-only.
+- `push(span)` and `pop(span)` batch contiguous transfers, wrapping at most once, so burst handoff avoids per-element index publication.
+- `size()` and `space()` expose the current ring occupancy and producer room.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation.
 - `cap()` exposes the usable capacity; the backing ring keeps one slot empty.
 - `bytes()` exposes the queue object footprint.
@@ -1188,6 +1190,7 @@ Static fan-in made from one SPSC lane per producer and one round-robin consumer.
 - `try_push<Producer>(event)` is wait-free for that producer lane.
 - `try_pop(event)` drains any completed producer without waiting behind another producer's half-finished slot.
 - `try_pop(producer, event)` also reports which lane produced the event.
+- `pop(span)` batches consumer-side fan-in when producer identity is not needed per item.
 - `drain(scratch, fn, max)` accepts either `fn(event)` or `fn(producer, event)`.
 - `cap()` is the usable per-producer lane capacity, `producers()` is the static lane count, and `bytes()` exposes the full object footprint.
 
@@ -2834,9 +2837,9 @@ GitHub-hosted runners are still ephemeral, so host packages installed by `apt` d
 
 Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared `esp32s3` lock in `cmake/arc-idf.cmake`.
 
-CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host test binary compiles pure Arc logic against tiny ESP attribute stubs and exercises SPSC, MPSC under real producer contention, Fanin round-robin behavior, wire codecs, stream helpers, SeqReg snapshots, and DSP/FIR math without flashing hardware.
+CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host test binary compiles pure Arc logic against tiny ESP attribute stubs and exercises SPSC single/batch transfer, MPSC under real producer contention, Fanin round-robin and batch drain behavior, wire codecs, stream helpers, SeqReg snapshots, and DSP/FIR math without flashing hardware.
 
-CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports host-runner throughput for Arc SPSC/MPSC/SeqReg/DSP/codecs plus standard-library baselines where a fair local baseline exists. It is not marketed as an ESP32-S3 cycle benchmark or as an Arduino/raw-IDF shootout; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start.
+CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports host-runner throughput for Arc SPSC batch/single lanes, MPSC/DenseMPSC, Fanin batch/single drains, SeqReg, stream helpers, DSP, codecs, and standard-library baselines where a fair local baseline exists. It is not marketed as an ESP32-S3 cycle benchmark or as an Arduino/raw-IDF shootout; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start. `tools/framework-compare.sh` adds host-buildable framework measurements after that step without duplicating the Arc host benchmark in CI.
 
 ## Notes
 

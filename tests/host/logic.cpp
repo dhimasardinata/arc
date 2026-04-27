@@ -249,6 +249,16 @@ void test_fanin()
     expect(fan.try_pop(producer, value) && producer == 2U && value == 30, "Fanin pop lane 2");
     expect(fan.try_pop(producer, value) && producer == 0U && value == 11, "Fanin round-robin resume");
     expect(!fan.try_pop(producer, value), "Fanin empty rejects");
+
+    expect(fan.try_push<0>(1), "Fanin batch lane 0 first");
+    expect(fan.try_push<0>(2), "Fanin batch lane 0 second");
+    expect(fan.try_push<1>(10), "Fanin batch lane 1 first");
+    expect(fan.try_push<2>(20), "Fanin batch lane 2 first");
+    expect(fan.try_push<2>(21), "Fanin batch lane 2 second");
+    std::array<int, 6> out{};
+    expect(fan.pop(std::span(out)) == 5U, "Fanin batch pop count");
+    expect(out[0] == 10 && out[1] == 20 && out[2] == 21 && out[3] == 1 && out[4] == 2, "Fanin batch lane order");
+    expect(fan.empty(), "Fanin batch drains empty");
 }
 
 void test_checked_fanin()
@@ -262,6 +272,11 @@ void test_checked_fanin()
     int value{};
     expect(fan.try_pop(producer, value) && producer == 0U && value == 10, "Audit Fanin pop lane 0");
     expect(fan.try_pop(producer, value) && producer == 1U && value == 20, "Audit Fanin pop lane 1");
+
+    expect(fan.try_push<0>(30), "Audit Fanin batch lane 0");
+    expect(fan.try_push<1>(40), "Audit Fanin batch lane 1");
+    std::array<int, 2> out{};
+    expect(fan.pop(std::span(out)) == 2U && out[0] == 30 && out[1] == 40, "Audit Fanin batch pop");
 }
 
 void test_mqtt()
