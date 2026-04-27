@@ -10,17 +10,30 @@ CXX="${CXX:-g++}"
 
 cd "$ROOT"
 
+IDF_ROOT="${ARC_IDF_PATH:-}"
+if [[ -z "$IDF_ROOT" && -d esp-idf/.git ]]; then
+    IDF_ROOT="$ROOT/esp-idf"
+fi
+if [[ -z "$IDF_ROOT" && -d "$HOME/esp-idf/.git" ]]; then
+    IDF_ROOT="$HOME/esp-idf"
+fi
+if [[ -z "$IDF_ROOT" || ! -f "$IDF_ROOT/components/mbedtls/mbedtls/tf-psa-crypto/include/mbedtls/base64.h" ]]; then
+    echo "ESP-IDF source with mbedTLS is required for framework host benchmarks; set ARC_IDF_PATH or provide esp-idf/" >&2
+    exit 1
+fi
+
 if [[ ! -d arduino-esp32/.git ]]; then
     "$ROOT/tools/ensure-frameworks.sh"
 fi
 
 echo "== framework source versions =="
-if [[ -d esp-idf/.git ]]; then
+printf 'ESP-IDF target  %s\n' "${ARC_IDF_TARGET:-esp32s3}"
+if [[ -d "$IDF_ROOT/.git" ]]; then
     printf 'raw ESP-IDF     %s %s\n' \
-        "$(git -C esp-idf rev-parse --short HEAD)" \
-        "$(git -C esp-idf describe --tags --always --dirty 2>/dev/null || true)"
+        "$(git -C "$IDF_ROOT" rev-parse --short HEAD)" \
+        "$(git -C "$IDF_ROOT" describe --tags --always --dirty 2>/dev/null || true)"
 else
-    echo "raw ESP-IDF     missing local esp-idf/"
+    printf 'raw ESP-IDF     %s\n' "$IDF_ROOT"
 fi
 printf 'Arduino-ESP32   %s %s\n' \
     "$(git -C arduino-esp32 rev-parse --short HEAD)" \
@@ -32,47 +45,18 @@ if [[ -f arduino-esp32/idf_component.yml ]]; then
     awk -F\" '/idf:/{print "Arduino IDF     " $2}' arduino-esp32/idf_component.yml
 fi
 
-cat <<'MATRIX'
-
-== feature coverage matrix ==
-Legend: native = first-class surface, compose = usable through lower layer, external = bring stack/library, no = not a goal here.
-
-Area                         Arc              raw ESP-IDF       Arduino-ESP32     ESPHome/product DSL
-Core/task topology           native typed     native C/RTOS     simplified        generated/runtime
-ESP32-S3 target lock         native strict    configurable      board package     board package
-Pin/topology conflict guard  native claims    manual            manual            generated config
-Dedicated GPIO hot path      native typed     native LL/HAL     limited/manual    no
-DMA/cache ownership          native typed     manual APIs       mostly hidden     no
-Capability heap buffers      native RAII      heap_caps manual  limited/manual    no
-Lock-free SPSC/MPSC/Fanin    native           manual/external   external          no
-SeqReg latest snapshot       native           external/manual   external          no
-Static pinned tasks          native           native manual     limited/manual    generated
-SPI/I2C/UART/I2S             native typed     native drivers    native friendly   components
-SPI/I2C slave ownership      native typed     native drivers    limited/manual    limited/no
-ADC oneshot/continuous DMA   native typed     native drivers    simplified        sensor components
-LCD I80/RGB/DVP DMA          native typed     native drivers    libraries/manual  limited/external
-MCPWM/LEDC/RMT/PCNT/SDM     native typed     native drivers    mixed wrappers    components/limited
-TWAI/CAN                     native typed     native driver     library/manual    component-limited
-USB Serial/JTAG              native typed     native driver     native friendly   no/limited
-USB OTG PHY                  native low-level native/private    TinyUSB-facing    no
-Filesystem/File/SD/NVS/OTA   native RAII      native drivers    native friendly   native product glue
-Wi-Fi owner                  native Core 0    native APIs       native friendly   native product glue
-WPA Enterprise               native bridge    native APIs       available/manual  limited
-ESP-NOW/UDP/TCP/TLS/HTTP     native lanes     native/lwIP       native friendly   components
-MQTT/WebSocket/CoAP codecs   native no-heap   mqtt/http libs    libraries         components
-BLE host/GAP                 native NimBLE    native stacks     native friendly   components
-AES/SHA/HMAC/DS/MPI/XTS      native typed     native/mbedTLS    available/manual  limited
-ULP/RTC GPIO/Sleep/PM/WDT    native typed     native APIs       mixed/manual      sleep components
-Touch/temp/fuse/rng/space    native typed     native APIs       mixed/manual      components
-Cloud/Matter/LVGL/TinyUSB    external         external/native   libraries         native/product
-Cross-target portability     no, S3 only      high within IDF   high within core  high within DSL
-Beginner velocity            low              medium            high              very high
-Realtime determinism         high             possible/manual   low/medium        low/medium
-MATRIX
+echo
+echo "== framework host benchmark scope =="
+echo "Measured here: host-compilable Arc, Arduino-ESP32 core, and ESP-IDF mbedTLS code paths."
+echo "ESP32-S3 driver timing still belongs on-device; host CI only publishes executable host measurements."
 
 echo
 echo "== Arc host benchmark =="
-"$ROOT/tools/host-bench.sh"
+if [[ "${ARC_SKIP_HOST_BENCH:-0}" == "1" ]]; then
+    echo "skipped; caller already ran tools/host-bench.sh"
+else
+    "$ROOT/tools/host-bench.sh"
+fi
 
 mkdir -p "$BUILD/arduino"
 cp arduino-esp32/cores/esp32/Print.cpp "$BUILD/arduino/Print.cpp"
@@ -118,6 +102,11 @@ cat >"$BUILD/framework-print-compare.cpp" <<'CPP'
 #include "Arduino.h"
 #include "Print.h"
 #include "arc/stream.hpp"
+#include "arc/ws.hpp"
+
+extern "C" {
+#include "mbedtls/base64.h"
+}
 
 namespace {
 
@@ -125,7 +114,7 @@ using Clock = std::chrono::steady_clock;
 volatile std::uint64_t sink{};
 volatile std::uint32_t tick{0x42U};
 
-[[gnu::noinline]] std::uint8_t next_byte() noexcept
+std::uint8_t next_byte() noexcept
 {
     tick = (tick * 1'103'515'245U) + 12'345U;
     return static_cast<std::uint8_t>(tick >> 16U);
@@ -155,21 +144,24 @@ void bench(const char* const name, const std::uint64_t ops, Fn&& fn)
     fn();
     const auto stop = Clock::now();
     const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
-    std::printf("%-28s %12llu ops %10.2f ns/op\n",
+    std::printf("%-32s %12llu ops %10.2f ns/op\n",
                 name,
                 static_cast<unsigned long long>(ops),
                 static_cast<double>(ns) / static_cast<double>(ops));
 }
 
 struct ArcSink {
-    std::array<std::uint8_t, 4096> data{};
+    std::array<std::uint8_t, 8192> data{};
     std::size_t pos{};
+    std::uint64_t checksum{};
 
-    [[gnu::noinline]] arc::Status send_all(const void* const src, const std::size_t bytes) noexcept
+    arc::Status send_all(const void* const src, const std::size_t bytes) noexcept
     {
         const auto* in = static_cast<const std::uint8_t*>(src);
         for (std::size_t i = 0; i < bytes; ++i) {
-            data[(pos + i) % data.size()] = in[i];
+            const auto byte = in[i];
+            data[(pos + i) % data.size()] = byte;
+            checksum += byte;
         }
         pos += bytes;
         return arc::ok();
@@ -183,12 +175,14 @@ struct ArcSink {
 
 class ArduinoBytePrint final : public Print {
 public:
-    std::array<std::uint8_t, 4096> data{};
+    std::array<std::uint8_t, 8192> data{};
     std::size_t pos{};
+    std::uint64_t checksum{};
 
-    [[gnu::noinline]] std::size_t write(std::uint8_t value) override
+    std::size_t write(std::uint8_t value) override
     {
         data[pos % data.size()] = value;
+        checksum += value;
         ++pos;
         return 1U;
     }
@@ -196,71 +190,187 @@ public:
 
 class ArduinoBulkPrint final : public Print {
 public:
-    std::array<std::uint8_t, 4096> data{};
+    std::array<std::uint8_t, 8192> data{};
     std::size_t pos{};
+    std::uint64_t checksum{};
 
-    [[gnu::noinline]] std::size_t write(std::uint8_t value) override
+    std::size_t write(std::uint8_t value) override
     {
         data[pos % data.size()] = value;
+        checksum += value;
         ++pos;
         return 1U;
     }
 
-    [[gnu::noinline]] std::size_t write(const std::uint8_t* buffer, std::size_t size) override
+    std::size_t write(const std::uint8_t* buffer, std::size_t size) override
     {
         for (std::size_t i = 0; i < size; ++i) {
-            data[(pos + i) % data.size()] = buffer[i];
+            const auto byte = buffer[i];
+            data[(pos + i) % data.size()] = byte;
+            checksum += byte;
         }
         pos += size;
         return size;
     }
 };
 
-}  // namespace
-
-int main()
+template <std::size_t Bytes>
+void bench_write_set(ArcSink& arc_sink, Print& byte_base, ArduinoBytePrint& byte_print, Print& bulk_base, ArduinoBulkPrint& bulk_print)
 {
-    constexpr std::uint32_t rounds = 500'000U;
-    std::array<std::uint8_t, 32> payload{
-        0, 1, 2, 3, 4, 5, 6, 7,
-        8, 9, 10, 11, 12, 13, 14, 15,
-        16, 17, 18, 19, 20, 21, 22, 23,
-        24, 25, 26, 27, 28, 29, 30, 31,
-    };
+    constexpr std::uint32_t rounds = 300'000U;
+    std::array<std::uint8_t, Bytes> payload{};
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = static_cast<std::uint8_t>(i * 3U);
+    }
 
-    std::puts("== real Arduino Print.cpp host compare ==");
+    char arc_name[40]{};
+    char byte_name[40]{};
+    char bulk_name[40]{};
+    std::snprintf(arc_name, sizeof(arc_name), "Arc write %zuB", Bytes);
+    std::snprintf(byte_name, sizeof(byte_name), "Arduino byte write %zuB", Bytes);
+    std::snprintf(bulk_name, sizeof(bulk_name), "Arduino bulk write %zuB", Bytes);
 
-    ArcSink arc_sink;
-    bench("Arc Stream::write", rounds, [&]() {
+    bench(arc_name, rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
-            payload[0] = next_byte();
+            payload[i % payload.size()] = next_byte();
             barrier();
             expect(arc::net::Stream::write(arc_sink, std::span(payload)).has_value(), "Arc stream write");
         }
     });
-    sink += arc_sink.pos;
+    sink += arc_sink.pos + arc_sink.checksum + arc_sink.data[arc_sink.pos % arc_sink.data.size()];
 
-    ArduinoBytePrint byte_print;
-    Print& byte_base = byte_print;
-    bench("Arduino Print byte path", rounds, [&]() {
+    bench(byte_name, rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
-            payload[0] = next_byte();
+            payload[i % payload.size()] = next_byte();
             barrier();
             expect(byte_base.write(payload.data(), payload.size()) == payload.size(), "Arduino byte write");
         }
     });
-    sink += byte_print.pos;
+    sink += byte_print.pos + byte_print.checksum + byte_print.data[byte_print.pos % byte_print.data.size()];
 
-    ArduinoBulkPrint bulk_print;
-    Print& bulk_base = bulk_print;
-    bench("Arduino Print bulk path", rounds, [&]() {
+    bench(bulk_name, rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
-            payload[0] = next_byte();
+            payload[i % payload.size()] = next_byte();
             barrier();
             expect(bulk_base.write(payload.data(), payload.size()) == payload.size(), "Arduino bulk write");
         }
     });
-    sink += bulk_print.pos;
+    sink += bulk_print.pos + bulk_print.checksum + bulk_print.data[bulk_print.pos % bulk_print.data.size()];
+}
+
+template <std::size_t Bytes>
+void bench_frame_set(ArcSink& arc_sink, Print& byte_base, Print& bulk_base)
+{
+    constexpr std::uint32_t rounds = 300'000U;
+    std::array<std::uint8_t, Bytes> payload{};
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = static_cast<std::uint8_t>(i * 5U);
+    }
+
+    char arc_name[40]{};
+    char byte_name[40]{};
+    char bulk_name[40]{};
+    std::snprintf(arc_name, sizeof(arc_name), "Arc frame16 %zuB", Bytes);
+    std::snprintf(byte_name, sizeof(byte_name), "Arduino byte frame16 %zuB", Bytes);
+    std::snprintf(bulk_name, sizeof(bulk_name), "Arduino bulk frame16 %zuB", Bytes);
+
+    bench(arc_name, rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[i % payload.size()] = next_byte();
+            barrier();
+            expect(arc::net::Stream::write_frame16(arc_sink, std::span(payload)).has_value(), "Arc frame16");
+        }
+    });
+    sink += arc_sink.pos + arc_sink.checksum;
+
+    bench(byte_name, rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[i % payload.size()] = next_byte();
+            const std::array<std::uint8_t, 2> header{
+                static_cast<std::uint8_t>(Bytes >> 8U),
+                static_cast<std::uint8_t>(Bytes),
+            };
+            barrier();
+            expect(byte_base.write(header.data(), header.size()) == header.size(), "Arduino byte frame header");
+            expect(byte_base.write(payload.data(), payload.size()) == payload.size(), "Arduino byte frame payload");
+        }
+    });
+
+    bench(bulk_name, rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[i % payload.size()] = next_byte();
+            const std::array<std::uint8_t, 2> header{
+                static_cast<std::uint8_t>(Bytes >> 8U),
+                static_cast<std::uint8_t>(Bytes),
+            };
+            barrier();
+            expect(bulk_base.write(header.data(), header.size()) == header.size(), "Arduino bulk frame header");
+            expect(bulk_base.write(payload.data(), payload.size()) == payload.size(), "Arduino bulk frame payload");
+        }
+    });
+}
+
+}  // namespace
+
+int main()
+{
+    std::puts("== real framework host compare ==");
+
+    ArcSink arc_sink;
+    ArduinoBytePrint byte_print;
+    Print& byte_base = byte_print;
+    ArduinoBulkPrint bulk_print;
+    Print& bulk_base = bulk_print;
+
+    bench_write_set<8>(arc_sink, byte_base, byte_print, bulk_base, bulk_print);
+    bench_write_set<32>(arc_sink, byte_base, byte_print, bulk_base, bulk_print);
+    bench_write_set<128>(arc_sink, byte_base, byte_print, bulk_base, bulk_print);
+
+    bench_frame_set<8>(arc_sink, byte_base, bulk_base);
+    bench_frame_set<32>(arc_sink, byte_base, bulk_base);
+    bench_frame_set<128>(arc_sink, byte_base, bulk_base);
+
+    constexpr std::uint32_t rounds = 500'000U;
+    bench("Arduino Print::print u32", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            const auto value = static_cast<unsigned long>((static_cast<std::uint32_t>(next_byte()) << 16U) | i);
+            barrier();
+            expect(bulk_base.print(value, DEC) != 0U, "Arduino decimal print");
+        }
+    });
+    sink += byte_print.pos + byte_print.checksum + bulk_print.pos + bulk_print.checksum;
+
+    std::array<char, 32> arc_key{};
+    std::array<unsigned char, 32> idf_key{};
+    std::array<std::uint8_t, 16> nonce{};
+    for (std::size_t i = 0; i < nonce.size(); ++i) {
+        nonce[i] = static_cast<std::uint8_t>(i * 7U);
+    }
+    bench("Arc WS base64 key", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            nonce[i % nonce.size()] = next_byte();
+            barrier();
+            const auto out = arc::net::Ws::key(arc_key, std::span<const std::uint8_t>{nonce});
+            expect(out.has_value() && out->size() == 24U, "Arc WS key");
+            sink += static_cast<unsigned char>((*out)[0]);
+        }
+    });
+
+    bench("ESP-IDF mbedTLS base64", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            nonce[i % nonce.size()] = next_byte();
+            barrier();
+            std::size_t out_len{};
+            const auto err = mbedtls_base64_encode(
+                idf_key.data(),
+                idf_key.size(),
+                &out_len,
+                nonce.data(),
+                nonce.size());
+            expect(err == 0 && out_len == 24U, "ESP-IDF mbedTLS base64");
+            sink += idf_key[0];
+        }
+    });
 
     std::printf("framework host compare: OK (%llu)\n", static_cast<unsigned long long>(sink));
 }
@@ -275,14 +385,28 @@ CPP
     -Werror \
     -pthread \
     -I"$BUILD/arduino" \
+    -I"$IDF_ROOT/components/mbedtls/mbedtls/tf-psa-crypto/include" \
+    -I"$IDF_ROOT/components/mbedtls/mbedtls/tf-psa-crypto/core" \
+    -I"$IDF_ROOT/components/mbedtls/mbedtls/tf-psa-crypto/drivers/builtin/include" \
+    -I"$IDF_ROOT/components/mbedtls/mbedtls/tf-psa-crypto/drivers/builtin/src" \
     -I"$ROOT/tests/host/stubs" \
     -I"$ROOT/components/arc/include" \
     "$BUILD/framework-print-compare.cpp" \
     "$BUILD/arduino/Print.cpp" \
+    "$IDF_ROOT/components/mbedtls/mbedtls/tf-psa-crypto/drivers/builtin/src/base64.c" \
     -o "$BUILD/framework-print-compare"
 
 echo
-"$BUILD/framework-print-compare"
+OUTPUT="$("$BUILD/framework-print-compare")"
+printf '%s\n' "$OUTPUT"
 
-echo
-echo "raw ESP-IDF note: ESP-IDF driver/FreeRTOS components are present locally, but their real queue/ringbuffer/GPIO paths are target/FreeRTOS ports, not a host ABI. This script does not publish fake raw-IDF host timings for hardware drivers."
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+        echo
+        echo "## Framework Host Benchmarks"
+        echo
+        echo '```text'
+        printf '%s\n' "$OUTPUT"
+        echo '```'
+    } >>"$GITHUB_STEP_SUMMARY"
+fi

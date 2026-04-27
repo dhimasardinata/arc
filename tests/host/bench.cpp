@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -12,10 +13,12 @@
 
 #include "arc/coap.hpp"
 #include "arc/dsp.hpp"
+#include "arc/fanin.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
+#include "arc/stream.hpp"
 #include "arc/ws.hpp"
 
 namespace {
@@ -25,7 +28,7 @@ using Clock = std::chrono::steady_clock;
 volatile std::uint64_t sink{};
 volatile std::uint32_t seed{0x1234'5678U};
 
-[[gnu::noinline]] std::uint32_t next_seed() noexcept
+std::uint32_t next_seed() noexcept
 {
     const auto next = (seed * 1'664'525U) + 1'013'904'223U;
     seed = next;
@@ -71,7 +74,7 @@ Bench measure(const char* const name, const std::uint64_t ops, Fn&& fn)
 
 void print(const Bench& bench)
 {
-    std::printf("%-24s %12llu ops %10.2f ns/op\n",
+    std::printf("%-28s %12llu ops %10.2f ns/op\n",
                 bench.name,
                 static_cast<unsigned long long>(bench.ops),
                 bench.ns_op);
@@ -108,20 +111,80 @@ void bench_spsc()
     expect(sum == (static_cast<std::uint64_t>(ops - 1U) * ops) / 2U, "deque sum");
     sink += sum;
     print(standard);
+
+    arc::Spsc<std::uint32_t, 1024> burst_queue;
+    std::array<std::uint32_t, 1023> burst_in{};
+    std::array<std::uint32_t, 1023> burst_out{};
+    sum = 0U;
+    const auto arc_burst = measure("arc::Spsc batch burst", ops * 2ULL, [&]() {
+        for (std::uint32_t base = 0; base < ops; base += 1023U) {
+            const auto batch = (ops - base) < 1023U ? (ops - base) : 1023U;
+            for (std::uint32_t i = 0; i < batch; ++i) {
+                burst_in[i] = base + i;
+            }
+            expect(burst_queue.push(std::span{burst_in}.first(batch)) == batch, "SPSC batch burst push");
+            expect(burst_queue.pop(std::span{burst_out}.first(batch)) == batch, "SPSC batch burst pop");
+            for (std::uint32_t i = 0; i < batch; ++i) {
+                sum += burst_out[i];
+            }
+        }
+    });
+    expect(sum == (static_cast<std::uint64_t>(ops - 1U) * ops) / 2U, "SPSC burst sum");
+    sink += sum;
+    print(arc_burst);
+
+    arc::Spsc<std::uint32_t, 1024> single_burst_queue;
+    sum = 0U;
+    const auto arc_single_burst = measure("arc::Spsc single burst", ops * 2ULL, [&]() {
+        for (std::uint32_t base = 0; base < ops; base += 1023U) {
+            const auto batch = (ops - base) < 1023U ? (ops - base) : 1023U;
+            for (std::uint32_t i = 0; i < batch; ++i) {
+                expect(single_burst_queue.try_push(base + i), "SPSC single burst push");
+            }
+            for (std::uint32_t i = 0; i < batch; ++i) {
+                std::uint32_t out{};
+                expect(single_burst_queue.try_pop(out), "SPSC single burst pop");
+                sum += out;
+            }
+        }
+    });
+    expect(sum == (static_cast<std::uint64_t>(ops - 1U) * ops) / 2U, "SPSC single burst sum");
+    sink += sum;
+    print(arc_single_burst);
+
+    std::deque<std::uint32_t> burst_baseline;
+    sum = 0U;
+    const auto std_burst = measure("std::deque burst", ops * 2ULL, [&]() {
+        for (std::uint32_t base = 0; base < ops; base += 1023U) {
+            const auto batch = (ops - base) < 1023U ? (ops - base) : 1023U;
+            for (std::uint32_t i = 0; i < batch; ++i) {
+                burst_baseline.push_back(base + i);
+            }
+            for (std::uint32_t i = 0; i < batch; ++i) {
+                const auto out = burst_baseline.front();
+                burst_baseline.pop_front();
+                sum += out;
+            }
+        }
+    });
+    expect(sum == (static_cast<std::uint64_t>(ops - 1U) * ops) / 2U, "deque burst sum");
+    sink += sum;
+    print(std_burst);
 }
 
-void bench_mpsc()
+template <typename Queue>
+Bench bench_mpsc_queue(const char* const name)
 {
     constexpr std::uint32_t producers = 4U;
     constexpr std::uint32_t per_producer = 50'000U;
     constexpr std::uint32_t total = producers * per_producer;
 
-    arc::Mpsc<std::uint32_t, 4096> queue;
+    Queue queue;
     std::atomic<std::uint32_t> ready{};
     std::array<std::thread, producers> threads;
     std::uint64_t sum{};
 
-    const auto arc = measure("arc::Mpsc 4p", total, [&]() {
+    const auto result = measure(name, total, [&]() {
         for (std::uint32_t producer = 0; producer < producers; ++producer) {
             threads[producer] = std::thread([producer, producers, &queue, &ready]() {
                 ready.fetch_add(1U, std::memory_order_release);
@@ -152,15 +215,26 @@ void bench_mpsc()
             thread.join();
         }
     });
-    expect(sum == producers * ((static_cast<std::uint64_t>(per_producer - 1U) * per_producer) / 2U), "MPSC sum");
+
+    expect(sum == producers * ((static_cast<std::uint64_t>(per_producer - 1U) * per_producer) / 2U), name);
     sink += sum;
-    print(arc);
+    return result;
+}
+
+void bench_mpsc()
+{
+    constexpr std::uint32_t producers = 4U;
+    constexpr std::uint32_t per_producer = 50'000U;
+    constexpr std::uint32_t total = producers * per_producer;
+
+    print(bench_mpsc_queue<arc::Mpsc<std::uint32_t, 4096>>("arc::Mpsc 4p"));
+    print(bench_mpsc_queue<arc::DenseMpsc<std::uint32_t, 4096>>("arc::DenseMpsc 4p"));
 
     std::deque<std::uint32_t> baseline;
     std::mutex lock;
     std::atomic<std::uint32_t> baseline_ready{};
     std::array<std::thread, producers> baseline_threads;
-    sum = 0U;
+    std::uint64_t sum{};
     const auto standard = measure("mutex deque 4p", total, [&]() {
         for (std::uint32_t producer = 0; producer < producers; ++producer) {
             baseline_threads[producer] = std::thread([producer, producers, &baseline, &lock, &baseline_ready]() {
@@ -205,6 +279,56 @@ void bench_mpsc()
     print(standard);
 }
 
+void bench_fanin()
+{
+    constexpr std::uint32_t ops = 250'000U;
+    arc::Fanin<std::uint32_t, 1024, 4> fan;
+    std::uint64_t sum{};
+
+    const auto arc = measure("arc::Fanin 4 lanes", ops * 8ULL, [&]() {
+        for (std::uint32_t i = 0; i < ops; ++i) {
+            expect(fan.try_push<0>(i), "Fanin push 0");
+            expect(fan.try_push<1>(i), "Fanin push 1");
+            expect(fan.try_push<2>(i), "Fanin push 2");
+            expect(fan.try_push<3>(i), "Fanin push 3");
+            for (std::uint32_t lane = 0; lane < 4U; ++lane) {
+                std::uint32_t out{};
+                expect(fan.try_pop(out), "Fanin pop");
+                sum += out;
+            }
+        }
+    });
+    expect(sum == 4ULL * ((static_cast<std::uint64_t>(ops - 1U) * ops) / 2U), "Fanin sum");
+    sink += sum;
+    print(arc);
+
+    std::array<std::deque<std::uint32_t>, 4> queues{};
+    sum = 0U;
+    const auto standard = measure("std::deque fanin 4", ops * 8ULL, [&]() {
+        std::size_t cursor{};
+        for (std::uint32_t i = 0; i < ops; ++i) {
+            for (auto& queue : queues) {
+                queue.push_back(i);
+            }
+            for (std::uint32_t lane = 0; lane < 4U; ++lane) {
+                for (std::size_t offset = 0; offset < queues.size(); ++offset) {
+                    const auto index = (cursor + offset) % queues.size();
+                    if (!queues[index].empty()) {
+                        const auto out = queues[index].front();
+                        queues[index].pop_front();
+                        cursor = (index + 1U) % queues.size();
+                        sum += out;
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    expect(sum == 4ULL * ((static_cast<std::uint64_t>(ops - 1U) * ops) / 2U), "deque fanin sum");
+    sink += sum;
+    print(standard);
+}
+
 void bench_seqreg()
 {
     struct Snapshot {
@@ -227,6 +351,69 @@ void bench_seqreg()
     });
     sink += sum;
     print(arc);
+
+    std::mutex lock;
+    Snapshot snap{};
+    sum = 0U;
+    const auto standard = measure("mutex snapshot", ops * 2ULL, [&]() {
+        for (std::uint32_t i = 0; i < ops; ++i) {
+            {
+                const std::lock_guard guard(lock);
+                snap = Snapshot{.a = i, .b = ~i, .c = static_cast<std::uint64_t>(i) * 3U};
+            }
+            Snapshot out{};
+            {
+                const std::lock_guard guard(lock);
+                out = snap;
+            }
+            expect(out.b == ~out.a && out.c == static_cast<std::uint64_t>(out.a) * 3U, "mutex snapshot invariant");
+            sum += out.a;
+        }
+    });
+    sink += sum;
+    print(standard);
+}
+
+void bench_memory()
+{
+    struct Payload {
+        std::uint32_t a;
+        std::uint32_t b;
+        std::uint64_t c;
+    };
+
+    constexpr std::uint32_t ops = 1'000'000U;
+    std::array<Payload, 1024> src{};
+    std::array<Payload, 1024> dst{};
+    for (std::size_t i = 0; i < src.size(); ++i) {
+        src[i] = Payload{
+            .a = static_cast<std::uint32_t>(i),
+            .b = static_cast<std::uint32_t>(~i),
+            .c = static_cast<std::uint64_t>(i) * 17U,
+        };
+    }
+
+    std::uint64_t sum{};
+    const auto span_copy = measure("std::copy span 16B", ops, [&]() {
+        for (std::uint32_t i = 0; i < ops; ++i) {
+            const auto index = i & 1023U;
+            std::copy_n(src.data() + index, 1U, dst.data() + ((index + 17U) & 1023U));
+            sum += dst[(index + 17U) & 1023U].a;
+        }
+    });
+    sink += sum;
+    print(span_copy);
+
+    sum = 0U;
+    const auto memcpy_copy = measure("std::memcpy 16B", ops, [&]() {
+        for (std::uint32_t i = 0; i < ops; ++i) {
+            const auto index = i & 1023U;
+            std::memcpy(dst.data() + ((index + 33U) & 1023U), src.data() + index, sizeof(Payload));
+            sum += dst[(index + 33U) & 1023U].b;
+        }
+    });
+    sink += sum;
+    print(memcpy_copy);
 }
 
 void bench_dsp()
@@ -324,6 +511,94 @@ void bench_codecs()
     print(coap);
 }
 
+void bench_stream()
+{
+    struct SinkStream {
+        std::array<std::uint8_t, 4096> data{};
+        std::size_t pos{};
+        std::uint64_t checksum{};
+
+        arc::Status send_all(const void* const src, const std::size_t bytes) noexcept
+        {
+            const auto* in = static_cast<const std::uint8_t*>(src);
+            for (std::size_t i = 0; i < bytes; ++i) {
+                const auto byte = in[i];
+                data[(pos + i) % data.size()] = byte;
+                checksum += byte;
+            }
+            pos += bytes;
+            return arc::ok();
+        }
+
+        arc::Result<std::size_t> recv(void*, std::size_t) noexcept
+        {
+            return std::size_t{};
+        }
+    };
+
+    struct SourceStream {
+        std::array<std::uint8_t, 4096> data{};
+        std::size_t pos{};
+
+        arc::Status send_all(const void*, std::size_t) noexcept
+        {
+            return arc::ok();
+        }
+
+        arc::Result<std::size_t> recv(void* const dst, const std::size_t bytes) noexcept
+        {
+            auto* out = static_cast<std::uint8_t*>(dst);
+            const auto chunk = bytes > 7U ? 7U : bytes;
+            for (std::size_t i = 0; i < chunk; ++i) {
+                out[i] = data[(pos + i) % data.size()];
+            }
+            pos += chunk;
+            return chunk;
+        }
+    };
+
+    constexpr std::uint32_t rounds = 500'000U;
+    std::array<std::uint8_t, 32> payload{};
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = static_cast<std::uint8_t>(i);
+    }
+
+    SinkStream stream;
+    const auto raw = measure("arc::Stream write", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(next_seed());
+            barrier();
+            expect(arc::net::Stream::write(stream, std::span(payload)).has_value(), "Stream write");
+        }
+    });
+    sink += stream.pos + stream.checksum;
+    print(raw);
+
+    const auto framed = measure("arc::Stream frame16", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(next_seed());
+            barrier();
+            expect(arc::net::Stream::write_frame16(stream, std::span(payload)).has_value(), "Stream frame16");
+        }
+    });
+    sink += stream.pos + stream.checksum;
+    print(framed);
+
+    SourceStream source;
+    for (std::size_t i = 0; i < source.data.size(); ++i) {
+        source.data[i] = static_cast<std::uint8_t>(i);
+    }
+    const auto read = measure("arc::Stream read_exact", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            std::array<std::uint8_t, 32> out{};
+            barrier();
+            expect(arc::net::Stream::read_exact(source, std::span(out)).has_value(), "Stream read_exact");
+            sink += out[i & 31U];
+        }
+    });
+    print(read);
+}
+
 }  // namespace
 
 int main()
@@ -331,7 +606,10 @@ int main()
     std::puts("arc host benchmark: correctness + throughput");
     bench_spsc();
     bench_mpsc();
+    bench_fanin();
     bench_seqreg();
+    bench_memory();
+    bench_stream();
     bench_dsp();
     bench_codecs();
     std::printf("arc host benchmark: OK (%llu)\n", static_cast<unsigned long long>(sink));

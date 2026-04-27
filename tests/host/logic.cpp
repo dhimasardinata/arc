@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <thread>
@@ -80,6 +81,25 @@ void test_spsc()
     expect(queue.try_pop(value) && value == 3, "SPSC pop 3");
     expect(queue.try_pop(value) && value == 4, "SPSC pop 4");
     expect(!queue.try_pop(value), "SPSC empty rejects");
+
+    const std::array more{5, 6, 7, 8};
+    expect(queue.push(std::span(more)) == 3U, "SPSC batch push caps at space");
+    expect(queue.size() == 3U, "SPSC batch size");
+    expect(queue.space() == 0U, "SPSC batch full space");
+
+    std::array<int, 4> out{};
+    expect(queue.pop(std::span(out)) == 3U, "SPSC batch pop available");
+    expect(out[0] == 5 && out[1] == 6 && out[2] == 7, "SPSC batch order");
+    expect(queue.empty(), "SPSC batch drains empty");
+
+    expect(queue.try_push(9), "SPSC wrap seed");
+    int wrap{};
+    expect(queue.try_pop(wrap) && wrap == 9, "SPSC wrap seed pop");
+    expect(queue.push(std::span(more).subspan(1U, 3U)) == 3U, "SPSC batch wrap push");
+    out = {};
+    expect(queue.pop(std::span(out).first(2U)) == 2U, "SPSC batch partial pop");
+    expect(out[0] == 6 && out[1] == 7, "SPSC batch partial order");
+    expect(queue.pop(std::span(out).first(2U)) == 1U && out[0] == 8, "SPSC batch remainder");
 }
 
 void test_checked_spsc()

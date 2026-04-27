@@ -4,6 +4,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <type_traits>
 
 #include "esp_attr.h"
@@ -33,6 +34,24 @@ struct Spsc {
         return true;
     }
 
+    template <typename U, std::size_t Extent>
+        requires(std::is_same_v<std::remove_cv_t<U>, T>)
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(
+        const std::span<U, Extent> data) noexcept
+    {
+        const auto head = load_relaxed(&head_);
+        const auto room = writable(head, load_acquire(&tail_));
+        const auto count = data.size() < room ? data.size() : room;
+
+        for (std::size_t i = 0; i < count; ++i) {
+            buffer_[wrap(head + static_cast<std::uint32_t>(i))] = data[i];
+        }
+        if (count != 0U) {
+            store_release(&head_, wrap(head + static_cast<std::uint32_t>(count)));
+        }
+        return count;
+    }
+
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(T& value) noexcept
     {
         const auto tail = load_relaxed(&tail_);
@@ -45,9 +64,37 @@ struct Spsc {
         return true;
     }
 
+    template <typename U, std::size_t Extent>
+        requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t pop(
+        const std::span<U, Extent> out) noexcept
+    {
+        const auto tail = load_relaxed(&tail_);
+        const auto count = readable(load_acquire(&head_), tail);
+        const auto take = out.size() < count ? out.size() : count;
+
+        for (std::size_t i = 0; i < take; ++i) {
+            out[i] = buffer_[wrap(tail + static_cast<std::uint32_t>(i))];
+        }
+        if (take != 0U) {
+            store_release(&tail_, wrap(tail + static_cast<std::uint32_t>(take)));
+        }
+        return take;
+    }
+
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool empty() const noexcept
     {
         return load_acquire(&head_) == load_acquire(&tail_);
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t size() const noexcept
+    {
+        return readable(load_acquire(&head_), load_acquire(&tail_));
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t space() const noexcept
+    {
+        return writable(load_acquire(&head_), load_acquire(&tail_));
     }
 
     [[nodiscard]] static constexpr std::size_t cap() noexcept
@@ -99,7 +146,27 @@ private:
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::uint32_t increment(
         const std::uint32_t index) noexcept
     {
-        return (index + 1U) & kMask;
+        return wrap(index + 1U);
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::uint32_t wrap(
+        const std::uint32_t index) noexcept
+    {
+        return index & kMask;
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::uint32_t readable(
+        const std::uint32_t head,
+        const std::uint32_t tail) noexcept
+    {
+        return (head - tail) & kMask;
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::uint32_t writable(
+        const std::uint32_t head,
+        const std::uint32_t tail) noexcept
+    {
+        return (tail - head - 1U) & kMask;
     }
 
     std::array<T, Capacity> buffer_{};
@@ -124,9 +191,35 @@ struct Audit<Spsc<T, Capacity>> {
         return lane_.try_pop(value);
     }
 
+    template <typename U, std::size_t Extent>
+        requires(std::is_same_v<std::remove_cv_t<U>, T>)
+    [[nodiscard]] inline std::size_t push(const std::span<U, Extent> data) noexcept
+    {
+        producer_.assert_single("arc::Audit<Spsc> push must stay single-producer");
+        return lane_.push(data);
+    }
+
+    template <typename U, std::size_t Extent>
+        requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
+    [[nodiscard]] inline std::size_t pop(const std::span<U, Extent> out) noexcept
+    {
+        consumer_.assert_single("arc::Audit<Spsc> pop must stay single-consumer");
+        return lane_.pop(out);
+    }
+
     [[nodiscard]] inline bool empty() const noexcept
     {
         return lane_.empty();
+    }
+
+    [[nodiscard]] inline std::size_t size() const noexcept
+    {
+        return lane_.size();
+    }
+
+    [[nodiscard]] inline std::size_t space() const noexcept
+    {
+        return lane_.space();
     }
 
     [[nodiscard]] static constexpr std::size_t cap() noexcept

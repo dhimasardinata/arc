@@ -115,7 +115,9 @@ jobs:
         shell: bash
         run: |
           chmod +x tools/host-bench.sh
+          chmod +x tools/framework-compare.sh
           ./tools/host-bench.sh
+          ARC_SKIP_HOST_BENCH=1 ARC_IDF_PATH="$HOME/esp-idf" ./tools/framework-compare.sh
 
       - name: Build all
         shell: bash
