@@ -186,6 +186,7 @@ Arc benchmark policy is strict:
 - Host benchmarks compare Arc primitives/codecs against local standard-library baselines only where both sides are compiled in the same binary.
 - `tools/ensure-frameworks.sh` creates local ignored framework checkouts beside `esp-idf/`, including `arduino-esp32/`.
 - `tools/framework-compare.sh` reports local raw ESP-IDF and Arduino-ESP32 versions, runs or explicitly skips the Arc host benchmark depending on the caller, and compiles real host-buildable Arduino `Print.cpp` plus ESP-IDF mbedTLS paths for same-binary write/frame/base64 measurements.
+- `examples/bench` is the real ESP32-S3 benchmark firmware. It flashes to hardware and reports target cycle-counter measurements for Arc primitives, codecs, stream helpers, DSP, copy paths, RNG, SHA, and AES modes.
 - Raw ESP-IDF benchmarks must live as pinned ESP-IDF examples or components and report firmware size, build config, target, and measured hardware path.
 - Arduino or PlatformIO benchmarks must pin the core/platform version and board package in CI before any number is published.
 - No README number should compare against Arduino, ESPHome, PlatformIO, or raw ESP-IDF unless that exact competitor source is checked in or installed by CI and run in the same workflow.
@@ -221,6 +222,8 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 ├── env.fish
 ├── env.sh
 ├── examples
+│   ├── bench
+│   │   └── README.md
 │   ├── bridge
 │   │   └── README.md
 │   ├── dsp
@@ -2843,6 +2846,8 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host test binary compiles pure Arc logic against tiny ESP attribute stubs and exercises SPSC single/batch transfer, MPSC under real producer contention, Fanin round-robin and batch drain behavior, wire codecs, stream helpers, SeqReg snapshots, and DSP/FIR math without flashing hardware.
 
 CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports host-runner throughput for Arc SPSC batch/single lanes, MPSC/DenseMPSC, Fanin batch/single drains, SeqReg, stream helpers, DSP, codecs, and standard-library baselines where a fair local baseline exists. It is not marketed as an ESP32-S3 cycle benchmark or as an Arduino/raw-IDF shootout; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start. `tools/framework-compare.sh` adds host-buildable framework measurements after that step without duplicating the Arc host benchmark in CI.
+
+For hardware numbers, build and flash `examples/bench` on an ESP32-S3. That firmware uses the target cycle counter and intentionally excludes wired peripheral benchmarks unless a board fixture defines the external devices and pins.
 
 ## Notes
 
