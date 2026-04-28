@@ -1,6 +1,6 @@
 # Arc ESP32-S3 Benchmark
 
-On-device benchmark for Arc hot primitives on a real ESP32-S3.
+On-device benchmark for Arc hot primitives on a real ESP32-S3, plus same-firmware framework comparisons where the path is valid on hardware without an external fixture.
 
 It measures runtime on the target using the Xtensa cycle counter and prints cycles/op for:
 
@@ -15,15 +15,36 @@ It measures runtime on the target using the Xtensa cycle counter and prints cycl
 - hardware RNG
 - accelerated SHA-256
 - AES ECB, CBC, CTR, OFB, and GCM encryption paths
+- internal temperature sensor reads
+- OTA running/boot/next slot inspection and state lookup
+- typed NVS blob/string save and load paths
+- TWAI/CAN self-test loopback send/receive on the on-chip controller
 
-It intentionally does not publish fake numbers for SPI/I2C/UART/ADC/LCD/CAN/etc. Those need a board fixture, attached devices, and a stable wiring policy to be meaningful.
+The firmware now also compares Arc against other framework surfaces on the same ESP32-S3 run:
+
+- raw ESP-IDF silicon APIs for RNG, PSA SHA-256, `esp_aes_*`, `esp_aes_gcm_*`, and async memcpy
+- Arduino-ESP32 core paths for `Print::write`, manual `frame16` emission, integer print formatting, and `base64::encode`
+
+It still does not publish fake numbers for SPI/I2C/UART/ADC/LCD/etc. Those need a board fixture, attached devices, and a stable wiring policy to be meaningful. The CAN lane here is strictly the ESP32-S3 self-test loopback path, not a benchmark for a real external bus.
+
+Arduino coverage is optional. The bench auto-enables it when one of these exists:
+
+- sibling checkout at `../../arduino-esp32`
+- `ARC_ARDUINO_PATH=/abs/path/to/arduino-esp32`
+
+The NVS write lanes use only `16` rounds per run so the one-shot benchmark does not hammer flash unnecessarily.
 
 Run:
 
 ```sh
+# optional: fetch/update the Arduino checkout used by the inter-framework leg
+./tools/ensure-frameworks.sh
+
 cd examples/bench
 . ../../env.sh
 idf.py build flash monitor
 ```
 
-Look for `arc-bench` log lines. Each line prints total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run.
+If you do not want the Arduino leg, skip `./tools/ensure-frameworks.sh` and run the same `idf.py` flow; the firmware will still publish Arc plus raw ESP-IDF comparisons.
+
+Look for `arc-bench` log lines. Each line prints total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Arc lanes keep their original names, raw ESP-IDF baselines are prefixed with `idf`, and Arduino-ESP32 baselines are prefixed with `arduino`.

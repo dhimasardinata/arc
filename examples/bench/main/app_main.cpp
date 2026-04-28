@@ -3,26 +3,42 @@
 #include <cstring>
 #include <span>
 
+#include "aes/esp_aes.h"
+#include "aes/esp_aes_gcm.h"
 #include "arc/aes.hpp"
+#include "arc/can.hpp"
 #include "arc/coap.hpp"
 #include "arc/copy.hpp"
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/mqtt.hpp"
+#include "arc/ota.hpp"
 #include "arc/probe.hpp"
 #include "arc/rng.hpp"
 #include "arc/seq.hpp"
 #include "arc/sha.hpp"
 #include "arc/spsc.hpp"
+#include "arc/store.hpp"
 #include "arc/stream.hpp"
+#include "arc/temp.hpp"
 #include "arc/time.hpp"
 #include "arc/ws.hpp"
 
+#include "esp_async_memcpy.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "mbedtls/base64.h"
+#include "psa/crypto.h"
+
+#ifdef ARC_BENCH_HAS_ARDUINO
+#include "Arduino.h"
+#include "Print.h"
+#include "base64.h"
+#endif
 
 namespace app {
 
@@ -30,8 +46,14 @@ inline constexpr char tag[] = "arc-bench";
 inline constexpr std::uint32_t rounds = 20'000U;
 inline constexpr std::uint32_t small_rounds = 4'000U;
 inline constexpr std::uint32_t dsp_rounds = 10'000U;
+inline constexpr std::uint32_t telemetry_rounds = 512U;
+inline constexpr std::uint32_t can_rounds = 256U;
+inline constexpr std::uint32_t flash_rounds = 16U;  // keep write-heavy NVS lanes from needlessly wearing flash
 inline constexpr std::size_t batch = 255U;
 inline constexpr std::size_t dsp_n = 256U;
+inline constexpr char store_ns[] = "bench";
+inline constexpr char store_blob_key[] = "control";
+inline constexpr char store_name_key[] = "name";
 
 volatile std::uint64_t sink{};
 
@@ -118,6 +140,177 @@ struct FrameSource {
         return chunk;
     }
 };
+
+struct AsyncCopySignal {
+    volatile std::uint32_t done{};
+};
+
+struct ControlWord {
+    std::uint16_t pace;
+    std::uint8_t mark;
+    std::uint8_t flags;
+};
+
+static_assert(sizeof(ControlWord) == 4U);
+
+using BenchCan = arc::Can<
+    4,
+    4,
+    500'000,
+    4,
+    32,
+    true,
+    true>;
+
+struct RawNvsHandle {
+    nvs_handle_t raw{};
+
+    ~RawNvsHandle()
+    {
+        if (raw != 0) {
+            nvs_close(raw);
+        }
+    }
+
+    [[nodiscard]] esp_err_t open(const char* const ns, const nvs_open_mode_t mode) noexcept
+    {
+        return nvs_open(ns, mode, &raw);
+    }
+};
+
+[[nodiscard]] esp_err_t raw_store_save(
+    const char* const ns,
+    const char* const key,
+    const ControlWord& value) noexcept
+{
+    RawNvsHandle handle{};
+    auto err = handle.open(ns, NVS_READWRITE);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = nvs_set_blob(handle.raw, key, &value, sizeof(value));
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return nvs_commit(handle.raw);
+}
+
+[[nodiscard]] esp_err_t raw_store_load(
+    const char* const ns,
+    const char* const key,
+    ControlWord& value) noexcept
+{
+    RawNvsHandle handle{};
+    auto err = handle.open(ns, NVS_READONLY);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    std::size_t bytes = sizeof(value);
+    err = nvs_get_blob(handle.raw, key, &value, &bytes);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return bytes == sizeof(value) ? ESP_OK : ESP_ERR_NVS_INVALID_LENGTH;
+}
+
+[[nodiscard]] esp_err_t raw_store_save_string(
+    const char* const ns,
+    const char* const key,
+    const char* const value) noexcept
+{
+    RawNvsHandle handle{};
+    auto err = handle.open(ns, NVS_READWRITE);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = nvs_set_str(handle.raw, key, value);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return nvs_commit(handle.raw);
+}
+
+[[nodiscard]] esp_err_t raw_store_load_string(
+    const char* const ns,
+    const char* const key,
+    const std::span<char> out,
+    std::size_t* const chars = nullptr) noexcept
+{
+    RawNvsHandle handle{};
+    auto err = handle.open(ns, NVS_READONLY);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    std::size_t bytes = out.size_bytes();
+    err = nvs_get_str(handle.raw, key, out.data(), &bytes);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    if (chars != nullptr) {
+        *chars = bytes == 0U ? 0U : bytes - 1U;
+    }
+    return ESP_OK;
+}
+
+IRAM_ATTR bool raw_copy_done(async_memcpy_handle_t, async_memcpy_event_t*, void* const ctx) noexcept
+{
+    auto* const signal = reinterpret_cast<AsyncCopySignal*>(ctx);
+    signal->done = 1U;
+    return false;
+}
+
+void init_psa()
+{
+    static bool ready{};
+    if (!ready) {
+        configASSERT(psa_crypto_init() == PSA_SUCCESS);
+        ready = true;
+    }
+}
+
+#ifdef ARC_BENCH_HAS_ARDUINO
+struct ArduinoSinkPrint final : public Print {
+    std::array<std::uint8_t, 4096> data{};
+    std::size_t pos{};
+    std::uint64_t checksum{};
+
+    std::size_t write(const std::uint8_t value) override
+    {
+        data[pos & (data.size() - 1U)] = value;
+        checksum += value;
+        ++pos;
+        return 1U;
+    }
+
+    std::size_t write(const std::uint8_t* const buffer, const std::size_t size) override
+    {
+        for (std::size_t i = 0; i < size; ++i) {
+            const auto value = buffer[i];
+            data[(pos + i) & (data.size() - 1U)] = value;
+            checksum += value;
+        }
+        pos += size;
+        return size;
+    }
+};
+
+void init_arduino()
+{
+    static bool ready{};
+    if (!ready) {
+        initArduino();
+        ready = true;
+    }
+}
+#endif
 
 void bench_spsc()
 {
@@ -384,6 +577,24 @@ void bench_copy()
         }
     }));
 
+    async_memcpy_config_t raw_config{};
+    raw_config.backlog = 4U;
+    raw_config.weight = 0U;
+    raw_config.dma_burst_size = 64U;
+    async_memcpy_handle_t raw_driver{};
+    ESP_ERROR_CHECK(esp_async_memcpy_install(&raw_config, &raw_driver));
+    print(measure("idf async memcpy 256B", small_rounds, [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            src[0] = static_cast<std::uint8_t>(i);
+            AsyncCopySignal signal{};
+            ESP_ERROR_CHECK(esp_async_memcpy(raw_driver, dst.data(), src.data(), src.size(), raw_copy_done, &signal));
+            while (signal.done == 0U) {
+            }
+            sink += dst[i & 255U];
+        }
+    }));
+    ESP_ERROR_CHECK(esp_async_memcpy_uninstall(raw_driver));
+
     ESP_ERROR_CHECK(arc::Copy<>::init());
     print(measure("copy dma 256B", small_rounds, [&]() {
         for (std::uint32_t i = 0; i < small_rounds; ++i) {
@@ -396,6 +607,8 @@ void bench_copy()
 
 void bench_silicon()
 {
+    init_psa();
+
     std::array<std::uint8_t, 256> data{};
     std::array<std::uint8_t, 32> sum{};
     std::array<std::uint8_t, 16> key{};
@@ -424,9 +637,22 @@ void bench_silicon()
         }
     }));
 
+    print(measure("idf esp_random word", small_rounds, [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            sink += esp_random();
+        }
+    }));
+
     print(measure("rng fill 256B", small_rounds, [&]() {
         for (std::uint32_t i = 0; i < small_rounds; ++i) {
             arc::Rng::fill(std::span(data));
+            sink += data[i & 255U];
+        }
+    }));
+
+    print(measure("idf esp_fill_random", small_rounds, [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            esp_fill_random(data.data(), data.size());
             sink += data[i & 255U];
         }
     }));
@@ -439,12 +665,39 @@ void bench_silicon()
         }
     }));
 
+    print(measure("idf psa sha256 256B", small_rounds, [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            data[0] = static_cast<std::uint8_t>(i);
+            std::size_t out_len{};
+            configASSERT(psa_hash_compute(
+                             PSA_ALG_SHA_256,
+                             data.data(),
+                             data.size(),
+                             sum.data(),
+                             sum.size(),
+                             &out_len) == PSA_SUCCESS);
+            configASSERT(out_len == sum.size());
+            sink += sum[0];
+        }
+    }));
+
     arc::Aes aes;
     ESP_ERROR_CHECK(aes.set(std::span(key)));
+    esp_aes_context raw_aes{};
+    esp_aes_init(&raw_aes);
+    configASSERT(esp_aes_setkey(&raw_aes, key.data(), static_cast<unsigned>(key.size() * 8U)) == 0);
     print(measure("aes ecb block", small_rounds, [&]() {
         for (std::uint32_t i = 0; i < small_rounds; ++i) {
             block[0] = static_cast<std::uint8_t>(i);
             configASSERT(aes.block(arc::Aes::Way::enc, block.data(), crypt.data()) == ESP_OK);
+            sink += crypt[0];
+        }
+    }));
+
+    print(measure("idf esp_aes ecb", small_rounds, [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            block[0] = static_cast<std::uint8_t>(i);
+            configASSERT(esp_aes_crypt_ecb(&raw_aes, ESP_AES_ENCRYPT, block.data(), crypt.data()) == 0);
             sink += crypt[0];
         }
     }));
@@ -454,6 +707,21 @@ void bench_silicon()
             auto work_iv = iv;
             plain[0] = static_cast<std::uint8_t>(i);
             configASSERT(aes.cbc(arc::Aes::Way::enc, plain.data(), cipher.data(), plain.size(), work_iv.data()) == ESP_OK);
+            sink += cipher[i & 63U];
+        }
+    }));
+
+    print(measure("idf esp_aes cbc", small_rounds * plain.size(), [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            auto work_iv = iv;
+            plain[0] = static_cast<std::uint8_t>(i);
+            configASSERT(esp_aes_crypt_cbc(
+                             &raw_aes,
+                             ESP_AES_ENCRYPT,
+                             plain.size(),
+                             work_iv.data(),
+                             plain.data(),
+                             cipher.data()) == 0);
             sink += cipher[i & 63U];
         }
     }));
@@ -469,6 +737,24 @@ void bench_silicon()
         }
     }));
 
+    print(measure("idf esp_aes ctr", small_rounds * plain.size(), [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            auto nonce = iv;
+            std::size_t offset{};
+            plain[0] = static_cast<std::uint8_t>(i);
+            std::memset(stream.data(), 0, stream.size());
+            configASSERT(esp_aes_crypt_ctr(
+                             &raw_aes,
+                             plain.size(),
+                             &offset,
+                             nonce.data(),
+                             stream.data(),
+                             plain.data(),
+                             cipher.data()) == 0);
+            sink += cipher[i & 63U];
+        }
+    }));
+
     print(measure("aes ofb 64B", small_rounds * plain.size(), [&]() {
         for (std::uint32_t i = 0; i < small_rounds; ++i) {
             auto work_iv = iv;
@@ -479,8 +765,31 @@ void bench_silicon()
         }
     }));
 
+    print(measure("idf esp_aes ofb", small_rounds * plain.size(), [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            auto work_iv = iv;
+            std::size_t offset{};
+            plain[0] = static_cast<std::uint8_t>(i);
+            configASSERT(esp_aes_crypt_ofb(
+                             &raw_aes,
+                             plain.size(),
+                             &offset,
+                             work_iv.data(),
+                             plain.data(),
+                             cipher.data()) == 0);
+            sink += cipher[i & 63U];
+        }
+    }));
+
     arc::Gcm gcm;
     ESP_ERROR_CHECK(gcm.set(std::span(key)));
+    esp_gcm_context raw_gcm{};
+    esp_aes_gcm_init(&raw_gcm);
+    configASSERT(esp_aes_gcm_setkey(
+                     &raw_gcm,
+                     arc::Gcm::cipher,
+                     key.data(),
+                     static_cast<unsigned>(key.size() * 8U)) == 0);
     print(measure("aes gcm seal 64B", small_rounds * plain.size(), [&]() {
         for (std::uint32_t i = 0; i < small_rounds; ++i) {
             plain[0] = static_cast<std::uint8_t>(i);
@@ -488,12 +797,330 @@ void bench_silicon()
             sink += static_cast<std::uint64_t>(cipher[i & 63U]) + static_cast<std::uint64_t>(auth_tag[0]);
         }
     }));
+
+    print(measure("idf esp_aes gcm", small_rounds * plain.size(), [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            plain[0] = static_cast<std::uint8_t>(i);
+            configASSERT(esp_aes_gcm_crypt_and_tag(
+                             &raw_gcm,
+                             ESP_AES_ENCRYPT,
+                             plain.size(),
+                             iv.data(),
+                             12U,
+                             data.data(),
+                             16U,
+                             plain.data(),
+                             cipher.data(),
+                             auth_tag.size(),
+                             auth_tag.data()) == 0);
+            sink += static_cast<std::uint64_t>(cipher[i & 63U]) + static_cast<std::uint64_t>(auth_tag[0]);
+        }
+    }));
+
+    esp_aes_gcm_free(&raw_gcm);
+    esp_aes_free(&raw_aes);
 }
+
+void bench_temp()
+{
+    using Die = arc::Temp<-10, 80>;
+    Die::start();
+    auto* const sensor = Die::native();
+    float value = 0.0F;
+
+    print(measure("temp read celsius", telemetry_rounds, [&]() {
+        for (std::uint32_t i = 0; i < telemetry_rounds; ++i) {
+            configASSERT(Die::read(value) == ESP_OK);
+            sink += static_cast<std::uint64_t>((value + 100.0F) * 1000.0F);
+        }
+    }));
+
+    print(measure("idf temp celsius", telemetry_rounds, [&]() {
+        for (std::uint32_t i = 0; i < telemetry_rounds; ++i) {
+            configASSERT(temperature_sensor_get_celsius(sensor, &value) == ESP_OK);
+            sink += static_cast<std::uint64_t>((value + 100.0F) * 1000.0F);
+        }
+    }));
+}
+
+void bench_ota()
+{
+    print(measure("ota inspect", telemetry_rounds * 5ULL, [&]() {
+        for (std::uint32_t i = 0; i < telemetry_rounds; ++i) {
+            const auto* const running = arc::Ota::running();
+            const auto* const boot = arc::Ota::boot();
+            const auto* const next = arc::Ota::next();
+            configASSERT(running != nullptr);
+
+            esp_ota_img_states_t state{};
+            configASSERT(arc::Ota::state(running, state) == ESP_OK);
+
+            esp_err_t pending_err = ESP_OK;
+            const bool pending = arc::Ota::pending_verify(&pending_err);
+            configASSERT(pending_err == ESP_OK);
+
+            sink += static_cast<std::uint64_t>(running->address);
+            sink += static_cast<std::uint64_t>(boot != nullptr ? boot->address : 0U);
+            sink += static_cast<std::uint64_t>(next != nullptr ? next->address : 0U);
+            sink += static_cast<std::uint64_t>(state);
+            sink += pending ? 1U : 0U;
+        }
+    }));
+
+    print(measure("idf ota inspect", telemetry_rounds * 5ULL, [&]() {
+        for (std::uint32_t i = 0; i < telemetry_rounds; ++i) {
+            const auto* const running = esp_ota_get_running_partition();
+            const auto* const boot = esp_ota_get_boot_partition();
+            const auto* const next = esp_ota_get_next_update_partition(nullptr);
+            configASSERT(running != nullptr);
+
+            esp_ota_img_states_t state{};
+            configASSERT(esp_ota_get_state_partition(running, &state) == ESP_OK);
+            const bool pending = state == ESP_OTA_IMG_PENDING_VERIFY;
+
+            sink += static_cast<std::uint64_t>(running->address);
+            sink += static_cast<std::uint64_t>(boot != nullptr ? boot->address : 0U);
+            sink += static_cast<std::uint64_t>(next != nullptr ? next->address : 0U);
+            sink += static_cast<std::uint64_t>(state);
+            sink += pending ? 1U : 0U;
+        }
+    }));
+}
+
+void bench_store()
+{
+    ESP_ERROR_CHECK(arc::Store::boot());
+
+    ControlWord control{
+        .pace = 2000U,
+        .mark = 0x31U,
+        .flags = 0x01U,
+    };
+    ControlWord loaded{};
+    std::array<char, 16> label{"arc-bench-a"};
+    std::array<char, 16> loaded_label{};
+    std::size_t chars{};
+
+    ESP_ERROR_CHECK(arc::Store::save(store_ns, store_blob_key, control));
+    ESP_ERROR_CHECK(arc::Store::save_string(store_ns, store_name_key, label.data()));
+
+    print(measure("store save blob", flash_rounds, [&]() {
+        for (std::uint32_t i = 0; i < flash_rounds; ++i) {
+            control.mark = static_cast<std::uint8_t>(0x31U + i);
+            control.flags ^= 0x01U;
+            configASSERT(arc::Store::save(store_ns, store_blob_key, control) == ESP_OK);
+            sink += static_cast<std::uint64_t>(control.mark) + static_cast<std::uint64_t>(control.flags);
+        }
+    }));
+
+    print(measure("idf nvs save blob", flash_rounds, [&]() {
+        for (std::uint32_t i = 0; i < flash_rounds; ++i) {
+            control.mark = static_cast<std::uint8_t>(0x51U + i);
+            control.flags ^= 0x01U;
+            configASSERT(raw_store_save(store_ns, store_blob_key, control) == ESP_OK);
+            sink += static_cast<std::uint64_t>(control.mark) + static_cast<std::uint64_t>(control.flags);
+        }
+    }));
+
+    print(measure("store load blob", telemetry_rounds, [&]() {
+        for (std::uint32_t i = 0; i < telemetry_rounds; ++i) {
+            configASSERT(arc::Store::load(store_ns, store_blob_key, loaded) == ESP_OK);
+            sink += static_cast<std::uint64_t>(loaded.pace);
+            sink += static_cast<std::uint64_t>(loaded.mark);
+            sink += static_cast<std::uint64_t>(loaded.flags);
+        }
+    }));
+
+    print(measure("idf nvs load blob", telemetry_rounds, [&]() {
+        for (std::uint32_t i = 0; i < telemetry_rounds; ++i) {
+            configASSERT(raw_store_load(store_ns, store_blob_key, loaded) == ESP_OK);
+            sink += static_cast<std::uint64_t>(loaded.pace);
+            sink += static_cast<std::uint64_t>(loaded.mark);
+            sink += static_cast<std::uint64_t>(loaded.flags);
+        }
+    }));
+
+    print(measure("store save string", flash_rounds, [&]() {
+        for (std::uint32_t i = 0; i < flash_rounds; ++i) {
+            label[10] = static_cast<char>('a' + static_cast<int>(i & 15U));
+            configASSERT(arc::Store::save_string(store_ns, store_name_key, label.data()) == ESP_OK);
+            sink += static_cast<std::uint8_t>(label[10]);
+        }
+    }));
+
+    print(measure("idf nvs save string", flash_rounds, [&]() {
+        for (std::uint32_t i = 0; i < flash_rounds; ++i) {
+            label[10] = static_cast<char>('p' + static_cast<int>(i & 7U));
+            configASSERT(raw_store_save_string(store_ns, store_name_key, label.data()) == ESP_OK);
+            sink += static_cast<std::uint8_t>(label[10]);
+        }
+    }));
+
+    print(measure("store load string", telemetry_rounds, [&]() {
+        for (std::uint32_t i = 0; i < telemetry_rounds; ++i) {
+            chars = 0U;
+            configASSERT(arc::Store::load_string(store_ns, store_name_key, std::span<char>{loaded_label}, &chars) == ESP_OK);
+            configASSERT(chars != 0U);
+            sink += static_cast<std::uint8_t>(loaded_label[chars - 1U]);
+        }
+    }));
+
+    print(measure("idf nvs load string", telemetry_rounds, [&]() {
+        for (std::uint32_t i = 0; i < telemetry_rounds; ++i) {
+            chars = 0U;
+            configASSERT(raw_store_load_string(store_ns, store_name_key, std::span<char>{loaded_label}, &chars) == ESP_OK);
+            configASSERT(chars != 0U);
+            sink += static_cast<std::uint8_t>(loaded_label[chars - 1U]);
+        }
+    }));
+
+    static_cast<void>(arc::Store::erase(store_ns, store_blob_key));
+    static_cast<void>(arc::Store::erase(store_ns, store_name_key));
+}
+
+void bench_can()
+{
+    BenchCan::start();
+    BenchCan::Frame stale{};
+    while (BenchCan::recv(stale)) {
+    }
+
+    std::array<std::uint8_t, 8> payload{0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U};
+    std::uint64_t sum{};
+    print(measure("can selftest txrx", can_rounds * 2ULL, [&]() {
+        for (std::uint32_t i = 0; i < can_rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(i);
+            auto tx = BenchCan::frame(0x123U, std::span<const std::uint8_t>{payload});
+            configASSERT(BenchCan::send_wait(tx, 1000) == ESP_OK);
+
+            BenchCan::Frame rx{};
+            while (!BenchCan::recv(rx)) {
+            }
+
+            configASSERT(rx.header.id == 0x123U);
+            configASSERT(rx.bytes == static_cast<std::uint16_t>(payload.size()));
+            configASSERT(rx.data[0] == payload[0]);
+            sum += rx.data[0];
+        }
+    }));
+    sink += sum;
+    sink += static_cast<std::uint64_t>(BenchCan::done()) + static_cast<std::uint64_t>(BenchCan::rx());
+    BenchCan::stop();
+}
+
+#ifdef ARC_BENCH_HAS_ARDUINO
+void bench_arduino()
+{
+    init_arduino();
+
+    std::array<std::uint8_t, 32> payload{};
+    std::array<std::uint8_t, 16> nonce{};
+    std::array<char, 32> arc_key{};
+    std::array<unsigned char, 32> idf_key{};
+    const std::array<std::uint8_t, 2> frame_header{
+        0U,
+        static_cast<std::uint8_t>(payload.size()),
+    };
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = static_cast<std::uint8_t>(i);
+    }
+    for (std::size_t i = 0; i < nonce.size(); ++i) {
+        nonce[i] = static_cast<std::uint8_t>(i * 7U);
+    }
+
+    SinkStream arc_write{};
+    print(measure("arc stream write 32B", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(i);
+            configASSERT(arc::net::Stream::write(arc_write, std::span(payload)).has_value());
+        }
+    }));
+    sink += arc_write.pos + arc_write.checksum;
+
+    ArduinoSinkPrint arduino_write;
+    print(measure("arduino write 32B", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(i);
+            configASSERT(arduino_write.write(payload.data(), payload.size()) == payload.size());
+        }
+    }));
+    sink += arduino_write.pos + arduino_write.checksum;
+
+    SinkStream arc_frame{};
+    print(measure("arc frame16 32B", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(i);
+            configASSERT(arc::net::Stream::write_frame16(arc_frame, std::span(payload)).has_value());
+        }
+    }));
+    sink += arc_frame.pos + arc_frame.checksum;
+
+    ArduinoSinkPrint arduino_frame;
+    print(measure("arduino frame16 32B", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(i);
+            configASSERT(arduino_frame.write(frame_header.data(), frame_header.size()) == frame_header.size());
+            configASSERT(arduino_frame.write(payload.data(), payload.size()) == payload.size());
+        }
+    }));
+    sink += arduino_frame.pos + arduino_frame.checksum;
+
+    ArduinoSinkPrint arduino_numbers;
+    print(measure("arduino print u32", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(i);
+            const auto value = static_cast<unsigned long>((static_cast<std::uint32_t>(payload[0]) << 16U) | i);
+            configASSERT(arduino_numbers.print(value, DEC) != 0U);
+        }
+    }));
+    sink += arduino_numbers.pos + arduino_numbers.checksum;
+
+    print(measure("arc ws key b64", small_rounds, [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            nonce[i & 15U] = static_cast<std::uint8_t>(i);
+            const auto out = arc::net::Ws::key(arc_key, std::span<const std::uint8_t>{nonce});
+            configASSERT(out.has_value() && out->size() == 24U);
+            sink += static_cast<std::uint8_t>((*out)[0]);
+        }
+    }));
+
+    print(measure("idf mbedtls b64", small_rounds, [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            nonce[i & 15U] = static_cast<std::uint8_t>(i);
+            std::size_t out_len{};
+            configASSERT(mbedtls_base64_encode(
+                             idf_key.data(),
+                             idf_key.size(),
+                             &out_len,
+                             nonce.data(),
+                             nonce.size()) == 0);
+            configASSERT(out_len == 24U);
+            sink += idf_key[0];
+        }
+    }));
+
+    print(measure("arduino b64", small_rounds, [&]() {
+        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+            nonce[i & 15U] = static_cast<std::uint8_t>(i);
+            const String out = base64::encode(nonce.data(), nonce.size());
+            configASSERT(out.length() == 24U);
+            sink += static_cast<std::uint8_t>(out.c_str()[0]);
+        }
+    }));
+}
+#endif
 
 void run()
 {
     ESP_LOGI(tag, "real ESP32-S3 benchmark start");
-    ESP_LOGI(tag, "scope=no external fixture; hardware peripherals with wiring are intentionally excluded");
+    ESP_LOGI(tag, "scope=no external fixture; external-device buses still need a wiring fixture, internal/self-test lanes are included");
+    ESP_LOGI(tag, "compare=Arc + raw ESP-IDF silicon paths");
+    ESP_LOGI(tag, "system=temp + ota + nvs + twai self-test loopback");
+#ifdef ARC_BENCH_HAS_ARDUINO
+    ESP_LOGI(tag, "compare+=Arduino-ESP32 component paths");
+#else
+    ESP_LOGI(tag, "compare+=Arduino-ESP32 skipped; clone arduino-esp32/ or set ARC_ARDUINO_PATH to enable it");
+#endif
     bench_spsc();
     bench_mpsc_one<arc::Mpsc<std::uint32_t, 512>>("mpsc single");
     bench_mpsc_one<arc::DenseMpsc<std::uint32_t, 512>>("dense mpsc single");
@@ -504,6 +1131,13 @@ void run()
     bench_dsp();
     bench_copy();
     bench_silicon();
+    bench_temp();
+    bench_ota();
+    bench_store();
+    bench_can();
+#ifdef ARC_BENCH_HAS_ARDUINO
+    bench_arduino();
+#endif
     ESP_LOGI(tag, "real ESP32-S3 benchmark done sink=%llu", static_cast<unsigned long long>(sink));
 }
 
