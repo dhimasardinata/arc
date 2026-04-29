@@ -207,7 +207,8 @@ template <typename T, std::uint32_t Caps, typename... Args>
     static_assert(std::is_nothrow_constructible_v<T, Args...>,
                   "capability-aware helpers assume nothrow construction");
 
-    void* const storage = heap_caps_malloc(sizeof(T), Caps);
+    constexpr auto min_align = alignof(T) > sizeof(void*) ? alignof(T) : sizeof(void*);
+    void* const storage = heap_caps_aligned_alloc(min_align, sizeof(T), Caps);
     if (storage == nullptr) {
         return {};
     }

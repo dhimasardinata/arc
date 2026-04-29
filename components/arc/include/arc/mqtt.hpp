@@ -295,9 +295,15 @@ struct Mqtt {
         }
 
         const auto byte0 = frame[0];
+        const auto type = static_cast<std::uint8_t>(byte0 >> 4U);
+        const auto flags = static_cast<std::uint8_t>(byte0 & 0x0fU);
+        if (!valid_header(type, flags)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
         return MqttPacket{
-            .type = static_cast<MqttType>(byte0 >> 4U),
-            .flags = static_cast<std::uint8_t>(byte0 & 0x0fU),
+            .type = static_cast<MqttType>(type),
+            .flags = flags,
             .body = frame.subspan(header, remaining),
             .bytes = total,
         };
@@ -444,6 +450,33 @@ private:
     [[nodiscard]] static constexpr std::size_t max_remaining() noexcept
     {
         return 268435455U;
+    }
+
+    [[nodiscard]] static constexpr bool valid_header(
+        const std::uint8_t type,
+        const std::uint8_t flags) noexcept
+    {
+        switch (type) {
+            case 1U:
+            case 2U:
+            case 4U:
+            case 5U:
+            case 7U:
+            case 9U:
+            case 11U:
+            case 12U:
+            case 13U:
+            case 14U:
+                return flags == 0U;
+            case 3U:
+                return ((flags >> 1U) & 0x03U) != 0x03U;
+            case 6U:
+            case 8U:
+            case 10U:
+                return flags == 0x02U;
+            default:
+                return false;
+        }
     }
 
     [[nodiscard]] static constexpr std::size_t header_bytes(const std::size_t remaining) noexcept

@@ -10,6 +10,7 @@
 #include <thread>
 #include <utility>
 
+#include "arc/caps.hpp"
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
 #include "arc/file.hpp"
@@ -517,6 +518,43 @@ void test_coap()
 
     const auto reset = arc::net::Coap::reset(buffer, 0x40U);
     expect(reset.has_value(), "CoAP reset encodes");
+
+    const std::array<std::uint8_t, 4> overflow_option{0xe0U, 0xffU, 0xf2U, 0x00U};
+    std::size_t overflow_offset{};
+    std::uint16_t overflow_number = 65530U;
+    const auto overflow = arc::net::Coap::next(overflow_option, overflow_offset, overflow_number);
+    expect(!overflow.has_value(), "CoAP option number overflow rejects");
+}
+
+void test_invalid_codecs()
+{
+    const std::array<std::uint8_t, 2> reserved_ws_opcode{0x83U, 0x00U};
+    expect(!arc::net::Ws::parse(reserved_ws_opcode), "WS reserved opcode rejects");
+
+    std::array<std::uint8_t, 8> ws_buffer{};
+    expect(!arc::net::Ws::frame(ws_buffer, static_cast<arc::net::WsOpcode>(0x3U), nullptr, 0U),
+           "WS reserved opcode encode rejects");
+
+    const std::array<std::uint8_t, 7> mqtt_reserved_qos{0x36U, 0x05U, 0x00U, 0x01U, 't', 0x00U, 0x01U};
+    expect(!arc::net::Mqtt::parse(mqtt_reserved_qos), "MQTT reserved publish QoS rejects");
+
+    const std::array<std::uint8_t, 2> mqtt_reserved_type{0xf0U, 0x00U};
+    expect(!arc::net::Mqtt::parse(mqtt_reserved_type), "MQTT reserved type rejects");
+
+    const std::array<std::uint8_t, 2> mqtt_bad_subscribe_flags{0x80U, 0x00U};
+    expect(!arc::net::Mqtt::parse(mqtt_bad_subscribe_flags), "MQTT fixed flags reject");
+}
+
+void test_caps()
+{
+    struct alignas(64) OverAligned {
+        std::uint32_t value{};
+    };
+
+    auto ptr = arc::caps<OverAligned, MALLOC_CAP_INTERNAL>();
+    expect(static_cast<bool>(ptr), "caps over-aligned allocation succeeds");
+    expect((reinterpret_cast<std::uintptr_t>(ptr.get()) & (alignof(OverAligned) - 1U)) == 0U,
+           "caps allocation preserves over-alignment");
 }
 
 void test_dsp()
@@ -825,6 +863,8 @@ int main()
     test_mqtt();
     test_ws();
     test_coap();
+    test_invalid_codecs();
+    test_caps();
     test_dsp();
     test_seqreg();
     test_file();

@@ -78,7 +78,8 @@ struct Ws {
         const bool rsv2 = false,
         const bool rsv3 = false) noexcept
     {
-        if ((bytes != 0U && data == nullptr) || (control(opcode) && (!fin || bytes > 125U))) {
+        if ((bytes != 0U && data == nullptr) || !valid_opcode(opcode) ||
+            (control(opcode) && (!fin || bytes > 125U))) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -227,6 +228,9 @@ struct Ws {
         }
 
         const auto opcode = static_cast<WsOpcode>(byte0 & 0x0fU);
+        if (!valid_opcode(opcode)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         if (control(opcode) && (!fin || bytes > 125U)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
@@ -399,6 +403,20 @@ private:
     [[nodiscard]] static constexpr bool control(const WsOpcode opcode) noexcept
     {
         return static_cast<std::uint8_t>(opcode) >= 0x8U;
+    }
+
+    [[nodiscard]] static constexpr bool valid_opcode(const WsOpcode opcode) noexcept
+    {
+        switch (opcode) {
+            case WsOpcode::continuation:
+            case WsOpcode::text:
+            case WsOpcode::binary:
+            case WsOpcode::close:
+            case WsOpcode::ping:
+            case WsOpcode::pong:
+                return true;
+        }
+        return false;
     }
 
     [[nodiscard]] static constexpr std::size_t header_bytes(

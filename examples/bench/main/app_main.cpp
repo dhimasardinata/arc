@@ -1,6 +1,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <span>
 
 #include "aes/esp_aes.h"
@@ -38,6 +39,7 @@
 #include "Arduino.h"
 #include "Print.h"
 #include "base64.h"
+#undef word
 #endif
 
 namespace app {
@@ -45,11 +47,12 @@ namespace app {
 inline constexpr char tag[] = "arc-bench";
 inline constexpr std::uint32_t rounds = 20'000U;
 inline constexpr std::uint32_t small_rounds = 4'000U;
+inline constexpr std::uint32_t rng_rounds = 256U;
 inline constexpr std::uint32_t dsp_rounds = 10'000U;
 inline constexpr std::uint32_t telemetry_rounds = 512U;
 inline constexpr std::uint32_t can_rounds = 256U;
 inline constexpr std::uint32_t flash_rounds = 16U;  // keep write-heavy NVS lanes from needlessly wearing flash
-inline constexpr std::size_t batch = 255U;
+inline constexpr std::size_t batch = 15U;
 inline constexpr std::size_t dsp_n = 256U;
 inline constexpr char store_ns[] = "bench";
 inline constexpr char store_blob_key[] = "control";
@@ -92,7 +95,7 @@ Result measure(const char* const name, const std::uint64_t ops, Fn&& fn)
 }
 
 struct SinkStream {
-    std::array<std::uint8_t, 4096> data{};
+    std::array<std::uint8_t, 64> data{};
     std::size_t pos{};
     std::uint64_t checksum{};
 
@@ -278,7 +281,7 @@ void init_psa()
 
 #ifdef ARC_BENCH_HAS_ARDUINO
 struct ArduinoSinkPrint final : public Print {
-    std::array<std::uint8_t, 4096> data{};
+    std::array<std::uint8_t, 64> data{};
     std::size_t pos{};
     std::uint64_t checksum{};
 
@@ -314,7 +317,7 @@ void init_arduino()
 
 void bench_spsc()
 {
-    arc::Spsc<std::uint32_t, 512> q;
+    arc::Spsc<std::uint32_t, 16> q;
     std::uint64_t sum{};
     print(measure("spsc single", rounds * 2ULL, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
@@ -326,7 +329,7 @@ void bench_spsc()
     }));
     sink += sum;
 
-    arc::Spsc<std::uint32_t, 512> bq;
+    arc::Spsc<std::uint32_t, 16> bq;
     std::array<std::uint32_t, batch> in{};
     std::array<std::uint32_t, batch> out{};
     sum = 0U;
@@ -364,7 +367,7 @@ void bench_mpsc_one(const char* const name)
 
 void bench_fanin()
 {
-    arc::Fanin<std::uint32_t, 512, 4> fan;
+    arc::Fanin<std::uint32_t, 16, 4> fan;
     std::uint64_t sum{};
     print(measure("fanin single", rounds * 8ULL, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
@@ -381,7 +384,7 @@ void bench_fanin()
     }));
     sink += sum;
 
-    arc::Fanin<std::uint32_t, 512, 4> batch_fan;
+    arc::Fanin<std::uint32_t, 16, 4> batch_fan;
     std::array<std::uint32_t, batch> in{};
     std::array<std::uint32_t, batch * 4U> out{};
     sum = 0U;
@@ -643,15 +646,15 @@ void bench_silicon()
         }
     }));
 
-    print(measure("rng fill 256B", small_rounds, [&]() {
-        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+    print(measure("rng fill 256B", rng_rounds, [&]() {
+        for (std::uint32_t i = 0; i < rng_rounds; ++i) {
             arc::Rng::fill(std::span(data));
             sink += data[i & 255U];
         }
     }));
 
-    print(measure("idf esp_fill_random", small_rounds, [&]() {
-        for (std::uint32_t i = 0; i < small_rounds; ++i) {
+    print(measure("idf esp_fill_random", rng_rounds, [&]() {
+        for (std::uint32_t i = 0; i < rng_rounds; ++i) {
             esp_fill_random(data.data(), data.size());
             sink += data[i & 255U];
         }
@@ -1122,8 +1125,8 @@ void run()
     ESP_LOGI(tag, "compare+=Arduino-ESP32 skipped; clone arduino-esp32/ or set ARC_ARDUINO_PATH to enable it");
 #endif
     bench_spsc();
-    bench_mpsc_one<arc::Mpsc<std::uint32_t, 512>>("mpsc single");
-    bench_mpsc_one<arc::DenseMpsc<std::uint32_t, 512>>("dense mpsc single");
+    bench_mpsc_one<arc::Mpsc<std::uint32_t, 16>>("mpsc single");
+    bench_mpsc_one<arc::DenseMpsc<std::uint32_t, 16>>("dense mpsc single");
     bench_fanin();
     bench_seqreg();
     bench_stream();

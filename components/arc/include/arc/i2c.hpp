@@ -26,7 +26,8 @@ template <int Port,
           std::uint8_t Glitch = 7,
           i2c_clock_source_t Clock = I2C_CLK_SRC_DEFAULT,
           int Intr = 0,
-          std::size_t Queue = 0>
+          std::size_t Queue = 0,
+          bool AdoptExisting = false>
 struct I2cBus {
     static_assert(Port >= 0 && Port < SOC_I2C_NUM, "invalid I2C port");
     static_assert(Sda >= 0 && Sda < SOC_GPIO_PIN_COUNT, "invalid I2C SDA pin");
@@ -38,6 +39,7 @@ struct I2cBus {
             return ESP_OK;
         }
 
+        const auto already_claimed = Resource::held();
         auto err = Resource::take();
         if (err != ESP_OK) {
             Init::fail(state.init);
@@ -60,7 +62,7 @@ struct I2cBus {
             Init::pass(state.init);
             return ESP_OK;
         }
-        if (err == ESP_ERR_INVALID_STATE) {
+        if (err == ESP_ERR_INVALID_STATE && (already_claimed || AdoptExisting)) {
             err = i2c_master_get_bus_handle(static_cast<decltype(cfg.i2c_port)>(Port), &state.bus);
             if (err == ESP_OK) {
                 Init::pass(state.init);
@@ -132,7 +134,7 @@ struct I2cBus {
 private:
     using Resource = Claim<ClaimKind::i2c_bus,
                            Port,
-                           claim_token<Port, Sda, Scl, Pullup, Glitch, Clock, Intr, Queue>()>;
+                           claim_token<Port, Sda, Scl, Pullup, Glitch, Clock, Intr, Queue, AdoptExisting>()>;
 
     struct State {
         i2c_master_bus_handle_t bus;

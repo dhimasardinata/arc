@@ -28,3 +28,13 @@ endif()
 include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/arc-idf.cmake)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(arc_bench)
+
+# espressif/esp-modbus has an upstream strncpy bug that triggers
+# -Werror=stringop-truncation on GCC 15+.  Demote the error back to a
+# warning for that third-party target only; the warning is still visible.
+if(ARC_BENCH_HAS_ARDUINO)
+    idf_component_get_property(_arc_modbus_lib espressif__esp-modbus COMPONENT_LIB)
+    if(TARGET ${_arc_modbus_lib})
+        target_compile_options(${_arc_modbus_lib} PRIVATE -Wno-error=stringop-truncation)
+    endif()
+endif()

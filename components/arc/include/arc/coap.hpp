@@ -272,6 +272,10 @@ struct Coap {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
+        if (*delta > (0xffffU - number)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
         number = static_cast<std::uint16_t>(number + *delta);
         const auto value = options.subspan(pos, *length);
         pos += *length;

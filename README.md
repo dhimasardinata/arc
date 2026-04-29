@@ -601,6 +601,7 @@ static_assert(arc::Topology<Board>);
 `arc::Pins` ignores negative sentinel pins like `-1`, so optional CS/MISO-style values can still be represented without false collisions.
 
 Peripheral wrappers also claim physical silicon at `init()` time. Two different `arc::Uart`, `arc::I2cBus`, `arc::I2cSlave`, `arc::I2c`, `arc::SpiBus`, `arc::SpiSlave`, or CS-backed `arc::Spi` template aliases cannot silently own the same hardware with different type parameters; the later claim returns `ESP_ERR_INVALID_STATE`.
+I2C and UART wrappers also reject pre-existing raw ESP-IDF drivers by default, because Arc cannot prove their pin, buffer, or framing policy. Set the trailing `AdoptExisting` template parameter only when deliberate raw-driver interop is part of the board contract.
 Identical aliases share a tiny atomic init gate, so two tasks racing the same first `init()` do not double-call the ESP-IDF allocator.
 
 ## Resource Lifetime
@@ -1376,6 +1377,7 @@ Use this when the ESP32-S3 should be a deterministic peripheral for another cont
 Compile-time I2C master wrapper.
 
 - `I2cBus::init()` brings up one I2C master bus and returns `esp_err_t`.
+- The trailing `AdoptExisting` parameter defaults to `false`; leave it there unless this Arc type is intentionally adopting a bus created elsewhere.
 - `I2cBus::probe(addr)` checks for a device without forcing a reboot loop.
 - `I2cBus::off()` deletes the bus once devices are removed.
 - `I2c::init()` mounts one device on a bus and returns `esp_err_t`.
@@ -1463,6 +1465,7 @@ Use this for digital MEMS microphones, simple PDM speaker/codec links, and low-p
 Compile-time UART wrapper.
 
 - `init()` configures the port, pins, framing, buffers, and driver, then returns `esp_err_t`.
+- The trailing `AdoptExisting` parameter defaults to `false`; raw ESP-IDF UART drivers must be adopted explicitly.
 - `boot()` keeps the fail-fast path for required serial links.
 - `off()` deletes the driver and releases the port claim.
 - `write(...)` and `read(...)` expose `arc::Result<std::size_t>` ergonomic overloads.
@@ -2845,7 +2848,7 @@ Before any build runs, CI also executes `./tools/check-repo.sh`. That check fail
 
 CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host test binary compiles pure Arc logic against tiny ESP attribute stubs and exercises SPSC single/batch transfer, MPSC under real producer contention, Fanin round-robin and batch drain behavior, wire codecs, stream helpers, SeqReg snapshots, and DSP/FIR math without flashing hardware.
 
-CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports host-runner throughput for Arc SPSC batch/single lanes, MPSC/DenseMPSC, Fanin batch/single drains, SeqReg, stream helpers, DSP, codecs, and standard-library baselines where a fair local baseline exists. It is not marketed as an ESP32-S3 cycle benchmark or as an Arduino/raw-IDF shootout; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start. `tools/framework-compare.sh` adds host-buildable framework measurements after that step without duplicating the Arc host benchmark in CI, while `examples/bench` is the on-device leg for real ESP32-S3 compare runs.
+CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports host-runner throughput for Arc SPSC batch/single lanes, MPSC/DenseMPSC, Fanin batch/single drains, SeqReg, stream helpers, DSP, codecs, and standard-library baselines where a fair local baseline exists. The output includes compiler and host context so runner changes are visible next to timing changes. It is not marketed as an ESP32-S3 cycle benchmark or as an Arduino/raw-IDF shootout; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start. `tools/framework-compare.sh` adds host-buildable framework measurements after that step without duplicating the Arc host benchmark in CI, while `examples/bench` is the on-device leg for real ESP32-S3 compare runs.
 
 For hardware numbers, build and flash `examples/bench` on an ESP32-S3. That firmware uses the target cycle counter, compares Arc against raw ESP-IDF silicon APIs in the same image, folds internal temp/NVS/OTA plus self-test TWAI loopback into the same run, optionally adds Arduino-ESP32 core paths when the component checkout is available, and still intentionally excludes wired peripheral benchmarks unless a board fixture defines the external devices and pins.
 

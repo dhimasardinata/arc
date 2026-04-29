@@ -36,7 +36,8 @@ template <uart_port_t Port,
           uart_parity_t Parity = UART_PARITY_DISABLE,
           uart_stop_bits_t Stop = UART_STOP_BITS_1,
           uart_hw_flowcontrol_t Flow = UART_HW_FLOWCTRL_DISABLE,
-          uart_sclk_t Clock = UART_SCLK_DEFAULT>
+          uart_sclk_t Clock = UART_SCLK_DEFAULT,
+          bool AdoptExisting = false>
 struct Uart {
     static_assert(Port >= 0 && Port < SOC_UART_NUM, "invalid UART port");
     static_assert((Tx >= 0 && Tx < SOC_GPIO_PIN_COUNT) || Tx == UART_PIN_NO_CHANGE, "invalid UART TX pin");
@@ -54,6 +55,7 @@ struct Uart {
             return ESP_OK;
         }
 
+        const auto already_claimed = Resource::held();
         auto err = Resource::take();
         if (err != ESP_OK) {
             Init::fail(state.init);
@@ -76,7 +78,7 @@ struct Uart {
              .stop = Stop,
              .flow = Flow,
              .clock = Clock});
-        if (err == ESP_ERR_INVALID_STATE) {
+        if (err == ESP_ERR_INVALID_STATE && (already_claimed || AdoptExisting)) {
             Init::pass(state.init);
             return ESP_OK;
         }
@@ -261,7 +263,7 @@ struct Uart {
 private:
     using Resource = Claim<ClaimKind::uart,
                            static_cast<int>(Port),
-                           claim_token<Port, Tx, Rx, Rts, Cts, Baud, RxBuf, TxBuf, Queue, Intr, Bits, Parity, Stop, Flow, Clock>()>;
+                           claim_token<Port, Tx, Rx, Rts, Cts, Baud, RxBuf, TxBuf, Queue, Intr, Bits, Parity, Stop, Flow, Clock, AdoptExisting>()>;
 
     struct State {
         std::uint32_t init;

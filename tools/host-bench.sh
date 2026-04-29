@@ -21,7 +21,15 @@ CXX="${CXX:-g++}"
     "$ROOT/tests/host/bench.cpp" \
     -o "$BUILD/arc-host-bench"
 
-OUTPUT="$("$BUILD/arc-host-bench")"
+BENCH_OUTPUT="$("$BUILD/arc-host-bench")"
+CXX_VERSION="$("$CXX" --version | sed -n '1p')"
+HOST_VERSION="$(uname -srmo 2>/dev/null || uname -a)"
+OUTPUT="$(
+    printf '== host benchmark context ==\n'
+    printf 'compiler %s\n' "$CXX_VERSION"
+    printf 'host     %s\n' "$HOST_VERSION"
+    printf '\n%s\n' "$BENCH_OUTPUT"
+)"
 printf '%s\n' "$OUTPUT"
 
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
