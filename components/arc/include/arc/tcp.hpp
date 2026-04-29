@@ -12,6 +12,7 @@
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
 
+#include "arc/ip.hpp"
 #include "arc/result.hpp"
 
 namespace arc::net {
@@ -52,7 +53,8 @@ struct Tcp {
     [[nodiscard]] static Result<Tcp> dial(
         const char* const host,
         const std::uint16_t port,
-        const std::uint32_t timeout_ms = 1000U) noexcept
+        const std::uint32_t timeout_ms = 1000U,
+        const IpFamily family = IpFamily::any) noexcept
     {
         if (host == nullptr || port == 0U) {
             return fail(ESP_ERR_INVALID_ARG);
@@ -62,9 +64,9 @@ struct Tcp {
         static_cast<void>(std::snprintf(service, sizeof(service), "%u", static_cast<unsigned>(port)));
 
         addrinfo hints{};
-        hints.ai_family = AF_INET;
+        hints.ai_family = socket_family(family);
         hints.ai_socktype = SOCK_STREAM;
-        hints.ai_protocol = IPPROTO_IP;
+        hints.ai_protocol = IPPROTO_TCP;
 
         addrinfo* res = nullptr;
         const auto gai = getaddrinfo(host, service, &hints, &res);
@@ -98,6 +100,14 @@ struct Tcp {
 
         freeaddrinfo(res);
         return fail(last);
+    }
+
+    [[nodiscard]] static Result<Tcp> dial(
+        const char* const host,
+        const std::uint16_t port,
+        const IpFamily family) noexcept
+    {
+        return dial(host, port, 1000U, family);
     }
 
     [[nodiscard]] Result<std::size_t> send(const void* const data, const std::size_t bytes) noexcept

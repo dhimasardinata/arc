@@ -1,5 +1,6 @@
 #pragma once
 
+#include "arc/any.hpp"
 #include "arc/bus.hpp"
 #include "arc/audit.hpp"
 #include "arc/cache.hpp"
@@ -42,6 +43,10 @@
 
 #if __has_include("esp_flash.h") && __has_include("esp_partition.h")
 #include "arc/xts.hpp"
+#endif
+
+#if __has_include("esp_etm.h")
+#include "arc/etm.hpp"
 #endif
 
 #if __has_include("driver/gpio.h")

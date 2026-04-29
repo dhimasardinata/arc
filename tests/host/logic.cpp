@@ -1,7 +1,7 @@
 #include <array>
 #include <atomic>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <span>
@@ -10,6 +10,7 @@
 #include <thread>
 #include <utility>
 
+#include "arc/any.hpp"
 #include "arc/caps.hpp"
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
@@ -29,6 +30,8 @@ static_assert(sizeof(arc::InitTxn) == sizeof(void*));
 static_assert(sizeof(arc::RefInitTxn) == sizeof(void*));
 static_assert(sizeof(arc::RefLease) == sizeof(void*));
 static_assert(sizeof(arc::TryGate) == sizeof(void*));
+static_assert(sizeof(arc::AnyI2c) == 4U * sizeof(void*));
+static_assert(sizeof(arc::AnySpi) == 4U * sizeof(void*));
 
 #if defined(__has_feature)
 #if __has_feature(thread_sanitizer)
@@ -46,6 +49,129 @@ void expect(const bool condition, const char* const message)
         std::fprintf(stderr, "host test failed: %s\n", message);
         std::exit(1);
     }
+}
+
+struct MockStaticI2c {
+    static inline std::size_t sent{};
+    static inline std::size_t received{};
+    static inline std::size_t xfer_tx{};
+    static inline std::size_t xfer_rx{};
+    static inline int timeout{};
+
+    [[nodiscard]] static esp_err_t send(
+        const void* const data,
+        const std::size_t bytes,
+        const int timeout_ms) noexcept
+    {
+        sent = data == nullptr ? 0U : bytes;
+        timeout = timeout_ms;
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t recv(
+        void* const data,
+        const std::size_t bytes,
+        const int timeout_ms) noexcept
+    {
+        received = data == nullptr ? 0U : bytes;
+        timeout = timeout_ms;
+        std::memset(data, 0x5A, bytes);
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t xfer(
+        const void* const tx,
+        const std::size_t tx_bytes,
+        void* const rx,
+        const std::size_t rx_bytes,
+        const int timeout_ms) noexcept
+    {
+        xfer_tx = tx == nullptr ? 0U : tx_bytes;
+        xfer_rx = rx == nullptr ? 0U : rx_bytes;
+        timeout = timeout_ms;
+        const auto* in = static_cast<const std::uint8_t*>(tx);
+        auto* out = static_cast<std::uint8_t*>(rx);
+        for (std::size_t i = 0; i < tx_bytes && i < rx_bytes; ++i) {
+            out[i] = static_cast<std::uint8_t>(in[i] ^ 0xFFU);
+        }
+        return ESP_OK;
+    }
+};
+
+struct MockSpi {
+    std::size_t sent{};
+    std::size_t received{};
+    std::size_t xfer_bytes{};
+    std::uint32_t hz{};
+    std::uint32_t flags{};
+
+    [[nodiscard]] esp_err_t send(
+        const void* const data,
+        const std::size_t bytes,
+        const std::uint32_t speed,
+        const std::uint32_t mode_flags) noexcept
+    {
+        sent = data == nullptr ? 0U : bytes;
+        hz = speed;
+        flags = mode_flags;
+        return ESP_OK;
+    }
+
+    [[nodiscard]] esp_err_t recv(
+        void* const data,
+        const std::size_t bytes,
+        const std::uint32_t speed,
+        const std::uint32_t mode_flags) noexcept
+    {
+        received = data == nullptr ? 0U : bytes;
+        hz = speed;
+        flags = mode_flags;
+        std::memset(data, 0xC3, bytes);
+        return ESP_OK;
+    }
+
+    [[nodiscard]] esp_err_t xfer(
+        const void* const tx,
+        void* const rx,
+        const std::size_t bytes,
+        const std::uint32_t speed,
+        const std::uint32_t mode_flags) noexcept
+    {
+        xfer_bytes = tx == nullptr || rx == nullptr ? 0U : bytes;
+        hz = speed;
+        flags = mode_flags;
+        std::memcpy(rx, tx, bytes);
+        return ESP_OK;
+    }
+};
+
+void test_any_io()
+{
+    const arc::AnyI2c empty_i2c;
+    expect(!empty_i2c, "empty AnyI2c is false");
+    expect(empty_i2c.send(nullptr, 1U) == ESP_ERR_INVALID_ARG, "empty AnyI2c rejects send");
+
+    const auto i2c = arc::AnyI2c::bind<MockStaticI2c>();
+    expect(static_cast<bool>(i2c), "static AnyI2c binds");
+    const std::array<std::uint8_t, 3> tx{0x10U, 0x20U, 0x30U};
+    std::array<std::uint8_t, 3> rx{};
+    expect(i2c.send(std::span(tx), 77) == ESP_OK, "AnyI2c span send");
+    expect(MockStaticI2c::sent == tx.size() && MockStaticI2c::timeout == 77, "AnyI2c send thunks");
+    expect(i2c.recv(std::span(rx), 78) == ESP_OK, "AnyI2c span recv");
+    expect(rx[0] == 0x5A && rx[2] == 0x5A && MockStaticI2c::received == rx.size(), "AnyI2c recv thunks");
+    expect(i2c.xfer(std::span(tx), std::span(rx), 79) == ESP_OK, "AnyI2c span xfer");
+    expect(rx[0] == 0xEFU && rx[2] == 0xCFU, "AnyI2c xfer transforms");
+    expect(MockStaticI2c::xfer_tx == tx.size() && MockStaticI2c::xfer_rx == rx.size(), "AnyI2c xfer lengths");
+
+    MockSpi mock;
+    const auto spi = arc::AnySpi::bind(mock);
+    expect(static_cast<bool>(spi), "object AnySpi binds");
+    expect(spi.send(std::span(tx), 1'000'000U, 3U) == ESP_OK, "AnySpi span send");
+    expect(mock.sent == tx.size() && mock.hz == 1'000'000U && mock.flags == 3U, "AnySpi send thunks");
+    rx = {};
+    expect(spi.xfer(std::span(tx), std::span(rx), 2'000'000U, 4U) == ESP_OK, "AnySpi span xfer");
+    expect(rx == tx && mock.xfer_bytes == tx.size() && mock.hz == 2'000'000U, "AnySpi xfer copies");
+    expect(spi.xfer(std::span(tx), std::span(rx).first(2U)) == ESP_ERR_INVALID_ARG, "AnySpi rejects mismatched spans");
 }
 
 template <typename Fn>
@@ -852,6 +978,7 @@ void test_refinit()
 
 int main()
 {
+    test_any_io();
     test_spsc();
     test_checked_spsc();
     test_mpsc_single();

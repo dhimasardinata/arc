@@ -18,6 +18,7 @@
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
 
+#include "arc/ip.hpp"
 #include "arc/net.hpp"
 #include "arc/soc.hpp"
 #include "arc/task.hpp"
@@ -167,6 +168,15 @@ private:
         }
     }
 
+    [[nodiscard]] static consteval IpFamily family_default() noexcept
+    {
+        if constexpr (requires { Policy::family; }) {
+            return Policy::family;
+        } else {
+            return IpFamily::any;
+        }
+    }
+
     inline constexpr static TickType_t idle_ticks = idle_default();
     inline constexpr static TickType_t retry_ticks = retry_default();
     inline constexpr static TickType_t stale_ticks = stale_default();
@@ -174,6 +184,9 @@ private:
     inline constexpr static bool pmf_required = pmf_default();
     inline constexpr static wifi_sae_pwe_method_t sae_pwe = sae_default();
     inline constexpr static std::uint8_t connect_retries = connect_retries_default();
+    inline constexpr static IpFamily family = family_default();
+    inline constexpr static bool accept_v4 = family != IpFamily::v6;
+    inline constexpr static bool accept_v6 = family != IpFamily::v4;
 
     struct State {
         StaticEventGroup_t events_mem{};
@@ -253,6 +266,15 @@ private:
             return;
         }
 
+        if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
+#if defined(CONFIG_LWIP_IPV6) && CONFIG_LWIP_IPV6
+            if constexpr (accept_v6) {
+                static_cast<void>(esp_netif_create_ip6_linklocal(state.sta));
+            }
+#endif
+            return;
+        }
+
         if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
             xEventGroupClearBits(ev, wifi_up);
             ESP_LOGW(Policy::tag, "wifi disconnected, retrying");
@@ -260,11 +282,25 @@ private:
             return;
         }
 
-        if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP && accept_v4) {
             const auto* event = static_cast<const ip_event_got_ip_t*>(data);
+            if (event->esp_netif != state.sta) {
+                return;
+            }
             ESP_LOGI(Policy::tag, "got ip " IPSTR, IP2STR(&event->ip_info.ip));
             xEventGroupSetBits(ev, wifi_up);
         }
+
+#if defined(CONFIG_LWIP_IPV6) && CONFIG_LWIP_IPV6
+        if (base == IP_EVENT && id == IP_EVENT_GOT_IP6 && accept_v6) {
+            const auto* event = static_cast<const ip_event_got_ip6_t*>(data);
+            if (event->esp_netif != state.sta) {
+                return;
+            }
+            ESP_LOGI(Policy::tag, "got ip6 " IPV6STR, IPV62STR(event->ip6_info.ip));
+            xEventGroupSetBits(ev, wifi_up);
+        }
+#endif
     }
 
     static void connect() noexcept
@@ -283,8 +319,20 @@ private:
             return;
         }
 
-        esp_netif_ip_info_t ip{};
-        if (esp_netif_get_ip_info(state.sta, &ip) == ESP_OK && ip.ip.addr != 0U) {
+        bool ready = false;
+        if constexpr (accept_v4) {
+            esp_netif_ip_info_t ip{};
+            ready = esp_netif_get_ip_info(state.sta, &ip) == ESP_OK && ip.ip.addr != 0U;
+        }
+
+#if defined(CONFIG_LWIP_IPV6) && CONFIG_LWIP_IPV6
+        if constexpr (accept_v6) {
+            esp_ip6_addr_t ip6[CONFIG_LWIP_IPV6_NUM_ADDRESSES]{};
+            ready = ready || esp_netif_get_all_ip6(state.sta, ip6) > 0;
+        }
+#endif
+
+        if (ready) {
             if (const auto ev = events(); ev != nullptr) {
                 xEventGroupSetBits(ev, wifi_up);
             }
@@ -308,6 +356,13 @@ private:
             return false;
         }
 
+#if !defined(CONFIG_LWIP_IPV6) || !CONFIG_LWIP_IPV6
+        if constexpr (!accept_v4 && accept_v6) {
+            ESP_LOGE(Policy::tag, "IPv6 UDP requires CONFIG_LWIP_IPV6");
+            return false;
+        }
+#endif
+
         ESP_ERROR_CHECK(Radio::lease());
         state.leased = true;
         if (!running()) {
@@ -330,7 +385,7 @@ private:
         state.wifi_on = true;
         ESP_ERROR_CHECK(esp_event_handler_instance_register(
             IP_EVENT,
-            IP_EVENT_STA_GOT_IP,
+            ESP_EVENT_ANY_ID,
             &on_event,
             nullptr,
             &state.got_ip));
@@ -366,9 +421,9 @@ private:
         close_socket();
 
         addrinfo hints{};
-        hints.ai_family = AF_INET;
+        hints.ai_family = socket_family(family);
         hints.ai_socktype = SOCK_DGRAM;
-        hints.ai_protocol = IPPROTO_IP;
+        hints.ai_protocol = IPPROTO_UDP;
 
         char port[8];
         static_cast<void>(std::snprintf(port, sizeof(port), "%u", static_cast<unsigned>(Policy::port)));
