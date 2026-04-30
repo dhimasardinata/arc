@@ -212,6 +212,7 @@
 #endif
 
 #if __has_include("lwip/netdb.h") && __has_include("lwip/sockets.h")
+#include "arc/poll.hpp"
 #include "arc/tcp.hpp"
 #endif
 

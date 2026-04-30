@@ -13,6 +13,7 @@
 #include "esp_err.h"
 
 #include "arc/result.hpp"
+#include "arc/tcp.hpp"
 
 namespace arc::net {
 
@@ -161,6 +162,29 @@ struct Tls {
             return fail(ESP_FAIL);
         }
         return static_cast<std::size_t>(bytes);
+    }
+
+    [[nodiscard]] Result<int> sockfd() const noexcept
+    {
+        if (handle_ == nullptr) {
+            return fail(ESP_ERR_INVALID_STATE);
+        }
+
+        int sock = -1;
+        const auto err = esp_tls_get_conn_sockfd(handle_, &sock);
+        if (err != ESP_OK) {
+            return fail(err);
+        }
+        return sock;
+    }
+
+    [[nodiscard]] esp_err_t nonblocking(const bool enable = true) noexcept
+    {
+        const auto sock = sockfd();
+        if (!sock) {
+            return sock.error();
+        }
+        return Tcp::set_nonblocking(*sock, enable);
     }
 
     void close() noexcept

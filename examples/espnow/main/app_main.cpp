@@ -51,9 +51,9 @@ inline constexpr Control fast{
     .pad = 0U,
 };
 
-[[nodiscard]] constexpr std::uint32_t cycles(const std::uint32_t us) noexcept
+[[nodiscard]] constexpr std::uint32_t pace_us(const std::uint32_t us) noexcept
 {
-    return us * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    return us;
 }
 
 using Led = arc::Drive<led, 0>;
@@ -61,7 +61,7 @@ using Link = arc::Link<Edge, Control, 256>;
 
 inline void prime(Link& bus)
 {
-    bus.pace.write(cycles(half_us));
+    bus.pace.write(pace_us(half_us));
     bus.control.write(slow);
 }
 
@@ -77,17 +77,17 @@ struct Pulse {
         std::uint32_t seq = 0;
 
         while (true) {
-            const auto pace = static_cast<esp_cpu_cycle_count_t>(bus.pace.read());
+            const auto pace_us = bus.pace.read();
 
             Led::on();
             emit(bus, seq, 1U);
             arc::fence();
-            arc::Clock::spin(pace);
+            arc::Clock::spin_us(pace_us);
 
             Led::off();
             emit(bus, seq, 0U);
             arc::fence();
-            arc::Clock::spin(pace);
+            arc::Clock::spin_us(pace_us);
         }
     }
 
@@ -155,7 +155,7 @@ struct Radio {
 
         const auto period = fast_mode ? fast_half_us : half_us;
         const auto control = fast_mode ? fast : slow;
-        bus.pace.write(cycles(period));
+        bus.pace.write(pace_us(period));
         bus.control.write(control);
 
         ESP_LOGI(

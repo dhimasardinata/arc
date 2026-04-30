@@ -13,7 +13,6 @@ inline constexpr std::uint32_t half_us = CONFIG_ARC_UDP_HALF_US;
 inline constexpr std::uint32_t fast_half_us = CONFIG_ARC_UDP_FAST_HALF_US;
 inline constexpr std::uint32_t cmd_ms = CONFIG_ARC_UDP_CMD_MS;
 inline constexpr std::uint32_t port = CONFIG_ARC_UDP_PORT;
-inline constexpr std::uint32_t mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
 
 inline constexpr char ssid[] = CONFIG_ARC_UDP_SSID;
 inline constexpr char pass[] = CONFIG_ARC_UDP_PASS;

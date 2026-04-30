@@ -19,17 +19,17 @@ struct Pulse {
         std::uint32_t seq = 0;
 
         while (true) {
-            const auto pace = static_cast<esp_cpu_cycle_count_t>(bus.pace.read());
+            const auto pace_us = bus.pace.read();
 
             Led::on();
             emit(bus, seq, 1U);
             arc::fence();
-            arc::Clock::spin(pace);
+            arc::Clock::spin_us(pace_us);
 
             Led::off();
             emit(bus, seq, 0U);
             arc::fence();
-            arc::Clock::spin(pace);
+            arc::Clock::spin_us(pace_us);
         }
     }
 
@@ -92,7 +92,7 @@ struct Udp {
 
         const auto half_us = fast ? app::cfg::fast_half_us : app::cfg::half_us;
         const auto control = fast ? app::fast : app::slow;
-        bus.pace.write(app::cycles(half_us));
+        bus.pace.write(app::pace_us(half_us));
         bus.control.write(control);
 
         ESP_LOGI(

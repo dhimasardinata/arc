@@ -347,7 +347,7 @@ void init_arduino()
 
 void bench_spsc()
 {
-    arc::Spsc<std::uint32_t, 16> q;
+    static arc::Spsc<std::uint32_t, 16> q;
     std::uint64_t sum{};
     print(measure("spsc single", rounds * 2ULL, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
@@ -359,9 +359,9 @@ void bench_spsc()
     }));
     sink += sum;
 
-    arc::Spsc<std::uint32_t, 16> bq;
-    std::array<std::uint32_t, batch> in{};
-    std::array<std::uint32_t, batch> out{};
+    static arc::Spsc<std::uint32_t, 16> bq;
+    static std::array<std::uint32_t, batch> in{};
+    static std::array<std::uint32_t, batch> out{};
     sum = 0U;
     print(measure("spsc batch", rounds * 2ULL, [&]() {
         for (std::uint32_t base = 0; base < rounds; base += batch) {
@@ -382,7 +382,7 @@ void bench_spsc()
 template <typename Queue>
 void bench_mpsc_one(const char* const name)
 {
-    Queue q;
+    static Queue q;
     std::uint64_t sum{};
     print(measure(name, rounds * 2ULL, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
@@ -397,7 +397,7 @@ void bench_mpsc_one(const char* const name)
 
 void bench_fanin()
 {
-    arc::Fanin<std::uint32_t, 16, 4> fan;
+    static arc::Fanin<std::uint32_t, 16, 4> fan;
     std::uint64_t sum{};
     print(measure("fanin single", rounds * 8ULL, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
@@ -414,9 +414,9 @@ void bench_fanin()
     }));
     sink += sum;
 
-    arc::Fanin<std::uint32_t, 16, 4> batch_fan;
-    std::array<std::uint32_t, batch> in{};
-    std::array<std::uint32_t, batch * 4U> out{};
+    static arc::Fanin<std::uint32_t, 16, 4> batch_fan;
+    static std::array<std::uint32_t, batch> in{};
+    static std::array<std::uint32_t, batch * 4U> out{};
     sum = 0U;
     print(measure("fanin batch", rounds * 8ULL, [&]() {
         for (std::uint32_t base = 0; base < rounds; base += batch) {
@@ -446,7 +446,7 @@ void bench_seqreg()
         std::uint64_t c;
     };
 
-    arc::SeqReg<Snapshot> reg;
+    static arc::SeqReg<Snapshot> reg;
     std::uint64_t sum{};
     print(measure("seqreg write/read", rounds * 2ULL, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
@@ -461,9 +461,10 @@ void bench_seqreg()
 
 void bench_stream()
 {
-    SinkStream stream;
-    std::array<std::uint8_t, 32> payload{};
-    std::array<std::uint8_t, 40> frame{};
+    static SinkStream stream;
+    static std::array<std::uint8_t, 32> payload{};
+    static std::array<std::uint8_t, 40> frame{};
+    static std::array<std::uint8_t, 32> read_out{};
     for (std::size_t i = 0; i < payload.size(); ++i) {
         payload[i] = static_cast<std::uint8_t>(i);
     }
@@ -496,18 +497,18 @@ void bench_stream()
     FrameSource source;
     print(measure("stream frame read", rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
-            std::array<std::uint8_t, 32> out{};
-            const auto got = arc::net::Stream::read_frame16(source, std::span(out));
-            configASSERT(got.has_value() && *got == out.size());
-            sink += out[i & 31U];
+            const auto got = arc::net::Stream::read_frame16(source, std::span(read_out));
+            configASSERT(got.has_value() && *got == read_out.size());
+            sink += read_out[i & 31U];
         }
     }));
 }
 
 void bench_codecs()
 {
-    std::array<std::uint8_t, 256> buffer{};
-    std::array<std::uint8_t, 8> payload{1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U};
+    static std::array<std::uint8_t, 256> buffer{};
+    static std::array<std::uint8_t, 8> payload{1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U};
+    static std::array<std::uint8_t, 32> scratch{};
 
     print(measure("mqtt codec", small_rounds, [&]() {
         for (std::uint32_t i = 0; i < small_rounds; ++i) {
@@ -523,7 +524,6 @@ void bench_codecs()
     }));
 
     print(measure("websocket codec", small_rounds, [&]() {
-        std::array<std::uint8_t, 32> scratch{};
         for (std::uint32_t i = 0; i < small_rounds; ++i) {
             payload[0] = static_cast<std::uint8_t>(i);
             const auto frame = arc::net::Ws::binary(buffer, std::span(payload), true, i);
@@ -719,7 +719,7 @@ void bench_dsp()
         }
     }));
 
-    arc::dsp::Fir<int, 8>::State state{};
+    static arc::dsp::Fir<int, 8>::State state{};
     constexpr arc::dsp::Fir<int, 8>::Coeffs taps{1, -1, 2, -2, 3, -3, 4, -4};
     print(measure("dsp fir", dsp_rounds * dsp_n, [&]() {
         for (std::uint32_t r = 0; r < dsp_rounds; ++r) {
@@ -1060,14 +1060,14 @@ void bench_store()
 {
     ESP_ERROR_CHECK(arc::Store::boot());
 
-    ControlWord control{
+    static ControlWord control{
         .pace = 2000U,
         .mark = 0x31U,
         .flags = 0x01U,
     };
-    ControlWord loaded{};
-    std::array<char, 16> label{"arc-bench-a"};
-    std::array<char, 16> loaded_label{};
+    static ControlWord loaded{};
+    static std::array<char, 16> label{"arc-bench-a"};
+    static std::array<char, 16> loaded_label{};
     std::size_t chars{};
 
     ESP_ERROR_CHECK(arc::Store::save(store_ns, store_blob_key, control));
@@ -1154,7 +1154,7 @@ void bench_can()
     while (BenchCan::recv(stale)) {
     }
 
-    std::array<std::uint8_t, 8> payload{0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U};
+    static std::array<std::uint8_t, 8> payload{0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U};
     std::uint64_t sum{};
     print(measure("can selftest txrx", can_rounds * 2ULL, [&]() {
         for (std::uint32_t i = 0; i < can_rounds; ++i) {
@@ -1182,10 +1182,10 @@ void bench_arduino()
 {
     init_arduino();
 
-    std::array<std::uint8_t, 32> payload{};
-    std::array<std::uint8_t, 16> nonce{};
-    std::array<char, 32> arc_key{};
-    std::array<unsigned char, 32> idf_key{};
+    static std::array<std::uint8_t, 32> payload{};
+    static std::array<std::uint8_t, 16> nonce{};
+    static std::array<char, 32> arc_key{};
+    static std::array<unsigned char, 32> idf_key{};
     const std::array<std::uint8_t, 2> frame_header{
         0U,
         static_cast<std::uint8_t>(payload.size()),
@@ -1197,7 +1197,7 @@ void bench_arduino()
         nonce[i] = static_cast<std::uint8_t>(i * 7U);
     }
 
-    SinkStream arc_write{};
+    static SinkStream arc_write{};
     print(measure("arc stream write 32B", rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
             payload[0] = static_cast<std::uint8_t>(i);
@@ -1206,7 +1206,7 @@ void bench_arduino()
     }));
     sink += arc_write.pos + arc_write.checksum;
 
-    ArduinoSinkPrint arduino_write;
+    static ArduinoSinkPrint arduino_write;
     print(measure("arduino write 32B", rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
             payload[0] = static_cast<std::uint8_t>(i);
@@ -1215,7 +1215,7 @@ void bench_arduino()
     }));
     sink += arduino_write.pos + arduino_write.checksum;
 
-    SinkStream arc_frame{};
+    static SinkStream arc_frame{};
     print(measure("arc frame16 32B", rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
             payload[0] = static_cast<std::uint8_t>(i);
@@ -1224,7 +1224,7 @@ void bench_arduino()
     }));
     sink += arc_frame.pos + arc_frame.checksum;
 
-    ArduinoSinkPrint arduino_frame;
+    static ArduinoSinkPrint arduino_frame;
     print(measure("arduino frame16 32B", rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
             payload[0] = static_cast<std::uint8_t>(i);
@@ -1234,7 +1234,7 @@ void bench_arduino()
     }));
     sink += arduino_frame.pos + arduino_frame.checksum;
 
-    ArduinoSinkPrint arduino_numbers;
+    static ArduinoSinkPrint arduino_numbers;
     print(measure("arduino print u32", rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
             payload[0] = static_cast<std::uint8_t>(i);

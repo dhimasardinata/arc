@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <fcntl.h>
 #include <cstdio>
 #include <span>
 #include <type_traits>
@@ -188,6 +189,32 @@ struct Tcp {
         return recv(data.data(), data.size_bytes(), timeout_ms);
     }
 
+    [[nodiscard]] esp_err_t nonblocking(const bool enable = true) noexcept
+    {
+        if (sock_ < 0) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        return set_nonblocking(sock_, enable);
+    }
+
+    [[nodiscard]] static esp_err_t set_nonblocking(const int sock, const bool enable = true) noexcept
+    {
+        if (sock < 0) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        const auto flags = ::fcntl(sock, F_GETFL, 0);
+        if (flags < 0) {
+            return last_error();
+        }
+
+        const auto next = enable ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+        if (::fcntl(sock, F_SETFL, next) != 0) {
+            return last_error();
+        }
+        return ESP_OK;
+    }
+
     void close() noexcept
     {
         if (sock_ >= 0) {
@@ -261,8 +288,13 @@ private:
             case 0:
                 return ESP_FAIL;
             case EAGAIN:
+#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+            case EWOULDBLOCK:
+#endif
+            case EINPROGRESS:
             case ETIMEDOUT:
                 return ESP_ERR_TIMEOUT;
+            case EBADF:
             case EINVAL:
                 return ESP_ERR_INVALID_ARG;
             case ENOMEM:

@@ -29,9 +29,9 @@ struct Control {
 
 static_assert(sizeof(Control) == sizeof(std::uint32_t));
 
-[[nodiscard]] constexpr std::uint32_t cycles(const std::uint32_t half_us) noexcept
+[[nodiscard]] constexpr std::uint32_t pace_us(const std::uint32_t half_us) noexcept
 {
-    return static_cast<std::uint32_t>(arc::Clock::us(half_us, cfg::mhz));
+    return half_us;
 }
 
 inline constexpr Control slow{.mark = 0x31, .stride = 0, .flags = trace_on};
@@ -40,7 +40,7 @@ inline constexpr Control fast{.mark = 0x7a, .stride = 3, .flags = trace_on};
 template <typename Bus>
 inline void prime(Bus& bus) noexcept
 {
-    bus.pace.write(cycles(cfg::half_us));
+    bus.pace.write(pace_us(cfg::half_us));
     bus.control.write(slow);
 }
 

@@ -9,8 +9,15 @@
 
 namespace arc {
 
-template <typename Pin, std::uint32_t HalfPeriodMicroseconds, std::uint32_t CpuFrequencyMHz>
+template <typename Pin,
+          std::uint32_t HalfPeriodMicroseconds,
+          std::uint32_t CpuFrequencyMHz,
+          ClockSource Source = ClockSource::systimer>
 struct Wave {
+    static_assert(
+        Source != ClockSource::cycle_counter || !clock_dfs_possible(),
+        "arc::Wave cycle-counter timing is not DFS-safe when CONFIG_PM_ENABLE is set; use the default systimer source or hold arc::CpuLock and request ClockSource::locked_cycle_counter");
+
     static void setup()
     {
         Pin::out();
@@ -19,9 +26,32 @@ struct Wave {
 
     IRAM_ATTR static void run() noexcept
     {
+        if constexpr (Source == ClockSource::systimer) {
+            run_systimer();
+        } else {
+            run_cycles();
+        }
+    }
+
+private:
+    static void run_systimer() noexcept
+    {
+        const auto half_period_us = imm<HalfPeriodMicroseconds>();
+
+        while (true) {
+            Pin::template write<true>();
+            fence();
+            Clock::spin_us(half_period_us);
+            Pin::template write<false>();
+            fence();
+            Clock::spin_us(half_period_us);
+        }
+    }
+
+    IRAM_ATTR static void run_cycles() noexcept
+    {
         const auto half_period_cycles =
-            static_cast<esp_cpu_cycle_count_t>(imm<HalfPeriodMicroseconds>()) *
-            static_cast<esp_cpu_cycle_count_t>(imm<CpuFrequencyMHz>());
+            Clock::cycles(imm<HalfPeriodMicroseconds>(), imm<CpuFrequencyMHz>());
 
         while (true) {
             Pin::template write<true>();
@@ -33,7 +63,6 @@ struct Wave {
         }
     }
 
-private:
     template <std::uint32_t Value>
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::uint32_t imm() noexcept
     {

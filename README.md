@@ -113,6 +113,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Radio` is the shared Core 0 Wi-Fi owner, so UDP and ESP-NOW do not each re-create NVS, netif, event loop, and Wi-Fi driver state.
 - `arc::net::Eap` configures WPA2/WPA3 Enterprise credentials and joins through the shared radio without pulling WPA supplicant into non-enterprise builds.
 - `arc::net::Tcp` gives direct IPv4/IPv6 TCP socket clients for Core 0 control/config paths.
+- `arc::net::Poll` multiplexes caller-owned TCP/TLS sockets from one Core 0 task without hidden heap allocation or per-connection stacks.
 - `arc::net::IpFamily` lets TCP calls and UDP policies stay dual-stack by default or force IPv4/IPv6 explicitly.
 - `arc::net::Tls` gives direct ESP-TLS client sessions for secure caller-buffer transports such as MQTTS without taking over reconnect or protocol policy.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP/HTTPS client sessions, with explicit HTTPS factories when secure scheme enforcement matters.
@@ -210,7 +211,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::Time`, `arc::Clock`, `arc::Probe` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
-| Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
+| Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream` |
 | Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::Xts`, `arc::Fuse`, `arc::Rng` |
 
@@ -1996,9 +1997,21 @@ Direct TCP client for Core 0 control and configuration paths.
 - `send(...)` and `recv(...)` return byte counts without hiding partial transfers.
 - `recv(..., 0)` restores the POSIX-style blocking receive timeout without changing the send timeout.
 - `send_all(...)` loops until the caller-owned buffer is fully written or an error occurs.
+- `nonblocking(enable)` switches the native socket between blocking and event-driven use.
 - `close()` and `native()` keep socket lifetime explicit.
 
 Use this when a small protocol needs TCP but does not justify a framework-owned task.
+
+### `arc::net::Poll`
+
+Heapless `select()` wrapper for Core 0 socket fan-in.
+
+- `PollItem{sock, want}` describes caller-owned sockets and receives `ready` bits in place.
+- `Poll::wait(items, timeout_ms)` returns `arc::Result<std::size_t>` with the number of ready items.
+- `poll_forever` requests an infinite wait; `timeout_ms == 0` performs an immediate readiness check.
+- `PollInterest::read`, `write`, and `error` can be ORed together without allocating descriptor state.
+
+Use this with `Tcp::nonblocking()` or `Tls::nonblocking()` when one task needs to drive several MQTT, WebSocket, or custom streams without one FreeRTOS stack per connection.
 
 ### `arc::net::Tls`
 
@@ -2008,6 +2021,8 @@ Direct ESP-TLS client transport for Core 0 secure control and telemetry paths.
 - `send(...)` and `recv(...)` return byte counts without hiding partial transfers.
 - `send_all(...)` loops until the caller-owned buffer is fully written or an error occurs.
 - `avail()` exposes decrypted bytes already buffered by the TLS record layer.
+- `sockfd()` exposes the underlying lwIP socket descriptor for `arc::net::Poll`.
+- `nonblocking(enable)` applies nonblocking mode to that descriptor.
 - `close()` and `native()` keep TLS lifetime explicit.
 
 Use this under `arc::net::Mqtt`, `arc::net::Ws`, or a custom stream protocol when you need TLS without adopting a cloud SDK, reconnect loop, or framework-owned task.
@@ -2162,10 +2177,16 @@ Set optional `Policy::stale` to a non-zero tick duration when stale pending tele
 
 This is the transport to use when you want Wi-Fi silicon and low latency, but not IP, DHCP, or sockets.
 
-### `arc::Wave<Pin, HalfUs, Mhz>`
+### `arc::Wave<Pin, HalfUs, Mhz, Source = arc::ClockSource::systimer>`
 
-Static CPU-owned square-wave generator when you want fixed compile-time timing and explicit spin control on Core 1.
-The hot loop keeps its compile-time constants in registers behind an optimizer barrier instead of forcing volatile stack spills.
+Static CPU-owned square-wave generator with explicit timing-source policy.
+
+- The default `ClockSource::systimer` path is wall-clock correct under Dynamic Frequency Scaling.
+- `ClockSource::cycle_counter` is rejected at compile time when `CONFIG_PM_ENABLE` is set.
+- `ClockSource::locked_cycle_counter` keeps the old cycle-counted hot path for code that holds an `arc::CpuLock` or otherwise guarantees a fixed CPU clock.
+- The cycle path keeps its compile-time constants in registers behind an optimizer barrier instead of forcing volatile stack spills.
+
+Use `arc_requires(... time)` when using the default systimer source.
 
 ## Outputs
 
