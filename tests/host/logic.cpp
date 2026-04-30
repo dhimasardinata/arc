@@ -681,6 +681,21 @@ void test_caps()
     expect(static_cast<bool>(ptr), "caps over-aligned allocation succeeds");
     expect((reinterpret_cast<std::uintptr_t>(ptr.get()) & (alignof(OverAligned) - 1U)) == 0U,
            "caps allocation preserves over-alignment");
+
+    heap_caps_last_calloc_bytes = 0U;
+    auto plain = arc::inbuf<std::uint8_t>(65U);
+    expect(static_cast<bool>(plain), "plain cap buffer allocation succeeds");
+    expect(plain.size() == 65U && plain.bytes() == 65U, "plain cap buffer preserves logical size");
+    expect(heap_caps_last_calloc_bytes == 65U, "plain cap buffer allocation stays logical");
+
+    heap_caps_last_calloc_bytes = 0U;
+    auto dma = arc::dmabuf<std::uint8_t>(65U);
+    const auto padded = (65U + arc::cache_line - 1U) & ~(arc::cache_line - 1U);
+    expect(static_cast<bool>(dma), "DMA cap buffer allocation succeeds");
+    expect(dma.size() == 65U && dma.bytes() == 65U, "DMA cap buffer preserves logical size");
+    expect((reinterpret_cast<std::uintptr_t>(dma.data()) & (arc::cache_line - 1U)) == 0U,
+           "DMA cap buffer preserves cache-line alignment");
+    expect(heap_caps_last_calloc_bytes == padded, "DMA cap buffer allocates whole cache lines");
 }
 
 void test_dsp()

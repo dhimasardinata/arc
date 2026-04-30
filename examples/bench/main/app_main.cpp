@@ -3,6 +3,7 @@
 #include <cstring>
 #include <memory>
 #include <span>
+#include <type_traits>
 
 #include "aes/esp_aes.h"
 #include "aes/esp_aes_gcm.h"
@@ -50,6 +51,7 @@ inline constexpr std::uint32_t small_rounds = 4'000U;
 inline constexpr std::uint32_t rng_rounds = 256U;
 inline constexpr std::uint32_t dsp_rounds = 10'000U;
 inline constexpr std::uint32_t telemetry_rounds = 512U;
+inline constexpr std::uint32_t usage_rounds = 4'000U;
 inline constexpr std::uint32_t can_rounds = 256U;
 inline constexpr std::uint32_t flash_rounds = 16U;  // keep write-heavy NVS lanes from needlessly wearing flash
 inline constexpr std::size_t batch = 15U;
@@ -71,11 +73,18 @@ void print(const Result result)
 {
     ESP_LOGI(
         tag,
-        "%-28s ops=%llu cycles/op=%u ns/op=%u",
+        "%-34s %10llu ops %9u cyc/op %9u ns/op",
         result.name,
         static_cast<unsigned long long>(result.ops),
         static_cast<unsigned>(result.cycles_op),
         static_cast<unsigned>(result.ns_op));
+}
+
+void section(const char* const name)
+{
+    ESP_LOGI(tag, "%s", "");
+    ESP_LOGI(tag, "== %s ==", name);
+    ESP_LOGI(tag, "%-34s %10s     %9s     %9s", "lane", "ops", "cycles", "ns");
 }
 
 template <typename Fn>
@@ -155,6 +164,32 @@ struct ControlWord {
 };
 
 static_assert(sizeof(ControlWord) == 4U);
+
+struct TelemetryFrame {
+    std::uint32_t seq;
+    std::int32_t accel_x;
+    std::int32_t accel_y;
+    std::int32_t accel_z;
+    std::uint16_t millivolts;
+    std::uint16_t centi_celsius;
+    std::uint8_t flags;
+    std::uint8_t lane;
+};
+
+static_assert(std::is_trivially_copyable_v<TelemetryFrame>);
+
+struct ControlSnapshot {
+    std::uint32_t tick;
+    std::int32_t error;
+    std::int32_t effort;
+    std::uint32_t flags;
+};
+
+struct ControlEvent {
+    std::uint16_t code;
+    std::uint16_t value;
+    std::uint32_t tick;
+};
 
 using BenchCan = arc::Can<
     4,
@@ -524,6 +559,142 @@ void bench_codecs()
             sink += parsed->payload[0];
         }
     }));
+}
+
+void bench_usage()
+{
+    arc::Spsc<TelemetryFrame, 64> telemetry;
+    std::array<TelemetryFrame, 31> produced{};
+    std::array<TelemetryFrame, 31> consumed{};
+    std::uint64_t telemetry_sum{};
+
+    print(measure("usage telemetry bridge", usage_rounds * 2ULL, [&]() {
+        for (std::uint32_t base = 0; base < usage_rounds; base += produced.size()) {
+            const auto count = (usage_rounds - base) < produced.size() ? (usage_rounds - base) : produced.size();
+            for (std::uint32_t i = 0; i < count; ++i) {
+                const auto seq = base + i;
+                produced[i] = TelemetryFrame{
+                    .seq = seq,
+                    .accel_x = static_cast<std::int32_t>((seq * 3U) & 0x3ffU) - 512,
+                    .accel_y = static_cast<std::int32_t>((seq * 5U) & 0x3ffU) - 512,
+                    .accel_z = static_cast<std::int32_t>((seq * 7U) & 0x3ffU) - 512,
+                    .millivolts = static_cast<std::uint16_t>(3300U + (seq & 31U)),
+                    .centi_celsius = static_cast<std::uint16_t>(2450U + (seq & 63U)),
+                    .flags = static_cast<std::uint8_t>(seq & 3U),
+                    .lane = static_cast<std::uint8_t>((seq >> 2U) & 3U),
+                };
+            }
+
+            configASSERT(telemetry.push(std::span{produced}.first(count)) == count);
+            configASSERT(telemetry.pop(std::span{consumed}.first(count)) == count);
+            for (std::uint32_t i = 0; i < count; ++i) {
+                configASSERT(consumed[i].seq == base + i);
+                telemetry_sum += static_cast<std::uint64_t>(consumed[i].millivolts);
+                telemetry_sum += static_cast<std::uint64_t>(consumed[i].centi_celsius);
+                telemetry_sum += consumed[i].flags;
+            }
+        }
+    }));
+    sink += telemetry_sum;
+
+    arc::SeqReg<ControlSnapshot> snapshot;
+    arc::Fanin<ControlEvent, 16, 3> events;
+    std::array<int, 32> samples{};
+    std::array<int, 32> work{};
+    arc::dsp::Fir<int, 8>::State filter{};
+    constexpr arc::dsp::Fir<int, 8>::Coeffs taps{1, -1, 2, -2, 3, -3, 4, -4};
+    std::uint64_t control_sum{};
+
+    print(measure("usage control tick", usage_rounds, [&]() {
+        for (std::uint32_t tick = 0; tick < usage_rounds; ++tick) {
+            for (std::size_t i = 0; i < samples.size(); ++i) {
+                samples[i] = static_cast<int>((tick + i) & 31U) - 16;
+            }
+
+            arc::dsp::scale(work.data(), samples.data(), 2, work.size());
+            arc::dsp::mac(work.data(), samples.data(), -1, work.size());
+            const auto peak = arc::dsp::peak(work.data(), work.size());
+            const auto effort = arc::dsp::Fir<int, 8>::step(filter, taps, peak);
+            snapshot.write_unmasked(ControlSnapshot{
+                .tick = tick,
+                .error = peak,
+                .effort = effort,
+                .flags = tick & 0x0fU,
+            });
+
+            if ((tick & 1U) == 0U) {
+                configASSERT(events.try_push<0>(ControlEvent{.code = 1U, .value = static_cast<std::uint16_t>(peak), .tick = tick}));
+            }
+            if ((tick & 3U) == 0U) {
+                configASSERT(events.try_push<1>(ControlEvent{.code = 2U, .value = static_cast<std::uint16_t>(effort), .tick = tick}));
+            }
+            if ((tick & 7U) == 0U) {
+                configASSERT(events.try_push<2>(ControlEvent{.code = 3U, .value = static_cast<std::uint16_t>(tick), .tick = tick}));
+            }
+
+            ControlEvent event{};
+            while (events.try_pop(event)) {
+                control_sum += static_cast<std::uint64_t>(event.code);
+                control_sum += event.value;
+                control_sum += event.tick;
+            }
+
+            const auto latest = snapshot.read();
+            configASSERT(latest.tick == tick);
+            control_sum += static_cast<std::uint64_t>(latest.flags);
+        }
+    }));
+    sink += control_sum;
+
+    SinkStream stream;
+    std::array<std::uint8_t, 256> packet{};
+    std::array<std::uint8_t, 64> frame{};
+    std::array<std::uint8_t, 32> scratch{};
+    std::array<std::uint8_t, 32> payload{};
+    const std::array options{
+        arc::net::Coap::text(static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_path), "telemetry"),
+    };
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = static_cast<std::uint8_t>(i);
+    }
+
+    print(measure("usage protocol bundle", usage_rounds * 4ULL, [&]() {
+        for (std::uint32_t i = 0; i < usage_rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(i);
+
+            const auto mqtt = arc::net::Mqtt::publish(packet, "arc/node/telemetry", std::span(payload), static_cast<std::uint16_t>(i));
+            configASSERT(mqtt.has_value());
+            const auto mqtt_packet = arc::net::Mqtt::parse(*mqtt);
+            configASSERT(mqtt_packet.has_value());
+            const auto mqtt_view = arc::net::Mqtt::view(*mqtt_packet);
+            configASSERT(mqtt_view.has_value() && mqtt_view->payload[0] == payload[0]);
+
+            const auto coap = arc::net::Coap::message(
+                packet,
+                arc::net::CoapType::nonconfirmable,
+                static_cast<std::uint8_t>(arc::net::CoapCode::post),
+                static_cast<std::uint16_t>(i),
+                {},
+                std::span(options),
+                std::span(payload));
+            configASSERT(coap.has_value());
+            const auto coap_packet = arc::net::Coap::parse(*coap);
+            configASSERT(coap_packet.has_value() && coap_packet->payload[0] == payload[0]);
+
+            const auto ws = arc::net::Ws::binary(packet, std::span(payload), true, i);
+            configASSERT(ws.has_value());
+            const auto ws_frame = arc::net::Ws::parse(*ws, scratch);
+            configASSERT(ws_frame.has_value() && ws_frame->payload[0] == payload[0]);
+
+            const auto encoded = arc::net::Stream::frame16(std::span(frame), std::span(payload));
+            configASSERT(encoded.has_value());
+            configASSERT(arc::net::Stream::write(stream, *encoded).has_value());
+            sink += mqtt_view->payload[0];
+            sink += coap_packet->payload[0];
+            sink += ws_frame->payload[0];
+        }
+    }));
+    sink += stream.pos + stream.checksum;
 }
 
 void bench_dsp()
@@ -1124,21 +1295,34 @@ void run()
 #else
     ESP_LOGI(tag, "compare+=Arduino-ESP32 skipped; clone arduino-esp32/ or set ARC_ARDUINO_PATH to enable it");
 #endif
+    section("core lanes");
     bench_spsc();
     bench_mpsc_one<arc::Mpsc<std::uint32_t, 16>>("mpsc single");
     bench_mpsc_one<arc::DenseMpsc<std::uint32_t, 16>>("dense mpsc single");
     bench_fanin();
     bench_seqreg();
+
+    section("streams and codecs");
     bench_stream();
     bench_codecs();
+
+    section("critical usage mixes");
+    bench_usage();
+
+    section("dsp and memory");
     bench_dsp();
     bench_copy();
+
+    section("silicon accelerators");
     bench_silicon();
+
+    section("system services");
     bench_temp();
     bench_ota();
     bench_store();
     bench_can();
 #ifdef ARC_BENCH_HAS_ARDUINO
+    section("arduino component compare");
     bench_arduino();
 #endif
     ESP_LOGI(tag, "real ESP32-S3 benchmark done sink=%llu", static_cast<unsigned long long>(sink));

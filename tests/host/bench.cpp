@@ -50,6 +50,30 @@ struct Bench {
     double ns_op;
 };
 
+struct TelemetryFrame {
+    std::uint32_t seq;
+    std::int32_t accel_x;
+    std::int32_t accel_y;
+    std::int32_t accel_z;
+    std::uint16_t millivolts;
+    std::uint16_t centi_celsius;
+    std::uint8_t flags;
+    std::uint8_t lane;
+};
+
+struct ControlSnapshot {
+    std::uint32_t tick;
+    std::int32_t error;
+    std::int32_t effort;
+    std::uint32_t flags;
+};
+
+struct ControlEvent {
+    std::uint16_t code;
+    std::uint16_t value;
+    std::uint32_t tick;
+};
+
 void expect(const bool condition, const char* const message)
 {
     if (!condition) {
@@ -74,10 +98,16 @@ Bench measure(const char* const name, const std::uint64_t ops, Fn&& fn)
 
 void print(const Bench& bench)
 {
-    std::printf("%-28s %12llu ops %10.2f ns/op\n",
+    std::printf("%-34s %12llu ops %12.2f ns/op\n",
                 bench.name,
                 static_cast<unsigned long long>(bench.ops),
                 bench.ns_op);
+}
+
+void section(const char* const name)
+{
+    std::printf("\n== %s ==\n", name);
+    std::printf("%-34s %12s     %12s\n", "lane", "ops", "ns/op");
 }
 
 void bench_spsc()
@@ -707,18 +737,169 @@ void bench_stream()
     print(read_frame);
 }
 
+void bench_usage()
+{
+    constexpr std::uint32_t telemetry_rounds = 250'000U;
+    arc::Spsc<TelemetryFrame, 1024> telemetry;
+    std::array<TelemetryFrame, 255> produced{};
+    std::array<TelemetryFrame, 255> consumed{};
+    std::uint64_t sum{};
+
+    const auto telemetry_bridge = measure("usage telemetry bridge", telemetry_rounds * 2ULL, [&]() {
+        for (std::uint32_t base = 0; base < telemetry_rounds; base += produced.size()) {
+            const auto count = (telemetry_rounds - base) < produced.size() ? (telemetry_rounds - base) : produced.size();
+            for (std::uint32_t i = 0; i < count; ++i) {
+                const auto seq = base + i;
+                produced[i] = TelemetryFrame{
+                    .seq = seq,
+                    .accel_x = static_cast<std::int32_t>((seq * 3U) & 0x3ffU) - 512,
+                    .accel_y = static_cast<std::int32_t>((seq * 5U) & 0x3ffU) - 512,
+                    .accel_z = static_cast<std::int32_t>((seq * 7U) & 0x3ffU) - 512,
+                    .millivolts = static_cast<std::uint16_t>(3300U + (seq & 31U)),
+                    .centi_celsius = static_cast<std::uint16_t>(2450U + (seq & 63U)),
+                    .flags = static_cast<std::uint8_t>(seq & 3U),
+                    .lane = static_cast<std::uint8_t>((seq >> 2U) & 3U),
+                };
+            }
+
+            expect(telemetry.push(std::span{produced}.first(count)) == count, "usage telemetry push");
+            expect(telemetry.pop(std::span{consumed}.first(count)) == count, "usage telemetry pop");
+            for (std::uint32_t i = 0; i < count; ++i) {
+                expect(consumed[i].seq == base + i, "usage telemetry order");
+                sum += consumed[i].millivolts;
+                sum += consumed[i].centi_celsius;
+                sum += consumed[i].flags;
+            }
+        }
+    });
+    sink += sum;
+    print(telemetry_bridge);
+
+    constexpr std::uint32_t control_rounds = 250'000U;
+    arc::SeqReg<ControlSnapshot> snapshot;
+    arc::Fanin<ControlEvent, 64, 3> events;
+    std::array<int, 32> samples{};
+    std::array<int, 32> work{};
+    arc::dsp::Fir<int, 8>::State filter{};
+    constexpr arc::dsp::Fir<int, 8>::Coeffs taps{1, -1, 2, -2, 3, -3, 4, -4};
+    sum = 0U;
+
+    const auto control_tick = measure("usage control tick", control_rounds, [&]() {
+        for (std::uint32_t tick = 0; tick < control_rounds; ++tick) {
+            for (std::size_t i = 0; i < samples.size(); ++i) {
+                samples[i] = static_cast<int>((tick + i) & 31U) - 16;
+            }
+
+            arc::dsp::scale(work.data(), samples.data(), 2, work.size());
+            arc::dsp::mac(work.data(), samples.data(), -1, work.size());
+            const auto peak = arc::dsp::peak(work.data(), work.size());
+            const auto effort = arc::dsp::Fir<int, 8>::step(filter, taps, peak);
+            snapshot.write_unmasked(ControlSnapshot{
+                .tick = tick,
+                .error = peak,
+                .effort = effort,
+                .flags = tick & 0x0fU,
+            });
+
+            if ((tick & 1U) == 0U) {
+                expect(events.try_push<0>(ControlEvent{.code = 1U, .value = static_cast<std::uint16_t>(peak), .tick = tick}),
+                       "usage control event 0");
+            }
+            if ((tick & 3U) == 0U) {
+                expect(events.try_push<1>(ControlEvent{.code = 2U, .value = static_cast<std::uint16_t>(effort), .tick = tick}),
+                       "usage control event 1");
+            }
+            if ((tick & 7U) == 0U) {
+                expect(events.try_push<2>(ControlEvent{.code = 3U, .value = static_cast<std::uint16_t>(tick), .tick = tick}),
+                       "usage control event 2");
+            }
+
+            ControlEvent event{};
+            while (events.try_pop(event)) {
+                sum += event.code;
+                sum += event.value;
+                sum += event.tick;
+            }
+
+            const auto latest = snapshot.read();
+            expect(latest.tick == tick, "usage control snapshot");
+            sum += latest.flags;
+        }
+    });
+    sink += sum;
+    print(control_tick);
+
+    constexpr std::uint32_t protocol_rounds = 100'000U;
+    std::array<std::uint8_t, 256> packet{};
+    std::array<std::uint8_t, 64> frame{};
+    std::array<std::uint8_t, 32> scratch{};
+    std::array<std::uint8_t, 32> payload{};
+    const std::array options{
+        arc::net::Coap::text(
+            static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_path),
+            "telemetry"),
+    };
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = static_cast<std::uint8_t>(i);
+    }
+
+    const auto protocol_bundle = measure("usage protocol bundle", protocol_rounds * 4ULL, [&]() {
+        for (std::uint32_t i = 0; i < protocol_rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(next_seed());
+            barrier();
+
+            const auto mqtt = arc::net::Mqtt::publish(packet, "arc/node/telemetry", std::span(payload), static_cast<std::uint16_t>(i));
+            expect(mqtt.has_value(), "usage MQTT encode");
+            const auto mqtt_packet = arc::net::Mqtt::parse(*mqtt);
+            expect(mqtt_packet.has_value(), "usage MQTT parse");
+            const auto mqtt_view = arc::net::Mqtt::view(*mqtt_packet);
+            expect(mqtt_view.has_value() && mqtt_view->payload[0] == payload[0], "usage MQTT view");
+
+            const auto coap = arc::net::Coap::message(
+                packet,
+                arc::net::CoapType::nonconfirmable,
+                static_cast<std::uint8_t>(arc::net::CoapCode::post),
+                static_cast<std::uint16_t>(i),
+                {},
+                std::span(options),
+                std::span(payload));
+            expect(coap.has_value(), "usage CoAP encode");
+            const auto coap_packet = arc::net::Coap::parse(*coap);
+            expect(coap_packet.has_value() && coap_packet->payload[0] == payload[0], "usage CoAP parse");
+
+            const auto ws = arc::net::Ws::binary(packet, std::span(payload), true, i);
+            expect(ws.has_value(), "usage WS encode");
+            const auto ws_frame = arc::net::Ws::parse(*ws, scratch);
+            expect(ws_frame.has_value() && ws_frame->payload[0] == payload[0], "usage WS parse");
+
+            const auto encoded = arc::net::Stream::frame16(std::span(frame), std::span(payload));
+            expect(encoded.has_value(), "usage stream frame");
+            sink += mqtt_view->payload[0];
+            sink += coap_packet->payload[0];
+            sink += ws_frame->payload[0];
+            sink += (*encoded)[i % encoded->size()];
+        }
+    });
+    print(protocol_bundle);
+}
+
 }  // namespace
 
 int main()
 {
     std::puts("arc host benchmark: correctness + throughput");
+    section("core queues");
     bench_spsc();
     bench_mpsc();
     bench_fanin();
     bench_seqreg();
+    section("memory and streams");
     bench_memory();
     bench_stream();
+    section("dsp and codecs");
     bench_dsp();
     bench_codecs();
+    section("critical usage mixes");
+    bench_usage();
     std::printf("arc host benchmark: OK (%llu)\n", static_cast<unsigned long long>(sink));
 }

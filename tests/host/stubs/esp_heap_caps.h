@@ -16,6 +16,8 @@
 #define MALLOC_CAP_DMA_DESC_AHB 0x80U
 #define MALLOC_CAP_DMA_DESC_AXI 0x100U
 
+inline std::size_t heap_caps_last_calloc_bytes{};
+
 inline std::size_t heap_caps_get_free_size(std::uint32_t) noexcept
 {
     return 0U;
@@ -59,6 +61,7 @@ inline void* heap_caps_aligned_calloc(
         return nullptr;
     }
     const auto bytes = count * size;
+    heap_caps_last_calloc_bytes = bytes;
     void* const out = heap_caps_aligned_alloc(alignment, bytes, caps);
     if (out != nullptr) {
         std::memset(out, 0, bytes);

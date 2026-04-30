@@ -10,6 +10,10 @@ It measures runtime on the target using the Xtensa cycle counter and prints cycl
 - `SeqReg`
 - `Stream` write, frame encode, and frame read
 - MQTT, WebSocket, and CoAP caller-buffer codecs
+- critical usage mixes that combine queues, snapshots, DSP, and protocol framing:
+  - Core 1 style telemetry batches handed to a Core 0 consumer through `Spsc`
+  - a control-loop tick with DSP math, `SeqReg` latest-state publication, and `Fanin` events
+  - a telemetry protocol bundle covering MQTT, CoAP, WebSocket, and `frame16` emission
 - DSP dot/scale/mac/FIR/peak kernels
 - standard `memcpy` and Arc async-DMA copy on the same 256-byte payload
 - hardware RNG
@@ -47,4 +51,4 @@ idf.py build flash monitor
 
 If you do not want the Arduino leg, skip `./tools/ensure-frameworks.sh` and run the same `idf.py` flow; the firmware will still publish Arc plus raw ESP-IDF comparisons.
 
-Look for `arc-bench` log lines. Each line prints total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Arc lanes keep their original names, raw ESP-IDF baselines are prefixed with `idf`, and Arduino-ESP32 baselines are prefixed with `arduino`.
+Look for `arc-bench` log lines. Output is grouped by benchmark area. Each lane prints total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Arc lanes keep their original names, raw ESP-IDF baselines are prefixed with `idf`, Arduino-ESP32 baselines are prefixed with `arduino`, and scenario lanes are prefixed with `usage`.

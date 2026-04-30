@@ -26,8 +26,11 @@ struct Spsc {
     {
         const auto head = load_relaxed(&head_);
         const auto next = increment(head);
-        if (next == load_acquire(&tail_)) {
-            return false;
+        if (next == shadow_tail_) {
+            shadow_tail_ = load_acquire(&tail_);
+            if (next == shadow_tail_) {
+                return false;
+            }
         }
 
         buffer_[head] = value;
@@ -41,7 +44,11 @@ struct Spsc {
         const std::span<U, Extent> data) noexcept
     {
         const auto head = load_relaxed(&head_);
-        const auto room = writable(head, load_acquire(&tail_));
+        auto room = writable(head, shadow_tail_);
+        if (room < data.size()) {
+            shadow_tail_ = load_acquire(&tail_);
+            room = writable(head, shadow_tail_);
+        }
         const auto count = data.size() < room ? data.size() : room;
 
         if (count != 0U) {
@@ -54,8 +61,11 @@ struct Spsc {
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(T& value) noexcept
     {
         const auto tail = load_relaxed(&tail_);
-        if (tail == load_acquire(&head_)) {
-            return false;
+        if (tail == shadow_head_) {
+            shadow_head_ = load_acquire(&head_);
+            if (tail == shadow_head_) {
+                return false;
+            }
         }
 
         value = buffer_[tail];
@@ -69,7 +79,11 @@ struct Spsc {
         const std::span<U, Extent> out) noexcept
     {
         const auto tail = load_relaxed(&tail_);
-        const auto count = readable(load_acquire(&head_), tail);
+        auto count = readable(shadow_head_, tail);
+        if (count < out.size()) {
+            shadow_head_ = load_acquire(&head_);
+            count = readable(shadow_head_, tail);
+        }
         const auto take = out.size() < count ? out.size() : count;
 
         if (take != 0U) {
@@ -193,6 +207,8 @@ private:
     std::array<T, Capacity> buffer_{};
     alignas(cache_line) std::uint32_t head_{0};
     alignas(cache_line) std::uint32_t tail_{0};
+    alignas(cache_line) std::uint32_t shadow_tail_{0};
+    alignas(cache_line) std::uint32_t shadow_head_{0};
 };
 
 template <typename T, std::size_t Capacity>

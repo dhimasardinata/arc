@@ -32,6 +32,48 @@ struct CapsDel {
 template <typename T>
 using CapsPtr = std::unique_ptr<T, CapsDel<T>>;
 
+namespace detail {
+
+// Cache maintenance works in whole lines, so cache/DMA-facing buffers get
+// hidden physical padding while keeping their public span size unchanged.
+template <std::uint32_t Caps>
+inline constexpr bool cache_sensitive_caps =
+    (Caps &
+     (MALLOC_CAP_DMA |
+      MALLOC_CAP_CACHE_ALIGNED |
+      MALLOC_CAP_SIMD |
+      MALLOC_CAP_DMA_DESC_AHB |
+      MALLOC_CAP_DMA_DESC_AXI)) != 0U;
+
+[[nodiscard]] constexpr bool can_round_up(
+    const std::size_t value,
+    const std::size_t align) noexcept
+{
+    return value <= (std::numeric_limits<std::size_t>::max() - (align - 1U));
+}
+
+[[nodiscard]] constexpr std::size_t round_up(
+    const std::size_t value,
+    const std::size_t align) noexcept
+{
+    return (value + align - 1U) & ~(align - 1U);
+}
+
+template <std::uint32_t Caps>
+[[nodiscard]] constexpr std::size_t allocation_bytes(
+    const std::size_t bytes,
+    const std::size_t align) noexcept
+{
+    if constexpr (cache_sensitive_caps<Caps>) {
+        return round_up(bytes, align);
+    } else {
+        static_cast<void>(align);
+        return bytes;
+    }
+}
+
+}  // namespace detail
+
 template <typename T>
 class CapsBuf {
 public:
@@ -157,7 +199,15 @@ struct CapsAlloc {
         constexpr auto min_align = alignof(T) > sizeof(void*) ? alignof(T) : sizeof(void*);
         constexpr auto actual_align = Align > min_align ? Align : min_align;
 
-        void* const storage = heap_caps_aligned_calloc(actual_align, count, sizeof(T), Caps);
+        const auto bytes = count * sizeof(T);
+        if constexpr (detail::cache_sensitive_caps<Caps>) {
+            if (!detail::can_round_up(bytes, actual_align)) {
+                std::abort();
+            }
+        }
+
+        const auto alloc_bytes = detail::allocation_bytes<Caps>(bytes, actual_align);
+        void* const storage = heap_caps_aligned_alloc(actual_align, alloc_bytes, Caps);
         if (storage == nullptr) {
             std::abort();
         }
@@ -242,7 +292,15 @@ template <typename T, std::uint32_t Caps, std::size_t Align = alignof(T)>
     constexpr auto min_align = alignof(T) > sizeof(void*) ? alignof(T) : sizeof(void*);
     constexpr auto actual_align = Align > min_align ? Align : min_align;
 
-    void* const storage = heap_caps_aligned_calloc(actual_align, count, sizeof(T), Caps);
+    const auto bytes = count * sizeof(T);
+    if constexpr (detail::cache_sensitive_caps<Caps>) {
+        if (!detail::can_round_up(bytes, actual_align)) {
+            return {};
+        }
+    }
+
+    const auto alloc_bytes = detail::allocation_bytes<Caps>(bytes, actual_align);
+    void* const storage = heap_caps_aligned_calloc(actual_align, alloc_bytes, 1U, Caps);
     if (storage == nullptr) {
         return {};
     }
