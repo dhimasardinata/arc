@@ -95,6 +95,12 @@ struct MqttSubAck {
     std::span<const std::uint8_t> codes{};
 };
 
+enum class MqttSessionState : std::uint8_t {
+    closed = 0U,
+    connecting = 1U,
+    online = 2U,
+};
+
 struct Mqtt {
     [[nodiscard]] static Result<std::span<const std::uint8_t>> connect(
         std::span<std::uint8_t> out,
@@ -583,6 +589,165 @@ private:
         }
         return in.subspan(pos + 2U, bytes);
     }
+};
+
+class MqttSession {
+public:
+    constexpr explicit MqttSession(const std::uint16_t keep_alive_s = 60U) noexcept
+        : keep_alive_s_(keep_alive_s)
+    {
+    }
+
+    constexpr void reset() noexcept
+    {
+        state_ = MqttSessionState::closed;
+        next_packet_ = 1U;
+        last_tx_ms_ = 0U;
+        last_rx_ms_ = 0U;
+        awaiting_ping_ = false;
+    }
+
+    constexpr void connect_started(
+        const std::uint64_t now_ms,
+        const std::uint16_t keep_alive_s) noexcept
+    {
+        state_ = MqttSessionState::connecting;
+        keep_alive_s_ = keep_alive_s;
+        last_tx_ms_ = now_ms;
+        last_rx_ms_ = now_ms;
+        awaiting_ping_ = false;
+    }
+
+    constexpr void connect_started(
+        const std::uint64_t now_ms,
+        const MqttConnect& cfg) noexcept
+    {
+        connect_started(now_ms, cfg.keep_alive);
+    }
+
+    [[nodiscard]] constexpr MqttSessionState state() const noexcept
+    {
+        return state_;
+    }
+
+    [[nodiscard]] constexpr bool online() const noexcept
+    {
+        return state_ == MqttSessionState::online;
+    }
+
+    [[nodiscard]] constexpr bool awaiting_ping() const noexcept
+    {
+        return awaiting_ping_;
+    }
+
+    [[nodiscard]] constexpr std::uint16_t keep_alive() const noexcept
+    {
+        return keep_alive_s_;
+    }
+
+    [[nodiscard]] constexpr std::uint16_t next_packet() noexcept
+    {
+        const auto out = next_packet_;
+        next_packet_ = static_cast<std::uint16_t>(next_packet_ + 1U);
+        if (next_packet_ == 0U) {
+            next_packet_ = 1U;
+        }
+        return out;
+    }
+
+    constexpr void sent(const std::uint64_t now_ms) noexcept
+    {
+        last_tx_ms_ = now_ms;
+    }
+
+    constexpr void received(const std::uint64_t now_ms) noexcept
+    {
+        last_rx_ms_ = now_ms;
+    }
+
+    [[nodiscard]] constexpr bool ping_due(const std::uint64_t now_ms) const noexcept
+    {
+        return online() && keep_alive_s_ != 0U && !awaiting_ping_ &&
+            elapsed(last_tx_ms_, now_ms) >= keep_alive_ms();
+    }
+
+    [[nodiscard]] constexpr bool expired(const std::uint64_t now_ms) const noexcept
+    {
+        return online() && keep_alive_s_ != 0U &&
+            elapsed(last_rx_ms_, now_ms) >= broker_timeout_ms();
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> ping(
+        std::span<std::uint8_t> out,
+        const std::uint64_t now_ms) noexcept
+    {
+        if (!ping_due(now_ms)) {
+            return fail(ESP_ERR_INVALID_STATE);
+        }
+
+        auto frame = Mqtt::ping(out);
+        if (!frame) {
+            return fail(frame.error());
+        }
+        sent(now_ms);
+        awaiting_ping_ = true;
+        return frame;
+    }
+
+    [[nodiscard]] esp_err_t observe(const MqttPacket& packet, const std::uint64_t now_ms) noexcept
+    {
+        received(now_ms);
+        switch (packet.type) {
+            case MqttType::connack: {
+                const auto ack = Mqtt::connack(packet);
+                if (!ack) {
+                    state_ = MqttSessionState::closed;
+                    return ack.error();
+                }
+                if (ack->code != 0U) {
+                    state_ = MqttSessionState::closed;
+                    return ESP_FAIL;
+                }
+                state_ = MqttSessionState::online;
+                awaiting_ping_ = false;
+                return ESP_OK;
+            }
+            case MqttType::pingresp:
+                awaiting_ping_ = false;
+                return ESP_OK;
+            case MqttType::suback:
+                return Mqtt::suback(packet).has_value() ? ESP_OK : ESP_ERR_INVALID_ARG;
+            case MqttType::puback:
+                return packet.body.size() == 2U ? ESP_OK : ESP_ERR_INVALID_ARG;
+            default:
+                return ESP_OK;
+        }
+    }
+
+private:
+    [[nodiscard]] constexpr std::uint64_t keep_alive_ms() const noexcept
+    {
+        return static_cast<std::uint64_t>(keep_alive_s_) * 1000ULL;
+    }
+
+    [[nodiscard]] constexpr std::uint64_t broker_timeout_ms() const noexcept
+    {
+        return keep_alive_ms() + (keep_alive_ms() / 2U);
+    }
+
+    [[nodiscard]] static constexpr std::uint64_t elapsed(
+        const std::uint64_t since_ms,
+        const std::uint64_t now_ms) noexcept
+    {
+        return now_ms - since_ms;
+    }
+
+    MqttSessionState state_{MqttSessionState::closed};
+    std::uint16_t next_packet_{1U};
+    std::uint16_t keep_alive_s_{60U};
+    std::uint64_t last_tx_ms_{};
+    std::uint64_t last_rx_ms_{};
+    bool awaiting_ping_{};
 };
 
 }  // namespace arc::net

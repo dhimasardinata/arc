@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "arc/fence.hpp"
 #include "esp_err.h"
 
 namespace arc {
@@ -20,62 +21,91 @@ enum class ClaimKind : std::uint32_t {
     rtc_gpio = 0x27c0'0001U,
 };
 
-[[nodiscard]] consteval std::uint32_t claim_mix(
-    const std::uint32_t seed,
-    const std::uint32_t value) noexcept
+[[nodiscard]] consteval std::uint64_t claim_mix(
+    const std::uint64_t seed,
+    const std::uint64_t value) noexcept
 {
-    return (seed ^ value) * 16'777'619U;
+    return (seed ^ value) * 1'099'511'628'211ULL;
 }
 
 template <auto... Values>
-[[nodiscard]] consteval std::uint32_t claim_token() noexcept
+[[nodiscard]] consteval std::uint64_t claim_token() noexcept
 {
-    // The 32-bit token is deliberate: tiny storage, deterministic init failure on mismatch.
-    std::uint32_t out = 2'166'136'261U;
-    ((out = claim_mix(out, static_cast<std::uint32_t>(Values))), ...);
-    return out == 0U ? 1U : out;
+    std::uint64_t out = 14'695'981'039'346'656'037ULL;
+    ((out = claim_mix(out, static_cast<std::uint64_t>(Values))), ...);
+    return out == 0ULL ? 1ULL : out;
 }
 
 template <ClaimKind Kind, int Index>
 struct ClaimSlot {
-    alignas(4) constinit static inline std::uint32_t token{};
+    alignas(4) constinit static inline std::uint32_t gate{};
+    alignas(8) constinit static inline std::uint64_t token{};
 };
 
-template <ClaimKind Kind, int Index, std::uint32_t Token>
+namespace detail {
+
+IRAM_ATTR [[gnu::always_inline]] inline void claim_lock(std::uint32_t& gate) noexcept
+{
+    for (;;) {
+        auto expected = std::uint32_t{};
+        if (__atomic_compare_exchange_n(
+                &gate,
+                &expected,
+                1U,
+                false,
+                __ATOMIC_ACQUIRE,
+                __ATOMIC_RELAXED)) {
+            return;
+        }
+        pause();
+    }
+}
+
+IRAM_ATTR [[gnu::always_inline]] inline void claim_unlock(std::uint32_t& gate) noexcept
+{
+    __atomic_store_n(&gate, 0U, __ATOMIC_RELEASE);
+}
+
+}  // namespace detail
+
+template <ClaimKind Kind, int Index, std::uint64_t Token>
 struct Claim {
-    static_assert(Token != 0U, "Arc claim token must be non-zero");
+    static_assert(Token != 0ULL, "Arc claim token must be non-zero");
 
     [[nodiscard]] static esp_err_t take() noexcept
     {
-        auto expected = std::uint32_t{};
-        if (__atomic_compare_exchange_n(
-                &ClaimSlot<Kind, Index>::token,
-                &expected,
-                Token,
-                false,
-                __ATOMIC_ACQ_REL,
-                __ATOMIC_ACQUIRE)) {
+        auto& gate = ClaimSlot<Kind, Index>::gate;
+        auto& token = ClaimSlot<Kind, Index>::token;
+        detail::claim_lock(gate);
+        const auto current = token;
+        if (current == 0ULL) {
+            token = Token;
+            detail::claim_unlock(gate);
             return ESP_OK;
         }
-
-        return expected == Token ? ESP_OK : ESP_ERR_INVALID_STATE;
+        detail::claim_unlock(gate);
+        return current == Token ? ESP_OK : ESP_ERR_INVALID_STATE;
     }
 
     static void drop() noexcept
     {
-        auto expected = Token;
-        static_cast<void>(__atomic_compare_exchange_n(
-            &ClaimSlot<Kind, Index>::token,
-            &expected,
-            0U,
-            false,
-            __ATOMIC_ACQ_REL,
-            __ATOMIC_ACQUIRE));
+        auto& gate = ClaimSlot<Kind, Index>::gate;
+        auto& token = ClaimSlot<Kind, Index>::token;
+        detail::claim_lock(gate);
+        if (token == Token) {
+            token = 0ULL;
+        }
+        detail::claim_unlock(gate);
     }
 
     [[nodiscard]] static bool held() noexcept
     {
-        return __atomic_load_n(&ClaimSlot<Kind, Index>::token, __ATOMIC_ACQUIRE) == Token;
+        auto& gate = ClaimSlot<Kind, Index>::gate;
+        auto& token = ClaimSlot<Kind, Index>::token;
+        detail::claim_lock(gate);
+        const auto ok = token == Token;
+        detail::claim_unlock(gate);
+        return ok;
     }
 };
 

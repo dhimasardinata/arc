@@ -115,7 +115,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::IpFamily` lets TCP calls and UDP policies stay dual-stack by default or force IPv4/IPv6 explicitly.
 - `arc::net::Tls` gives direct ESP-TLS client sessions for secure caller-buffer transports such as MQTTS without taking over reconnect or protocol policy.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP/HTTPS client sessions, with explicit HTTPS factories when secure scheme enforcement matters.
-- `arc::net::Mqtt` gives caller-buffer MQTT 3.1.1 packet encoding, parsing, and topic matching without owning the transport lane.
+- `arc::net::Mqtt` gives caller-buffer MQTT 3.1.1 packet encoding, parsing, topic matching, and heapless session keepalive helpers without owning the transport lane.
 - `arc::net::Ws` gives WebSocket handshake helpers plus caller-buffer frame encode/parse without owning reconnect or task policy.
 - `arc::net::Coap` gives caller-buffer CoAP datagram encode/parse and option walking without hiding message layout.
 - `arc::net::Mdns` adds a thin discovery battery on top of `esp_netif` and the shared Wi-Fi lane when lwIP mDNS headers exist.
@@ -1096,7 +1096,7 @@ Use these when application code should accept "anything with this static control
 
 Most application code should only see the small surface: `start()`, `send(...)`, `read(...)`, `set(...)`, and typed buffers. The dense internals are deliberately isolated:
 
-- Claim tokens protect hardware ownership across translation units.
+- 64-bit claim tokens protect hardware ownership across translation units while a tiny 32-bit gate avoids depending on target support for 64-bit atomics.
 - Cache helpers encode ESP32-S3 DMA/cache-line rules at the call site.
 - Lock-free queues use explicit sequence arithmetic and cache-line isolation.
 - ISR-facing callbacks stay minimal and update counters or queues with release/acquire ordering.
@@ -1604,7 +1604,7 @@ Explicit cache coherency helpers for DMA and external-memory paths.
 - `to_device(data, bytes)` writes dirty cache lines back before hardware reads a buffer.
 - `from_device(data, bytes)` invalidates only whole cache-line-aligned buffers after hardware writes a buffer.
 - `discard(data, bytes)` writes back and invalidates only whole cache-line-aligned buffers when ownership moves away from the CPU.
-- `from_device_unaligned(...)` and `discard_unaligned(...)` are the explicit escape hatches when the caller accepts shared-line invalidation risk.
+- `from_device_unaligned(...)` and `discard_unaligned(...)` remain available but deprecated; they are explicit escape hatches for code that accepts shared-line invalidation risk.
 - The unaligned escape hatches are unsafe around actively mutated neighbors on the same cache line; use cache-line-aligned buffers or the `_strict` path for live DMA ownership.
 - `line(ptr)` returns the cache line size for one address, or zero when the address is not cacheable.
 - span overloads work directly with `arc::CapsBuf<T>::view()`.
@@ -1780,7 +1780,7 @@ Seqlock-style latest-snapshot lane for payloads larger than one word.
 - `read()` retries until one stable snapshot is observed
 - `try_read(value)` gives you the same read without blocking
 
-`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It now publishes into an inactive shadow slot before flipping the even sequence, so readers never copy from the slot a writer is mutating. `write()` still masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
+`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It publishes into an inactive shadow slot before flipping the even sequence, so readers never copy from the slot a writer is mutating. The sequence counter still carries release/acquire visibility; the payload boundary uses compiler fences rather than global seq-cst fences so the hot path stays lighter on weakly ordered targets. `write()` still masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
 
@@ -2023,6 +2023,7 @@ Thin MQTT 3.1.1 wire codec for caller-owned buffers.
 - `connect(...)`, `publish(...)`, `subscribe(...)`, `ping(...)`, and `disconnect(...)` encode packets directly into a caller-provided byte span.
 - `parse(...)` splits one MQTT frame out of a receive buffer without hiding the consumed byte count.
 - `view(packet)`, `connack(packet)`, and `suback(packet)` decode the common packet bodies without heap allocation.
+- `MqttSession` tracks CONNECT/CONNACK state, rolling non-zero packet IDs, keepalive PINGREQ/PINGRESP timing, and broker timeout checks without owning the socket or allocating memory.
 - `match(filter, topic)` applies MQTT wildcard rules so subscription routing can stay local and explicit.
 
 Use this when you want MQTT batteries on top of `arc::net::Tcp` or another stream lane without giving the framework ownership of reconnect policy, socket lifetime, or tasking.

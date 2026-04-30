@@ -13,6 +13,7 @@
 
 #include "arc/any.hpp"
 #include "arc/caps.hpp"
+#include "arc/claim.hpp"
 #include "arc/concepts.hpp"
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
@@ -43,6 +44,8 @@ static_assert(arc::rtos::milliseconds(std::chrono::microseconds{1500}) == 2U);
 static_assert(arc::rtos::milliseconds(std::chrono::milliseconds{-1}) == 0U);
 static_assert(arc::rtos::ticks_ms(2U) == 2U);
 static_assert(arc::rtos::ticks(std::chrono::microseconds{1500}) == 2U);
+static_assert(sizeof(decltype(arc::claim_token<1, 2, 3>())) == sizeof(std::uint64_t));
+static_assert(arc::claim_token<1, 2, 3>() != arc::claim_token<1, 2, 4>());
 
 #if defined(__has_feature)
 #if __has_feature(thread_sanitizer)
@@ -723,6 +726,25 @@ void test_mqtt()
     expect(suback->packet == 9U, "MQTT suback packet id");
     expect(suback->codes.size() == 1U && suback->codes[0] == 0x01U, "MQTT suback code");
 
+    arc::net::MqttSession session;
+    session.connect_started(1000U, 2U);
+    expect(session.state() == arc::net::MqttSessionState::connecting, "MQTT session connecting");
+    expect(session.observe(*connack_packet, 1010U) == ESP_OK, "MQTT session connack");
+    expect(session.online(), "MQTT session online");
+    expect(session.next_packet() == 1U && session.next_packet() == 2U, "MQTT session packet ids");
+    expect(!session.ping_due(2500U), "MQTT session ping not due");
+    expect(session.ping_due(3010U), "MQTT session ping due");
+    const auto ping = session.ping(buffer, 3010U);
+    expect(ping.has_value() && (*ping)[0] == 0xC0U, "MQTT session ping frame");
+    expect(session.awaiting_ping(), "MQTT session awaits pingresp");
+    const std::array<std::uint8_t, 2> pingresp_raw{0xD0U, 0x00U};
+    const auto pingresp = arc::net::Mqtt::parse(pingresp_raw);
+    expect(pingresp.has_value(), "MQTT pingresp parses");
+    expect(session.observe(*pingresp, 3050U) == ESP_OK, "MQTT session pingresp");
+    expect(!session.awaiting_ping(), "MQTT session pingresp clears");
+    expect(!session.expired(6000U), "MQTT session not expired");
+    expect(session.expired(6060U), "MQTT session expired");
+
     expect(arc::net::Mqtt::match("arc/+/status", "arc/node/status"), "MQTT single wildcard");
     expect(arc::net::Mqtt::match("arc/#", "arc/node/status"), "MQTT multi wildcard");
     expect(arc::net::Mqtt::match("arc/#", "arc"), "MQTT parent wildcard root");
@@ -1012,6 +1034,24 @@ void test_seqreg()
     expect(final.total == static_cast<std::uint64_t>(20000U) * 3U, "SeqReg final total");
 }
 
+void test_claim()
+{
+    using Owner = arc::Claim<arc::ClaimKind::uart, 91, arc::claim_token<1, 2, 3>()>;
+    using Same = arc::Claim<arc::ClaimKind::uart, 91, arc::claim_token<1, 2, 3>()>;
+    using Other = arc::Claim<arc::ClaimKind::uart, 91, arc::claim_token<1, 2, 4>()>;
+
+    Owner::drop();
+    Other::drop();
+    expect(Owner::take() == ESP_OK, "Claim first owner succeeds");
+    expect(Same::take() == ESP_OK, "Claim identical owner shares");
+    expect(Other::take() == ESP_ERR_INVALID_STATE, "Claim different token rejects");
+    expect(Owner::held(), "Claim owner held");
+    Owner::drop();
+    expect(!Owner::held(), "Claim owner drops");
+    expect(Other::take() == ESP_OK, "Claim other owner succeeds after drop");
+    Other::drop();
+}
+
 void test_file()
 {
     char path[] = "/tmp/arc-host-file-XXXXXX";
@@ -1246,6 +1286,7 @@ int main()
     test_caps();
     test_dsp();
     test_seqreg();
+    test_claim();
     test_file();
     test_stream();
     test_refinit();
