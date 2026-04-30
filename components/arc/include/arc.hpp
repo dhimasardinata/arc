@@ -26,6 +26,7 @@
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
 #include "arc/sketch.hpp"
+#include "arc/stack.hpp"
 #include "arc/soc.hpp"
 #include "arc/stream.hpp"
 #include "arc/task.hpp"

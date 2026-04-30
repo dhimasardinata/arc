@@ -48,6 +48,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::Pins` gives one-file board topology checks so duplicate physical pins are caught where hardware truth is declared.
 - `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::Gate`, and `arc::MutexGate` provide initialization, shared-resource lifetime, and task-level locking primitives for static drivers.
+- `arc::stack` turns task stack sizing into a compile-time contract: Arc task wrappers reject stacks below their declared budget, and Arc's CMake interface enables GCC stack/frame errors for oversized C++ frames.
 - `arc::Result<T>` is an opt-in `std::expected<T, esp_err_t>` alias for runtime operations that should not hard-panic.
 - `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site, while `arc::Copy::send_coherent(...)` and `finish_coherent(...)` cover the common async-memcpy handoff without blocking useful CPU work.
 - `arc::Can` binds the ESP32-S3 TWAI/CAN controller with ISR-backed RX handoff.
@@ -202,7 +203,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 
 | Area | Headers | Primary types |
 | --- | --- | --- |
-| Core plane | `arc/task.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp` | `arc::spawn`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos` |
+| Core plane | `arc/task.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg` |
@@ -1136,6 +1137,8 @@ Your `Program` type defines:
 
 `App` turns that into a static pinned task without heap allocation.
 
+If `Program` declares `static constexpr std::size_t stack_bytes`, `App` refuses to compile unless `StackBytes >= stack_bytes`. Without an explicit declaration, Arc still enforces the 2 KiB `arc::stack::task_floor`.
+
 `boot()` is idempotent while the task is active.
 
 `arc::Sketch` remains available as a compatibility alias.
@@ -1153,7 +1156,21 @@ Your `Program` type defines:
 
 When `Budget` is non-zero, `Tight` counts iterations whose masked step exceeds that cycle budget. `overruns()` returns the counter, and an optional `Program::overrun(cycles) noexcept` hook can consume the exact overrun cost.
 
+Like `App`, `Tight` enforces `Program::stack_bytes` at compile time when the program declares it, with `arc::stack::task_floor` as the minimum.
+
 Use this only when the step body is tiny and the jitter budget is tighter than what a normal task iteration should tolerate. `arc::Hard` is a compatibility alias.
+
+### `arc::stack`
+
+Compile-time stack sizing helpers for Arc tasks.
+
+- `arc::stack::task_floor` is the minimum accepted static task stack.
+- `arc::stack::budget<LocalBytes, CalleeBytes, RuntimeBytes, MarginBytes>()` creates a rounded byte budget for `Program::stack_bytes` or `Policy::stack_bytes`.
+- `arc::stack::storage<T, N>()` and `arc::stack::objects<T...>()` make local object budgets readable.
+- `arc::TaskMem<StackBytes, RequiredBytes>` fails at compile time when `StackBytes` is smaller than `RequiredBytes`.
+- `arc::Plane`, `arc::App`, and `arc::Tight` publish `stack_required` so tests can assert the expected budget.
+
+Arc's component interface also enables GCC `-Werror=stack-usage=2048` and `-Werror=frame-larger-than=1024` for C++ consumers. That catches large individual frames and unbounded stack use at compile time; explicit `stack_bytes` catches whole-task budgets that include known callee and runtime reserve.
 
 ### `arc::Link<Event, Control, Capacity>`
 
@@ -1935,6 +1952,8 @@ or:
 Use this when you want explicit stateful realtime workers instead of the simpler `Sketch`.
 
 Bound workloads boot as `Plane<...>::boot<&shared>(tag)` so the shared cross-core state is named at compile time and cannot accidentally come from a temporary or stack object.
+
+If `Work` or `State` declares `static constexpr std::size_t stack_bytes`, `Plane` uses the larger declaration as its compile-time stack requirement. This makes undersized Core 0/Core 1 task stacks a build error instead of a runtime watchdog or stack canary failure.
 
 ### `arc::net::Radio`
 

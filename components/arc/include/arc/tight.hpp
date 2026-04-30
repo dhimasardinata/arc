@@ -9,6 +9,7 @@
 #include "arc/clock.hpp"
 #include "arc/mask.hpp"
 #include "arc/plane.hpp"
+#include "arc/stack.hpp"
 #include "arc/task.hpp"
 
 namespace arc {
@@ -28,6 +29,11 @@ template <typename Program,
 struct Tight {
     static_assert(TightWork<Program>, "program must define setup() and step()");
     static_assert(noexcept(Program::step()), "tight step must be noexcept");
+    static constexpr std::size_t stack_bytes = StackBytes;
+    static constexpr std::size_t stack_required = stack::required<Program>();
+    static_assert(
+        stack::fits<stack_bytes, stack_required>(),
+        "Tight StackBytes is smaller than Program::stack_bytes compile-time budget");
 
     static void boot(const char* tag, const char* name = "tight")
     {
@@ -43,6 +49,8 @@ private:
     constinit static inline std::uint32_t overrun_count{};
 
     struct Work {
+        static constexpr std::size_t stack_bytes = stack::required<Program>();
+
         static void setup()
         {
             Program::setup();

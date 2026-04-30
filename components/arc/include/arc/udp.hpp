@@ -210,7 +210,7 @@ private:
     };
 
     constinit static inline State state{};
-    constinit static inline TaskMem<Policy::stack> stack{};
+    constinit static inline TaskMem<Policy::stack, stack::required<Policy>()> stack{};
 
     [[nodiscard]] static EventGroupHandle_t events() noexcept
     {

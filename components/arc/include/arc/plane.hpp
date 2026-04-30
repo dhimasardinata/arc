@@ -35,6 +35,11 @@ struct Plane {
     static_assert(
         BareWork<Workload> || BoundWork<Workload, State>,
         "workload must define setup/run with either no state or a shared state reference");
+    static constexpr std::size_t stack_bytes = StackBytes;
+    static constexpr std::size_t stack_required = stack::required<Workload, State>();
+    static_assert(
+        stack::fits<stack_bytes, stack_required>(),
+        "Plane StackBytes is smaller than Workload::stack_bytes compile-time budget");
 
     static constexpr bool kBound = BoundWork<Workload, State>;
     static constexpr bool kRunNoexcept = []() consteval {
@@ -108,7 +113,7 @@ private:
             static_cast<unsigned>(Pri));
     }
 
-    constinit static inline TaskMem<StackBytes> mem{};
+    constinit static inline TaskMem<StackBytes, stack_required> mem{};
     constinit static inline Launch launch{};
 
     static void set_task(const TaskHandle_t task) noexcept

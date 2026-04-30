@@ -9,6 +9,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "arc/stack.hpp"
+
 namespace arc {
 
 enum class Core : BaseType_t {
@@ -31,23 +33,28 @@ concept StaticTaskState =
     std::same_as<StaticObject<Object>, T> &&
     !std::is_const_v<std::remove_pointer_t<decltype(Object)>>;
 
-template <std::size_t StackBytes>
+template <std::size_t StackBytes, std::size_t RequiredBytes = stack::task_floor>
 struct TaskMem {
     static_assert(StackBytes > 0, "stack size must be non-zero");
+    static_assert(
+        stack::fits<StackBytes, RequiredBytes>(),
+        "static task stack is smaller than its compile-time Arc stack budget");
     static constexpr std::size_t depth = words(StackBytes);
+    static constexpr std::size_t bytes = StackBytes;
+    static constexpr std::size_t required = RequiredBytes;
 
     alignas(portBYTE_ALIGNMENT) std::array<StackType_t, depth> stack{};
     StaticTask_t tcb{};
 };
 
-template <std::size_t StackBytes>
+template <std::size_t StackBytes, std::size_t RequiredBytes>
 [[nodiscard]] inline TaskHandle_t spawn(
     TaskFunction_t entry,
     const char* name,
     void* context,
     const UBaseType_t priority,
     const Core core,
-    TaskMem<StackBytes>& mem) noexcept
+    TaskMem<StackBytes, RequiredBytes>& mem) noexcept
 {
     return xTaskCreateStaticPinnedToCore(
         entry,

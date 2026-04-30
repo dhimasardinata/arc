@@ -20,7 +20,16 @@ struct Bare {
     static void run() noexcept {}
 };
 
+struct Budgeted {
+    static constexpr std::size_t stack_bytes = arc::stack::budget<1536U>();
+
+    static void setup() {}
+    static void run() noexcept {}
+};
+
 struct Loop {
+    static constexpr std::size_t stack_bytes = arc::stack::budget<512U>();
+
     static void setup() {}
     IRAM_ATTR static void loop() noexcept {}
 };
@@ -70,12 +79,17 @@ struct MockWave {
     }
 };
 
-using BoundPlane = arc::Plane<Bound, 1024, Shared>;
-using BarePlane = arc::Plane<Bare, 1024>;
-using App = arc::App<Loop, 1024>;
+using BoundPlane = arc::Plane<Bound, 2048, Shared>;
+using BarePlane = arc::Plane<Bare, 2048>;
+using BudgetedPlane = arc::Plane<Budgeted, Budgeted::stack_bytes>;
+using App = arc::App<Loop, arc::stack::required<Loop>()>;
 
 static_assert(requires { BarePlane::boot("arc"); });
 static_assert(requires { BoundPlane::template boot<&shared>("arc"); });
+static_assert(BudgetedPlane::stack_required == Budgeted::stack_bytes);
+static_assert(App::stack_required == arc::stack::task_floor);
+static_assert(arc::TaskMem<2048>::required == arc::stack::task_floor);
+static_assert(!arc::stack::fits<1024, arc::stack::task_floor>());
 static_assert(requires { App::boot("arc"); });
 static_assert(arc::WaveConfig<MockWave>);
 static_assert(arc::ConfigWave<MockWave>);

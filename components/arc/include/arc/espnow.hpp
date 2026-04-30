@@ -197,7 +197,7 @@ private:
     };
 
     constinit static inline State state{nullptr, nullptr, {}, 0, false, false, false, false, nullptr, 0U, 0U, 0U};
-    constinit static inline TaskMem<Policy::stack> stack{};
+    constinit static inline TaskMem<Policy::stack, stack::required<Policy>()> stack{};
 
     [[nodiscard]] static TaskHandle_t task() noexcept
     {
