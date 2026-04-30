@@ -15,6 +15,7 @@
 #include "arc/detail/cold.hpp"
 #include "arc/init.hpp"
 #include "arc/result.hpp"
+#include "arc/rtos.hpp"
 
 namespace arc {
 
@@ -62,11 +63,20 @@ struct Usb {
         }
 
         boot();
-        const auto out = usb_serial_jtag_write_bytes(data, bytes, ticks(timeout_ms));
+        const auto out = usb_serial_jtag_write_bytes(data, bytes, rtos::ticks_ms(timeout_ms));
         if (out < 0) {
             return fail(ESP_FAIL);
         }
         return static_cast<std::size_t>(out);
+    }
+
+    template <typename Rep, typename Period>
+    [[nodiscard]] static Result<std::size_t> write(
+        const void* const data,
+        const std::size_t bytes,
+        const std::chrono::duration<Rep, Period> timeout) noexcept
+    {
+        return write(data, bytes, rtos::milliseconds(timeout));
     }
 
     template <typename T, std::size_t Extent>
@@ -76,6 +86,15 @@ struct Usb {
         const std::uint32_t timeout_ms = 0U) noexcept
     {
         return write(data.data(), data.size_bytes(), timeout_ms);
+    }
+
+    template <typename T, std::size_t Extent, typename Rep, typename Period>
+        requires UsbBytes<T>
+    [[nodiscard]] static Result<std::size_t> write(
+        const std::span<T, Extent> data,
+        const std::chrono::duration<Rep, Period> timeout) noexcept
+    {
+        return write(data.data(), data.size_bytes(), timeout);
     }
 
     [[nodiscard]] static Result<std::size_t> read(
@@ -95,11 +114,20 @@ struct Usb {
         const auto in = usb_serial_jtag_read_bytes(
             data,
             static_cast<std::uint32_t>(bytes),
-            ticks(timeout_ms));
+            rtos::ticks_ms(timeout_ms));
         if (in < 0) {
             return fail(ESP_FAIL);
         }
         return static_cast<std::size_t>(in);
+    }
+
+    template <typename Rep, typename Period>
+    [[nodiscard]] static Result<std::size_t> read(
+        void* const data,
+        const std::size_t bytes,
+        const std::chrono::duration<Rep, Period> timeout) noexcept
+    {
+        return read(data, bytes, rtos::milliseconds(timeout));
     }
 
     template <typename T, std::size_t Extent>
@@ -111,10 +139,25 @@ struct Usb {
         return read(data.data(), data.size_bytes(), timeout_ms);
     }
 
+    template <typename T, std::size_t Extent, typename Rep, typename Period>
+        requires(UsbBytes<T> && !std::is_const_v<T>)
+    [[nodiscard]] static Result<std::size_t> read(
+        const std::span<T, Extent> data,
+        const std::chrono::duration<Rep, Period> timeout) noexcept
+    {
+        return read(data.data(), data.size_bytes(), timeout);
+    }
+
     [[nodiscard]] static esp_err_t wait(const std::uint32_t timeout_ms = 1000U) noexcept
     {
         boot();
-        return usb_serial_jtag_wait_tx_done(ticks(timeout_ms));
+        return usb_serial_jtag_wait_tx_done(rtos::ticks_ms(timeout_ms));
+    }
+
+    template <typename Rep, typename Period>
+    [[nodiscard]] static esp_err_t wait(const std::chrono::duration<Rep, Period> timeout) noexcept
+    {
+        return wait(rtos::milliseconds(timeout));
     }
 
     [[nodiscard]] static esp_err_t off() noexcept
@@ -148,11 +191,6 @@ private:
     };
 
     constinit static inline State state{};
-
-    [[nodiscard]] static constexpr std::uint32_t ticks(const std::uint32_t ms) noexcept
-    {
-        return static_cast<std::uint32_t>(pdMS_TO_TICKS(ms));
-    }
 };
 
 }  // namespace arc

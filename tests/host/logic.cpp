@@ -1,5 +1,6 @@
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
@@ -20,6 +21,7 @@
 #include "arc/coap.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
+#include "arc/rtos.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
 #include "arc/stream.hpp"
@@ -36,6 +38,11 @@ static_assert(sizeof(arc::AnyIn) == 3U * sizeof(void*));
 static_assert(sizeof(arc::AnyI2c) == 4U * sizeof(void*));
 static_assert(sizeof(arc::AnySpi) == 4U * sizeof(void*));
 static_assert(sizeof(arc::AnyUart) == 6U * sizeof(void*));
+static_assert(arc::rtos::ticks_per_second() == 1000U);
+static_assert(arc::rtos::milliseconds(std::chrono::microseconds{1500}) == 2U);
+static_assert(arc::rtos::milliseconds(std::chrono::milliseconds{-1}) == 0U);
+static_assert(arc::rtos::ticks_ms(2U) == 2U);
+static_assert(arc::rtos::ticks(std::chrono::microseconds{1500}) == 2U);
 
 #if defined(__has_feature)
 #if __has_feature(thread_sanitizer)
@@ -395,9 +402,12 @@ void test_any_io()
     const auto got = uart.read(std::span(serial_rx), 42U);
     expect(got.has_value() && *got == serial_rx.size(), "AnyUart reads");
     expect(serial_rx[0] == 0xA0U && serial_rx[3] == 0xA3U && uart_mock.timeout == 42U, "AnyUart read thunks");
+    const auto got_timed = uart.read(std::span(serial_rx).first(1U), std::chrono::microseconds{1500});
+    expect(got_timed.has_value() && *got_timed == 1U && uart_mock.timeout == 2U, "AnyUart chrono read");
     std::size_t available{};
-    expect(uart.available(available) == ESP_OK && available == 4U, "AnyUart available");
+    expect(uart.available(available) == ESP_OK && available == 3U, "AnyUart available");
     expect(uart.wait(43U) == ESP_OK && uart_mock.timeout == 43U, "AnyUart wait");
+    expect(uart.wait(std::chrono::milliseconds{44}) == ESP_OK && uart_mock.timeout == 44U, "AnyUart chrono wait");
     expect(uart.flush() == ESP_OK && uart_mock.flushed, "AnyUart flush");
 }
 

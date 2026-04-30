@@ -16,6 +16,7 @@
 #include "arc/detail/cold.hpp"
 #include "arc/init.hpp"
 #include "arc/result.hpp"
+#include "arc/rtos.hpp"
 
 namespace arc {
 
@@ -147,7 +148,7 @@ struct Uart {
             return ready;
         }
 
-        const auto in = uart_read_bytes(Port, data, bytes, pdMS_TO_TICKS(timeout_ms));
+        const auto in = uart_read_bytes(Port, data, bytes, rtos::ticks_ms(timeout_ms));
         if (in < 0) {
             return ESP_FAIL;
         }
@@ -170,6 +171,25 @@ struct Uart {
         return got;
     }
 
+    template <typename Rep, typename Period>
+    [[nodiscard]] static esp_err_t read(
+        void* const data,
+        const std::size_t bytes,
+        std::size_t* const got,
+        const std::chrono::duration<Rep, Period> timeout) noexcept
+    {
+        return read(data, bytes, got, rtos::milliseconds(timeout));
+    }
+
+    template <typename Rep, typename Period>
+    [[nodiscard]] static Result<std::size_t> read(
+        void* const data,
+        const std::size_t bytes,
+        const std::chrono::duration<Rep, Period> timeout) noexcept
+    {
+        return read(data, bytes, rtos::milliseconds(timeout));
+    }
+
     template <typename T, std::size_t Extent>
         requires(UartBytes<T> && !std::is_const_v<T>)
     [[nodiscard]] static Result<std::size_t> read(
@@ -179,6 +199,15 @@ struct Uart {
         return read(data.data(), data.size_bytes(), timeout_ms);
     }
 
+    template <typename T, std::size_t Extent, typename Rep, typename Period>
+        requires(UartBytes<T> && !std::is_const_v<T>)
+    [[nodiscard]] static Result<std::size_t> read(
+        const std::span<T, Extent> data,
+        const std::chrono::duration<Rep, Period> timeout) noexcept
+    {
+        return read(data.data(), data.size_bytes(), timeout);
+    }
+
     [[nodiscard]] static esp_err_t wait(const std::uint32_t timeout_ms = 1000U) noexcept
     {
         const auto ready = init();
@@ -186,7 +215,13 @@ struct Uart {
             return ready;
         }
 
-        return uart_wait_tx_done(Port, pdMS_TO_TICKS(timeout_ms));
+        return uart_wait_tx_done(Port, rtos::ticks_ms(timeout_ms));
+    }
+
+    template <typename Rep, typename Period>
+    [[nodiscard]] static esp_err_t wait(const std::chrono::duration<Rep, Period> timeout) noexcept
+    {
+        return wait(rtos::milliseconds(timeout));
     }
 
     [[nodiscard]] static esp_err_t flush() noexcept

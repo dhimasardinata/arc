@@ -84,6 +84,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Pm` gives typed ESP-IDF PM locks for CPU/APB/no-light-sleep critical sections when DFS is enabled.
 - `arc::Rng` exposes the ESP32-S3 hardware random source for fixed buffers and typed values.
 - `arc::Time` reads the global SYSTIMER-backed microsecond clock for cross-core timestamps.
+- `arc::rtos` converts `std::chrono` durations to bounded FreeRTOS millisecond/tick values for APIs that sleep or wait.
 - `arc::Sha` hashes buffers through Espressif's accelerated PSA/mbedTLS SHA path with `arc::Result` output.
 - `arc::Aes` and `arc::Gcm` wrap AES block/stream/GCM operations with explicit key setup and caller-owned buffers.
 - `arc::Hmac` computes eFuse-keyed SHA-256 HMACs and gates temporary JTAG unlock through the HMAC peripheral.
@@ -201,11 +202,11 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 
 | Area | Headers | Primary types |
 | --- | --- | --- |
-| Core plane | `arc/task.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp` | `arc::spawn`, `arc::Plane`, `arc::App`, `arc::Tight` |
+| Core plane | `arc/task.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp` | `arc::spawn`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg` |
-| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::Clock`, `arc::Probe` |
+| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::Time`, `arc::Clock`, `arc::Probe` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
 | Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
@@ -338,6 +339,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 │               ├── pwm.hpp
 │               ├── reg.hpp
 │               ├── result.hpp
+│               ├── rtos.hpp
 │               ├── scope.hpp
 │               ├── sd.hpp
 │               ├── sense.hpp
@@ -932,6 +934,17 @@ Global microsecond clock backed by the ESP32-S3 SYSTIMER through `esp_timer_get_
 - `since(start)` and `due(start, span)` keep timeout math unsigned and terse.
 
 Use this when Core 0 and Core 1 need one shared timestamp base. Keep `arc::Clock` for core-local cycle probes and short spin windows.
+
+### `arc::rtos`
+
+Small FreeRTOS time conversion helpers for APIs that accept wait windows.
+
+- `milliseconds(duration)` rounds positive `std::chrono` durations up to milliseconds and saturates at `uint32_t` max.
+- `ticks_ms(ms)` converts milliseconds to `TickType_t` without the overflow/truncation hazards of scattered `pdMS_TO_TICKS(...)` calls.
+- `ticks(duration)` combines both conversions.
+- `delay_for(duration)` sleeps the current task for the converted tick count.
+
+`Uart`, `Usb`, and `AnyUart` keep their existing integer millisecond APIs and also accept `std::chrono` durations.
 
 ### `arc::Sha`
 

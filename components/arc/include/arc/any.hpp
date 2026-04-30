@@ -8,6 +8,7 @@
 #include "esp_err.h"
 
 #include "arc/result.hpp"
+#include "arc/rtos.hpp"
 
 namespace arc {
 
@@ -696,6 +697,15 @@ struct AnyUart {
         return read_fn(ctx, data, bytes, timeout_ms);
     }
 
+    template <typename Rep, typename Period>
+    [[nodiscard]] Result<std::size_t> read(
+        void* const data,
+        const std::size_t bytes,
+        const std::chrono::duration<Rep, Period> timeout) const noexcept
+    {
+        return read(data, bytes, rtos::milliseconds(timeout));
+    }
+
     template <typename T, std::size_t Extent>
         requires AnyIoBytes<T>
     [[nodiscard]] Result<std::size_t> write(const std::span<T, Extent> data) const noexcept
@@ -712,12 +722,27 @@ struct AnyUart {
         return read(data.data(), data.size_bytes(), timeout_ms);
     }
 
+    template <typename T, std::size_t Extent, typename Rep, typename Period>
+        requires(AnyIoBytes<T> && !std::is_const_v<T>)
+    [[nodiscard]] Result<std::size_t> read(
+        const std::span<T, Extent> data,
+        const std::chrono::duration<Rep, Period> timeout) const noexcept
+    {
+        return read(data.data(), data.size_bytes(), timeout);
+    }
+
     [[nodiscard]] esp_err_t wait(const std::uint32_t timeout_ms = 1000U) const noexcept
     {
         if (wait_fn == nullptr) {
             return ESP_ERR_INVALID_ARG;
         }
         return wait_fn(ctx, timeout_ms);
+    }
+
+    template <typename Rep, typename Period>
+    [[nodiscard]] esp_err_t wait(const std::chrono::duration<Rep, Period> timeout) const noexcept
+    {
+        return wait(rtos::milliseconds(timeout));
     }
 
     [[nodiscard]] esp_err_t flush() const noexcept

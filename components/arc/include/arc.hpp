@@ -21,6 +21,7 @@
 #include "arc/plane.hpp"
 #include "arc/probe.hpp"
 #include "arc/reg.hpp"
+#include "arc/rtos.hpp"
 #include "arc/spsc.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
