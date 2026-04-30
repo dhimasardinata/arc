@@ -1,14 +1,17 @@
 #pragma once
 
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 
 #include "esp_err.h"
 
+#include "arc/result.hpp"
+
 namespace arc {
 
 template <typename T>
-concept ControlResult = std::same_as<T, void> || std::same_as<T, esp_err_t>;
+concept ControlResult = std::same_as<T, void> || std::same_as<T, esp_err_t> || std::same_as<T, Status>;
 
 template <typename T>
 concept WaveConfig = requires {
@@ -34,6 +37,59 @@ template <typename T>
 concept RateWave = WaveConfig<T> && requires(const std::uint32_t hz) {
     { T::hz() } -> std::same_as<std::uint32_t>;
     { T::hz(hz) } -> ControlResult;
+};
+
+template <typename T>
+concept DigitalOut = requires {
+    { T::out() } -> ControlResult;
+    { T::hi() } -> ControlResult;
+    { T::lo() } -> ControlResult;
+    { T::toggle() } -> ControlResult;
+    { T::high() } -> std::same_as<bool>;
+};
+
+template <typename T>
+concept DigitalIn = requires {
+    { T::in() } -> ControlResult;
+    { T::high() } -> std::same_as<bool>;
+};
+
+template <typename T>
+concept I2cDevice = requires(
+    const void* tx,
+    void* rx,
+    const std::size_t tx_bytes,
+    const std::size_t rx_bytes,
+    const int timeout_ms) {
+    { T::send(tx, tx_bytes, timeout_ms) } -> std::same_as<esp_err_t>;
+    { T::recv(rx, rx_bytes, timeout_ms) } -> std::same_as<esp_err_t>;
+    { T::xfer(tx, tx_bytes, rx, rx_bytes, timeout_ms) } -> std::same_as<esp_err_t>;
+};
+
+template <typename T>
+concept SpiDevice = requires(
+    const void* tx,
+    void* rx,
+    const std::size_t bytes,
+    const std::uint32_t hz,
+    const std::uint32_t flags) {
+    { T::send(tx, bytes, hz, flags) } -> std::same_as<esp_err_t>;
+    { T::recv(rx, bytes, hz, flags) } -> std::same_as<esp_err_t>;
+    { T::xfer(tx, rx, bytes, hz, flags) } -> std::same_as<esp_err_t>;
+};
+
+template <typename T>
+concept UartDevice = requires(
+    const void* tx,
+    void* rx,
+    const std::size_t bytes,
+    const std::uint32_t timeout_ms,
+    std::size_t& available) {
+    { T::write(tx, bytes) } -> std::same_as<Result<std::size_t>>;
+    { T::read(rx, bytes, timeout_ms) } -> std::same_as<Result<std::size_t>>;
+    { T::wait(timeout_ms) } -> std::same_as<esp_err_t>;
+    { T::flush() } -> std::same_as<esp_err_t>;
+    { T::available(available) } -> std::same_as<esp_err_t>;
 };
 
 }  // namespace arc

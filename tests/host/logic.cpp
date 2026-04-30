@@ -12,6 +12,7 @@
 
 #include "arc/any.hpp"
 #include "arc/caps.hpp"
+#include "arc/concepts.hpp"
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
 #include "arc/file.hpp"
@@ -30,8 +31,11 @@ static_assert(sizeof(arc::InitTxn) == sizeof(void*));
 static_assert(sizeof(arc::RefInitTxn) == sizeof(void*));
 static_assert(sizeof(arc::RefLease) == sizeof(void*));
 static_assert(sizeof(arc::TryGate) == sizeof(void*));
+static_assert(sizeof(arc::AnyOut) == 6U * sizeof(void*));
+static_assert(sizeof(arc::AnyIn) == 3U * sizeof(void*));
 static_assert(sizeof(arc::AnyI2c) == 4U * sizeof(void*));
 static_assert(sizeof(arc::AnySpi) == 4U * sizeof(void*));
+static_assert(sizeof(arc::AnyUart) == 6U * sizeof(void*));
 
 #if defined(__has_feature)
 #if __has_feature(thread_sanitizer)
@@ -98,6 +102,76 @@ struct MockStaticI2c {
     }
 };
 
+static_assert(arc::I2cDevice<MockStaticI2c>);
+
+struct MockStaticOut {
+    static inline bool level{};
+    static inline std::uint32_t configured{};
+    static inline std::uint32_t writes{};
+
+    static void out() noexcept
+    {
+        ++configured;
+    }
+
+    static void hi() noexcept
+    {
+        level = true;
+        ++writes;
+    }
+
+    static void lo() noexcept
+    {
+        level = false;
+        ++writes;
+    }
+
+    static void toggle() noexcept
+    {
+        level = !level;
+        ++writes;
+    }
+
+    [[nodiscard]] static bool high() noexcept
+    {
+        return level;
+    }
+};
+
+static_assert(arc::DigitalOut<MockStaticOut>);
+
+struct MockInput {
+    bool level{};
+    std::uint32_t configured{};
+
+    arc::Status in() noexcept
+    {
+        ++configured;
+        return arc::ok();
+    }
+
+    [[nodiscard]] bool high() const noexcept
+    {
+        return level;
+    }
+};
+
+struct MockStaticInput {
+    static inline bool level{};
+
+    static esp_err_t in() noexcept
+    {
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static bool high() noexcept
+    {
+        return level;
+    }
+};
+
+static_assert(arc::DigitalIn<MockStaticInput>);
+
 struct MockSpi {
     std::size_t sent{};
     std::size_t received{};
@@ -145,8 +219,147 @@ struct MockSpi {
     }
 };
 
+struct MockStaticSpi {
+    [[nodiscard]] static esp_err_t send(
+        const void*,
+        std::size_t,
+        std::uint32_t,
+        std::uint32_t) noexcept
+    {
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t recv(
+        void*,
+        std::size_t,
+        std::uint32_t,
+        std::uint32_t) noexcept
+    {
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t xfer(
+        const void*,
+        void*,
+        std::size_t,
+        std::uint32_t,
+        std::uint32_t) noexcept
+    {
+        return ESP_OK;
+    }
+};
+
+static_assert(arc::SpiDevice<MockStaticSpi>);
+
+struct MockUart {
+    std::array<std::uint8_t, 8> rx{0xA0U, 0xA1U, 0xA2U, 0xA3U, 0xA4U, 0xA5U, 0xA6U, 0xA7U};
+    std::size_t wrote{};
+    std::size_t read_pos{};
+    std::uint32_t timeout{};
+    bool flushed{};
+
+    [[nodiscard]] arc::Result<std::size_t> write(
+        const void* const data,
+        const std::size_t bytes) noexcept
+    {
+        wrote = data == nullptr ? 0U : bytes;
+        return wrote;
+    }
+
+    [[nodiscard]] arc::Result<std::size_t> read(
+        void* const data,
+        const std::size_t bytes,
+        const std::uint32_t timeout_ms) noexcept
+    {
+        timeout = timeout_ms;
+        auto* out = static_cast<std::uint8_t*>(data);
+        const auto available = rx.size() - read_pos;
+        const auto count = bytes < available ? bytes : available;
+        std::memcpy(out, rx.data() + read_pos, count);
+        read_pos += count;
+        return count;
+    }
+
+    [[nodiscard]] esp_err_t wait(const std::uint32_t timeout_ms) noexcept
+    {
+        timeout = timeout_ms;
+        return ESP_OK;
+    }
+
+    [[nodiscard]] esp_err_t flush() noexcept
+    {
+        flushed = true;
+        return ESP_OK;
+    }
+
+    [[nodiscard]] esp_err_t available(std::size_t& bytes) noexcept
+    {
+        bytes = rx.size() - read_pos;
+        return ESP_OK;
+    }
+};
+
+struct MockStaticUart {
+    [[nodiscard]] static arc::Result<std::size_t> write(const void*, const std::size_t bytes) noexcept
+    {
+        return bytes;
+    }
+
+    [[nodiscard]] static arc::Result<std::size_t> read(
+        void*,
+        const std::size_t bytes,
+        std::uint32_t) noexcept
+    {
+        return bytes;
+    }
+
+    [[nodiscard]] static esp_err_t wait(std::uint32_t) noexcept
+    {
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t flush() noexcept
+    {
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t available(std::size_t& bytes) noexcept
+    {
+        bytes = 0U;
+        return ESP_OK;
+    }
+};
+
+static_assert(arc::UartDevice<MockStaticUart>);
+
 void test_any_io()
 {
+    const arc::AnyOut empty_out;
+    expect(!empty_out, "empty AnyOut is false");
+    expect(!empty_out.hi().has_value(), "empty AnyOut rejects hi");
+    expect(!empty_out.high().has_value(), "empty AnyOut rejects readback");
+
+    MockStaticOut::level = false;
+    MockStaticOut::configured = 0U;
+    MockStaticOut::writes = 0U;
+    const auto static_out = arc::AnyOut::bind<MockStaticOut>();
+    expect(static_cast<bool>(static_out), "static AnyOut binds");
+    expect(static_out.out().has_value(), "static AnyOut configures");
+    expect(static_out.write(true).has_value(), "static AnyOut writes high");
+    expect(static_out.high().has_value() && *static_out.high(), "static AnyOut reads high");
+    expect(static_out.toggle().has_value(), "static AnyOut toggles");
+    expect(static_out.low().has_value() && *static_out.low(), "static AnyOut reads low");
+    expect(MockStaticOut::configured == 1U && MockStaticOut::writes == 2U, "static AnyOut thunks");
+
+    MockInput input{.level = true};
+    const auto any_in = arc::AnyIn::bind(input);
+    expect(static_cast<bool>(any_in), "object AnyIn binds");
+    expect(any_in.in().has_value(), "object AnyIn configures");
+    expect(any_in.high().has_value() && *any_in.high(), "object AnyIn reads high");
+    input.level = false;
+    expect(any_in.low().has_value() && *any_in.low(), "object AnyIn reads low");
+    expect(input.configured == 1U, "object AnyIn thunks");
+
     const arc::AnyI2c empty_i2c;
     expect(!empty_i2c, "empty AnyI2c is false");
     expect(empty_i2c.send(nullptr, 1U) == ESP_ERR_INVALID_ARG, "empty AnyI2c rejects send");
@@ -172,6 +385,20 @@ void test_any_io()
     expect(spi.xfer(std::span(tx), std::span(rx), 2'000'000U, 4U) == ESP_OK, "AnySpi span xfer");
     expect(rx == tx && mock.xfer_bytes == tx.size() && mock.hz == 2'000'000U, "AnySpi xfer copies");
     expect(spi.xfer(std::span(tx), std::span(rx).first(2U)) == ESP_ERR_INVALID_ARG, "AnySpi rejects mismatched spans");
+
+    MockUart uart_mock;
+    const auto uart = arc::AnyUart::bind(uart_mock);
+    expect(static_cast<bool>(uart), "object AnyUart binds");
+    const auto wrote = uart.write(std::span(tx));
+    expect(wrote.has_value() && *wrote == tx.size() && uart_mock.wrote == tx.size(), "AnyUart writes");
+    std::array<std::uint8_t, 4> serial_rx{};
+    const auto got = uart.read(std::span(serial_rx), 42U);
+    expect(got.has_value() && *got == serial_rx.size(), "AnyUart reads");
+    expect(serial_rx[0] == 0xA0U && serial_rx[3] == 0xA3U && uart_mock.timeout == 42U, "AnyUart read thunks");
+    std::size_t available{};
+    expect(uart.available(available) == ESP_OK && available == 4U, "AnyUart available");
+    expect(uart.wait(43U) == ESP_OK && uart_mock.timeout == 43U, "AnyUart wait");
+    expect(uart.flush() == ESP_OK && uart_mock.flushed, "AnyUart flush");
 }
 
 template <typename Fn>

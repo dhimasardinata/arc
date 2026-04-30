@@ -65,7 +65,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Rgb` binds the ESP32-S3 RGB LCD engine with explicit timing, frame-buffer ownership, and refresh control.
 - `arc::I2cBus`, `arc::I2c`, and `arc::I2cSlave` bind ESP32-S3 I2C master/slave buses and devices with recoverable init paths.
 - `arc::SpiBus`, `arc::Spi`, and `arc::SpiSlave` drive DMA-capable SPI master/slave transfers with ticketed queue/finish ownership.
-- `arc::AnyI2c` and `arc::AnySpi` provide no-heap type erasure for slow-path sensor/config drivers that should compile out-of-line instead of becoming fully templated headers.
+- `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, and `arc::AnyUart` provide no-heap type erasure for slow-path sensor/config/modem drivers that should compile out-of-line instead of becoming fully templated headers.
 - `arc::I2s` owns standard-mode I2S channels, `arc::I2sTdm` covers multichannel framed lanes, and `arc::I2sPdm` covers one-line PDM RX/TX, with both raw `esp_err_t` and opt-in `arc::Result` APIs.
 - `arc::Uart` binds ESP32-S3 UART ports, pins, framing, and buffers with fixed storage and typed read/write APIs.
 - `arc::Usb` binds the ESP32-S3 USB Serial/JTAG lane with typed byte IO.
@@ -206,7 +206,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg` |
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::Clock`, `arc::Probe` |
-| Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::AnyI2c`, `arc::AnySpi`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
+| Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
 | Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream` |
@@ -1069,6 +1069,9 @@ Do not create multiple aliases for the same physical peripheral just to vary a r
 
 `arc/concepts.hpp` adds small compile-time contracts for app-side composition without virtual dispatch or heap-owned interfaces.
 
+- `arc::ControlResult<T>` accepts recoverable control functions that return `void`, `esp_err_t`, or `arc::Status`.
+- `arc::DigitalOut<T>` and `arc::DigitalIn<T>` check the static GPIO-style surfaces used by `arc::Gpio`, `arc::Drive`, and `arc::Sense`.
+- `arc::I2cDevice<T>`, `arc::SpiDevice<T>`, and `arc::UartDevice<T>` check static bus/device contracts for templated drivers that still want compile-time dispatch.
 - `arc::WaveConfig<T>` checks that a static waveform type exposes `Config`, `defaults()`, `config()`, and `permille()`.
 - `arc::ConfigWave<T>` checks the combined recoverable runtime-config surface.
 - `arc::DutyWave<T>` checks the duty-control surface.
