@@ -35,4 +35,9 @@ template <typename T>
     return err == ESP_OK ? ok() : Status{fail(err)};
 }
 
+[[nodiscard]] constexpr esp_err_t status_code(const Status& value) noexcept
+{
+    return value ? ESP_OK : value.error();
+}
+
 }  // namespace arc

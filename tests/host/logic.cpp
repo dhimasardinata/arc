@@ -34,6 +34,8 @@ static_assert(sizeof(arc::InitTxn) == sizeof(void*));
 static_assert(sizeof(arc::RefInitTxn) == sizeof(void*));
 static_assert(sizeof(arc::RefLease) == sizeof(void*));
 static_assert(sizeof(arc::TryGate) == sizeof(void*));
+static_assert(sizeof(arc::MutexGate) == sizeof(void*));
+static_assert(sizeof(arc::TryMutexGate) == sizeof(void*));
 static_assert(sizeof(arc::AnyOut) == 6U * sizeof(void*));
 static_assert(sizeof(arc::AnyIn) == 3U * sizeof(void*));
 static_assert(sizeof(arc::AnyI2c) == 4U * sizeof(void*));
@@ -46,6 +48,8 @@ static_assert(arc::rtos::ticks_ms(2U) == 2U);
 static_assert(arc::rtos::ticks(std::chrono::microseconds{1500}) == 2U);
 static_assert(sizeof(decltype(arc::claim_token<1, 2, 3>())) == sizeof(std::uint64_t));
 static_assert(arc::claim_token<1, 2, 3>() != arc::claim_token<1, 2, 4>());
+static_assert(arc::Result<int>{2}.and_then([](int value) { return arc::Result<int>{value + 1}; }).value() == 3);
+static_assert(arc::status_code(arc::ok()) == ESP_OK);
 
 #if defined(__has_feature)
 #if __has_feature(thread_sanitizer)
@@ -1175,6 +1179,21 @@ void test_refinit()
     }
     expect(arc::Gate::try_take(state), "TryGate reset opens gate");
     arc::Gate::drop(state);
+
+    arc::MutexGateState mutex{};
+    {
+        arc::TryMutexGate first(mutex);
+        expect(static_cast<bool>(first), "TryMutexGate takes mutex");
+
+        auto moved_mutex = std::move(first);
+        expect(!static_cast<bool>(first), "TryMutexGate move clears source");
+        expect(static_cast<bool>(moved_mutex), "TryMutexGate move keeps destination");
+        moved_mutex.reset();
+    }
+    {
+        arc::MutexGate guard(mutex);
+        static_cast<void>(guard);
+    }
 
     {
         auto txn = arc::InitTxn::begin(state);

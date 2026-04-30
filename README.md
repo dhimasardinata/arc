@@ -47,7 +47,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Soc` exposes the ESP32-S3 capability map from `soc_caps.h` as compile-time constants and hard-fails on non-S3 targets.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::Pins` gives one-file board topology checks so duplicate physical pins are caught where hardware truth is declared.
-- `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, and `arc::Gate` provide one-word initialization and shared-resource lifetime state machines for static drivers.
+- `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::Gate`, and `arc::MutexGate` provide initialization, shared-resource lifetime, and task-level locking primitives for static drivers.
 - `arc::Result<T>` is an opt-in `std::expected<T, esp_err_t>` alias for runtime operations that should not hard-panic.
 - `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site, while `arc::Copy::send_coherent(...)` and `finish_coherent(...)` cover the common async-memcpy handoff without blocking useful CPU work.
 - `arc::Can` binds the ESP32-S3 TWAI/CAN controller with ISR-backed RX handoff.
@@ -203,7 +203,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 | Area | Headers | Primary types |
 | --- | --- | --- |
 | Core plane | `arc/task.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp` | `arc::spawn`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos` |
-| Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
+| Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg` |
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::Time`, `arc::Clock`, `arc::Probe` |
@@ -617,8 +617,9 @@ Arc keeps driver lifetime explicit because ESP-IDF peripheral handles often have
 - `arc::RefInit` is the shared-resource variant. The first `begin()` owns initialization, later `begin()` or `take()` calls acquire a reference, and only the final `drop()` returns `true` so the caller can tear the hardware down. `arc::RefInitTxn` gives the first initializer the same rollback-on-early-return protection as `arc::InitTxn`.
 - Both init machines expose `is_empty()`, `is_busy()`, and `is_ready()` so diagnostics can inspect state without depending on sentinel values.
 - `arc::RefLease` is the scoped form for borrowed shared references. `take()` acquires a new reference, `adopt()` wraps an existing one, and the final owner must call `release()` and perform teardown explicitly instead of hiding hardware deinit in a destructor.
-- `arc::Gate` is a tiny task-context guard for protecting short control-plane mutations. It asserts in ISR context instead of blocking where FreeRTOS cannot safely sleep.
+- `arc::Gate` is a tiny task-context guard for protecting short hot mutations. It asserts in ISR context instead of blocking where FreeRTOS cannot safely sleep.
 - `arc::TryGate` is the non-blocking form for paths that may probe ownership but must not sleep; failed acquisition is just `false`.
+- `arc::MutexGate` and `arc::TryMutexGate` wrap a lazily created `StaticSemaphore_t` mutex for task-level control-plane locks that should get FreeRTOS priority inheritance instead of spin-sleep polling.
 
 This keeps static peripheral wrappers cheap while still giving buses, radios, filesystems, and host tasks a path to safe dynamic off/on behavior when an application needs sleep, hot-plug, or staged subsystem startup.
 
@@ -920,6 +921,7 @@ Opt-in C++23/26 runtime error surface based on `std::expected`.
 - `arc::Status` is `std::expected<void, esp_err_t>`.
 - `arc::fail(err)` creates the error side.
 - `arc::status(err)` converts an `esp_err_t` into `arc::Status`.
+- `arc::status_code(status)` converts `arc::Status` back to `esp_err_t` after monadic `.and_then(...)` chains.
 
 Use this for runtime operations that can fail without invalidating the board topology. Hardware boot/configuration errors still intentionally use fail-fast ESP-IDF checks.
 

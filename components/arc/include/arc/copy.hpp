@@ -14,6 +14,7 @@
 
 #include "arc/cache.hpp"
 #include "arc/init.hpp"
+#include "arc/result.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
 
@@ -66,14 +67,15 @@ struct Copy {
         config.dma_burst_size = BurstBytes;
         config.flags = 0;
 
-        const auto err = install(&config);
-        if (err == ESP_OK) {
+        const auto ready = status(install(&config)).and_then([&]() noexcept -> Status {
             Init::pass(state.init);
-        } else {
+            return ok();
+        });
+        if (!ready) {
             state.driver = nullptr;
             Init::fail(state.init);
         }
-        return err;
+        return status_code(ready);
     }
 
     static void boot()
@@ -260,7 +262,7 @@ private:
     struct State {
         async_memcpy_handle_t driver{};
         std::uint32_t init{};
-        std::uint32_t gate{};
+        MutexGateState gate{};
         alignas(cache_line) std::uint32_t sent{};
         alignas(cache_line) std::uint32_t done{};
         std::size_t bytes{};
@@ -296,7 +298,7 @@ private:
             return ESP_ERR_INVALID_ARG;
         }
 
-        Gate guard(state.gate);
+        MutexGate guard(state.gate);
         const auto ret = esp_async_memcpy(
             state.driver,
             dst,

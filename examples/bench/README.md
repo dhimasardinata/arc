@@ -38,6 +38,8 @@ Arduino coverage is optional. The bench auto-enables it when one of these exists
 
 The NVS write lanes use only `16` rounds per run so the one-shot benchmark does not hammer flash unnecessarily.
 
+The benchmark has its own `sdkconfig.defaults` overlay that gives `app_main` an 8 KiB stack and keeps FreeRTOS stack canaries enabled. Large benchmark work buffers live in static storage rather than on `main_task`, and the firmware prints stack high-water marks after each section so stack pressure is visible next to timing data.
+
 Run:
 
 ```sh

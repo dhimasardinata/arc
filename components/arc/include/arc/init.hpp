@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 namespace arc {
@@ -197,6 +198,113 @@ private:
     inline constexpr static std::uint32_t empty = 0U;
     inline constexpr static std::uint32_t busy = 1U;
     inline constexpr static std::uint32_t ready = 2U;
+};
+
+struct MutexGateState {
+    StaticSemaphore_t storage{};
+    SemaphoreHandle_t handle{};
+    std::uint32_t init{};
+};
+
+struct MutexGate {
+    explicit MutexGate(MutexGateState& state) noexcept
+        : state_(&state)
+    {
+        take(*state_);
+    }
+
+    MutexGate(const MutexGate&) = delete;
+    MutexGate& operator=(const MutexGate&) = delete;
+
+    ~MutexGate()
+    {
+        drop(*state_);
+    }
+
+    static void take(MutexGateState& state) noexcept
+    {
+        ensure(state);
+        configASSERT(xSemaphoreTake(state.handle, portMAX_DELAY) == pdTRUE);
+    }
+
+    [[nodiscard]] static bool try_take(MutexGateState& state) noexcept
+    {
+        ensure(state);
+        return xSemaphoreTake(state.handle, 0U) == pdTRUE;
+    }
+
+    static void drop(MutexGateState& state) noexcept
+    {
+        configASSERT(state.handle != nullptr && "arc::MutexGate dropped before init");
+        configASSERT(xSemaphoreGive(state.handle) == pdTRUE);
+    }
+
+private:
+    static void ensure(MutexGateState& state) noexcept
+    {
+        if (!Init::begin(state.init)) {
+            return;
+        }
+
+        state.handle = xSemaphoreCreateMutexStatic(&state.storage);
+        if (state.handle == nullptr) {
+            Init::fail(state.init);
+            configASSERT(false && "arc::MutexGate mutex creation failed");
+            return;
+        }
+        Init::pass(state.init);
+    }
+
+    MutexGateState* state_;
+};
+
+struct TryMutexGate {
+    explicit TryMutexGate(MutexGateState& state) noexcept
+        : state_(MutexGate::try_take(state) ? &state : nullptr)
+    {
+    }
+
+    TryMutexGate(const TryMutexGate&) = delete;
+    TryMutexGate& operator=(const TryMutexGate&) = delete;
+
+    TryMutexGate(TryMutexGate&& other) noexcept
+        : state_(other.state_)
+    {
+        other.state_ = nullptr;
+    }
+
+    TryMutexGate& operator=(TryMutexGate&& other) noexcept
+    {
+        if (this != &other) {
+            reset();
+            state_ = other.state_;
+            other.state_ = nullptr;
+        }
+        return *this;
+    }
+
+    ~TryMutexGate()
+    {
+        reset();
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept
+    {
+        return state_ != nullptr;
+    }
+
+    void reset() noexcept
+    {
+        if (state_ == nullptr) {
+            return;
+        }
+
+        MutexGate::drop(*state_);
+        state_ = nullptr;
+    }
+
+private:
+    MutexGateState* state_{};
 };
 
 namespace detail {

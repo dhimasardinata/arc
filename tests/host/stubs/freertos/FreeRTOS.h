@@ -18,6 +18,8 @@ struct StaticTask_t {
 #define configMAX_PRIORITIES 25
 #define configTICK_RATE_HZ 1000U
 #define portMAX_DELAY UINT32_MAX
+#define pdFALSE 0
+#define pdTRUE 1
 #define pdMS_TO_TICKS(ms) ((static_cast<TickType_t>(ms) * configTICK_RATE_HZ) / 1000U)
 
 #define configASSERT(expr) \

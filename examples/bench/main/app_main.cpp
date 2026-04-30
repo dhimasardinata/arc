@@ -17,6 +17,7 @@
 #include "arc/mqtt.hpp"
 #include "arc/ota.hpp"
 #include "arc/probe.hpp"
+#include "arc/result.hpp"
 #include "arc/rng.hpp"
 #include "arc/seq.hpp"
 #include "arc/sha.hpp"
@@ -85,6 +86,12 @@ void section(const char* const name)
     ESP_LOGI(tag, "%s", "");
     ESP_LOGI(tag, "== %s ==", name);
     ESP_LOGI(tag, "%-34s %10s     %9s     %9s", "lane", "ops", "cycles", "ns");
+}
+
+void stack_mark(const char* const label)
+{
+    const auto words = uxTaskGetStackHighWaterMark(nullptr);
+    ESP_LOGI(tag, "stack %-29s %10u words free", label, static_cast<unsigned>(words));
 }
 
 template <typename Fn>
@@ -222,17 +229,14 @@ struct RawNvsHandle {
     const ControlWord& value) noexcept
 {
     RawNvsHandle handle{};
-    auto err = handle.open(ns, NVS_READWRITE);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    err = nvs_set_blob(handle.raw, key, &value, sizeof(value));
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    return nvs_commit(handle.raw);
+    const auto saved = arc::status(handle.open(ns, NVS_READWRITE))
+                           .and_then([&]() noexcept -> arc::Status {
+                               return arc::status(nvs_set_blob(handle.raw, key, &value, sizeof(value)));
+                           })
+                           .and_then([&]() noexcept -> arc::Status {
+                               return arc::status(nvs_commit(handle.raw));
+                           });
+    return arc::status_code(saved);
 }
 
 [[nodiscard]] esp_err_t raw_store_load(
@@ -241,18 +245,15 @@ struct RawNvsHandle {
     ControlWord& value) noexcept
 {
     RawNvsHandle handle{};
-    auto err = handle.open(ns, NVS_READONLY);
-    if (err != ESP_OK) {
-        return err;
-    }
-
     std::size_t bytes = sizeof(value);
-    err = nvs_get_blob(handle.raw, key, &value, &bytes);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    return bytes == sizeof(value) ? ESP_OK : ESP_ERR_NVS_INVALID_LENGTH;
+    const auto loaded = arc::status(handle.open(ns, NVS_READONLY))
+                            .and_then([&]() noexcept -> arc::Status {
+                                return arc::status(nvs_get_blob(handle.raw, key, &value, &bytes));
+                            })
+                            .and_then([&]() noexcept -> arc::Status {
+                                return bytes == sizeof(value) ? arc::ok() : arc::Status{arc::fail(ESP_ERR_NVS_INVALID_LENGTH)};
+                            });
+    return arc::status_code(loaded);
 }
 
 [[nodiscard]] esp_err_t raw_store_save_string(
@@ -261,17 +262,14 @@ struct RawNvsHandle {
     const char* const value) noexcept
 {
     RawNvsHandle handle{};
-    auto err = handle.open(ns, NVS_READWRITE);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    err = nvs_set_str(handle.raw, key, value);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    return nvs_commit(handle.raw);
+    const auto saved = arc::status(handle.open(ns, NVS_READWRITE))
+                           .and_then([&]() noexcept -> arc::Status {
+                               return arc::status(nvs_set_str(handle.raw, key, value));
+                           })
+                           .and_then([&]() noexcept -> arc::Status {
+                               return arc::status(nvs_commit(handle.raw));
+                           });
+    return arc::status_code(saved);
 }
 
 [[nodiscard]] esp_err_t raw_store_load_string(
@@ -281,21 +279,18 @@ struct RawNvsHandle {
     std::size_t* const chars = nullptr) noexcept
 {
     RawNvsHandle handle{};
-    auto err = handle.open(ns, NVS_READONLY);
-    if (err != ESP_OK) {
-        return err;
-    }
-
     std::size_t bytes = out.size_bytes();
-    err = nvs_get_str(handle.raw, key, out.data(), &bytes);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    if (chars != nullptr) {
-        *chars = bytes == 0U ? 0U : bytes - 1U;
-    }
-    return ESP_OK;
+    const auto loaded = arc::status(handle.open(ns, NVS_READONLY))
+                            .and_then([&]() noexcept -> arc::Status {
+                                return arc::status(nvs_get_str(handle.raw, key, out.data(), &bytes));
+                            })
+                            .and_then([&]() noexcept -> arc::Status {
+                                if (chars != nullptr) {
+                                    *chars = bytes == 0U ? 0U : bytes - 1U;
+                                }
+                                return arc::ok();
+                            });
+    return arc::status_code(loaded);
 }
 
 IRAM_ATTR bool raw_copy_done(async_memcpy_handle_t, async_memcpy_event_t*, void* const ctx) noexcept
@@ -563,9 +558,9 @@ void bench_codecs()
 
 void bench_usage()
 {
-    arc::Spsc<TelemetryFrame, 64> telemetry;
-    std::array<TelemetryFrame, 31> produced{};
-    std::array<TelemetryFrame, 31> consumed{};
+    static arc::Spsc<TelemetryFrame, 64> telemetry;
+    static std::array<TelemetryFrame, 31> produced{};
+    static std::array<TelemetryFrame, 31> consumed{};
     std::uint64_t telemetry_sum{};
 
     print(measure("usage telemetry bridge", usage_rounds * 2ULL, [&]() {
@@ -597,11 +592,11 @@ void bench_usage()
     }));
     sink += telemetry_sum;
 
-    arc::SeqReg<ControlSnapshot> snapshot;
-    arc::Fanin<ControlEvent, 16, 3> events;
-    std::array<int, 32> samples{};
-    std::array<int, 32> work{};
-    arc::dsp::Fir<int, 8>::State filter{};
+    static arc::SeqReg<ControlSnapshot> snapshot;
+    static arc::Fanin<ControlEvent, 16, 3> events;
+    static std::array<int, 32> samples{};
+    static std::array<int, 32> work{};
+    static arc::dsp::Fir<int, 8>::State filter{};
     constexpr arc::dsp::Fir<int, 8>::Coeffs taps{1, -1, 2, -2, 3, -3, 4, -4};
     std::uint64_t control_sum{};
 
@@ -646,11 +641,11 @@ void bench_usage()
     }));
     sink += control_sum;
 
-    SinkStream stream;
-    std::array<std::uint8_t, 256> packet{};
-    std::array<std::uint8_t, 64> frame{};
-    std::array<std::uint8_t, 32> scratch{};
-    std::array<std::uint8_t, 32> payload{};
+    static SinkStream stream;
+    static std::array<std::uint8_t, 256> packet{};
+    static std::array<std::uint8_t, 64> frame{};
+    static std::array<std::uint8_t, 32> scratch{};
+    static std::array<std::uint8_t, 32> payload{};
     const std::array options{
         arc::net::Coap::text(static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_path), "telemetry"),
     };
@@ -783,16 +778,16 @@ void bench_silicon()
 {
     init_psa();
 
-    std::array<std::uint8_t, 256> data{};
-    std::array<std::uint8_t, 32> sum{};
-    std::array<std::uint8_t, 16> key{};
-    std::array<std::uint8_t, 16> block{};
-    std::array<std::uint8_t, 16> crypt{};
-    std::array<std::uint8_t, 16> iv{};
-    std::array<std::uint8_t, 16> auth_tag{};
-    std::array<std::uint8_t, 16> stream{};
-    std::array<std::uint8_t, 64> plain{};
-    std::array<std::uint8_t, 64> cipher{};
+    static std::array<std::uint8_t, 256> data{};
+    static std::array<std::uint8_t, 32> sum{};
+    static std::array<std::uint8_t, 16> key{};
+    static std::array<std::uint8_t, 16> block{};
+    static std::array<std::uint8_t, 16> crypt{};
+    static std::array<std::uint8_t, 16> iv{};
+    static std::array<std::uint8_t, 16> auth_tag{};
+    static std::array<std::uint8_t, 16> stream{};
+    static std::array<std::uint8_t, 64> plain{};
+    static std::array<std::uint8_t, 64> cipher{};
     for (std::size_t i = 0; i < data.size(); ++i) {
         data[i] = static_cast<std::uint8_t>(i);
     }
@@ -1301,26 +1296,33 @@ void run()
     bench_mpsc_one<arc::DenseMpsc<std::uint32_t, 16>>("dense mpsc single");
     bench_fanin();
     bench_seqreg();
+    stack_mark("after core lanes");
 
     section("streams and codecs");
     bench_stream();
     bench_codecs();
+    stack_mark("after streams/codecs");
 
     section("critical usage mixes");
     bench_usage();
+    stack_mark("after usage mixes");
 
     section("dsp and memory");
     bench_dsp();
+    stack_mark("before async memcpy");
     bench_copy();
+    stack_mark("after async memcpy");
 
     section("silicon accelerators");
     bench_silicon();
+    stack_mark("after silicon");
 
     section("system services");
     bench_temp();
     bench_ota();
     bench_store();
     bench_can();
+    stack_mark("after services");
 #ifdef ARC_BENCH_HAS_ARDUINO
     section("arduino component compare");
     bench_arduino();
