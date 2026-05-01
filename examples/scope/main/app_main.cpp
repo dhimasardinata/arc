@@ -16,14 +16,13 @@ inline constexpr TickType_t log_ticks = pdMS_TO_TICKS(250);
 using In = arc::Scope<40'000, 256, 4096, true, arc::Adc<4>>;
 
 constinit static arc::TaskMem<stack> host_mem{};
+constinit static std::array<In::Sample, 64> sample_frame{};
 
 void host(void*) noexcept
 {
-    std::array<adc_continuous_data_t, 64> frame{};
-
     while (true) {
         std::uint32_t got = 0U;
-        const auto ret = In::pull(frame.data(), static_cast<std::uint32_t>(frame.size()), &got, 1000);
+        const auto ret = In::pull(sample_frame.data(), static_cast<std::uint32_t>(sample_frame.size()), &got, 1000);
 
         if (ret == ESP_ERR_TIMEOUT) {
             continue;
@@ -41,7 +40,7 @@ void host(void*) noexcept
         std::uint32_t valid = 0U;
 
         for (std::uint32_t i = 0; i < got; ++i) {
-            const auto& sample = frame[static_cast<std::size_t>(i)];
+            const auto& sample = sample_frame[static_cast<std::size_t>(i)];
             if (!sample.valid) {
                 continue;
             }

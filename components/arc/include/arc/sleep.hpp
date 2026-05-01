@@ -12,17 +12,58 @@ namespace arc {
 struct Sleep {
     [[nodiscard]] static esp_sleep_source_t cause() noexcept
     {
-        return esp_sleep_get_wakeup_cause();
+        const auto mask = causes();
+        if (hit(mask, ESP_SLEEP_WAKEUP_TIMER)) {
+            return ESP_SLEEP_WAKEUP_TIMER;
+        }
+        if (hit(mask, ESP_SLEEP_WAKEUP_GPIO)) {
+            return ESP_SLEEP_WAKEUP_GPIO;
+        }
+        if (uart(mask)) {
+            return ESP_SLEEP_WAKEUP_UART;
+        }
+        if (hit(mask, ESP_SLEEP_WAKEUP_EXT0)) {
+            return ESP_SLEEP_WAKEUP_EXT0;
+        }
+        if (hit(mask, ESP_SLEEP_WAKEUP_EXT1)) {
+            return ESP_SLEEP_WAKEUP_EXT1;
+        }
+        if (hit(mask, ESP_SLEEP_WAKEUP_TOUCHPAD)) {
+            return ESP_SLEEP_WAKEUP_TOUCHPAD;
+        }
+        if (hit(mask, ESP_SLEEP_WAKEUP_ULP)) {
+            return ESP_SLEEP_WAKEUP_ULP;
+        }
+        if (hit(mask, ESP_SLEEP_WAKEUP_WIFI)) {
+            return ESP_SLEEP_WAKEUP_WIFI;
+        }
+        if (hit(mask, ESP_SLEEP_WAKEUP_BT)) {
+            return ESP_SLEEP_WAKEUP_BT;
+        }
+        if (hit(mask, ESP_SLEEP_WAKEUP_COCPU_TRAP_TRIG)) {
+            return ESP_SLEEP_WAKEUP_COCPU_TRAP_TRIG;
+        }
+        if (hit(mask, ESP_SLEEP_WAKEUP_VAD)) {
+            return ESP_SLEEP_WAKEUP_VAD;
+        }
+        if (hit(mask, ESP_SLEEP_WAKEUP_VBAT_UNDER_VOLT)) {
+            return ESP_SLEEP_WAKEUP_VBAT_UNDER_VOLT;
+        }
+        return ESP_SLEEP_WAKEUP_UNDEFINED;
     }
 
     [[nodiscard]] static std::uint32_t causes() noexcept
     {
-        return static_cast<std::uint32_t>(cause());
+        return esp_sleep_get_wakeup_causes();
     }
 
     [[nodiscard]] static bool woke(const esp_sleep_source_t source) noexcept
     {
-        return cause() == source;
+        const auto mask = causes();
+        if (source == ESP_SLEEP_WAKEUP_UART) {
+            return uart(mask);
+        }
+        return hit(mask, source);
     }
 
     [[nodiscard]] static esp_err_t after_us(const std::uint64_t us) noexcept
@@ -121,6 +162,17 @@ struct Sleep {
     }
 
 private:
+    [[nodiscard]] static constexpr bool hit(const std::uint32_t mask, const esp_sleep_source_t source) noexcept
+    {
+        const auto shift = static_cast<std::uint32_t>(source);
+        return shift < 32U && (mask & (std::uint32_t{1} << shift)) != 0U;
+    }
+
+    [[nodiscard]] static constexpr bool uart(const std::uint32_t mask) noexcept
+    {
+        return hit(mask, ESP_SLEEP_WAKEUP_UART) || hit(mask, ESP_SLEEP_WAKEUP_UART1) || hit(mask, ESP_SLEEP_WAKEUP_UART2);
+    }
+
     template <int Pin>
     [[nodiscard]] static consteval std::uint64_t bit() noexcept
     {
