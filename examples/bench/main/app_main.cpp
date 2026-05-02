@@ -921,6 +921,41 @@ void bench_dsp()
             }
         }
     }));
+
+    static arc::dsp::Sos<int, 3>::State sos_state{};
+    constexpr arc::dsp::Sos<int, 3>::Coeffs sos{
+        arc::dsp::Biquad<int>::Coeffs{.b0 = 1, .b1 = -1, .b2 = 1, .a1 = 0, .a2 = 0},
+        arc::dsp::Biquad<int>::Coeffs{.b0 = 1, .b1 = 1, .b2 = 0, .a1 = 0, .a2 = 0},
+        arc::dsp::Biquad<int>::Coeffs{.b0 = 1, .b1 = 0, .b2 = 0, .a1 = 0, .a2 = 0},
+    };
+    print(measure("dsp sos cascade", dsp_rounds * dsp_n * 3ULL, [&]() {
+        for (std::uint32_t r = 0; r < dsp_rounds; ++r) {
+            for (std::size_t i = 0; i < dsp_n; ++i) {
+                sink += static_cast<std::uint64_t>(arc::dsp::Sos<int, 3>::step(sos_state, sos, lhs[i]));
+            }
+        }
+    }));
+
+    using ControlPlant = arc::dsp::StateSpace<int, 4, 2, 2>;
+    static ControlPlant::State plant{};
+    constexpr ControlPlant::Model model{
+        .a = {{{1, 1, 0, 0}, {0, 1, 1, 0}, {0, 0, 1, 1}, {0, 0, 0, 1}}},
+        .b = {{{1, 0}, {0, 1}, {1, -1}, {0, 1}}},
+        .c = {{{1, 0, 0, 0}, {0, 0, 1, 0}}},
+        .d = {{{0, 0}, {0, 0}}},
+    };
+    print(measure("dsp state-space 4x2x2", dsp_rounds, [&]() {
+        for (std::uint32_t i = 0; i < dsp_rounds; ++i) {
+            const auto y = ControlPlant::step(
+                plant,
+                model,
+                ControlPlant::InputVec{
+                    static_cast<int>(i & 7U) - 3,
+                    static_cast<int>((i >> 1U) & 7U) - 3,
+                });
+            sink += static_cast<std::uint64_t>(y[0] + y[1]);
+        }
+    }));
 }
 
 void bench_copy()

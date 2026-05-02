@@ -12,7 +12,7 @@ At runtime, this example:
 
 - allocates cache-aligned SIMD-capable buffers
 - runs `scale`, `mac`, `dot`, `peak`, and an `8-tap` FIR on Core 1
-- demonstrates the same `arc::dsp` namespace used by `Pid<T>` and `Biquad<T>` for control loops and IIR filtering
+- demonstrates the same `arc::dsp` namespace used by `Pid<T>`, `Biquad<T>`, `Sos<T, N>`, and `StateSpace<T, S, I, O>` for control loops and IIR filtering
 - publishes the latest snapshot through `arc::SeqReg`
 - logs the snapshot from Core 0
 
@@ -61,3 +61,5 @@ The main API pieces are:
 - `arc::dsp::Fir<T, N>::step(...)`
 - `arc::dsp::Pid<T>::step(...)`
 - `arc::dsp::Biquad<T>::step(...)`
+- `arc::dsp::Sos<T, N>::step(...)`
+- `arc::dsp::StateSpace<T, S, I, O>::step(...)`

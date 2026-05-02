@@ -19,7 +19,7 @@ It measures runtime on the target using the Xtensa cycle counter and prints cycl
   - `Spsc`, `SeqReg`, and `LogLane` handoff latency
   - 1 kHz period jitter measured against the Xtensa cycle counter
   - 1 kHz budget slack and missed-deadline count for the full synthetic control tick
-- DSP dot/scale/mac/FIR/peak kernels
+- DSP dot/scale/mac/FIR/peak, SOS cascade, and fixed state-space kernels
 - standard `memcpy` and Arc async-DMA copy on the same 256-byte payload
 - hardware RNG
 - accelerated SHA-256

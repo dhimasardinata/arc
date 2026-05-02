@@ -235,4 +235,114 @@ struct Biquad {
     }
 };
 
+template <typename T, std::size_t Sections>
+struct Sos {
+    static_assert(Sections > 0U, "SOS section count must be non-zero");
+    static_assert(std::is_arithmetic_v<T>, "SOS works on arithmetic sample types");
+
+    using Section = Biquad<T>;
+    using Coeffs = std::array<typename Section::Coeffs, Sections>;
+
+    struct State {
+        std::array<typename Section::State, Sections> sections{};
+    };
+
+    static void clear(State& state) noexcept
+    {
+        for (auto& section : state.sections) {
+            Section::clear(section);
+        }
+    }
+
+    [[nodiscard]] ARC_HOT static T step(
+        State& state,
+        const Coeffs& coeffs,
+        const T sample) noexcept
+    {
+        auto value = sample;
+        for (std::size_t i = 0; i < Sections; ++i) {
+            value = Section::step(state.sections[i], coeffs[i], value);
+        }
+        return value;
+    }
+
+    ARC_HOT static void run(
+        T* __restrict out,
+        State& state,
+        const Coeffs& coeffs,
+        const T* __restrict in,
+        const std::size_t count) noexcept
+    {
+        for (std::size_t i = 0; i < count; ++i) {
+            out[i] = step(state, coeffs, in[i]);
+        }
+    }
+};
+
+template <typename T, std::size_t States, std::size_t Inputs, std::size_t Outputs>
+struct StateSpace {
+    static_assert(States > 0U, "StateSpace state count must be non-zero");
+    static_assert(Inputs > 0U, "StateSpace input count must be non-zero");
+    static_assert(Outputs > 0U, "StateSpace output count must be non-zero");
+    static_assert(std::is_arithmetic_v<T>, "StateSpace works on arithmetic sample types");
+
+    using StateVec = std::array<T, States>;
+    using InputVec = std::array<T, Inputs>;
+    using OutputVec = std::array<T, Outputs>;
+    using A = std::array<std::array<T, States>, States>;
+    using B = std::array<std::array<T, Inputs>, States>;
+    using C = std::array<std::array<T, States>, Outputs>;
+    using D = std::array<std::array<T, Inputs>, Outputs>;
+
+    struct Model {
+        A a{};
+        B b{};
+        C c{};
+        D d{};
+    };
+
+    struct State {
+        StateVec x{};
+        StateVec next{};
+    };
+
+    static void clear(State& state) noexcept
+    {
+        state = {};
+    }
+
+    [[nodiscard]] ARC_HOT static OutputVec step(
+        State& state,
+        const Model& model,
+        const InputVec& input) noexcept
+    {
+        OutputVec output{};
+
+        for (std::size_t row = 0; row < Outputs; ++row) {
+            T acc{};
+            for (std::size_t col = 0; col < States; ++col) {
+                acc += model.c[row][col] * state.x[col];
+            }
+            for (std::size_t col = 0; col < Inputs; ++col) {
+                acc += model.d[row][col] * input[col];
+            }
+            output[row] = acc;
+        }
+
+        for (std::size_t row = 0; row < States; ++row) {
+            T acc{};
+            for (std::size_t col = 0; col < States; ++col) {
+                acc += model.a[row][col] * state.x[col];
+            }
+            for (std::size_t col = 0; col < Inputs; ++col) {
+                acc += model.b[row][col] * input[col];
+            }
+            state.next[row] = acc;
+        }
+
+        state.x = state.next;
+        return output;
+    }
+};
+
 }  // namespace arc::dsp

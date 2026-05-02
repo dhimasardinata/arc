@@ -1860,6 +1860,8 @@ Hot-loop math helpers for the compute plane.
 - `arc::dsp::Fir<T, N>` provides a no-heap FIR state machine with `step(...)` and `run(...)`.
 - `arc::dsp::Pid<T>` provides a no-heap PID controller with clamped integral state and derivative-on-measurement behavior to avoid derivative kick.
 - `arc::dsp::Biquad<T>` provides a direct-form IIR/FIR section with caller-provided coefficients.
+- `arc::dsp::Sos<T, N>` chains fixed second-order sections for deterministic cascaded filtering.
+- `arc::dsp::StateSpace<T, States, Inputs, Outputs>` runs fixed-size controller/plant updates with caller-owned state.
 
 Use this when Core 1 is doing signal work and you want aligned buffers plus tight, vector-friendly loops without a heavyweight DSP framework.
 

@@ -1012,6 +1012,30 @@ void test_dsp()
     const Bq::Coeffs fir2{.b0 = 1, .b1 = 1, .b2 = 0, .a1 = 0, .a2 = 0};
     expect(Bq::step(bq, fir2, 2) == 2, "DSP Biquad first sample");
     expect(Bq::step(bq, fir2, 3) == 5, "DSP Biquad history");
+
+    using Cascade = arc::dsp::Sos<int, 2>;
+    Cascade::State cascade{};
+    const Cascade::Coeffs sections{
+        Bq::Coeffs{.b0 = 1, .b1 = 1, .b2 = 0, .a1 = 0, .a2 = 0},
+        Bq::Coeffs{.b0 = 2, .b1 = 0, .b2 = 0, .a1 = 0, .a2 = 0},
+    };
+    expect(Cascade::step(cascade, sections, 4) == 8, "DSP SOS first sample");
+    expect(Cascade::step(cascade, sections, 5) == 18, "DSP SOS cascade history");
+    Cascade::clear(cascade);
+    expect(Cascade::step(cascade, sections, 1) == 2, "DSP SOS clear");
+
+    using Plant = arc::dsp::StateSpace<int, 2, 1, 1>;
+    Plant::State plant{};
+    const Plant::Model model{
+        .a = {{{1, 1}, {0, 1}}},
+        .b = {{{1}, {1}}},
+        .c = {{{1, 0}}},
+        .d = {{{0}}},
+    };
+    expect(Plant::step(plant, model, Plant::InputVec{2})[0] == 0, "DSP StateSpace first output");
+    expect((plant.x == Plant::StateVec{2, 2}), "DSP StateSpace state update");
+    expect(Plant::step(plant, model, Plant::InputVec{3})[0] == 2, "DSP StateSpace second output");
+    expect((plant.x == Plant::StateVec{7, 5}), "DSP StateSpace second update");
 }
 
 void test_log_lane()
