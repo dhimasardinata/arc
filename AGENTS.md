@@ -13,6 +13,7 @@ Arc is an ESP-IDF firmware substrate for ESP32-S3. Core library headers live in 
 - `./tools/host-bench.sh`: run host benchmarks and print compiler/host context.
 - `./tools/format.sh --check`: verify C/C++ and Python formatting.
 - `./tools/check-repo.sh`: run repository policy checks used by CI.
+- `./tools/sync-idf.sh --stash`: sync local `esp-idf/` to Arc's pinned ESP-IDF release.
 - `./tools/clangd-compile-commands.py --validate-arc-headers`: regenerate and validate `compile_commands.json` for IDEs.
 - Zed and VS Code use checked-in clangd settings; keep them portable and backed by the repo `compile_commands.json`.
 

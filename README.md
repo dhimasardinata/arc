@@ -705,9 +705,10 @@ You can put that line in `.bashrc` or `.zshrc`.
 Use this if you want the toolchain and IDF checkout pinned next to the repo.
 
 ```bash
-git clone --branch v6.0.1 --recursive https://github.com/espressif/esp-idf.git esp-idf
-./esp-idf/install.sh esp32s3
+./tools/sync-idf.sh --stash --install
 ```
+
+`sync-idf.sh` reads Arc's pinned `ARC_IDF_VERSION` and `ARC_IDF_REF` from `.github/workflows/build.yml`, stashes a dirty local `esp-idf/` only when `--stash` is passed, checks out the pinned release, and updates submodules. When Arc moves to the next ESP-IDF patch release, rerun the same command instead of hand-editing the local checkout.
 
 ## Load the environment
 

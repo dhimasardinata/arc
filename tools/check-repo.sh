@@ -107,7 +107,7 @@ if ! grep -qE '\./tools/clangd-compile-commands\.py --validate-arc-headers' .git
     die "build workflow must validate Arc header compile commands"
 fi
 
-for file in env.sh tools/host-tests.sh tools/host-bench.sh tools/framework-compare.sh tools/ensure-frameworks.sh tools/dump-source.py tools/clangd-compile-commands.py tools/format.sh tools/install-git-hooks.sh examples/*/env.sh; do
+for file in env.sh tools/host-tests.sh tools/host-bench.sh tools/framework-compare.sh tools/ensure-frameworks.sh tools/sync-idf.sh tools/dump-source.py tools/clangd-compile-commands.py tools/format.sh tools/install-git-hooks.sh examples/*/env.sh; do
     [[ -x "$file" ]] || die "$file must stay executable"
 done
 

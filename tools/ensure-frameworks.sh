@@ -28,7 +28,7 @@ clone_or_update() {
 }
 
 if [[ ! -d esp-idf/.git ]]; then
-    echo "local esp-idf/ not found; clone ESP-IDF separately or set ARC_IDF_PATH for full firmware builds" >&2
+    echo "local esp-idf/ not found; run ./tools/sync-idf.sh --install or set ARC_IDF_PATH for full firmware builds" >&2
 else
     printf 'esp-idf      %s %s\n' \
         "$(git -C esp-idf rev-parse --short HEAD)" \
