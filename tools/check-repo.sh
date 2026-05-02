@@ -53,6 +53,17 @@ if grep_files '/home/[^*]|/Users/[^*]|esp-[0-9]' "${vscode_files[@]}" >/dev/null
     die ".vscode must not hardcode user-specific clangd toolchain paths"
 fi
 
+mapfile -t zed_files < <(git_files .zed || true)
+for file in "${zed_files[@]}"; do
+    case "$file" in
+        .zed/settings.json) ;;
+        *) die ".zed must only contain portable clangd settings: $file" ;;
+    esac
+done
+if grep_files '/home/[^*]|/Users/[^*]|esp-[0-9]' "${zed_files[@]}" >/dev/null 2>&1; then
+    die ".zed must not hardcode user-specific clangd toolchain paths"
+fi
+
 mapfile -t clangd_files < <(git_files | grep -E '(^|/)\.clangd$' || true)
 for file in "${clangd_files[@]}"; do
     [[ "$file" == ".clangd" ]] || die "per-project .clangd files must stay generated/local: $file"

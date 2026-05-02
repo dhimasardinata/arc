@@ -1,0 +1,22 @@
+{
+  "languages": {
+    "C": {
+      "language_servers": ["clangd"]
+    },
+    "C++": {
+      "language_servers": ["clangd"]
+    }
+  },
+  "lsp": {
+    "clangd": {
+      "binary": {
+        "path": "clangd",
+        "arguments": [
+          "--compile-commands-dir=.",
+          "--query-driver=/home/*/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp32s3-elf-*,/Users/*/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp32s3-elf-*",
+          "--header-insertion=never"
+        ]
+      }
+    }
+  }
+}
