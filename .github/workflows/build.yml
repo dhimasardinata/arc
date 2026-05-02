@@ -8,8 +8,8 @@ jobs:
   esp32s3:
     runs-on: ubuntu-latest
     env:
-      ARC_IDF_VERSION: v6.0
-      ARC_IDF_REF: 662a3be354759d9487bf4b1a629fadb766cb1800
+      ARC_IDF_VERSION: v6.0.1
+      ARC_IDF_REF: d59a48530db46665ea70e2876738062ee0a9cdc2
       ARC_IDF_TARGET: esp32s3
       ARC_PYTHON: "3.12"
 

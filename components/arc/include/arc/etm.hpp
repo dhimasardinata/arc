@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <utility>
 
 #include "esp_err.h"
@@ -8,6 +9,16 @@
 #include "arc/result.hpp"
 
 namespace arc {
+
+template <typename T>
+concept EtmEventSource = requires(const T& value) {
+    { value.native() } -> std::same_as<esp_etm_event_handle_t>;
+};
+
+template <typename T>
+concept EtmTaskSink = requires(const T& value) {
+    { value.native() } -> std::same_as<esp_etm_task_handle_t>;
+};
 
 class EtmEvent {
 public:
@@ -232,6 +243,85 @@ public:
 
 private:
     esp_etm_channel_handle_t channel_{};
+};
+
+template <EtmEventSource Event, EtmTaskSink Task>
+class EtmRoute {
+public:
+    EtmRoute(const EtmRoute&) = delete;
+    EtmRoute& operator=(const EtmRoute&) = delete;
+
+    constexpr EtmRoute(EtmRoute&&) noexcept = default;
+    EtmRoute& operator=(EtmRoute&&) noexcept = default;
+
+    [[nodiscard]] static Result<EtmRoute> make(
+        Event event,
+        Task task,
+        const esp_etm_channel_config_t& cfg = {}) noexcept
+    {
+        if (event.native() == nullptr || task.native() == nullptr) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        auto channel = Etm::make(cfg);
+        if (!channel) {
+            return fail(channel.error());
+        }
+
+        auto err = channel->connect(event.native(), task.native());
+        if (!err) {
+            return fail(err.error());
+        }
+
+        err = channel->enable();
+        if (!err) {
+            return fail(err.error());
+        }
+
+        return EtmRoute{std::move(event), std::move(task), std::move(*channel)};
+    }
+
+    [[nodiscard]] constexpr const Event& event() const noexcept
+    {
+        return event_;
+    }
+
+    [[nodiscard]] constexpr const Task& task() const noexcept
+    {
+        return task_;
+    }
+
+    [[nodiscard]] constexpr Etm& channel() noexcept
+    {
+        return channel_;
+    }
+
+    [[nodiscard]] constexpr const Etm& channel() const noexcept
+    {
+        return channel_;
+    }
+
+    [[nodiscard]] Status disable() noexcept
+    {
+        return channel_.disable();
+    }
+
+    [[nodiscard]] Status enable() noexcept
+    {
+        return channel_.enable();
+    }
+
+private:
+    constexpr EtmRoute(Event event, Task task, Etm channel) noexcept
+        : event_(std::move(event))
+        , task_(std::move(task))
+        , channel_(std::move(channel))
+    {
+    }
+
+    Event event_;
+    Task task_;
+    Etm channel_;
 };
 
 }  // namespace arc

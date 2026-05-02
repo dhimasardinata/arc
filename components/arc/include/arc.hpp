@@ -14,6 +14,7 @@
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
 #include "arc/fence.hpp"
+#include "arc/http_server.hpp"
 #include "arc/init.hpp"
 #include "arc/mask.hpp"
 #include "arc/mqtt.hpp"

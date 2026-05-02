@@ -18,6 +18,7 @@
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
 #include "arc/file.hpp"
+#include "arc/http_server.hpp"
 #include "arc/init.hpp"
 #include "arc/coap.hpp"
 #include "arc/log.hpp"
@@ -940,6 +941,87 @@ void test_invalid_codecs()
     expect(!arc::net::Mqtt::parse(mqtt_bad_subscribe_flags), "MQTT fixed flags reject");
 }
 
+void test_http_server()
+{
+    using ConfigGet = arc::net::HttpRoute<arc::net::HttpMethod::get, "/config">;
+    using MetricsGet = arc::net::HttpRoute<arc::net::HttpMethod::get, "/metrics">;
+    static_assert(ConfigGet::id() != MetricsGet::id());
+
+    constexpr char raw[] =
+        "POST /config HTTP/1.1\r\n"
+        "Host: arc.local\r\n"
+        "Content-Length: 7\r\n"
+        "X-Mode: tight \r\n"
+        "\r\n"
+        "enabledextra";
+    std::array<arc::net::HttpHeaderView, 4> headers{};
+    const auto req = arc::net::HttpServer::parse(
+        std::span<const char>{raw, sizeof(raw) - 1U},
+        std::span(headers));
+    expect(req.has_value(), "HTTP server request parses");
+    expect(req->method == arc::net::HttpMethod::post, "HTTP method parses");
+    expect(std::memcmp(req->target.data(), "/config", req->target.size()) == 0, "HTTP target parses");
+    expect(req->headers.size() == 3U, "HTTP header count");
+    expect(req->body.size() == 7U, "HTTP body trims to content length");
+    expect(std::memcmp(req->body.data(), "enabled", req->body.size()) == 0, "HTTP body view");
+
+    const auto* const host = arc::net::HttpServer::find_header(*req, "host");
+    expect(host != nullptr && std::memcmp(host->value.data(), "arc.local", host->value.size()) == 0, "HTTP host header");
+
+    const auto* const mode = arc::net::HttpServer::find_header(*req, "x-mode");
+    expect(mode != nullptr && mode->value.size() == 5U, "HTTP header trim");
+
+    bool routed{};
+    const auto post_hit = arc::net::HttpRouter<ConfigGet, MetricsGet>::dispatch(*req, [&](auto route) {
+        routed = route.id() == ConfigGet::id();
+    });
+    expect(!post_hit && !routed, "HTTP router rejects method mismatch");
+
+    constexpr char get_raw[] = "GET /config HTTP/1.1\r\nHost: arc.local\r\n\r\n";
+    const auto get_req = arc::net::HttpServer::parse(
+        std::span<const char>{get_raw, sizeof(get_raw) - 1U},
+        std::span(headers));
+    expect(get_req.has_value(), "HTTP GET parses");
+    const auto get_hit = arc::net::HttpRouter<ConfigGet, MetricsGet>::dispatch(*get_req, [&](auto route) {
+        routed = route.id() == ConfigGet::id();
+    });
+    expect(get_hit && routed, "HTTP router matches compile-time route");
+
+    std::array<char, 128> response{};
+    constexpr char body[] = "ok";
+    const auto encoded = arc::net::HttpServer::text_response(
+        std::span(response),
+        200,
+        "OK",
+        std::span<const char>{body, sizeof(body) - 1U});
+    expect(encoded.has_value(), "HTTP response encodes");
+    expect(std::memcmp(encoded->data(), "HTTP/1.1 200 OK\r\n", 17U) == 0, "HTTP response status");
+
+    std::array<arc::net::HttpHeaderView, 1> too_few{};
+    expect(
+        !arc::net::HttpServer::parse(std::span<const char>{raw, sizeof(raw) - 1U}, std::span(too_few)),
+        "HTTP header capacity rejects");
+
+    constexpr char short_body[] = "POST /config HTTP/1.1\r\nContent-Length: 8\r\n\r\nenabled";
+    expect(
+        !arc::net::HttpServer::parse(std::span<const char>{short_body, sizeof(short_body) - 1U}, std::span(headers)),
+        "HTTP short body rejects");
+
+    constexpr char bad_header[] = "GET /config HTTP/1.1\r\nBroken\r\n\r\n";
+    expect(
+        !arc::net::HttpServer::parse(std::span<const char>{bad_header, sizeof(bad_header) - 1U}, std::span(headers)),
+        "HTTP malformed header rejects");
+
+    std::array<char, 8> small_response{};
+    expect(
+        !arc::net::HttpServer::text_response(
+            std::span(small_response),
+            200,
+            "OK",
+            std::span<const char>{body, sizeof(body) - 1U}),
+        "HTTP response buffer cap rejects");
+}
+
 void test_caps()
 {
     struct alignas(64) OverAligned {
@@ -1484,6 +1566,7 @@ int main()
     test_ws();
     test_coap();
     test_invalid_codecs();
+    test_http_server();
     test_caps();
     test_dsp();
     test_log_lane();

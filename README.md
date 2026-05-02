@@ -2,7 +2,7 @@
 
 [![build](https://github.com/dhimasardinata/arc/actions/workflows/build.yml/badge.svg)](https://github.com/dhimasardinata/arc/actions/workflows/build.yml)
 [![license: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](LICENSE)
-![ESP-IDF v6.0](https://img.shields.io/badge/ESP--IDF-v6.0-E7352C.svg)
+![ESP-IDF v6.0.1](https://img.shields.io/badge/ESP--IDF-v6.0.1-E7352C.svg)
 ![C++ gnu++26](https://img.shields.io/badge/C%2B%2B-gnu%2B%2B26-00599C.svg)
 ![target ESP32-S3](https://img.shields.io/badge/target-ESP32--S3-222222.svg)
 
@@ -14,7 +14,7 @@ Arc is not a convenience wrapper around ESP-IDF. It is a typed substrate for fir
 
 At a glance:
 
-- Target: ESP32-S3, ESP-IDF `v6.0`, C++ `gnu++26`.
+- Target: ESP32-S3, ESP-IDF `v6.0.1`, C++ `gnu++26`.
 - Runtime shape: Core 0 owns control, networking, storage, logs, and framework work; Core 1 owns deterministic compute and GPIO.
 - Allocation stance: hot paths use static storage, caller-owned spans, capability-tagged buffers, and no framework-owned protocol heap.
 - Error stance: setup can return `esp_err_t` / `arc::Result<T>`; impossible topology and hot-path contract violations fail early.
@@ -59,7 +59,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Pulse` uses MCPWM for higher-grade waveform generation than LEDC when period and edge placement matter.
 - `arc::Bridge` drives complementary MCPWM pairs with explicit dead-time and optional hardware brake input.
 - `arc::Capture` timestamps edges in hardware through the MCPWM capture block.
-- `arc::Etm` owns ESP32-S3 Event Task Matrix channels so peripheral events can trigger peripheral tasks without waking a CPU.
+- `arc::Etm` owns ESP32-S3 Event Task Matrix channels so peripheral events can trigger peripheral tasks without waking a CPU, while `arc::EtmRoute` keeps the event, task, and channel lifetime bound together.
 - `arc::AdcBus`, `arc::AdcOne`, and `arc::Scope` cover calibrated ADC oneshot reads and continuous DMA capture without mixing the ownership models.
 - `arc::Copy` offloads memory movement to the async DMA memcpy engine.
 - `arc::Dvp` captures parallel camera frames through the ESP32-S3 LCD_CAM DMA path.
@@ -120,6 +120,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Tls` gives direct ESP-TLS client sessions for secure caller-buffer transports such as MQTTS without taking over reconnect or protocol policy.
 - `arc::net::Pbuf` gives RAII ownership and direct payload spans for lwIP pbufs when a path needs packet-buffer ownership without extra copies.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP/HTTPS client sessions, with explicit HTTPS factories when secure scheme enforcement matters.
+- `arc::net::HttpServer` parses HTTP/1.x requests, trims fixed header views, emits small text responses, and routes compile-time method/path tags without allocation.
 - `arc::pack::Schema` packs and unpacks fixed binary telemetry/config records with compile-time field sizing, caller-owned buffers, and byteswap-based endian conversion.
 - `arc::net::Mqtt` gives caller-buffer MQTT 3.1.1 packet encoding, parsing, topic matching, and heapless session keepalive helpers without owning the transport lane.
 - `arc::net::Ws` gives WebSocket handshake helpers plus caller-buffer frame encode/parse without owning reconnect or task policy.
@@ -212,10 +213,10 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp`, `arc/prefetch.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy`, `arc::prefetch` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem` |
-| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/timesync.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::TimeSync` |
+| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/timesync.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::EtmRoute`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::TimeSync` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
-| Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
+| Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::HttpServer`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream` |
 | Binary records and optimizer hints | `arc/pack.hpp`, `arc/assume.hpp` | `arc::pack::Schema`, `arc::pack::Endian`, `arc::assume` |
 | Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::Xts`, `arc::Fuse`, `arc::Rng` |
@@ -436,9 +437,9 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 
 ## C++ Reality
 
-The current local Arc toolchain was checked against the installed ESP-IDF environment on this machine:
+Arc is pinned to the ESP-IDF v6.0 patch line and should be validated with the current repo pin:
 
-- ESP-IDF `v6.0-dirty`
+- ESP-IDF `v6.0.1`
 - `xtensa-esp32s3-elf-g++ 15.2.0`
 - Espressif toolchain `esp-15.2.0_20251204`
 - `__cplusplus == 202400L`
@@ -687,7 +688,7 @@ This is the better default if you work on more than one ESP-IDF repo.
 ```bash
 mkdir -p ~/esp
 cd ~/esp
-git clone --branch v6.0 --recursive https://github.com/espressif/esp-idf.git
+git clone --branch v6.0.1 --recursive https://github.com/espressif/esp-idf.git
 ./esp-idf/install.sh esp32s3
 ```
 
@@ -704,7 +705,7 @@ You can put that line in `.bashrc` or `.zshrc`.
 Use this if you want the toolchain and IDF checkout pinned next to the repo.
 
 ```bash
-git clone --branch v6.0 --recursive https://github.com/espressif/esp-idf.git esp-idf
+git clone --branch v6.0.1 --recursive https://github.com/espressif/esp-idf.git esp-idf
 ./esp-idf/install.sh esp32s3
 ```
 
@@ -1538,7 +1539,7 @@ RAII owner for the ESP32-S3 native USB OTG PHY.
 - `status(target)` reads whether a PHY target is free or in use.
 - `off()` releases the PHY, and the destructor does the same for move-owned handles.
 
-Use this as the low-level USB OTG lane owner before a host/device stack takes over the DWC core. ESP-IDF v6.0 in this repo does not ship a TinyUSB component, so Arc exposes the real PHY boundary instead of inventing a partial HID/MSC wrapper.
+Use this as the low-level USB OTG lane owner before a host/device stack takes over the DWC core. ESP-IDF v6.0.1 in this repo does not ship a TinyUSB component, so Arc exposes the real PHY boundary instead of inventing a partial HID/MSC wrapper.
 
 ### `arc::Sd<Clk = 14, Cmd = 15, D0 = 2, D1 = 4, D2 = 12, D3 = 13, ...>`
 
@@ -1715,6 +1716,17 @@ Compile-time GPTimer wrapper for a hardware timebase.
 - `IRAM_ATTR static bool alarm(const gptimer_alarm_event_data_t&) noexcept`
 
 Use this when you want a real hardware timebase or periodic alarm instead of a busy loop.
+
+### `arc::Etm` and `arc::EtmRoute`
+
+RAII ownership for ESP32-S3 Event Task Matrix event, task, and channel handles.
+
+- `Etm::make(cfg)` allocates one ETM channel.
+- `connect(event, task)`, `enable()`, `disable()`, and `disconnect()` expose the native channel lifecycle without hiding ESP-IDF errors.
+- `EtmEvent` and `EtmTask` own native event/task handles and delete them on scope exit.
+- `EtmRoute<Event, Task>::make(event, task, cfg)` binds movable event/task owners to an enabled channel, keeping the zero-CPU peripheral route alive as one object.
+
+Use this when GPIO, timer, ADC, MCPWM, or other ETM-capable peripherals should trigger each other without an ISR, queue, or Core 1 polling loop.
 
 ### `arc::Sleep`
 
@@ -2135,6 +2147,18 @@ RAII wrapper for ESP-IDF HTTP client sessions.
 - `status()`, `length()`, and `native()` expose response metadata and the raw handle.
 
 Use this for Core 0 REST/config exchanges where HTTP or HTTPS should stay outside the realtime plane. Use `arc::net::Tls` directly when you need a secure raw stream rather than HTTP semantics.
+
+### `arc::net::HttpServer`
+
+Zero-allocation HTTP/1.x request parser and compile-time route matcher for small local config, health, and metrics endpoints.
+
+- `parse(bytes, header_scratch)` returns an `HttpRequestView` whose method, target, headers, and body point into caller-owned receive storage.
+- `find_header(req, "content-length")` performs ASCII case-insensitive header lookup without copying keys.
+- `HttpRoute<HttpMethod::get, "/metrics">` creates a compile-time method/path tag with a stable route ID.
+- `HttpRouter<Routes...>::dispatch(req, fn)` calls `fn(route_tag)` for the first matching route.
+- `text_response(out, 200, "OK", body)` emits a compact close-delimited text response into caller-owned storage.
+
+Use this behind `arc::net::Tcp`, `arc::net::Tls`, or a custom socket accept loop when a device needs a local REST or Prometheus-style surface without importing a task-owning web framework.
 
 ### `arc::net::Mqtt`
 
