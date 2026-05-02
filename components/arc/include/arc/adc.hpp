@@ -121,9 +121,7 @@ struct AdcBus {
     }
 
 private:
-    using Resource = Claim<ClaimKind::adc_bus,
-                           static_cast<int>(Unit),
-                           claim_token<Unit, Clock, Ulp>()>;
+    using Resource = ClaimFor<ClaimKind::adc_bus, static_cast<int>(Unit), Unit, Clock, Ulp>;
 
     struct State {
         adc_oneshot_unit_handle_t handle;
@@ -255,9 +253,13 @@ struct AdcOne {
     }
 
 private:
-    using Resource = Claim<ClaimKind::adc_dev,
-                           (static_cast<int>(Bus::unit()) * SOC_GPIO_PIN_COUNT) + Pad::io(),
-                           claim_token<Bus::unit(), Pad::io(), Pad::atten(), Pad::width(), Cali>()>;
+    using Resource = ClaimFor<ClaimKind::adc_dev,
+                              (static_cast<int>(Bus::unit()) * SOC_GPIO_PIN_COUNT) + Pad::io(),
+                              Bus::unit(),
+                              Pad::io(),
+                              Pad::atten(),
+                              Pad::width(),
+                              Cali>;
 
     struct State {
         adc_channel_t channel{};

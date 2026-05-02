@@ -9,6 +9,21 @@ IRAM_ATTR [[gnu::always_inline]] inline void compiler_fence() noexcept
     __asm__ __volatile__("" ::: "memory");
 }
 
+IRAM_ATTR [[gnu::always_inline]] inline void acquire_fence() noexcept
+{
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
+}
+
+IRAM_ATTR [[gnu::always_inline]] inline void release_fence() noexcept
+{
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+}
+
+IRAM_ATTR [[gnu::always_inline]] inline void acq_rel_fence() noexcept
+{
+    __atomic_thread_fence(__ATOMIC_ACQ_REL);
+}
+
 IRAM_ATTR [[gnu::always_inline]] inline void fence() noexcept
 {
 #if defined(__XTENSA__) || defined(__xtensa__)

@@ -132,9 +132,17 @@ struct I2cBus {
     }
 
 private:
-    using Resource = Claim<ClaimKind::i2c_bus,
-                           Port,
-                           claim_token<Port, Sda, Scl, Pullup, Glitch, Clock, Intr, Queue, AdoptExisting>()>;
+    using Resource = ClaimFor<ClaimKind::i2c_bus,
+                              Port,
+                              Port,
+                              Sda,
+                              Scl,
+                              Pullup,
+                              Glitch,
+                              Clock,
+                              Intr,
+                              Queue,
+                              AdoptExisting>;
 
     struct State {
         i2c_master_bus_handle_t bus;
@@ -311,9 +319,14 @@ struct I2c {
     }
 
 private:
-    using Resource = Claim<ClaimKind::i2c_dev,
-                           (Bus::port() * 1024) + static_cast<int>(Addr),
-                           claim_token<Bus::port(), Addr, Hz, AddrLen, SclWaitUs, AckCheck>()>;
+    using Resource = ClaimFor<ClaimKind::i2c_dev,
+                              (Bus::port() * 1024) + static_cast<int>(Addr),
+                              Bus::port(),
+                              Addr,
+                              Hz,
+                              AddrLen,
+                              SclWaitUs,
+                              AckCheck>;
 
     struct State {
         i2c_master_dev_handle_t dev;

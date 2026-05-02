@@ -12,6 +12,8 @@ struct Time {
 
     using Tick = std::uint64_t;
 
+    // esp_timer_get_time() is wall-clock safe but not a hot-loop primitive; use Clock::tick()
+    // for cycle-budgeted Core 1 paths.
     [[nodiscard]] static Tick us() noexcept
     {
         return static_cast<Tick>(esp_timer_get_time());

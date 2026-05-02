@@ -431,21 +431,21 @@ struct SpiSlave {
     }
 
 private:
-    using Resource = Claim<ClaimKind::spi_bus,
-                           static_cast<int>(Host),
-                           claim_token<Host,
-                                       Sclk,
-                                       Mosi,
-                                       Miso,
-                                       Cs,
-                                       Queue,
-                                       Mode,
-                                       MaxBytes,
-                                       Dma,
-                                       BusFlags,
-                                       SlaveFlags,
-                                       IsrCpu,
-                                       IntrFlags>()>;
+    using Resource = ClaimFor<ClaimKind::spi_bus,
+                              static_cast<int>(Host),
+                              Host,
+                              Sclk,
+                              Mosi,
+                              Miso,
+                              Cs,
+                              Queue,
+                              Mode,
+                              MaxBytes,
+                              Dma,
+                              BusFlags,
+                              SlaveFlags,
+                              IsrCpu,
+                              IntrFlags>;
 
     struct State {
         bool enabled;

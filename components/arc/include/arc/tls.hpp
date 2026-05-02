@@ -83,6 +83,19 @@ struct Tls {
         return Tls{handle};
     }
 
+    template <std::size_t N>
+    [[nodiscard]] static Result<Tls> dial_ca(
+        const char* const host,
+        const std::uint16_t port,
+        const char (&cacert_pem)[N]) noexcept
+    {
+        static_assert(N > 1U, "TLS CA PEM must not be empty");
+        esp_tls_cfg_t cfg{};
+        cfg.cacert_buf = reinterpret_cast<const unsigned char*>(cacert_pem);
+        cfg.cacert_bytes = N;
+        return dial(host, port, cfg);
+    }
+
     [[nodiscard]] Result<std::size_t> send(const void* const data, const std::size_t bytes) noexcept
     {
         if (handle_ == nullptr || data == nullptr) {

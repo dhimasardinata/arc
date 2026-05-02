@@ -264,9 +264,16 @@ struct TouchBus {
     }
 
 private:
-    using Resource = Claim<ClaimKind::touch_bus,
-                           0,
-                           claim_token<PowerOnWaitUs, MeasIntervalUs, MaxMeasTimeUs, ChargeTimes, VoltLow, VoltHigh, Idle, Bias>()>;
+    using Resource = ClaimFor<ClaimKind::touch_bus,
+                              0,
+                              PowerOnWaitUs,
+                              MeasIntervalUs,
+                              MaxMeasTimeUs,
+                              ChargeTimes,
+                              VoltLow,
+                              VoltHigh,
+                              Idle,
+                              Bias>;
 
     struct State {
         touch_sensor_handle_t handle;
@@ -511,9 +518,7 @@ private:
         return read_err;
     }
 
-    using Resource = Claim<ClaimKind::touch_chan,
-                           Io,
-                           claim_token<Io, Active, Speed, InitVolt>()>;
+    using Resource = ClaimFor<ClaimKind::touch_chan, Io, Io, Active, Speed, InitVolt>;
 
     struct State {
         touch_channel_handle_t handle;

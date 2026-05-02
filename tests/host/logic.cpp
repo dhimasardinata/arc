@@ -48,6 +48,7 @@ static_assert(arc::rtos::ticks_ms(2U) == 2U);
 static_assert(arc::rtos::ticks(std::chrono::microseconds{1500}) == 2U);
 static_assert(sizeof(decltype(arc::claim_token<1, 2, 3>())) == sizeof(std::uint64_t));
 static_assert(arc::claim_token<1, 2, 3>() != arc::claim_token<1, 2, 4>());
+static_assert(arc::claim_proof<1, 2, 3>() != arc::claim_proof<1, 2, 4>());
 static_assert(arc::Result<int>{2}.and_then([](int value) { return arc::Result<int>{value + 1}; }).value() == 3);
 static_assert(arc::status_code(arc::ok()) == ESP_OK);
 
@@ -1040,15 +1041,17 @@ void test_seqreg()
 
 void test_claim()
 {
-    using Owner = arc::Claim<arc::ClaimKind::uart, 91, arc::claim_token<1, 2, 3>()>;
-    using Same = arc::Claim<arc::ClaimKind::uart, 91, arc::claim_token<1, 2, 3>()>;
-    using Other = arc::Claim<arc::ClaimKind::uart, 91, arc::claim_token<1, 2, 4>()>;
+    using Owner = arc::ClaimFor<arc::ClaimKind::uart, 91, 1, 2, 3>;
+    using Same = arc::ClaimFor<arc::ClaimKind::uart, 91, 1, 2, 3>;
+    using Other = arc::ClaimFor<arc::ClaimKind::uart, 91, 1, 2, 4>;
+    using TokenCollision = arc::Claim<arc::ClaimKind::uart, 91, arc::claim_token<1, 2, 3>(), arc::claim_proof<9, 9, 9>()>;
 
     Owner::drop();
     Other::drop();
     expect(Owner::take() == ESP_OK, "Claim first owner succeeds");
     expect(Same::take() == ESP_OK, "Claim identical owner shares");
     expect(Other::take() == ESP_ERR_INVALID_STATE, "Claim different token rejects");
+    expect(TokenCollision::take() == ESP_ERR_INVALID_STATE, "Claim token collision rejects");
     expect(Owner::held(), "Claim owner held");
     Owner::drop();
     expect(!Owner::held(), "Claim owner drops");

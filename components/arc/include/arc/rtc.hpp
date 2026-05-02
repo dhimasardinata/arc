@@ -142,7 +142,7 @@ template <int Pin>
 struct RtcPin {
     static_assert(Pin >= 0 && Pin < SOC_GPIO_PIN_COUNT, "invalid RTC GPIO pin number");
 
-    using Resource = Claim<ClaimKind::rtc_gpio, Pin, claim_token<Pin>()>;
+    using Resource = ClaimFor<ClaimKind::rtc_gpio, Pin, Pin>;
 
     [[nodiscard]] static constexpr gpio_num_t io() noexcept
     {

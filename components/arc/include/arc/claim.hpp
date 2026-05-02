@@ -28,6 +28,16 @@ enum class ClaimKind : std::uint32_t {
     return (seed ^ value) * 1'099'511'628'211ULL;
 }
 
+[[nodiscard]] consteval std::uint64_t claim_proof_mix(
+    const std::uint64_t seed,
+    const std::uint64_t value) noexcept
+{
+    auto out = seed + value + 0x9e37'79b9'7f4a'7c15ULL;
+    out = (out ^ (out >> 30U)) * 0xbf58'476d'1ce4'e5b9ULL;
+    out = (out ^ (out >> 27U)) * 0x94d0'49bb'1331'11ebULL;
+    return out ^ (out >> 31U);
+}
+
 template <auto... Values>
 [[nodiscard]] consteval std::uint64_t claim_token() noexcept
 {
@@ -36,10 +46,19 @@ template <auto... Values>
     return out == 0ULL ? 1ULL : out;
 }
 
+template <auto... Values>
+[[nodiscard]] consteval std::uint64_t claim_proof() noexcept
+{
+    std::uint64_t out = 7'649'843'219'613'412'809ULL;
+    ((out = claim_proof_mix(out, static_cast<std::uint64_t>(Values))), ...);
+    return out == 0ULL ? 1ULL : out;
+}
+
 template <ClaimKind Kind, int Index>
 struct ClaimSlot {
     alignas(4) constinit static inline std::uint32_t gate{};
     alignas(8) constinit static inline std::uint64_t token{};
+    alignas(8) constinit static inline std::uint64_t proof{};
 };
 
 namespace detail {
@@ -68,32 +87,39 @@ IRAM_ATTR [[gnu::always_inline]] inline void claim_unlock(std::uint32_t& gate) n
 
 }  // namespace detail
 
-template <ClaimKind Kind, int Index, std::uint64_t Token>
+template <ClaimKind Kind, int Index, std::uint64_t Token, std::uint64_t Proof = claim_proof<Kind, Index, Token>()>
 struct Claim {
     static_assert(Token != 0ULL, "Arc claim token must be non-zero");
+    static_assert(Proof != 0ULL, "Arc claim proof must be non-zero");
+    static_assert(Index >= 0, "Arc claim index must be non-negative");
 
     [[nodiscard]] static esp_err_t take() noexcept
     {
         auto& gate = ClaimSlot<Kind, Index>::gate;
         auto& token = ClaimSlot<Kind, Index>::token;
+        auto& proof = ClaimSlot<Kind, Index>::proof;
         detail::claim_lock(gate);
         const auto current = token;
         if (current == 0ULL) {
             token = Token;
+            proof = Proof;
             detail::claim_unlock(gate);
             return ESP_OK;
         }
+        const auto current_proof = proof;
         detail::claim_unlock(gate);
-        return current == Token ? ESP_OK : ESP_ERR_INVALID_STATE;
+        return current == Token && current_proof == Proof ? ESP_OK : ESP_ERR_INVALID_STATE;
     }
 
     static void drop() noexcept
     {
         auto& gate = ClaimSlot<Kind, Index>::gate;
         auto& token = ClaimSlot<Kind, Index>::token;
+        auto& proof = ClaimSlot<Kind, Index>::proof;
         detail::claim_lock(gate);
-        if (token == Token) {
+        if (token == Token && proof == Proof) {
             token = 0ULL;
+            proof = 0ULL;
         }
         detail::claim_unlock(gate);
     }
@@ -102,11 +128,15 @@ struct Claim {
     {
         auto& gate = ClaimSlot<Kind, Index>::gate;
         auto& token = ClaimSlot<Kind, Index>::token;
+        auto& proof = ClaimSlot<Kind, Index>::proof;
         detail::claim_lock(gate);
-        const auto ok = token == Token;
+        const auto ok = token == Token && proof == Proof;
         detail::claim_unlock(gate);
         return ok;
     }
 };
+
+template <ClaimKind Kind, int Index, auto... Values>
+using ClaimFor = Claim<Kind, Index, claim_token<Values...>(), claim_proof<Kind, Index, Values...>()>;
 
 }  // namespace arc

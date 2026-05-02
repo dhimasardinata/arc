@@ -296,9 +296,24 @@ struct Uart {
     }
 
 private:
-    using Resource = Claim<ClaimKind::uart,
-                           static_cast<int>(Port),
-                           claim_token<Port, Tx, Rx, Rts, Cts, Baud, RxBuf, TxBuf, Queue, Intr, Bits, Parity, Stop, Flow, Clock, AdoptExisting>()>;
+    using Resource = ClaimFor<ClaimKind::uart,
+                              static_cast<int>(Port),
+                              Port,
+                              Tx,
+                              Rx,
+                              Rts,
+                              Cts,
+                              Baud,
+                              RxBuf,
+                              TxBuf,
+                              Queue,
+                              Intr,
+                              Bits,
+                              Parity,
+                              Stop,
+                              Flow,
+                              Clock,
+                              AdoptExisting>;
 
     struct State {
         std::uint32_t init;

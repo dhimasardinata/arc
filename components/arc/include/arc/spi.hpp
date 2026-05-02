@@ -164,24 +164,24 @@ struct SpiBus {
     }
 
 private:
-    using Resource = Claim<ClaimKind::spi_bus,
-                           static_cast<int>(Host),
-                           claim_token<Host,
-                                       Sclk,
-                                       Mosi,
-                                       Miso,
-                                       MaxBytes,
-                                       Dma,
-                                       Flags,
-                                       IsrCpu,
-                                       IntrFlags,
-                                       QuadWp,
-                                       QuadHd,
-                                       Data4,
-                                       Data5,
-                                       Data6,
-                                       Data7,
-                                       DataDefault>()>;
+    using Resource = ClaimFor<ClaimKind::spi_bus,
+                              static_cast<int>(Host),
+                              Host,
+                              Sclk,
+                              Mosi,
+                              Miso,
+                              MaxBytes,
+                              Dma,
+                              Flags,
+                              IsrCpu,
+                              IntrFlags,
+                              QuadWp,
+                              QuadHd,
+                              Data4,
+                              Data5,
+                              Data6,
+                              Data7,
+                              DataDefault>;
 
     struct State {
         std::uint32_t init;
@@ -648,9 +648,17 @@ struct Spi {
     }
 
 private:
-    using Resource = Claim<ClaimKind::spi_dev,
-                           (static_cast<int>(Bus::host()) * (SOC_GPIO_PIN_COUNT + 1)) + Cs + 1,
-                           claim_token<Bus::host(), Cs, Hz, Mode, Queue, Flags, Clock, DutyCyclePos, InputDelayNs>()>;
+    using Resource = ClaimFor<ClaimKind::spi_dev,
+                              (static_cast<int>(Bus::host()) * (SOC_GPIO_PIN_COUNT + 1)) + Cs + 1,
+                              Bus::host(),
+                              Cs,
+                              Hz,
+                              Mode,
+                              Queue,
+                              Flags,
+                              Clock,
+                              DutyCyclePos,
+                              InputDelayNs>;
 
     struct State {
         spi_device_handle_t dev;

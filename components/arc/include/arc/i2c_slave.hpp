@@ -250,20 +250,20 @@ struct I2cSlave {
     }
 
 private:
-    using Resource = Claim<ClaimKind::i2c_bus,
-                           Port,
-                           claim_token<Port,
-                                       Sda,
-                                       Scl,
-                                       Addr,
-                                       TxBytes,
-                                       RxBytes,
-                                       Pullup,
-                                       AddrLen,
-                                       Clock,
-                                       Intr,
-                                       AllowPd,
-                                       Broadcast>()>;
+    using Resource = ClaimFor<ClaimKind::i2c_bus,
+                              Port,
+                              Port,
+                              Sda,
+                              Scl,
+                              Addr,
+                              TxBytes,
+                              RxBytes,
+                              Pullup,
+                              AddrLen,
+                              Clock,
+                              Intr,
+                              AllowPd,
+                              Broadcast>;
 
     struct State {
         Handle dev;

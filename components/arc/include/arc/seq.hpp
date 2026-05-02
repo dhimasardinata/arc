@@ -29,6 +29,7 @@ template <typename T>
 struct alignas(cache_line) SeqReg {
     static_assert(sizeof(T) > sizeof(std::uint32_t), "prefer arc::Reg<T> for one-word payloads");
     static_assert(std::is_trivially_copyable_v<T>, "seq payload must be trivially copyable");
+    static_assert(std::is_default_constructible_v<T>, "seq payload must be default constructible");
 
     void write(const T& value) noexcept
     {
@@ -42,9 +43,9 @@ struct alignas(cache_line) SeqReg {
         const auto next = seq + 2U;
         const auto slot = index(next);
         __atomic_store_n(&seq_, seq + 1U, __ATOMIC_RELEASE);
-        compiler_fence();
+        acq_rel_fence();
         __builtin_memcpy(&slots_[slot], &value, sizeof(T));
-        compiler_fence();
+        release_fence();
         __atomic_store_n(&seq_, next, __ATOMIC_RELEASE);
     }
 
