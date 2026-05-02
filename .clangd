@@ -1,18 +1,20 @@
 # clangd should read ESP-IDF's generated compile commands. Optional Arc
 # features stay owned by CMake deps, not ad hoc include paths here.
 CompileFlags:
-  CompilationDatabase: .
-  Remove:
-    - -mlongcalls
-    - -mdisable-hardware-atomics
-    - -fstrict-volatile-bitfields
-    - -fno-tree-switch-conversion
-    - -mtext-section-literals
-  Add:
-    - -nostdlibinc
+    CompilationDatabase: .
+    Remove:
+        - -mlongcalls
+        - -mdisable-hardware-atomics
+        - -fstrict-volatile-bitfields
+        - -fno-tree-switch-conversion
+        - -mtext-section-literals
+    Add:
+        - -nostdlibinc
+        - -D__XTENSA__
 Diagnostics:
-  Suppress:
-    - attribute_not_type_attr
-    - attributes_not_allowed
-    - unused-includes
-    - expr_not_cce
+    Suppress:
+        - attribute_not_type_attr
+        - attributes_not_allowed
+        - unused-includes
+        - expr_not_cce
+        - redefinition_different_typedef

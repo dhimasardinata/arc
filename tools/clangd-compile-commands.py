@@ -22,6 +22,8 @@ INCLUDE_RE = re.compile(r"^\s*#\s*include\s*([<\"])([^>\"]+)[>\"]")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 INCLUDE_FLAGS = {"-I", "-isystem", "-iquote", "-idirafter"}
 INCLUDE_PREFIX_FLAGS = tuple(sorted(INCLUDE_FLAGS, key=len, reverse=True))
+SYSTEM_INCLUDE_MARKER = "#include <...> search starts here:"
+INCLUDE_END_MARKER = "End of search list."
 PUBLIC_REQ_KEYS = ("reqs", "managed_reqs")
 CMAKE_COMPONENT_KEYS = {
     "SRCS",
@@ -130,6 +132,133 @@ def entry_args(entry: dict[str, Any]) -> list[str]:
         return shlex.split(command)
 
     return []
+
+
+def compiler_probe_args(args: list[str]) -> tuple[str, ...]:
+    if not args:
+        return ()
+
+    probe = [args[0]]
+    has_specs = False
+    index = 1
+    while index < len(args):
+        arg = args[index]
+        if arg in {
+            "--target",
+            "-target",
+            "-mcpu",
+            "-march",
+            "-mabi",
+            "-mfloat-abi",
+            "-mfpu",
+            "-isysroot",
+            "--sysroot",
+            "-specs",
+        }:
+            if index + 1 < len(args):
+                probe.extend((arg, args[index + 1]))
+                has_specs = has_specs or arg == "-specs"
+                index += 2
+                continue
+        elif arg.startswith(
+            ("--target=", "-mcpu=", "-march=", "-mabi=", "-mfloat-abi=", "-mfpu=", "--sysroot=", "-specs=")
+        ):
+            probe.append(arg)
+            has_specs = has_specs or arg.startswith("-specs=")
+        elif arg.startswith("-m") and not arg.startswith(("-mllvm", "-MF", "-MT", "-MQ")):
+            probe.append(arg)
+        index += 1
+
+    if not has_specs and (Path(args[0]).resolve().parents[1] / "xtensa-esp-elf" / "lib" / "picolibc.specs").is_file():
+        probe.append("-specs=picolibc.specs")
+
+    return tuple(probe)
+
+
+def compiler_builtin_include_dirs(args: list[str], cache: dict[tuple[str, ...], tuple[Path, ...]]) -> tuple[Path, ...]:
+    probe = compiler_probe_args(args)
+    if not probe:
+        return ()
+
+    cached = cache.get(probe)
+    if cached is not None:
+        return cached
+
+    try:
+        proc = subprocess.run(
+            [*probe, "-E", "-x", "c++", "-", "-v"],
+            input="",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    except (FileNotFoundError, PermissionError):
+        cache[probe] = ()
+        return ()
+
+    includes: list[Path] = []
+    capture = False
+    for raw_line in proc.stderr.splitlines():
+        line = raw_line.strip()
+        if line == SYSTEM_INCLUDE_MARKER:
+            capture = True
+            continue
+        if line == INCLUDE_END_MARKER:
+            break
+        if capture and line and not line.startswith("(framework directory)"):
+            path = Path(line).expanduser().resolve()
+            if path.is_dir():
+                includes.append(path)
+
+    resolved = tuple(dict.fromkeys(includes))
+    cache[probe] = resolved
+    return resolved
+
+
+def raw_include_values(args: list[str]) -> set[str]:
+    values: set[str] = set()
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in INCLUDE_FLAGS and index + 1 < len(args):
+            values.add(args[index + 1])
+            index += 2
+            continue
+        for flag in INCLUDE_PREFIX_FLAGS:
+            if arg.startswith(flag) and len(arg) > len(flag):
+                values.add(arg[len(flag) :])
+                break
+        index += 1
+    return values
+
+
+def add_builtin_include_dirs(
+    entry: dict[str, Any],
+    cache: dict[tuple[str, ...], tuple[Path, ...]],
+) -> dict[str, Any]:
+    args = entry_args(entry)
+    if not args:
+        return entry
+
+    existing = raw_include_values(args)
+    builtin_dirs = tuple(path for path in compiler_builtin_include_dirs(args, cache) if str(path) not in existing)
+    if not builtin_dirs:
+        return entry
+
+    clone = dict(entry)
+    enriched = [args[0], *(arg for path in builtin_dirs for arg in ("-isystem", str(path))), *args[1:]]
+    if "arguments" in clone:
+        clone["arguments"] = enriched
+        clone.pop("command", None)
+    else:
+        clone["command"] = shlex.join(enriched)
+    return clone
+
+
+def add_builtin_includes(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    cache: dict[tuple[str, ...], tuple[Path, ...]] = {}
+    return [add_builtin_include_dirs(command, cache) for command in commands]
 
 
 def entry_directory(entry: dict[str, Any]) -> Path:
@@ -563,7 +692,7 @@ def component_public_dirs(
 
 
 def missing_include_dirs(
-    includes: list[str],
+    includes: tuple[str, ...],
     dirs: tuple[Path, ...],
     components: dict[str, dict[str, Any]],
     cache: dict[tuple[Path, str], bool],
@@ -825,6 +954,7 @@ def main() -> int:
     except ValueError as err:
         print(err, file=sys.stderr)
         return 1
+    commands = add_builtin_includes(commands)
 
     header_commands: list[dict[str, Any]] = []
     header_failures: list[str] = []
