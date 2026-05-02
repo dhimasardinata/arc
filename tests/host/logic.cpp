@@ -20,6 +20,7 @@
 #include "arc/file.hpp"
 #include "arc/init.hpp"
 #include "arc/coap.hpp"
+#include "arc/log.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/rtos.hpp"
@@ -988,6 +989,48 @@ void test_dsp()
     expect((filtered == std::array<int, 4>{1, 4, 10, 16}), "DSP FIR");
     Filter::clear(state);
     expect(Filter::step(state, taps, 5) == 5, "DSP FIR clear");
+
+    using Pid = arc::dsp::Pid<float>;
+    Pid::State pid{};
+    const auto effort = Pid::step(
+        pid,
+        {.kp = 2.0F, .ki = 1.0F, .kd = 0.5F},
+        {.out_min = -10.0F, .out_max = 10.0F, .i_min = -2.0F, .i_max = 2.0F},
+        3.0F,
+        1.0F,
+        0.5F);
+    expect(effort == 5.0F, "DSP PID step");
+    expect(pid.integral == 1.0F, "DSP PID integral");
+
+    using Bq = arc::dsp::Biquad<int>;
+    Bq::State bq{};
+    const Bq::Coeffs pass{.b0 = 1, .b1 = 0, .b2 = 0, .a1 = 0, .a2 = 0};
+    expect(Bq::step(bq, pass, 7) == 7, "DSP Biquad passthrough");
+    Bq::clear(bq);
+    const Bq::Coeffs fir2{.b0 = 1, .b1 = 1, .b2 = 0, .a1 = 0, .a2 = 0};
+    expect(Bq::step(bq, fir2, 2) == 2, "DSP Biquad first sample");
+    expect(Bq::step(bq, fir2, 3) == 5, "DSP Biquad history");
+}
+
+void test_log_lane()
+{
+    static_assert(arc::log_id("core1.overrun") != arc::log_id("core1.watchdog"));
+    arc::LogLane<4> lane;
+    constexpr auto event = arc::log_id("core1.overrun");
+
+    expect(lane.push(event, 7U, 9U), "LogLane push first");
+    expect(lane.push(event, 8U, 10U), "LogLane push second");
+    expect(lane.push(event, 9U, 11U), "LogLane push third");
+    expect(!lane.push(event, 10U, 12U), "LogLane reports full");
+    expect(lane.dropped() == 1U, "LogLane dropped count");
+
+    std::uint32_t payload_sum{};
+    const auto drained = lane.drain([&](const arc::LogEvent& item) {
+        expect(item.id == event, "LogLane id");
+        payload_sum += item.payload;
+    });
+    expect(drained == 3U, "LogLane drain count");
+    expect(payload_sum == 24U, "LogLane payloads");
 }
 
 void test_seqreg()
@@ -1307,6 +1350,7 @@ int main()
     test_invalid_codecs();
     test_caps();
     test_dsp();
+    test_log_lane();
     test_seqreg();
     test_claim();
     test_file();

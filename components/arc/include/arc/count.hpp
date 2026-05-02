@@ -132,4 +132,69 @@ private:
     }
 };
 
+template <int PhaseA,
+          int PhaseB,
+          int Low = -32768,
+          int High = 32767,
+          std::uint32_t FilterNs = 0,
+          bool Accum = true,
+          pcnt_clock_source_t Source = PCNT_CLK_SRC_DEFAULT>
+using Quadrature = Count<PhaseA,
+                         PhaseB,
+                         -1,
+                         Low,
+                         High,
+                         PCNT_CHANNEL_EDGE_ACTION_INCREASE,
+                         PCNT_CHANNEL_EDGE_ACTION_DECREASE,
+                         PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+                         PCNT_CHANNEL_LEVEL_ACTION_INVERSE,
+                         FilterNs,
+                         Accum,
+                         Source>;
+
+struct EncoderDelta {
+    int position{};
+    int delta{};
+    std::uint64_t dt_us{};
+};
+
+template <typename Counter>
+struct Encoder {
+    static void start()
+    {
+        Counter::start();
+    }
+
+    static void stop()
+    {
+        Counter::stop();
+    }
+
+    static void clear()
+    {
+        Counter::clear();
+        previous_ = 0;
+    }
+
+    [[nodiscard]] static int position()
+    {
+        return Counter::read();
+    }
+
+    [[nodiscard]] static EncoderDelta sample(const std::uint64_t dt_us)
+    {
+        const auto now = Counter::read();
+        const auto delta = now - previous_;
+        previous_ = now;
+        return {
+            .position = now,
+            .delta = delta,
+            .dt_us = dt_us,
+        };
+    }
+
+private:
+    constinit static inline int previous_{};
+};
+
 }  // namespace arc

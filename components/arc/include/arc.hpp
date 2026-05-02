@@ -207,6 +207,10 @@
 #include "arc/time.hpp"
 #endif
 
+#if __has_include("esp_cpu.h")
+#include "arc/log.hpp"
+#endif
+
 #if __has_include("driver/touch_sens.h") && __has_include("soc/touch_sensor_channel.h")
 #include "arc/touch.hpp"
 #endif
@@ -214,6 +218,10 @@
 #if __has_include("lwip/netdb.h") && __has_include("lwip/sockets.h")
 #include "arc/poll.hpp"
 #include "arc/tcp.hpp"
+#endif
+
+#if __has_include("lwip/pbuf.h")
+#include "arc/pbuf.hpp"
 #endif
 
 #if __has_include("esp_tls.h")
