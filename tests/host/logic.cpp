@@ -24,6 +24,7 @@
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/pack.hpp"
+#include "arc/probe.hpp"
 #include "arc/rtos.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
@@ -1061,6 +1062,25 @@ void test_pack()
            "Pack little endian");
 }
 
+void test_probe_stats()
+{
+    arc::CycleStats cycles{};
+    cycles.add(10U);
+    cycles.add(30U);
+    expect(cycles.min == 10U && cycles.max == 30U && cycles.avg() == 20U, "CycleStats aggregate");
+    cycles.clear();
+    expect(cycles.samples == 0U && cycles.max == 0U, "CycleStats clear");
+
+    arc::JitterStats jitter{};
+    jitter.add(-5);
+    jitter.add(7);
+    jitter.add(1);
+    expect(jitter.min == -5 && jitter.max == 7, "JitterStats min/max");
+    expect(jitter.avg_abs() == 4U && jitter.max_abs() == 7U, "JitterStats abs");
+    jitter.clear();
+    expect(jitter.samples == 0U && jitter.avg_abs() == 0U, "JitterStats clear");
+}
+
 void test_seqreg()
 {
     struct Snapshot {
@@ -1380,6 +1400,7 @@ int main()
     test_dsp();
     test_log_lane();
     test_pack();
+    test_probe_stats();
     test_seqreg();
     test_claim();
     test_file();

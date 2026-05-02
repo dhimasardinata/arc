@@ -14,6 +14,10 @@ It measures runtime on the target using the Xtensa cycle counter and prints cycl
   - Core 1 style telemetry batches handed to a Core 0 consumer through `Spsc`
   - a control-loop tick with DSP math, `SeqReg` latest-state publication, and `Fanin` events
   - a telemetry protocol bundle covering MQTT, CoAP, WebSocket, and `frame16` emission
+- no-fixture realtime control probes:
+  - control body latency for a DSP/FIR tick
+  - `Spsc`, `SeqReg`, and `LogLane` handoff latency
+  - 1 kHz period jitter measured against the Xtensa cycle counter
 - DSP dot/scale/mac/FIR/peak kernels
 - standard `memcpy` and Arc async-DMA copy on the same 256-byte payload
 - hardware RNG
@@ -29,7 +33,7 @@ The firmware now also compares Arc against other framework surfaces on the same 
 - raw ESP-IDF silicon APIs for RNG, PSA SHA-256, `esp_aes_*`, `esp_aes_gcm_*`, and async memcpy
 - Arduino-ESP32 core paths for `Print::write`, manual `frame16` emission, integer print formatting, and `base64::encode`
 
-It still does not publish fake numbers for SPI/I2C/UART/ADC/LCD/etc. Those need a board fixture, attached devices, and a stable wiring policy to be meaningful. The CAN lane here is strictly the ESP32-S3 self-test loopback path, not a benchmark for a real external bus.
+It still does not publish fake numbers for SPI/I2C/UART/ADC/LCD/etc. Those need a board fixture, attached devices, and a stable wiring policy to be meaningful. The CAN lane here is strictly the ESP32-S3 self-test loopback path, not a benchmark for a real external bus. Realtime jitter/latency probes are internal only: no pin toggles, no loopback wire, and no attached device.
 
 Arduino coverage is optional. The bench auto-enables it when one of these exists:
 
@@ -53,4 +57,4 @@ idf.py build flash monitor
 
 If you do not want the Arduino leg, skip `./tools/ensure-frameworks.sh` and run the same `idf.py` flow; the firmware will still publish Arc plus raw ESP-IDF comparisons.
 
-Look for `arc-bench` log lines. Output is grouped by benchmark area. Each lane prints total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Arc lanes keep their original names, raw ESP-IDF baselines are prefixed with `idf`, Arduino-ESP32 baselines are prefixed with `arduino`, and scenario lanes are prefixed with `usage`.
+Look for `arc-bench` log lines. Output is grouped by benchmark area. Throughput lanes print total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Realtime lanes print sample count plus min/avg/max cycle latency or signed period jitter. Arc lanes keep their original names, raw ESP-IDF baselines are prefixed with `idf`, Arduino-ESP32 baselines are prefixed with `arduino`, and scenario lanes are prefixed with `usage` or `rt`.

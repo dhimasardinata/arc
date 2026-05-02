@@ -9,13 +9,16 @@
 #include "aes/esp_aes_gcm.h"
 #include "arc/aes.hpp"
 #include "arc/can.hpp"
+#include "arc/clock.hpp"
 #include "arc/coap.hpp"
 #include "arc/copy.hpp"
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
+#include "arc/log.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/ota.hpp"
+#include "arc/prefetch.hpp"
 #include "arc/probe.hpp"
 #include "arc/result.hpp"
 #include "arc/rng.hpp"
@@ -54,6 +57,7 @@ inline constexpr std::uint32_t dsp_rounds = 10'000U;
 inline constexpr std::uint32_t telemetry_rounds = 512U;
 inline constexpr std::uint32_t usage_rounds = 4'000U;
 inline constexpr std::uint32_t can_rounds = 256U;
+inline constexpr std::uint32_t realtime_rounds = 512U;
 inline constexpr std::uint32_t flash_rounds = 16U;  // keep write-heavy NVS lanes from needlessly wearing flash
 inline constexpr std::size_t batch = 15U;
 inline constexpr std::size_t dsp_n = 256U;
@@ -92,6 +96,30 @@ void stack_mark(const char* const label)
 {
     const auto words = uxTaskGetStackHighWaterMark(nullptr);
     ESP_LOGI(tag, "stack %-29s %10u words free", label, static_cast<unsigned>(words));
+}
+
+void print_cycles(const char* const name, const arc::CycleStats& stats)
+{
+    ESP_LOGI(
+        tag,
+        "%-34s %10u samples %9u min %9u avg %9u max",
+        name,
+        static_cast<unsigned>(stats.samples),
+        static_cast<unsigned>(stats.samples == 0U ? 0U : stats.min),
+        static_cast<unsigned>(stats.avg()),
+        static_cast<unsigned>(stats.max));
+}
+
+void print_jitter(const char* const name, const arc::JitterStats& stats)
+{
+    ESP_LOGI(
+        tag,
+        "%-34s %10u samples %9d min %9u avg|j| %9d max",
+        name,
+        static_cast<unsigned>(stats.samples),
+        static_cast<int>(stats.samples == 0U ? 0 : stats.min),
+        static_cast<unsigned>(stats.avg_abs()),
+        static_cast<int>(stats.samples == 0U ? 0 : stats.max));
 }
 
 template <typename Fn>
@@ -690,6 +718,86 @@ void bench_usage()
         }
     }));
     sink += stream.pos + stream.checksum;
+}
+
+void bench_realtime()
+{
+    static std::array<int, 32> samples{};
+    static std::array<int, 32> work{};
+    static arc::dsp::Fir<int, 8>::State filter{};
+    constexpr arc::dsp::Fir<int, 8>::Coeffs taps{1, -1, 2, -2, 3, -3, 4, -4};
+    static arc::SeqReg<ControlSnapshot> snapshot;
+    static arc::Spsc<ControlEvent, 16> queue;
+    static arc::LogLane<64> log;
+
+    arc::CycleStats body{};
+    arc::CycleStats spsc{};
+    arc::CycleStats seqreg{};
+    arc::CycleStats log_push{};
+    arc::JitterStats period{};
+    std::uint64_t control_sum{};
+
+    const auto target = arc::Clock::cycles(1000U, arc::Clock::default_mhz());
+    auto next = static_cast<esp_cpu_cycle_count_t>(arc::Clock::tick() + target);
+
+    for (std::uint32_t tick = 0; tick < realtime_rounds; ++tick) {
+        while (static_cast<std::int32_t>(arc::Clock::tick() - next) < 0) {
+            arc::pause();
+        }
+
+        const auto arrived = arc::Clock::tick();
+        period.add(static_cast<std::int32_t>(arrived - next));
+        next = static_cast<esp_cpu_cycle_count_t>(next + target);
+
+        const auto body_mark = arc::Probe::now();
+        for (std::size_t i = 0; i < samples.size(); ++i) {
+            samples[i] = static_cast<int>((tick + i) & 31U) - 16;
+        }
+        arc::prefetch(std::span{samples});
+        arc::dsp::scale(work.data(), samples.data(), 2, work.size());
+        arc::dsp::mac(work.data(), samples.data(), -1, work.size());
+        const auto peak = arc::dsp::peak(work.data(), work.size());
+        const auto effort = arc::dsp::Fir<int, 8>::step(filter, taps, peak);
+        body.add(body_mark.lap());
+
+        const auto seq_mark = arc::Probe::now();
+        snapshot.write_unmasked(ControlSnapshot{
+            .tick = tick,
+            .error = peak,
+            .effort = effort,
+            .flags = tick & 0x0fU,
+        });
+        const auto latest = snapshot.read();
+        seqreg.add(seq_mark.lap());
+        configASSERT(latest.tick == tick);
+
+        const auto q_mark = arc::Probe::now();
+        configASSERT(queue.try_push(ControlEvent{
+            .code = 7U,
+            .value = static_cast<std::uint16_t>(peak),
+            .tick = tick,
+        }));
+        ControlEvent event{};
+        configASSERT(queue.try_pop(event));
+        spsc.add(q_mark.lap());
+
+        const auto log_mark = arc::Probe::now();
+        configASSERT(log.push(arc::log_id("bench.control.tick"), tick, static_cast<std::uint32_t>(effort)));
+        arc::LogEvent logged{};
+        configASSERT(log.pop(logged));
+        log_push.add(log_mark.lap());
+
+        control_sum += static_cast<std::uint64_t>(latest.flags);
+        control_sum += static_cast<std::uint64_t>(event.value);
+        control_sum += logged.payload;
+    }
+
+    sink += control_sum;
+    print_cycles("rt body latency", body);
+    print_cycles("rt spsc handoff", spsc);
+    print_cycles("rt seqreg snapshot", seqreg);
+    print_cycles("rt loglane event", log_push);
+    print_jitter("rt 1khz period jitter", period);
 }
 
 void bench_dsp()
@@ -1306,6 +1414,10 @@ void run()
     section("critical usage mixes");
     bench_usage();
     stack_mark("after usage mixes");
+
+    section("realtime control no-fixture");
+    bench_realtime();
+    stack_mark("after realtime control");
 
     section("dsp and memory");
     bench_dsp();
