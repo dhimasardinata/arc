@@ -1,6 +1,7 @@
 #pragma once
 
 #include "arc/any.hpp"
+#include "arc/assume.hpp"
 #include "arc/bus.hpp"
 #include "arc/audit.hpp"
 #include "arc/cache.hpp"
@@ -20,6 +21,7 @@
 #include "arc/place.hpp"
 #include "arc/plane.hpp"
 #include "arc/probe.hpp"
+#include "arc/prefetch.hpp"
 #include "arc/reg.hpp"
 #include "arc/rtos.hpp"
 #include "arc/spsc.hpp"
@@ -37,6 +39,10 @@
 
 #if __has_include("host/ble_gap.h") && __has_include("nimble/nimble_port.h")
 #include "arc/ble.hpp"
+#endif
+
+#if __has_include("mbedtls/bignum.h")
+#include "arc/mpi.hpp"
 #endif
 
 #if __has_include("aes/esp_aes.h") && __has_include("aes/esp_aes_gcm.h") && __has_include("psa/crypto.h")
@@ -121,10 +127,6 @@
 
 #if __has_include("esp_lcd_panel_ops.h") && __has_include("esp_lcd_panel_rgb.h")
 #include "arc/rgb.hpp"
-#endif
-
-#if __has_include("mbedtls/bignum.h")
-#include "arc/mpi.hpp"
 #endif
 
 #if __has_include("esp_ota_ops.h") && __has_include("esp_partition.h")

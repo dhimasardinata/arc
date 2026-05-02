@@ -1,7 +1,9 @@
 #pragma once
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <type_traits>
 
@@ -82,10 +84,12 @@ private:
     {
         using U = UnsignedWireT<Field>;
         auto raw = static_cast<U>(static_cast<WireTypeT<Field>>(value));
-        for (std::size_t i = 0; i < sizeof(U); ++i) {
-            const auto shift = Order == Endian::big ? ((sizeof(U) - 1U - i) * 8U) : (i * 8U);
-            out[pos++] = static_cast<std::uint8_t>((raw >> shift) & 0xffU);
+        if constexpr ((Order == Endian::big && std::endian::native == std::endian::little) ||
+                      (Order == Endian::little && std::endian::native == std::endian::big)) {
+            raw = std::byteswap(raw);
         }
+        std::memcpy(out.data() + pos, &raw, sizeof(U));
+        pos += sizeof(U);
     }
 
     template <Endian Order, typename Field>
@@ -95,9 +99,11 @@ private:
     {
         using U = UnsignedWireT<Field>;
         U raw{};
-        for (std::size_t i = 0; i < sizeof(U); ++i) {
-            const auto shift = Order == Endian::big ? ((sizeof(U) - 1U - i) * 8U) : (i * 8U);
-            raw |= static_cast<U>(static_cast<U>(in[pos++]) << shift);
+        std::memcpy(&raw, in.data() + pos, sizeof(U));
+        pos += sizeof(U);
+        if constexpr ((Order == Endian::big && std::endian::native == std::endian::little) ||
+                      (Order == Endian::little && std::endian::native == std::endian::big)) {
+            raw = std::byteswap(raw);
         }
         if constexpr (std::is_enum_v<std::remove_cvref_t<Field>>) {
             return static_cast<Field>(static_cast<WireTypeT<Field>>(raw));

@@ -11,6 +11,7 @@
 #include "esp_attr.h"
 
 #include "arc/audit.hpp"
+#include "arc/assume.hpp"
 #include "arc/detail/owner.hpp"
 #include "arc/sdk.hpp"
 
@@ -33,6 +34,7 @@ struct Spsc {
             }
         }
 
+        assume(head < Capacity);
         buffer_[head] = value;
         store_release(&head_, next);
         return true;
@@ -68,6 +70,7 @@ struct Spsc {
             }
         }
 
+        assume(tail < Capacity);
         value = buffer_[tail];
         store_release(&tail_, increment(tail));
         return true;
@@ -163,6 +166,7 @@ private:
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] static inline std::uint32_t wrap(
         const std::uint32_t index) noexcept
     {
+        assume(kMask != 0U);
         return index & kMask;
     }
 
@@ -185,6 +189,8 @@ private:
         const T* const src,
         const std::size_t count) noexcept
     {
+        assume(head < Capacity);
+        assume(count <= Capacity - 1U);
         const auto first = count < (Capacity - head) ? count : (Capacity - head);
         std::memcpy(buffer_.data() + head, src, first * sizeof(T));
         if (first != count) {
@@ -197,6 +203,8 @@ private:
         const std::uint32_t tail,
         const std::size_t count) noexcept
     {
+        assume(tail < Capacity);
+        assume(count <= Capacity - 1U);
         const auto first = count < (Capacity - tail) ? count : (Capacity - tail);
         std::memcpy(dst, buffer_.data() + tail, first * sizeof(T));
         if (first != count) {

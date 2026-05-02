@@ -51,6 +51,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::stack` turns task stack sizing into a compile-time contract: Arc task wrappers reject stacks below their declared budget, and Arc's CMake interface enables GCC stack/frame errors for oversized C++ frames.
 - `arc::Result<T>` is an opt-in `std::expected<T, esp_err_t>` alias for runtime operations that should not hard-panic.
 - `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site, while `arc::Copy::send_coherent(...)` and `finish_coherent(...)` cover the common async-memcpy handoff without blocking useful CPU work.
+- `arc::prefetch(...)` and `arc::prefetch_write(...)` expose explicit cache preloading hints for long PSRAM/DMA walks.
 - `arc::Can` binds the ESP32-S3 TWAI/CAN controller with ISR-backed RX handoff.
 - `arc::Burst` streams prebuilt RMT symbols with optional hardware looping.
 - `arc::Trace` captures RMT symbols back into SRAM without a CPU sampling loop.
@@ -119,7 +120,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Tls` gives direct ESP-TLS client sessions for secure caller-buffer transports such as MQTTS without taking over reconnect or protocol policy.
 - `arc::net::Pbuf` gives RAII ownership and direct payload spans for lwIP pbufs when a path needs packet-buffer ownership without extra copies.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP/HTTPS client sessions, with explicit HTTPS factories when secure scheme enforcement matters.
-- `arc::pack::Schema` packs and unpacks fixed binary telemetry/config records with compile-time field sizing and caller-owned buffers.
+- `arc::pack::Schema` packs and unpacks fixed binary telemetry/config records with compile-time field sizing, caller-owned buffers, and byteswap-based endian conversion.
 - `arc::net::Mqtt` gives caller-buffer MQTT 3.1.1 packet encoding, parsing, topic matching, and heapless session keepalive helpers without owning the transport lane.
 - `arc::net::Ws` gives WebSocket handshake helpers plus caller-buffer frame encode/parse without owning reconnect or task policy.
 - `arc::net::Coap` gives caller-buffer CoAP datagram encode/parse and option walking without hiding message layout.
@@ -209,14 +210,14 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 | --- | --- | --- |
 | Core plane | `arc/task.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
-| Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy` |
+| Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp`, `arc/prefetch.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy`, `arc::prefetch` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane` |
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::Time`, `arc::Clock`, `arc::Probe` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
 | Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream` |
-| Binary records | `arc/pack.hpp` | `arc::pack::Schema`, `arc::pack::Endian` |
+| Binary records and optimizer hints | `arc/pack.hpp`, `arc/assume.hpp` | `arc::pack::Schema`, `arc::pack::Endian`, `arc::assume` |
 | Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::Xts`, `arc::Fuse`, `arc::Rng` |
 
 </details>
@@ -1635,6 +1636,16 @@ Explicit cache coherency helpers for DMA and external-memory paths.
 
 Use this when you are about to hand a buffer to DMA, SPI, I2S, ADC, RMT, or async copy and you want ownership to be explicit instead of implied.
 
+### `arc::prefetch(...)` and `arc::prefetch_write(...)`
+
+Explicit cache preload hints for large linear memory walks.
+
+- `prefetch(ptr)` hints that the CPU will read from the address soon.
+- `prefetch_write(ptr)` hints that the CPU will write to the address soon.
+- span overloads accept trivially copyable caller-owned buffers.
+
+Use this in long Core 1 loops over PSRAM, DMA frame buffers, or audio blocks when the next cache line can be requested before the current math finishes.
+
 ### `arc::Burst<Pin, Hz, Symbols = 64, Depth = 1, Dma = false>`
 
 Compile-time RMT TX wrapper for symbol streams.
@@ -2080,6 +2091,7 @@ Fixed binary record packer for telemetry and configuration frames.
 - `write<Endian>(out, values...)` writes integer/enum fields into caller-owned output and returns the written span.
 - `read<Endian>(in, refs...)` decodes the same schema into caller-owned variables.
 - `Endian::big` is the default; `Endian::little` is available for local protocols.
+- multi-byte endian conversion uses `std::byteswap` and `std::memcpy` so unaligned wire fields stay well-defined and map cleanly to compiler byte-swap codegen.
 - Field types are limited to non-bool integer and enum scalars up to 64 bits.
 
 Use this when a Core 1/Core 0 or device/network boundary needs a fixed ABI with no heap, no reflection runtime, and compile-time size checks.
@@ -2952,6 +2964,8 @@ The workflow also caches:
 GitHub-hosted runners are still ephemeral, so host packages installed by `apt` do not persist across jobs. Arc now only installs host packages if they are actually missing on the runner.
 
 Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared `esp32s3` lock in `cmake/arc-idf.cmake`.
+
+CI validates clangd coverage with `./tools/clangd-compile-commands.py --validate-arc-headers -o compile_commands.json`. The script prefers compact root-project compile commands, adds discovered ESP-IDF component include roots for public headers, and applies a bounded per-header compiler timeout so a malformed inferred command fails with a header-specific error instead of hanging the workflow.
 
 CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host test binary compiles pure Arc logic against tiny ESP attribute stubs and exercises SPSC single/batch transfer, MPSC under real producer contention, Fanin round-robin and batch drain behavior, wire codecs, stream helpers, SeqReg snapshots, and DSP/FIR math without flashing hardware.
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
@@ -38,6 +39,25 @@ CMAKE_COMPONENT_KEYS = {
     "EMBED_TXTFILES",
     "WHOLE_ARCHIVE",
 }
+ESP_TARGET_DIR_RE = re.compile(r"^esp32[a-z0-9]*$")
+
+
+def esp32s3_compatible_path(path: Path) -> bool:
+    parts = path.parts
+    for part in parts:
+        if part in {"test", "tests", "dummy", "mynewt", "nuttx", "riot"}:
+            return False
+        if part == "openthread":
+            return False
+        if part == "riscv":
+            return False
+        if part == "FreeRTOS-Kernel-SMP":
+            return False
+        if part == "linux":
+            return False
+        if ESP_TARGET_DIR_RE.match(part) and part != "esp32s3":
+            return False
+    return True
 
 
 def display(path: Path) -> str:
@@ -392,16 +412,40 @@ def cxx_candidates(commands: list[dict[str, Any]]) -> list[tuple[int, dict[str, 
             continue
         candidates.append((index, entry, include_dirs(entry)))
 
-    def rank(candidate: tuple[int, dict[str, Any], tuple[Path, ...]]) -> tuple[int, int, int]:
+    def rank(candidate: tuple[int, dict[str, Any], tuple[Path, ...]]) -> tuple[int, ...]:
         index, entry, _ = candidate
         source = entry_source(entry)
         if source is None:
             return (2, 1, index)
+        args = entry_args(entry)
+        root_app = source == (ROOT / "main" / "app_main.cpp").resolve()
+        example_source = under(source, ROOT / "examples")
         project_source = under(source, ROOT) and not under(source, ROOT / "esp-idf")
         app_source = source.name == "app_main.cpp"
-        return (0 if project_source else 1, 0 if app_source else 1, index)
+        arduino = any("arduino-esp32" in arg or "ARDUINO" in arg for arg in args)
+        managed = any("managed_components" in arg for arg in args)
+        return (
+            0 if root_app else 1,
+            0 if project_source else 1,
+            0 if app_source else 1,
+            1 if example_source else 0,
+            1 if arduino else 0,
+            1 if managed else 0,
+            len(args),
+            index,
+        )
 
     return sorted(candidates, key=rank)
+
+
+def feature_rich_rank(candidate: tuple[int, dict[str, Any], tuple[Path, ...]]) -> tuple[int, int]:
+    _, entry, dirs = candidate
+    source = entry_source(entry)
+    args = entry_args(entry)
+    arduino = (source is not None and under(source, ROOT / "arduino-esp32")) or any(
+        "arduino-esp32" in arg or "ARDUINO" in arg for arg in args
+    )
+    return (1 if arduino else 0, -len(dirs))
 
 
 def project_description_paths(databases: list[Path]) -> list[Path]:
@@ -618,9 +662,13 @@ def component_discovered_dirs(info: dict[str, Any]) -> tuple[Path, ...]:
     for include_dir in root.rglob("include"):
         if not include_dir.is_dir():
             continue
+        if not esp32s3_compatible_path(include_dir):
+            continue
         dirs.append(include_dir.resolve())
         for child in sorted(include_dir.iterdir()):
             if child.is_dir():
+                if not esp32s3_compatible_path(child):
+                    continue
                 dirs.append(child.resolve())
 
     resolved = tuple(dict.fromkeys(dirs))
@@ -664,7 +712,7 @@ def include_owner(
 
     _, _, owner, include_root = min(matches)
     info = components[owner]
-    dirs = tuple(dict.fromkeys((*info.get("include_dirs", ()), include_root, *component_discovered_dirs(info))))
+    dirs = tuple(dict.fromkeys((*info.get("include_dirs", ()), include_root)))
     info["include_dirs"] = dirs
     search_cache[include] = owner
     return owner
@@ -685,10 +733,58 @@ def component_public_dirs(
     if not info:
         return []
 
-    dirs = list(dict.fromkeys((*info.get("include_dirs", ()), *component_discovered_dirs(info))))
+    dirs = list(dict.fromkeys(info.get("include_dirs", ())))
+    if not dirs:
+        dirs.extend(component_discovered_dirs(info))
     for req in info.get("reqs", ()):
         dirs.extend(component_public_dirs(req, components, seen))
     return dirs
+
+
+def validation_support_dirs(
+    databases: list[Path],
+    components: dict[str, dict[str, Any]],
+) -> tuple[Path, ...]:
+    includes = (
+        "mbedtls/private_access.h",
+        "mbedtls/private/bignum.h",
+        "mbedtls/private/config_psa.h",
+        "tf-psa-crypto/build_info.h",
+        "nimble/hci_common.h",
+        "nimble/nimble_npl_os.h",
+        "esp_nimble_cfg.h",
+        "ulp_common.h",
+        "ulp_fsm_common.h",
+    )
+    dirs: list[Path] = []
+    seen: set[Path] = set()
+    for idf in idf_paths(databases, components):
+        root = idf / "components"
+        if not root.is_dir():
+            continue
+        for include in includes:
+            parts = Path(include).parts
+            matches = []
+            for candidate in root.rglob(parts[-1]):
+                if tuple(candidate.parts[-len(parts) :]) != parts:
+                    continue
+                matches.append(candidate)
+            matches.sort(key=lambda path: (0 if "freertos" in path.parts else 1, len(path.parts)))
+            for candidate in matches:
+                include_root = include_root_for_match(candidate, include)
+                if not esp32s3_compatible_path(include_root):
+                    continue
+                if include_root not in seen:
+                    dirs.append(include_root)
+                    seen.add(include_root)
+                break
+    bt = components.get("bt")
+    if bt is not None:
+        for directory in component_discovered_dirs(bt):
+            if directory not in seen and esp32s3_compatible_path(directory):
+                dirs.append(directory)
+                seen.add(directory)
+    return tuple(dirs)
 
 
 def missing_include_dirs(
@@ -767,6 +863,24 @@ def command_for_file(
     return clone
 
 
+def append_include_dirs(entry: dict[str, Any], include_dirs: tuple[Path, ...]) -> dict[str, Any]:
+    if not include_dirs:
+        return entry
+
+    args = entry_args(entry)
+    if not args:
+        return entry
+
+    clone = dict(entry)
+    args = [*args, *(f"-I{path}" for path in include_dirs)]
+    if "arguments" in clone:
+        clone["arguments"] = args
+        clone.pop("command", None)
+    else:
+        clone["command"] = shlex.join(args)
+    return clone
+
+
 def strip_ansi(text: str) -> str:
     return ANSI_RE.sub("", text)
 
@@ -787,10 +901,18 @@ def validate_header_command(
     entry: dict[str, Any],
     header: Path,
     extra_include_dirs: tuple[Path, ...] = (),
+    timeout: float = 15.0,
 ) -> str | None:
     with tempfile.NamedTemporaryFile("w", suffix=".cpp", delete=False) as temp:
         include = str(header).replace("\\", "\\\\").replace('"', '\\"')
-        temp.write(f'#include "{include}"\nint main() {{ return 0; }}\n')
+        temp.write(
+            "#include <assert.h>\n"
+            "#ifndef assert\n"
+            "#define assert(condition) ((void)0)\n"
+            "#endif\n"
+            f'#include "{include}"\n'
+            "int main() { return 0; }\n"
+        )
         source = Path(temp.name)
 
     try:
@@ -821,9 +943,12 @@ def validate_header_command(
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False,
+                timeout=timeout,
             )
         except FileNotFoundError as err:
             return str(err)
+        except subprocess.TimeoutExpired:
+            return f"compiler timed out after {timeout:g}s"
 
         if proc.returncode == 0:
             return None
@@ -832,10 +957,76 @@ def validate_header_command(
         source.unlink(missing_ok=True)
 
 
+def validate_header_set(
+    entry: dict[str, Any],
+    headers: list[Path],
+    extra_include_dirs: tuple[Path, ...] = (),
+    timeout: float = 60.0,
+) -> str | None:
+    with tempfile.NamedTemporaryFile("w", suffix=".cpp", delete=False) as temp:
+        temp.write("#include <assert.h>\n#ifndef assert\n#define assert(condition) ((void)0)\n#endif\n")
+        for header in headers:
+            include = str(header).replace("\\", "\\\\").replace('"', '\\"')
+            temp.write(f'#include "{include}"\n')
+        temp.write("int main() { return 0; }\n")
+        source = Path(temp.name)
+
+    try:
+        return validate_source_command(entry, source, extra_include_dirs, timeout)
+    finally:
+        source.unlink(missing_ok=True)
+
+
+def validate_source_command(
+    entry: dict[str, Any],
+    source: Path,
+    extra_include_dirs: tuple[Path, ...] = (),
+    timeout: float = 15.0,
+) -> str | None:
+    args = entry_args_for_file(entry, source, extra_include_dirs)
+    if not args:
+        return "candidate compile command has no arguments"
+
+    filtered: list[str] = []
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "-o":
+            skip_next = True
+            continue
+        if arg == "-Werror" or arg.startswith("-Werror="):
+            continue
+        filtered.append(arg)
+    filtered.insert(1, "-fsyntax-only")
+    filtered.append("-Wno-error")
+
+    try:
+        proc = subprocess.run(
+            filtered,
+            cwd=entry_directory(entry),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except FileNotFoundError as err:
+        return str(err)
+    except subprocess.TimeoutExpired:
+        return f"compiler timed out after {timeout:g}s"
+
+    if proc.returncode == 0:
+        return None
+    return summarize_stderr(proc.stderr, proc.returncode)
+
+
 def arc_header_commands(
     commands: list[dict[str, Any]],
     databases: list[Path],
     validate: bool = False,
+    validate_timeout: float = 15.0,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     headers = arc_header_index()
     if not headers:
@@ -847,6 +1038,7 @@ def arc_header_commands(
     owner_cache: dict[str, str | None] = {}
     dependency_cache: dict[Path, tuple[str, ...]] = {}
     header_commands: list[dict[str, Any]] = []
+    selected_headers: list[Path] = []
     failures: list[str] = []
 
     for header in sorted(headers.values()):
@@ -854,7 +1046,8 @@ def arc_header_commands(
         selected: dict[str, Any] | None = None
         error: str | None = None
         attempted: set[tuple[str, tuple[str, ...]]] = set()
-        for _, entry, dirs in candidates:
+        header_candidates = sorted(candidates, key=feature_rich_rank) if header.name == "arc.hpp" else candidates
+        for _, entry, dirs in header_candidates:
             extras = ()
             if not all(has_include(include, dirs, include_cache) for include in includes):
                 extras = missing_include_dirs(includes, dirs, components, include_cache, owner_cache)
@@ -869,27 +1062,8 @@ def arc_header_commands(
                 continue
             attempted.add(key)
 
-            if validate:
-                error = validate_header_command(entry, header, extras)
-                if error is not None:
-                    continue
-
             selected = command_for_file(entry, header, extras)
             break
-
-        if selected is None and validate:
-            for _, entry, _ in candidates:
-                key = (source_key(entry, DEFAULT_OUTPUT), ())
-                if key in attempted:
-                    continue
-                attempted.add(key)
-
-                error = validate_header_command(entry, header)
-                if error is not None:
-                    continue
-
-                selected = command_for_file(entry, header)
-                break
 
         if selected is None and not validate and candidates:
             selected = command_for_file(candidates[0][1], header)
@@ -900,6 +1074,24 @@ def arc_header_commands(
             continue
 
         header_commands.append(selected)
+        selected_headers.append(header)
+
+    if validate and header_commands:
+        support_dirs = validation_support_dirs(databases, components)
+        workers = max(1, min(4, os.cpu_count() or 1))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    validate_header_command, append_include_dirs(entry, support_dirs), header, (), validate_timeout
+                ): header
+                for header, entry in zip(selected_headers, header_commands, strict=True)
+            }
+            for future in concurrent.futures.as_completed(futures):
+                header = futures[future]
+                error = future.result()
+                if error is not None:
+                    failures.append(f"{display(header)}: {error}")
+        failures.sort()
 
     return header_commands, failures
 
@@ -931,6 +1123,12 @@ def main() -> int:
         action="store_true",
         help="Syntax-check inferred Arc header commands and fail if any public Arc header cannot be compiled.",
     )
+    parser.add_argument(
+        "--validate-timeout",
+        type=float,
+        default=float(os.environ.get("ARC_CLANGD_VALIDATE_TIMEOUT", "60")),
+        help="Per-header compiler timeout in seconds when --validate-arc-headers is used.",
+    )
     args = parser.parse_args()
 
     if args.inputs:
@@ -959,7 +1157,12 @@ def main() -> int:
     header_commands: list[dict[str, Any]] = []
     header_failures: list[str] = []
     if not args.no_arc_headers:
-        header_commands, header_failures = arc_header_commands(commands, databases, validate=args.validate_arc_headers)
+        header_commands, header_failures = arc_header_commands(
+            commands,
+            databases,
+            validate=args.validate_arc_headers,
+            validate_timeout=args.validate_timeout,
+        )
         commands.extend(header_commands)
 
     output = args.output.expanduser()
