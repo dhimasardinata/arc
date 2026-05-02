@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -11,7 +12,6 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any
-
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "compile_commands.json"
@@ -23,6 +23,19 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 INCLUDE_FLAGS = {"-I", "-isystem", "-iquote", "-idirafter"}
 INCLUDE_PREFIX_FLAGS = tuple(sorted(INCLUDE_FLAGS, key=len, reverse=True))
 PUBLIC_REQ_KEYS = ("reqs", "managed_reqs")
+CMAKE_COMPONENT_KEYS = {
+    "SRCS",
+    "SRC_DIRS",
+    "EXCLUDE_SRCS",
+    "INCLUDE_DIRS",
+    "PRIV_INCLUDE_DIRS",
+    "LDFRAGMENTS",
+    "REQUIRES",
+    "PRIV_REQUIRES",
+    "EMBED_FILES",
+    "EMBED_TXTFILES",
+    "WHOLE_ARCHIVE",
+}
 
 
 def display(path: Path) -> str:
@@ -275,15 +288,22 @@ def project_description_paths(databases: list[Path]) -> list[Path]:
     return descriptions
 
 
-def component_info(databases: list[Path]) -> dict[str, dict[str, Any]]:
-    components: dict[str, dict[str, Any]] = {}
-
+def load_project_descriptions(databases: list[Path]) -> list[dict[str, Any]]:
+    descriptions: list[dict[str, Any]] = []
     for description in project_description_paths(databases):
         try:
             data = json.loads(description.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
+        if isinstance(data, dict):
+            descriptions.append(data)
+    return descriptions
 
+
+def component_info(databases: list[Path]) -> dict[str, dict[str, Any]]:
+    components: dict[str, dict[str, Any]] = {}
+
+    for data in load_project_descriptions(databases):
         infos = data.get("all_component_info") or data.get("build_component_info")
         if not isinstance(infos, dict):
             continue
@@ -318,7 +338,134 @@ def component_info(databases: list[Path]) -> dict[str, dict[str, Any]]:
                 "reqs": tuple(reqs),
             }
 
+    discover_idf_components(components, databases)
     return components
+
+
+def add_unique_path(paths: list[Path], seen: set[Path], path: Path) -> None:
+    resolved = path.expanduser().resolve()
+    if resolved not in seen:
+        paths.append(resolved)
+        seen.add(resolved)
+
+
+def idf_paths(databases: list[Path], components: dict[str, dict[str, Any]]) -> list[Path]:
+    paths: list[Path] = []
+    seen: set[Path] = set()
+
+    for name in ("IDF_PATH", "ARC_IDF_PATH"):
+        value = os.environ.get(name)
+        if value:
+            add_unique_path(paths, seen, Path(value))
+
+    for data in load_project_descriptions(databases):
+        value = data.get("idf_path")
+        if isinstance(value, str) and value:
+            add_unique_path(paths, seen, Path(value))
+
+    for info in components.values():
+        root = info.get("root")
+        if not isinstance(root, Path):
+            continue
+        for parent in root.parents:
+            if parent.name == "components" and (parent.parent / "tools" / "idf.py").is_file():
+                add_unique_path(paths, seen, parent.parent)
+                break
+
+    return paths
+
+
+def cmake_register_body(text: str) -> str | None:
+    marker = "idf_component_register("
+    start = text.find(marker)
+    if start < 0:
+        return None
+
+    index = start + len(marker)
+    depth = 1
+    while index < len(text):
+        char = text[index]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return text[start + len(marker) : index]
+        index += 1
+    return None
+
+
+def cmake_tokens(text: str) -> list[str]:
+    body = cmake_register_body(text)
+    if body is None:
+        return []
+
+    lines = []
+    for line in body.splitlines():
+        lines.append(line.split("#", 1)[0])
+    return shlex.split("\n".join(lines), posix=True)
+
+
+def cmake_register_sections(root: Path) -> dict[str, list[str]]:
+    cmake = root / "CMakeLists.txt"
+    if not cmake.is_file():
+        return {}
+
+    try:
+        tokens = cmake_tokens(cmake.read_text(encoding="utf-8"))
+    except ValueError:
+        return {}
+
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for token in tokens:
+        key = token.upper()
+        if key in CMAKE_COMPONENT_KEYS:
+            current = key
+            sections.setdefault(current, [])
+        elif current is not None:
+            sections[current].append(token)
+    return sections
+
+
+def cmake_path(root: Path, token: str) -> Path | None:
+    if not token or "$<" in token:
+        return None
+
+    token = token.replace("${CMAKE_CURRENT_SOURCE_DIR}", str(root))
+    if "$" in token:
+        return None
+
+    path = Path(token)
+    if not path.is_absolute():
+        path = root / path
+    return path.resolve()
+
+
+def cmake_name(token: str) -> str | None:
+    if not token or "$" in token or ";" in token:
+        return None
+    return token
+
+
+def discover_idf_components(components: dict[str, dict[str, Any]], databases: list[Path]) -> None:
+    for idf in idf_paths(databases, components):
+        component_root = idf / "components"
+        if not component_root.is_dir():
+            continue
+
+        for root in sorted(path for path in component_root.iterdir() if path.is_dir()):
+            if root.name in components or not (root / "CMakeLists.txt").is_file():
+                continue
+
+            sections = cmake_register_sections(root)
+            include_dirs = [path for token in sections.get("INCLUDE_DIRS", ()) if (path := cmake_path(root, token))]
+            reqs = [name for token in sections.get("REQUIRES", ()) if (name := cmake_name(token))]
+            components[root.name] = {
+                "root": root.resolve(),
+                "include_dirs": tuple(dict.fromkeys(include_dirs)),
+                "reqs": tuple(dict.fromkeys(reqs)),
+            }
 
 
 def include_root_for_match(path: Path, include: str) -> Path:
@@ -409,7 +556,7 @@ def component_public_dirs(
     if not info:
         return []
 
-    dirs = list(info.get("include_dirs", ()))
+    dirs = list(dict.fromkeys((*info.get("include_dirs", ()), *component_discovered_dirs(info))))
     for req in info.get("reqs", ()):
         dirs.extend(component_public_dirs(req, components, seen))
     return dirs
