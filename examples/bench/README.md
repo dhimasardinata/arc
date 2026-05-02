@@ -18,6 +18,7 @@ It measures runtime on the target using the Xtensa cycle counter and prints cycl
   - control body latency for a DSP/FIR tick
   - `Spsc`, `SeqReg`, and `LogLane` handoff latency
   - 1 kHz period jitter measured against the Xtensa cycle counter
+  - 1 kHz budget slack and missed-deadline count for the full synthetic control tick
 - DSP dot/scale/mac/FIR/peak kernels
 - standard `memcpy` and Arc async-DMA copy on the same 256-byte payload
 - hardware RNG
@@ -57,4 +58,4 @@ idf.py build flash monitor
 
 If you do not want the Arduino leg, skip `./tools/ensure-frameworks.sh` and run the same `idf.py` flow; the firmware will still publish Arc plus raw ESP-IDF comparisons.
 
-Look for `arc-bench` log lines. Output is grouped by benchmark area. Every result line starts with a `surface` column so the implementation is explicit: `arc`, `idf`, `arduino`, or `std`. Throughput lanes print total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Realtime lanes print sample count plus min/avg/max cycle latency or signed period jitter.
+Look for `arc-bench` log lines. Output is grouped by benchmark area. Every result line starts with a `surface` column so the implementation is explicit: `arc`, `idf`, `arduino`, or `std`. Throughput lanes print total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Realtime lanes print sample count plus min/avg/max cycles and matching nanoseconds; jitter and slack rows are signed, and the `misses` column is the missed-deadline count.

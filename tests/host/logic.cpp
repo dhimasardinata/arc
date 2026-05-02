@@ -1079,6 +1079,17 @@ void test_probe_stats()
     expect(jitter.avg_abs() == 4U && jitter.max_abs() == 7U, "JitterStats abs");
     jitter.clear();
     expect(jitter.samples == 0U && jitter.avg_abs() == 0U, "JitterStats clear");
+
+    arc::DeadlineStats deadline{};
+    deadline.add(80U, 100U);
+    deadline.add(130U, 100U);
+    expect(deadline.min_slack == -30 && deadline.max_slack == 20, "DeadlineStats slack");
+    expect(deadline.avg_slack() == -5 && deadline.overruns == 1U && deadline.max_overrun == 30, "DeadlineStats overrun");
+    deadline.clear();
+    expect(deadline.samples == 0U && deadline.overruns == 0U, "DeadlineStats clear");
+
+    expect(arc::Clock::ns(240U, 240U) == 1000U, "Clock cycle ns");
+    expect(arc::Clock::signed_ns(-240, 240U) == -1000, "Clock signed cycle ns");
 }
 
 void test_seqreg()

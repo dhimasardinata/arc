@@ -96,4 +96,51 @@ private:
     }
 };
 
+struct DeadlineStats {
+    std::uint32_t samples{};
+    std::uint32_t overruns{};
+    std::int32_t min_slack{std::numeric_limits<std::int32_t>::max()};
+    std::int32_t max_slack{std::numeric_limits<std::int32_t>::min()};
+    std::int32_t max_overrun{};
+    std::int64_t total_slack{};
+
+    IRAM_ATTR [[gnu::always_inline]] inline void add(
+        const esp_cpu_cycle_count_t elapsed,
+        const esp_cpu_cycle_count_t budget) noexcept
+    {
+        const auto diff = static_cast<std::int64_t>(budget) - static_cast<std::int64_t>(elapsed);
+        const auto slack = diff < std::numeric_limits<std::int32_t>::min()
+            ? std::numeric_limits<std::int32_t>::min()
+            : diff > std::numeric_limits<std::int32_t>::max()
+            ? std::numeric_limits<std::int32_t>::max()
+            : static_cast<std::int32_t>(diff);
+        min_slack = slack < min_slack ? slack : min_slack;
+        max_slack = slack > max_slack ? slack : max_slack;
+        total_slack += slack;
+        samples += 1U;
+        if (slack < 0) {
+            overruns += 1U;
+            const auto late = slack == std::numeric_limits<std::int32_t>::min()
+                ? std::numeric_limits<std::int32_t>::max()
+                : static_cast<std::int32_t>(-slack);
+            max_overrun = late > max_overrun ? late : max_overrun;
+        }
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::int32_t avg_slack() const noexcept
+    {
+        return samples == 0U ? 0 : static_cast<std::int32_t>(total_slack / samples);
+    }
+
+    IRAM_ATTR [[gnu::always_inline]] inline void clear() noexcept
+    {
+        samples = 0U;
+        overruns = 0U;
+        min_slack = std::numeric_limits<std::int32_t>::max();
+        max_slack = std::numeric_limits<std::int32_t>::min();
+        max_overrun = 0;
+        total_slack = 0;
+    }
+};
+
 }  // namespace arc

@@ -48,6 +48,27 @@ struct Clock {
         return cycles(time_us, mhz);
     }
 
+    [[nodiscard]] static constexpr std::uint64_t ns(
+        const esp_cpu_cycle_count_t cycles,
+        const std::uint32_t mhz) noexcept
+    {
+        return mhz == 0U ? 0U : (static_cast<std::uint64_t>(cycles) * 1000ULL) / mhz;
+    }
+
+    [[nodiscard]] static constexpr std::int64_t signed_ns(
+        const std::int32_t cycles,
+        const std::uint32_t mhz) noexcept
+    {
+        if (mhz == 0U) {
+            return 0;
+        }
+        const auto magnitude = cycles < 0
+            ? static_cast<std::uint64_t>(-(cycles + 1)) + 1ULL
+            : static_cast<std::uint64_t>(cycles);
+        const auto converted = static_cast<std::int64_t>((magnitude * 1000ULL) / mhz);
+        return cycles < 0 ? -converted : converted;
+    }
+
     [[nodiscard]] static constexpr std::uint32_t default_mhz() noexcept
     {
 #if defined(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ)

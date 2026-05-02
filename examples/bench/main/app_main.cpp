@@ -127,6 +127,13 @@ void section(const char* const name)
     ESP_LOGI(tag, "%-9s %-31s %10s     %9s     %9s", "surface", "lane", "ops", "cycles", "ns");
 }
 
+void realtime_section(const char* const name)
+{
+    ESP_LOGI(tag, "%s", "");
+    ESP_LOGI(tag, "== %s ==", name);
+    ESP_LOGI(tag, "%-9s %-27s %7s     %-19s %-19s %8s", "surface", "lane", "samples", "cyc min/avg/max", "ns min/avg/max", "misses");
+}
+
 void stack_mark(const char* const label)
 {
     const auto words = uxTaskGetStackHighWaterMark(nullptr);
@@ -136,29 +143,64 @@ void stack_mark(const char* const label)
 void print_cycles(const char* const name, const arc::CycleStats& stats)
 {
     const auto lane = lane_of(name);
+    const auto min = stats.samples == 0U ? 0U : stats.min;
+    const auto avg = stats.avg();
+    const auto max = stats.max;
     ESP_LOGI(
         tag,
-        "%-9s %-31s %10u samples %9u min %9u avg %9u max",
+        "%-9s %-27s %7u     %6u/%6u/%6u %6llu/%6llu/%6llu %8s",
         lane.surface,
         lane.name,
         static_cast<unsigned>(stats.samples),
-        static_cast<unsigned>(stats.samples == 0U ? 0U : stats.min),
-        static_cast<unsigned>(stats.avg()),
-        static_cast<unsigned>(stats.max));
+        static_cast<unsigned>(min),
+        static_cast<unsigned>(avg),
+        static_cast<unsigned>(max),
+        static_cast<unsigned long long>(arc::Clock::ns(min, arc::Clock::default_mhz())),
+        static_cast<unsigned long long>(arc::Clock::ns(avg, arc::Clock::default_mhz())),
+        static_cast<unsigned long long>(arc::Clock::ns(max, arc::Clock::default_mhz())),
+        "-");
 }
 
 void print_jitter(const char* const name, const arc::JitterStats& stats)
 {
     const auto lane = lane_of(name);
+    const auto min = stats.samples == 0U ? 0 : stats.min;
+    const auto avg_abs = stats.avg_abs();
+    const auto max = stats.samples == 0U ? 0 : stats.max;
     ESP_LOGI(
         tag,
-        "%-9s %-31s %10u samples %9d min %9u avg|j| %9d max",
+        "%-9s %-27s %7u     %6d/%6u/%6d %6lld/%6llu/%6lld %8s",
         lane.surface,
         lane.name,
         static_cast<unsigned>(stats.samples),
-        static_cast<int>(stats.samples == 0U ? 0 : stats.min),
-        static_cast<unsigned>(stats.avg_abs()),
-        static_cast<int>(stats.samples == 0U ? 0 : stats.max));
+        static_cast<int>(min),
+        static_cast<unsigned>(avg_abs),
+        static_cast<int>(max),
+        static_cast<long long>(arc::Clock::signed_ns(min, arc::Clock::default_mhz())),
+        static_cast<unsigned long long>(arc::Clock::ns(avg_abs, arc::Clock::default_mhz())),
+        static_cast<long long>(arc::Clock::signed_ns(max, arc::Clock::default_mhz())),
+        "-");
+}
+
+void print_deadline(const char* const name, const arc::DeadlineStats& stats)
+{
+    const auto lane = lane_of(name);
+    const auto min = stats.samples == 0U ? 0 : stats.min_slack;
+    const auto avg = stats.avg_slack();
+    const auto max = stats.samples == 0U ? 0 : stats.max_slack;
+    ESP_LOGI(
+        tag,
+        "%-9s %-27s %7u     %6d/%6d/%6d %6lld/%6lld/%6lld %8u",
+        lane.surface,
+        lane.name,
+        static_cast<unsigned>(stats.samples),
+        static_cast<int>(min),
+        static_cast<int>(avg),
+        static_cast<int>(max),
+        static_cast<long long>(arc::Clock::signed_ns(min, arc::Clock::default_mhz())),
+        static_cast<long long>(arc::Clock::signed_ns(avg, arc::Clock::default_mhz())),
+        static_cast<long long>(arc::Clock::signed_ns(max, arc::Clock::default_mhz())),
+        static_cast<unsigned>(stats.overruns));
 }
 
 template <typename Fn>
@@ -774,6 +816,7 @@ void bench_realtime()
     arc::CycleStats seqreg{};
     arc::CycleStats log_push{};
     arc::JitterStats period{};
+    arc::DeadlineStats deadline{};
     std::uint64_t control_sum{};
 
     const auto target = arc::Clock::cycles(1000U, arc::Clock::default_mhz());
@@ -788,6 +831,7 @@ void bench_realtime()
         period.add(static_cast<std::int32_t>(arrived - next));
         next = static_cast<esp_cpu_cycle_count_t>(next + target);
 
+        const auto tick_mark = arc::Probe::now();
         const auto body_mark = arc::Probe::now();
         for (std::size_t i = 0; i < samples.size(); ++i) {
             samples[i] = static_cast<int>((tick + i) & 31U) - 16;
@@ -829,6 +873,7 @@ void bench_realtime()
         control_sum += static_cast<std::uint64_t>(latest.flags);
         control_sum += static_cast<std::uint64_t>(event.value);
         control_sum += logged.payload;
+        deadline.add(tick_mark.lap(), target);
     }
 
     sink += control_sum;
@@ -837,6 +882,7 @@ void bench_realtime()
     print_cycles("rt seqreg snapshot", seqreg);
     print_cycles("rt loglane event", log_push);
     print_jitter("rt 1khz period jitter", period);
+    print_deadline("rt 1khz budget slack", deadline);
 }
 
 void bench_dsp()
@@ -1455,7 +1501,7 @@ void run()
     bench_usage();
     stack_mark("after usage mixes");
 
-    section("realtime control no-fixture");
+    realtime_section("realtime control no-fixture");
     bench_realtime();
     stack_mark("after realtime control");
 
