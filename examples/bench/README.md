@@ -57,4 +57,4 @@ idf.py build flash monitor
 
 If you do not want the Arduino leg, skip `./tools/ensure-frameworks.sh` and run the same `idf.py` flow; the firmware will still publish Arc plus raw ESP-IDF comparisons.
 
-Look for `arc-bench` log lines. Output is grouped by benchmark area. Throughput lanes print total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Realtime lanes print sample count plus min/avg/max cycle latency or signed period jitter. Arc lanes keep their original names, raw ESP-IDF baselines are prefixed with `idf`, Arduino-ESP32 baselines are prefixed with `arduino`, and scenario lanes are prefixed with `usage` or `rt`.
+Look for `arc-bench` log lines. Output is grouped by benchmark area. Every result line starts with a `surface` column so the implementation is explicit: `arc`, `idf`, `arduino`, or `std`. Throughput lanes print total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Realtime lanes print sample count plus min/avg/max cycle latency or signed period jitter.

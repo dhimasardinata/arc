@@ -74,12 +74,47 @@ struct Result {
     std::uint32_t ns_op;
 };
 
+struct Lane {
+    const char* surface;
+    const char* name;
+};
+
+[[nodiscard]] bool starts_with(const char* const text, const char* const prefix) noexcept
+{
+    return std::strncmp(text, prefix, std::strlen(prefix)) == 0;
+}
+
+[[nodiscard]] Lane lane_of(const char* const name) noexcept
+{
+    if (starts_with(name, "arc ")) {
+        return Lane{.surface = "arc", .name = name + 4U};
+    }
+    if (starts_with(name, "idf ")) {
+        return Lane{.surface = "idf", .name = name + 4U};
+    }
+    if (starts_with(name, "arduino ")) {
+        return Lane{.surface = "arduino", .name = name + 8U};
+    }
+    if (starts_with(name, "std ")) {
+        return Lane{.surface = "std", .name = name + 4U};
+    }
+    if (starts_with(name, "usage ")) {
+        return Lane{.surface = "arc", .name = name + 6U};
+    }
+    if (starts_with(name, "rt ")) {
+        return Lane{.surface = "arc", .name = name + 3U};
+    }
+    return Lane{.surface = "arc", .name = name};
+}
+
 void print(const Result result)
 {
+    const auto lane = lane_of(result.name);
     ESP_LOGI(
         tag,
-        "%-34s %10llu ops %9u cyc/op %9u ns/op",
-        result.name,
+        "%-9s %-31s %10llu ops %9u cyc/op %9u ns/op",
+        lane.surface,
+        lane.name,
         static_cast<unsigned long long>(result.ops),
         static_cast<unsigned>(result.cycles_op),
         static_cast<unsigned>(result.ns_op));
@@ -89,7 +124,7 @@ void section(const char* const name)
 {
     ESP_LOGI(tag, "%s", "");
     ESP_LOGI(tag, "== %s ==", name);
-    ESP_LOGI(tag, "%-34s %10s     %9s     %9s", "lane", "ops", "cycles", "ns");
+    ESP_LOGI(tag, "%-9s %-31s %10s     %9s     %9s", "surface", "lane", "ops", "cycles", "ns");
 }
 
 void stack_mark(const char* const label)
@@ -100,10 +135,12 @@ void stack_mark(const char* const label)
 
 void print_cycles(const char* const name, const arc::CycleStats& stats)
 {
+    const auto lane = lane_of(name);
     ESP_LOGI(
         tag,
-        "%-34s %10u samples %9u min %9u avg %9u max",
-        name,
+        "%-9s %-31s %10u samples %9u min %9u avg %9u max",
+        lane.surface,
+        lane.name,
         static_cast<unsigned>(stats.samples),
         static_cast<unsigned>(stats.samples == 0U ? 0U : stats.min),
         static_cast<unsigned>(stats.avg()),
@@ -112,10 +149,12 @@ void print_cycles(const char* const name, const arc::CycleStats& stats)
 
 void print_jitter(const char* const name, const arc::JitterStats& stats)
 {
+    const auto lane = lane_of(name);
     ESP_LOGI(
         tag,
-        "%-34s %10u samples %9d min %9u avg|j| %9d max",
-        name,
+        "%-9s %-31s %10u samples %9d min %9u avg|j| %9d max",
+        lane.surface,
+        lane.name,
         static_cast<unsigned>(stats.samples),
         static_cast<int>(stats.samples == 0U ? 0 : stats.min),
         static_cast<unsigned>(stats.avg_abs()),
@@ -958,9 +997,9 @@ void bench_silicon()
         }
     }));
 
-    arc::Aes aes;
+    static arc::Aes aes;
     ESP_ERROR_CHECK(aes.set(std::span(key)));
-    esp_aes_context raw_aes{};
+    static esp_aes_context raw_aes{};
     esp_aes_init(&raw_aes);
     configASSERT(esp_aes_setkey(&raw_aes, key.data(), static_cast<unsigned>(key.size() * 8U)) == 0);
     print(measure("aes ecb block", small_rounds, [&]() {
@@ -1058,9 +1097,9 @@ void bench_silicon()
         }
     }));
 
-    arc::Gcm gcm;
+    static arc::Gcm gcm;
     ESP_ERROR_CHECK(gcm.set(std::span(key)));
-    esp_gcm_context raw_gcm{};
+    static esp_gcm_context raw_gcm{};
     esp_aes_gcm_init(&raw_gcm);
     configASSERT(esp_aes_gcm_setkey(
                      &raw_gcm,
@@ -1392,6 +1431,7 @@ void run()
     ESP_LOGI(tag, "real ESP32-S3 benchmark start");
     ESP_LOGI(tag, "scope=no external fixture; external-device buses still need a wiring fixture, internal/self-test lanes are included");
     ESP_LOGI(tag, "compare=Arc + raw ESP-IDF silicon paths");
+    ESP_LOGI(tag, "columns=surface names the implementation: arc, idf, arduino, or std");
     ESP_LOGI(tag, "system=temp + ota + nvs + twai self-test loopback");
 #ifdef ARC_BENCH_HAS_ARDUINO
     ESP_LOGI(tag, "compare+=Arduino-ESP32 component paths");

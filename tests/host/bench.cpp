@@ -50,6 +50,33 @@ struct Bench {
     double ns_op;
 };
 
+struct Lane {
+    const char* surface;
+    const char* name;
+};
+
+[[nodiscard]] bool starts_with(const char* const text, const char* const prefix) noexcept
+{
+    return std::strncmp(text, prefix, std::strlen(prefix)) == 0;
+}
+
+[[nodiscard]] Lane lane_of(const char* const name) noexcept
+{
+    if (starts_with(name, "arc::")) {
+        return Lane{.surface = "arc", .name = name + 5U};
+    }
+    if (starts_with(name, "std::")) {
+        return Lane{.surface = "std", .name = name + 5U};
+    }
+    if (starts_with(name, "mutex ")) {
+        return Lane{.surface = "std", .name = name};
+    }
+    if (starts_with(name, "usage ")) {
+        return Lane{.surface = "arc", .name = name + 6U};
+    }
+    return Lane{.surface = "arc", .name = name};
+}
+
 struct TelemetryFrame {
     std::uint32_t seq;
     std::int32_t accel_x;
@@ -98,8 +125,10 @@ Bench measure(const char* const name, const std::uint64_t ops, Fn&& fn)
 
 void print(const Bench& bench)
 {
-    std::printf("%-34s %12llu ops %12.2f ns/op\n",
-                bench.name,
+    const auto lane = lane_of(bench.name);
+    std::printf("%-9s %-31s %12llu ops %12.2f ns/op\n",
+                lane.surface,
+                lane.name,
                 static_cast<unsigned long long>(bench.ops),
                 bench.ns_op);
 }
@@ -107,7 +136,7 @@ void print(const Bench& bench)
 void section(const char* const name)
 {
     std::printf("\n== %s ==\n", name);
-    std::printf("%-34s %12s     %12s\n", "lane", "ops", "ns/op");
+    std::printf("%-9s %-31s %12s     %12s\n", "surface", "lane", "ops", "ns/op");
 }
 
 void bench_spsc()

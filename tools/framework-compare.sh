@@ -137,6 +137,30 @@ void expect(const bool condition, const char* const message)
     }
 }
 
+struct Lane {
+    const char* surface;
+    const char* name;
+};
+
+bool starts_with(const char* const text, const char* const prefix) noexcept
+{
+    return std::strncmp(text, prefix, std::strlen(prefix)) == 0;
+}
+
+Lane lane_of(const char* const name) noexcept
+{
+    if (starts_with(name, "Arc ")) {
+        return Lane{.surface = "arc", .name = name + 4U};
+    }
+    if (starts_with(name, "ESP-IDF ")) {
+        return Lane{.surface = "idf", .name = name + 8U};
+    }
+    if (starts_with(name, "Arduino ")) {
+        return Lane{.surface = "arduino", .name = name + 8U};
+    }
+    return Lane{.surface = "arc", .name = name};
+}
+
 template <typename Fn>
 void bench(const char* const name, const std::uint64_t ops, Fn&& fn)
 {
@@ -144,8 +168,10 @@ void bench(const char* const name, const std::uint64_t ops, Fn&& fn)
     fn();
     const auto stop = Clock::now();
     const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
-    std::printf("%-32s %12llu ops %10.2f ns/op\n",
-                name,
+    const auto lane = lane_of(name);
+    std::printf("%-9s %-29s %12llu ops %10.2f ns/op\n",
+                lane.surface,
+                lane.name,
                 static_cast<unsigned long long>(ops),
                 static_cast<double>(ns) / static_cast<double>(ops));
 }
@@ -315,6 +341,7 @@ void bench_frame_set(ArcSink& arc_sink, Print& byte_base, Print& bulk_base)
 int main()
 {
     std::puts("== real framework host compare ==");
+    std::printf("%-9s %-29s %12s     %10s\n", "surface", "lane", "ops", "ns/op");
 
     ArcSink arc_sink;
     ArduinoBytePrint byte_print;
