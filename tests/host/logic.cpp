@@ -23,6 +23,7 @@
 #include "arc/log.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
+#include "arc/pack.hpp"
 #include "arc/rtos.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
@@ -1033,6 +1034,33 @@ void test_log_lane()
     expect(payload_sum == 24U, "LogLane payloads");
 }
 
+void test_pack()
+{
+    enum class Kind : std::uint8_t {
+        sample = 0x41U,
+    };
+
+    using Telemetry = arc::pack::Schema<Kind, std::uint16_t, std::int32_t>;
+    static_assert(Telemetry::bytes == 7U);
+
+    std::array<std::uint8_t, Telemetry::bytes> frame{};
+    const auto encoded = Telemetry::write(frame, Kind::sample, 0x1234U, -2);
+    expect(encoded.has_value(), "Pack encode");
+    expect((frame == std::array<std::uint8_t, 7>{0x41U, 0x12U, 0x34U, 0xffU, 0xffU, 0xffU, 0xfeU}), "Pack big endian");
+
+    Kind kind{};
+    std::uint16_t id{};
+    std::int32_t value{};
+    expect(Telemetry::read(*encoded, kind, id, value).has_value(), "Pack decode");
+    expect(kind == Kind::sample && id == 0x1234U && value == -2, "Pack roundtrip");
+
+    std::array<std::uint8_t, Telemetry::bytes> little{};
+    expect(Telemetry::write<arc::pack::Endian::little>(little, Kind::sample, 0x1234U, -2).has_value(),
+           "Pack little encode");
+    expect((little == std::array<std::uint8_t, 7>{0x41U, 0x34U, 0x12U, 0xfeU, 0xffU, 0xffU, 0xffU}),
+           "Pack little endian");
+}
+
 void test_seqreg()
 {
     struct Snapshot {
@@ -1351,6 +1379,7 @@ int main()
     test_caps();
     test_dsp();
     test_log_lane();
+    test_pack();
     test_seqreg();
     test_claim();
     test_file();

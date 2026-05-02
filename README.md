@@ -74,8 +74,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Sd` mounts ESP32-S3 SD/MMC cards through FAT and keeps raw sector access explicit.
 - `arc::Fs` mounts SPIFFS and FAT-on-flash VFS paths with fixed handle ownership.
 - `arc::File` gives RAII VFS/POSIX file I/O without leaking `FILE*` ownership into app code.
-- `arc::Count` offloads pulse accumulation to the PCNT block.
-- `arc::dsp` adds hot-loop math kernels that pair naturally with `arc::simdbuf` and Core 1.
+- `arc::Count`, `arc::Quadrature`, and `arc::Encoder` offload pulse and quadrature accumulation to the PCNT block.
+- `arc::dsp` adds hot-loop math kernels, FIR, PID, and biquad primitives that pair naturally with `arc::simdbuf` and Core 1.
+- `arc::LogLane` gives Core 1 a lock-free binary event lane that Core 0 can drain and format later.
 - `arc::Probe` reads the Xtensa cycle counter so hot paths can be measured, not guessed.
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency defaults with runtime duty retuning.
@@ -116,7 +117,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Poll` multiplexes caller-owned TCP/TLS sockets from one Core 0 task without hidden heap allocation or per-connection stacks.
 - `arc::net::IpFamily` lets TCP calls and UDP policies stay dual-stack by default or force IPv4/IPv6 explicitly.
 - `arc::net::Tls` gives direct ESP-TLS client sessions for secure caller-buffer transports such as MQTTS without taking over reconnect or protocol policy.
+- `arc::net::Pbuf` gives RAII ownership and direct payload spans for lwIP pbufs when a path needs packet-buffer ownership without extra copies.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP/HTTPS client sessions, with explicit HTTPS factories when secure scheme enforcement matters.
+- `arc::pack::Schema` packs and unpacks fixed binary telemetry/config records with compile-time field sizing and caller-owned buffers.
 - `arc::net::Mqtt` gives caller-buffer MQTT 3.1.1 packet encoding, parsing, topic matching, and heapless session keepalive helpers without owning the transport lane.
 - `arc::net::Ws` gives WebSocket handshake helpers plus caller-buffer frame encode/parse without owning reconnect or task policy.
 - `arc::net::Coap` gives caller-buffer CoAP datagram encode/parse and option walking without hiding message layout.
@@ -167,7 +170,7 @@ Legend: `native` means the stack has a first-class surface for that area; `manua
 | SPI/I2C slave | native ownership and claims | native drivers | limited/manual | limited/no |
 | ADC oneshot/continuous DMA | native oneshot, calibration, DMA scope | native drivers | simplified | sensor components |
 | LCD I80/RGB/DVP DMA | native typed DMA ownership | native drivers | libraries/manual | limited/external |
-| MCPWM/LEDC/RMT/PCNT/SDM | native typed wrappers | native drivers | mixed wrappers/libraries | components/limited |
+| MCPWM/LEDC/RMT/PCNT/SDM | native typed wrappers plus quadrature helpers | native drivers | mixed wrappers/libraries | components/limited |
 | TWAI/CAN | native typed owner | native driver | library/manual | component-limited |
 | USB Serial/JTAG | native typed byte IO | native driver | friendly wrapper | limited/no |
 | USB OTG PHY | native low-level PHY owner | native/private-ish | TinyUSB-facing paths | no |
@@ -207,12 +210,13 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 | Core plane | `arc/task.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy` |
-| Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg` |
+| Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane` |
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::Time`, `arc::Clock`, `arc::Probe` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
-| Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
+| Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream` |
+| Binary records | `arc/pack.hpp` | `arc::pack::Schema`, `arc::pack::Endian` |
 | Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::Xts`, `arc::Fuse`, `arc::Rng` |
 
 </details>
@@ -1681,6 +1685,8 @@ Compile-time PCNT wrapper for hardware edge accumulation.
 
 Use this when the silicon should count pulses while the CPU only samples or reacts at a slower cadence.
 
+`arc::Quadrature<PhaseA, PhaseB, ...>` is the PCNT alias for rotary/linear encoder A/B phase counting. `arc::Encoder<Counter>` adds static `position()` and `sample(dt_us)` helpers that return position, delta, and caller-supplied sample interval without allocating state.
+
 ### `arc::Timer<Hz, Source = GPTIMER_CLK_SRC_DEFAULT, Direction = GPTIMER_COUNT_UP>`
 
 Compile-time GPTimer wrapper for a hardware timebase.
@@ -1800,9 +1806,21 @@ Seqlock-style latest-snapshot lane for payloads larger than one word.
 - `read()` retries until one stable snapshot is observed
 - `try_read(value)` gives you the same read without blocking
 
-`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It publishes into an inactive shadow slot before flipping the even sequence, so readers never copy from the slot a writer is mutating. The sequence counter still carries release/acquire visibility; the payload boundary uses compiler fences rather than global seq-cst fences so the hot path stays lighter on weakly ordered targets. `write()` still masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
+`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It publishes into an inactive shadow slot before flipping the even sequence, so readers never copy from the slot a writer is mutating. The sequence counter carries release/acquire visibility, and the payload boundary uses acquire/release fences without forcing seq-cst ordering. `write()` still masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
+
+### `arc::LogLane<Capacity>`
+
+Lock-free binary event lane for realtime observability.
+
+- `push(id, payload, aux)` records cycle tick, event ID, and two 32-bit payload words without formatting or UART work.
+- `pop(event)` lets Core 0 drain one event.
+- `drain(fn, max)` drains a bounded batch into a formatter, socket, file, or test hook.
+- `dropped()` reports overflow count when the producer outruns the consumer.
+- `arc::log_id("name")` creates stable non-zero 32-bit event IDs at compile time.
+
+Use this when Core 1 must report anomalies without calling `ESP_LOGx`, formatting strings, or blocking on UART/Wi-Fi.
 
 ### `arc::Probe` and `arc::CycleStats`
 
@@ -1825,6 +1843,8 @@ Hot-loop math helpers for the compute plane.
 - `arc::dsp::mac(...)` accumulates `acc += in * gain`.
 - `arc::dsp::peak(...)` finds the absolute peak.
 - `arc::dsp::Fir<T, N>` provides a no-heap FIR state machine with `step(...)` and `run(...)`.
+- `arc::dsp::Pid<T>` provides a no-heap PID controller with clamped integral state and derivative-on-measurement behavior to avoid derivative kick.
+- `arc::dsp::Biquad<T>` provides a direct-form IIR/FIR section with caller-provided coefficients.
 
 Use this when Core 1 is doing signal work and you want aligned buffers plus tight, vector-friendly loops without a heavyweight DSP framework.
 
@@ -2013,6 +2033,19 @@ Heapless `select()` wrapper for Core 0 socket fan-in.
 
 Use this with `Tcp::nonblocking()` or `Tls::nonblocking()` when one task needs to drive several MQTT, WebSocket, or custom streams without one FreeRTOS stack per connection.
 
+### `arc::net::Pbuf`
+
+Move-only RAII owner for lwIP packet buffers.
+
+- `alloc(layer, bytes, type)` wraps `pbuf_alloc(...)` and returns `arc::Result<arc::net::Pbuf>`.
+- `transport_ram(bytes)` is the common transport-layer RAM packet helper.
+- `payload()` returns a mutable or const span over the first pbuf payload segment.
+- `len()` and `total_len()` expose segment and chain lengths.
+- `native()` exposes the raw `pbuf*`; `release()` transfers ownership to lwIP or another owner.
+- `reset()` frees the current chain with `pbuf_free(...)`.
+
+Use this when a Core 0 network path needs explicit pbuf lifetime and direct packet-buffer access instead of copying into an intermediate span.
+
 ### `arc::net::Tls`
 
 Direct ESP-TLS client transport for Core 0 secure control and telemetry paths.
@@ -2038,6 +2071,18 @@ Tiny stream composition helpers for transports that expose `send_all(...)` and `
 - `frame16(out, payload)` encodes the same record into a caller-owned scratch buffer when the next layer wants a contiguous frame before sending.
 
 Use this when an application protocol needs exact records on top of TCP or TLS but still should not own a reconnect loop, parser task, or heap buffer.
+
+### `arc::pack::Schema<Fields...>`
+
+Fixed binary record packer for telemetry and configuration frames.
+
+- `Schema<...>::bytes` is the compile-time wire size.
+- `write<Endian>(out, values...)` writes integer/enum fields into caller-owned output and returns the written span.
+- `read<Endian>(in, refs...)` decodes the same schema into caller-owned variables.
+- `Endian::big` is the default; `Endian::little` is available for local protocols.
+- Field types are limited to non-bool integer and enum scalars up to 64 bits.
+
+Use this when a Core 1/Core 0 or device/network boundary needs a fixed ABI with no heap, no reflection runtime, and compile-time size checks.
 
 ### `arc::net::Http`
 

@@ -224,6 +224,8 @@
 #include "arc/pbuf.hpp"
 #endif
 
+#include "arc/pack.hpp"
+
 #if __has_include("esp_tls.h")
 #include "arc/tls.hpp"
 #endif
