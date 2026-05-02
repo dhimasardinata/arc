@@ -24,11 +24,13 @@
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/pack.hpp"
+#include "arc/postmortem.hpp"
 #include "arc/probe.hpp"
 #include "arc/rtos.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
 #include "arc/stream.hpp"
+#include "arc/timesync.hpp"
 #include "arc/ws.hpp"
 
 namespace {
@@ -1059,6 +1061,57 @@ void test_log_lane()
     expect(payload_sum == 24U, "LogLane payloads");
 }
 
+void test_postmortem()
+{
+    using Dump = arc::Postmortem<4>;
+    Dump::clear();
+    Dump::boot();
+    expect(Dump::valid(), "Postmortem valid");
+    expect(Dump::header().boots == 1U, "Postmortem boot count");
+
+    Dump::append(arc::LogEvent{.tick = 1U, .id = 10U, .payload = 20U, .aux = 30U});
+    Dump::append(arc::LogEvent{.tick = 2U, .id = 11U, .payload = 21U, .aux = 31U});
+    Dump::append(arc::LogEvent{.tick = 3U, .id = 12U, .payload = 22U, .aux = 32U});
+    Dump::append(arc::LogEvent{.tick = 4U, .id = 13U, .payload = 23U, .aux = 33U});
+    Dump::append(arc::LogEvent{.tick = 5U, .id = 14U, .payload = 24U, .aux = 34U});
+    expect(Dump::size() == 4U, "Postmortem ring size");
+    expect(Dump::event(0).tick == 2U && Dump::event(3).tick == 5U, "Postmortem keeps newest tail");
+
+    arc::LogLane<4> lane;
+    expect(lane.push(99U, 1U, 2U), "Postmortem lane push");
+    expect(Dump::capture(lane) == 1U, "Postmortem capture count");
+    expect(Dump::event(3).id == 99U, "Postmortem capture event");
+}
+
+void test_timesync()
+{
+    arc::TimeSync sync{};
+    const auto first = sync.discipline(
+        arc::TimeSyncSample{
+            .local_send_us = 1'000,
+            .remote_recv_us = 1'120,
+            .remote_send_us = 1'140,
+            .local_recv_us = 1'040,
+        },
+        arc::TimeSyncConfig{.kp_shift = 0, .ki_shift = 8, .max_step_us = 1'000, .max_integral_us = 1'000});
+    expect(first.raw_offset_us == 110, "TimeSync raw offset");
+    expect(first.filtered_offset_us == 110, "TimeSync correction");
+    expect(first.delay_us == 20, "TimeSync delay");
+    expect(sync.local_to_remote(1'000) == 1'110, "TimeSync local to remote");
+    expect(sync.remote_to_local(1'110) == 1'000, "TimeSync remote to local");
+
+    const auto second = sync.discipline(
+        arc::TimeSyncSample{
+            .local_send_us = 2'000,
+            .remote_recv_us = 2'120,
+            .remote_send_us = 2'120,
+            .local_recv_us = 2'000,
+        },
+        arc::TimeSyncConfig{.kp_shift = 1, .ki_shift = 8, .max_step_us = 5, .max_integral_us = 1'000});
+    expect(second.correction_us == 5, "TimeSync correction clamp");
+    expect(second.filtered_offset_us == 115, "TimeSync filtered offset");
+}
+
 void test_pack()
 {
     enum class Kind : std::uint8_t {
@@ -1434,6 +1487,8 @@ int main()
     test_caps();
     test_dsp();
     test_log_lane();
+    test_postmortem();
+    test_timesync();
     test_pack();
     test_probe_stats();
     test_seqreg();

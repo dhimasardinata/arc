@@ -52,4 +52,4 @@ using Core1 = arc::Plane<Pulse, CONFIG_ARC_ESPNOW_STACK, Link>;
 - optional `tick(bus, now)`
 - optional `recv(bus, peer, data, len)`
 
-The default example keeps receive logic out of the hot path and only uses `start(...)` plus `tick(...)`.
+The default example keeps receive logic out of the hot path and only uses `start(...)` plus `tick(...)`. Production links can call `Core0::rotate_lmk(new_key)` while the plane is active to rotate the peer LMK without tearing down the radio task.

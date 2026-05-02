@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -148,6 +149,27 @@ struct EspNow {
             vTaskDelay(1);
         }
         return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t rotate_lmk(
+        const std::array<std::uint8_t, ESP_NOW_KEY_LEN>& lmk,
+        const bool encrypt = true) noexcept
+    {
+        if (__atomic_load_n(&state.active, __ATOMIC_ACQUIRE) == 0U) {
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        esp_now_peer_info_t peer{};
+        copy(peer.peer_addr, Policy::peer, ESP_NOW_ETH_ALEN);
+        peer.channel = Policy::channel;
+        peer.ifidx = WIFI_IF_STA;
+        peer.encrypt = encrypt;
+        copy(peer.lmk, lmk, ESP_NOW_KEY_LEN);
+
+        if (esp_now_is_peer_exist(Policy::peer.data())) {
+            return esp_now_mod_peer(&peer);
+        }
+        return esp_now_add_peer(&peer);
     }
 
 private:

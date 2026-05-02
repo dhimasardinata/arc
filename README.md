@@ -211,8 +211,8 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 | Core plane | `arc/task.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp`, `arc/prefetch.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy`, `arc::prefetch` |
-| Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane` |
-| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats` |
+| Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem` |
+| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/timesync.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::TimeSync` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space` |
 | Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap` |
@@ -1833,6 +1833,17 @@ Lock-free binary event lane for realtime observability.
 
 Use this when Core 1 must report anomalies without calling `ESP_LOGx`, formatting strings, or blocking on UART/Wi-Fi.
 
+### `arc::Postmortem<Capacity>`
+
+RTC no-init ring buffer for reboot-surviving diagnostics.
+
+- `boot()` validates or initializes the RTC record and increments the boot counter.
+- `append(event)` writes one `arc::LogEvent` into the retained ring.
+- `capture(log_lane)` drains a `LogLane` into RTC storage and records its dropped-event count.
+- `header()`, `size()`, and `event(i)` expose the retained tail after a soft reboot.
+
+Use this from panic, watchdog, or shutdown hooks when a deterministic system needs a small post-mortem trail before Core 0 formats it later.
+
 ### `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, and `arc::DeadlineStats`
 
 Cycle-counter instrumentation for hot paths.
@@ -1847,6 +1858,16 @@ Cycle-counter instrumentation for hot paths.
 - `arc::Clock::ns(cycles, mhz)` and `signed_ns(cycles, mhz)` convert cycle measurements to nanoseconds for reports.
 
 Use this when you want to validate the actual cost of a hot path, scheduler period, or realtime budget instead of trusting intuition.
+
+### `arc::TimeSync`
+
+Zero-allocation PI discipliner for peer clock synchronization.
+
+- `TimeSyncSample` carries local send, remote receive, remote send, and local receive timestamps in microseconds.
+- `discipline(sample, config)` computes NTP-style offset/delay and applies bounded proportional/integral correction.
+- `local_to_remote(us)` and `remote_to_local(us)` convert timestamps using the filtered offset.
+
+Use this over ESP-NOW or UDP when multiple S3 nodes need a shared microsecond-scale time base without heap state or a background task.
 
 ### `arc::dsp`
 
@@ -2237,6 +2258,7 @@ Optional hooks:
 
 ESP-NOW holds one failed send as a pending frame before draining more events, matching the UDP backpressure contract.
 Set optional `Policy::stale` to a non-zero tick duration when stale pending telemetry should be discarded before radio recovery sends it.
+Use `rotate_lmk(new_key)` while the plane is active to replace the peer LMK through `esp_now_mod_peer()` without tearing down the radio task.
 
 This is the transport to use when you want Wi-Fi silicon and low latency, but not IP, DHCP, or sockets.
 
