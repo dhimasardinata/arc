@@ -14,9 +14,11 @@
 #include <vector>
 
 #include "arc/any.hpp"
+#include "arc/bare_core.hpp"
 #include "arc/caps.hpp"
 #include "arc/claim.hpp"
 #include "arc/concepts.hpp"
+#include "arc/crypto_dma.hpp"
 #include "arc/dsp.hpp"
 #include "arc/ecs.hpp"
 #include "arc/ethernet.hpp"
@@ -25,14 +27,17 @@
 #include "arc/flash_log.hpp"
 #include "arc/flash_off.hpp"
 #include "arc/foc.hpp"
+#include "arc/fsm.hpp"
 #include "arc/hil.hpp"
 #include "arc/http_server.hpp"
 #include "arc/init.hpp"
+#include "arc/interrupt_matrix.hpp"
 #include "arc/kalman.hpp"
 #include "arc/coap.hpp"
 #include "arc/log.hpp"
 #include "arc/matrix.hpp"
 #include "arc/motion.hpp"
+#include "arc/mmu_span.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/netrpc.hpp"
@@ -111,6 +116,9 @@ void expect(const bool condition, const char* const message)
 std::size_t pms_policy_regions{};
 bool flash_policy_active{};
 std::size_t w5500_policy_bytes{};
+std::size_t bare_core_boots{};
+std::size_t crypto_dma_bytes{};
+std::size_t interrupt_binds{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -155,6 +163,92 @@ struct MockStaticI2c {
         for (std::size_t i = 0; i < tx_bytes && i < rx_bytes; ++i) {
             out[i] = static_cast<std::uint8_t>(in[i] ^ 0xFFU);
         }
+        return ESP_OK;
+    }
+};
+
+struct MockBarePolicy {
+    static inline arc::BareCoreConfig config{};
+    static inline void (*entry)(void*) noexcept {};
+    static inline void* context{};
+
+    [[nodiscard]] static esp_err_t boot(
+        const arc::BareCoreConfig& cfg,
+        void (*fn)(void*) noexcept,
+        void* arg) noexcept
+    {
+        config = cfg;
+        entry = fn;
+        context = arg;
+        ++bare_core_boots;
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t halt() noexcept
+    {
+        return ESP_OK;
+    }
+};
+
+struct MockCryptoDmaPolicy {
+    static inline arc::CryptoDmaJob last{};
+    static inline bool complete{};
+
+    [[nodiscard]] static esp_err_t submit(const arc::CryptoDmaJob& job) noexcept
+    {
+        last = job;
+        crypto_dma_bytes = job.bytes;
+        complete = true;
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static bool done() noexcept
+    {
+        return complete;
+    }
+};
+
+struct MockMmuPolicy {
+    static inline std::array<std::uint32_t, 4> flash{0x10U, 0x20U, 0x30U, 0x40U};
+    static inline bool unmapped{};
+
+    [[nodiscard]] static arc::Result<arc::MmuRegion> map(const arc::MmuMapRequest& request) noexcept
+    {
+        if (request.bytes > flash.size() * sizeof(std::uint32_t)) {
+            return arc::fail(ESP_ERR_INVALID_ARG);
+        }
+        return arc::ok(arc::MmuRegion{
+            .address = flash.data(),
+            .bytes = request.bytes,
+            .handle = 7U,
+        });
+    }
+
+    static void unmap(const arc::MmuRegion& region) noexcept
+    {
+        unmapped = region.handle == 7U;
+    }
+};
+
+struct MockInterruptPolicy {
+    static inline arc::InterruptBinding last{};
+    static inline void (*handler)(void*) noexcept {};
+    static inline void* arg{};
+
+    [[nodiscard]] static esp_err_t bind(
+        const arc::InterruptBinding& binding,
+        void (*fn)(void*) noexcept,
+        void* context) noexcept
+    {
+        last = binding;
+        handler = fn;
+        arg = context;
+        ++interrupt_binds;
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static esp_err_t unbind(const arc::InterruptBinding&) noexcept
+    {
         return ESP_OK;
     }
 };
@@ -1608,6 +1702,69 @@ void test_pack()
     expect(reflected_out.seq == reflected.seq && reflected_out.temp == reflected.temp, "Pack reflected roundtrip");
 }
 
+void test_static_silicon_facades()
+{
+    struct BareProgram {
+        static void loop() noexcept {}
+    };
+
+    std::array<std::byte, 256> stack{};
+    auto token = std::uint32_t{0xA5U};
+    expect((arc::BareCore<BareProgram, MockBarePolicy>::boot(stack, &token).has_value()), "BareCore boot");
+    expect(bare_core_boots == 1U && MockBarePolicy::config.stack.size() == stack.size(), "BareCore policy handoff");
+    expect(MockBarePolicy::context == &token, "BareCore context");
+
+    arc::DmaChain<1> input{};
+    arc::DmaChain<1> output{};
+    std::array<std::uint8_t, 16> in_bytes{};
+    std::array<std::uint8_t, 16> out_bytes{};
+    input.bind(0, in_bytes);
+    output.bind(0, out_bytes, true);
+    expect((arc::crypto_dma_submit<1, 1, MockCryptoDmaPolicy>(
+                input,
+                output,
+                in_bytes.size(),
+                arc::CryptoDmaMode::gcm_encrypt)
+                .has_value()),
+           "CryptoDma submit");
+    expect(crypto_dma_bytes == in_bytes.size() && arc::CryptoDma<MockCryptoDmaPolicy>::done(), "CryptoDma policy");
+
+    auto mapped = arc::MmuSpan<std::uint32_t>::map<MockMmuPolicy>(
+        {.source = 0U, .offset = 0U, .bytes = 3U * sizeof(std::uint32_t), .memory = 0U});
+    expect(mapped.has_value(), "MmuSpan map");
+    expect(mapped->size() == 3U && (*mapped)[1] == 0x20U, "MmuSpan view");
+    mapped->unmap<MockMmuPolicy>();
+    expect(MockMmuPolicy::unmapped, "MmuSpan unmap");
+
+    static auto handled = false;
+    constexpr auto handler = [](void*) noexcept { handled = true; };
+    using Irq = arc::InterruptMatrix<12, 5, 3, handler, MockInterruptPolicy>;
+    expect(Irq::bind(&token).has_value(), "InterruptMatrix bind");
+    expect(interrupt_binds == 1U && MockInterruptPolicy::last.source == 12, "InterruptMatrix route");
+    MockInterruptPolicy::handler(MockInterruptPolicy::arg);
+    expect(handled, "InterruptMatrix handler");
+
+    enum class State : std::uint8_t {
+        idle,
+        armed,
+        fault,
+    };
+    enum class Event : std::uint8_t {
+        arm,
+        trip,
+        reset,
+    };
+    using Machine = arc::fsm::Automaton<
+        State::idle,
+        arc::fsm::Terminals<State::fault>,
+        arc::fsm::Transition<State::idle, Event::arm, State::armed>,
+        arc::fsm::Transition<State::armed, Event::trip, State::fault>,
+        arc::fsm::Transition<State::armed, Event::reset, State::idle>>;
+    static_assert(Machine::valid());
+    expect(Machine::dispatch(State::idle, Event::arm) == State::armed, "FSM transition");
+    expect(Machine::dispatch(State::fault, Event::reset) == State::fault, "FSM terminal hold");
+}
+
 void test_rcu()
 {
     struct Config {
@@ -2000,6 +2157,7 @@ int main()
     test_postmortem();
     test_timesync();
     test_pack();
+    test_static_silicon_facades();
     test_rcu();
     test_ulp_shared();
     test_probe_stats();

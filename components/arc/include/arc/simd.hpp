@@ -19,7 +19,8 @@ inline void store4(float* ptr, const float32x4_t value) noexcept
 
 [[nodiscard]] inline float32x4_t splat4(const float value) noexcept
 {
-    return {value, value, value, value};
+    const float values[4]{value, value, value, value};
+    return load4(values);
 }
 
 [[nodiscard]] inline float32x4_t mac4(
