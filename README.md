@@ -86,6 +86,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Task<void>` provides heapless coroutine state machines when the coroutine frame is allocated from an explicit `arc::TaskArena`.
 - `arc::CacheLock` is a policy facade for locking hot code/data regions into cache when a board needs cache-miss-free control loops.
 - `arc::RtcRing<T, Capacity>` gives the ULP RISC-V and Xtensa cores a trivially copyable SPSC lane in RTC-capable storage.
+- `arc::WorldGuard`, `HardwareGuard`, and `ICacheLock` expose policy-based hooks for S3 isolation, watchpoints, and instruction-cache pinning without baking private register layouts into public headers.
+- `arc::pack::Overlay<Codec>` reads endian-correct fields directly from DMA/network spans without copying into a local struct.
+- `arc::ulp::riscv::assemble(...)` emits tiny ULP RISC-V programs as compile-time `std::array<uint32_t, N>` blobs.
 - `arc::LogLane` gives Core 1 a lock-free binary event lane that Core 0 can drain and format later.
 - `arc::TraceEventWriter` turns binary log events into Chrome/Perfetto trace-event JSON fragments from caller-owned buffers.
 - `arc::TraceStream` drains binary log lanes into a caller-provided UDP/WebSocket/file sink as live Perfetto JSON chunks.

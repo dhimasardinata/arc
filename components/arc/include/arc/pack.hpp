@@ -79,6 +79,9 @@ template <Endian Order, typename Field>
 
 }  // namespace detail
 
+template <typename Codec, Endian Order = Endian::big>
+struct Overlay;
+
 template <typename... Fields>
 struct Schema {
     static_assert((Scalar<Fields> && ...), "pack fields must be integer or enum scalars up to 64 bits");
@@ -173,6 +176,17 @@ struct Struct {
     }
 
 private:
+    template <auto Member, typename First, typename... Rest>
+    [[nodiscard]] static consteval std::size_t member_offset() noexcept
+    {
+        if constexpr (First::member == Member) {
+            return 0U;
+        } else {
+            static_assert(sizeof...(Rest) > 0U, "pack overlay member is not part of codec");
+            return sizeof(WireTypeT<typename First::Type>) + member_offset<Member, Rest...>();
+        }
+    }
+
     template <Endian Order, typename Field>
     static void write_member(
         const std::span<std::uint8_t> out,
@@ -190,10 +204,32 @@ private:
     {
         out.*Field::member = detail::read_scalar<Order, typename Field::Type>(in, pos);
     }
+
+    template <typename, Endian>
+    friend struct Overlay;
 };
 
 template <typename Object, auto... Members>
 using StructOf = Struct<Object, Field<Members>...>;
+
+template <typename Object, typename... Fields, Endian Order>
+struct Overlay<Struct<Object, Fields...>, Order> {
+    std::span<const std::uint8_t> bytes{};
+
+    [[nodiscard]] bool valid() const noexcept
+    {
+        return bytes.size() >= Struct<Object, Fields...>::bytes;
+    }
+
+    template <auto Member>
+    [[nodiscard]] auto get() const noexcept
+    {
+        using Codec = Struct<Object, Fields...>;
+        using Type = typename Field<Member>::Type;
+        auto pos = Codec::template member_offset<Member, Fields...>();
+        return detail::read_scalar<Order, Type>(bytes, pos);
+    }
+};
 
 template <typename Object>
 struct ReflectMembers;

@@ -29,4 +29,17 @@ struct CacheLock {
     }
 };
 
+template <auto Function, typename Policy>
+struct ICacheLock {
+    [[nodiscard]] static esp_err_t lock(const std::size_t bytes = 0U) noexcept
+    {
+        return Policy::lock_code(reinterpret_cast<const void*>(Function), bytes);
+    }
+
+    [[nodiscard]] static esp_err_t unlock() noexcept
+    {
+        return Policy::unlock_code(reinterpret_cast<const void*>(Function));
+    }
+};
+
 }  // namespace arc
