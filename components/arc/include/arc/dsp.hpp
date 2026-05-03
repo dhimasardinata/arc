@@ -11,9 +11,89 @@
 namespace arc::dsp {
 
 template <typename T>
+struct Phase3 {
+    T a{};
+    T b{};
+    T c{};
+};
+
+template <typename T>
+struct AlphaBeta {
+    T alpha{};
+    T beta{};
+};
+
+template <typename T>
+struct Dq {
+    T d{};
+    T q{};
+};
+
+template <typename T>
 [[nodiscard]] constexpr T clamp(const T value, const T lo, const T hi) noexcept
 {
     return value < lo ? lo : (value > hi ? hi : value);
+}
+
+template <typename T>
+[[nodiscard]] constexpr AlphaBeta<T> clarke(const Phase3<T> phase) noexcept
+{
+    return {
+        .alpha = phase.a,
+        .beta = (phase.a + (phase.b * T{2})) * T{0.5773502691896258},
+    };
+}
+
+template <typename T>
+[[nodiscard]] constexpr Phase3<T> inverse_clarke(const AlphaBeta<T> value) noexcept
+{
+    return {
+        .a = value.alpha,
+        .b = (T{-0.5} * value.alpha) + (T{0.8660254037844386} * value.beta),
+        .c = (T{-0.5} * value.alpha) - (T{0.8660254037844386} * value.beta),
+    };
+}
+
+template <typename T>
+[[nodiscard]] constexpr Dq<T> park(
+    const AlphaBeta<T> value,
+    const T sin_theta,
+    const T cos_theta) noexcept
+{
+    return {
+        .d = (value.alpha * cos_theta) + (value.beta * sin_theta),
+        .q = (value.beta * cos_theta) - (value.alpha * sin_theta),
+    };
+}
+
+template <typename T>
+[[nodiscard]] constexpr AlphaBeta<T> inverse_park(
+    const Dq<T> value,
+    const T sin_theta,
+    const T cos_theta) noexcept
+{
+    return {
+        .alpha = (value.d * cos_theta) - (value.q * sin_theta),
+        .beta = (value.d * sin_theta) + (value.q * cos_theta),
+    };
+}
+
+template <typename T>
+[[nodiscard]] constexpr Phase3<T> duty_centered(
+    const AlphaBeta<T> voltage,
+    const T bus_voltage) noexcept
+{
+    if (bus_voltage <= T{}) {
+        return {T{0.5}, T{0.5}, T{0.5}};
+    }
+
+    const auto phase = inverse_clarke(voltage);
+    const auto scale = T{0.5} / bus_voltage;
+    return {
+        .a = clamp(T{0.5} + (phase.a * scale), T{}, T{1}),
+        .b = clamp(T{0.5} + (phase.b * scale), T{}, T{1}),
+        .c = clamp(T{0.5} + (phase.c * scale), T{}, T{1}),
+    };
 }
 
 template <typename T>

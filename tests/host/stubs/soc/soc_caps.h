@@ -1,0 +1,4 @@
+#pragma once
+
+#define SOC_RISCV_COPROC_SUPPORTED 1
+#define SOC_ULP_FSM_SUPPORTED 1

@@ -6,6 +6,7 @@
 #include <type_traits>
 
 #include "esp_err.h"
+#include "esp_attr.h"
 #include "soc/soc_caps.h"
 #include "ulp.h"
 #include "ulp_riscv.h"
@@ -31,6 +32,34 @@ struct Ulp {
         [[nodiscard]] std::uint32_t add(const std::uint32_t delta = 1U) noexcept
         {
             return __atomic_add_fetch(&value, delta, __ATOMIC_ACQ_REL);
+        }
+    };
+
+    template <typename T>
+    struct alignas(8) Shared {
+        static_assert(std::is_trivially_copyable_v<T>, "ULP shared payload must be trivially copyable");
+        static_assert(std::is_trivially_destructible_v<T>, "ULP shared payload must be trivially destructible");
+        static_assert((sizeof(T) % 4U) == 0U, "ULP shared payload size must be word aligned");
+
+        Word seq{};
+        alignas(8) T value{};
+
+        void write(const T& next) noexcept
+        {
+            static_cast<void>(seq.add());
+            value = next;
+            static_cast<void>(seq.add());
+        }
+
+        [[nodiscard]] bool read(T& out) const noexcept
+        {
+            const auto head = seq.read();
+            if ((head & 1U) != 0U) {
+                return false;
+            }
+            out = value;
+            __atomic_thread_fence(__ATOMIC_ACQUIRE);
+            return head == seq.read();
         }
     };
 

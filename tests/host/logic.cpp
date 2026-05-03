@@ -18,20 +18,30 @@
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
 #include "arc/file.hpp"
+#include "arc/foc.hpp"
 #include "arc/http_server.hpp"
 #include "arc/init.hpp"
 #include "arc/coap.hpp"
 #include "arc/log.hpp"
+#include "arc/motion.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
+#include "arc/netrpc.hpp"
 #include "arc/pack.hpp"
+#include "arc/pms.hpp"
 #include "arc/postmortem.hpp"
 #include "arc/probe.hpp"
+#include "arc/rcu.hpp"
+#include "arc/rpc.hpp"
 #include "arc/rtos.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
 #include "arc/stream.hpp"
+#include "arc/secure_update.hpp"
+#include "arc/tdma.hpp"
 #include "arc/timesync.hpp"
+#include "arc/trace_event.hpp"
+#include "arc/ulp.hpp"
 #include "arc/ws.hpp"
 
 namespace {
@@ -75,6 +85,8 @@ void expect(const bool condition, const char* const message)
         std::exit(1);
     }
 }
+
+std::size_t pms_policy_regions{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -646,6 +658,35 @@ void test_fanin()
     expect(out[0] == 100 && out[1] == 101 && out[2] == 102, "Fanin batch pushed order");
 }
 
+void test_rpc_lane()
+{
+    enum class Op : std::uint8_t { set = 1U };
+    struct Request {
+        std::uint32_t value{};
+    };
+    struct Reply {
+        std::uint32_t applied{};
+    };
+
+    arc::RpcLane<Op, Request, Reply, 4> rpc;
+    expect(rpc.call(Op::set, Request{.value = 42U}, 7U), "RPC call queues request");
+
+    decltype(rpc)::Request request{};
+    expect(rpc.recv(request), "RPC recv request");
+    expect(request.serial == 7U && request.op == Op::set && request.payload.value == 42U, "RPC request fields");
+    expect(rpc.reply(request.serial, ESP_OK, Reply{.applied = request.payload.value + 1U}), "RPC queues reply");
+
+    decltype(rpc)::Reply reply{};
+    expect(rpc.poll_match(7U, reply), "RPC match reply");
+    expect(reply.status == ESP_OK && reply.payload.applied == 43U, "RPC reply fields");
+
+    expect(rpc.call(Op::set, Request{.value = 1U}, 8U), "RPC second call");
+    expect(rpc.recv(request), "RPC second recv");
+    expect(rpc.reply(9U, ESP_OK, Reply{.applied = 9U}), "RPC out-of-order reply");
+    expect(!rpc.poll_match(8U, reply), "RPC defers unmatched reply");
+    expect(rpc.poll_deferred(reply) && reply.serial == 9U, "RPC deferred reply preserved");
+}
+
 void test_checked_fanin()
 {
     arc::Audit<arc::Fanin<int, 4, 2>> fan;
@@ -1120,6 +1161,128 @@ void test_dsp()
     expect((plant.x == Plant::StateVec{2, 2}), "DSP StateSpace state update");
     expect(Plant::step(plant, model, Plant::InputVec{3})[0] == 2, "DSP StateSpace second output");
     expect((plant.x == Plant::StateVec{7, 5}), "DSP StateSpace second update");
+
+    const auto clarke = arc::dsp::clarke(arc::dsp::Phase3<float>{.a = 1.0F, .b = -0.5F, .c = -0.5F});
+    expect(clarke.alpha == 1.0F && clarke.beta == 0.0F, "DSP Clarke transform");
+    const auto park = arc::dsp::park(clarke, 0.0F, 1.0F);
+    expect(park.d == 1.0F && park.q == 0.0F, "DSP Park transform");
+    const auto phase = arc::dsp::inverse_clarke(arc::dsp::AlphaBeta<float>{.alpha = 1.0F, .beta = 0.0F});
+    expect(phase.a == 1.0F && phase.b == -0.5F && phase.c == -0.5F, "DSP inverse Clarke");
+}
+
+void test_foc_motion_tdma()
+{
+    struct Bridge {};
+    struct Scope {};
+    struct Encoder {};
+
+    arc::Foc<Bridge, Scope, Encoder, float> foc{};
+    foc.config = {
+        .d_gains = {.kp = 1.0F, .ki = 0.0F, .kd = 0.0F},
+        .q_gains = {.kp = 2.0F, .ki = 0.0F, .kd = 0.0F},
+        .limits = {.out_min = -1.0F, .out_max = 1.0F, .i_min = -1.0F, .i_max = 1.0F},
+    };
+    foc.target.write({.d = 0.0F, .q = 0.5F, .bus = 2.0F});
+    const auto out = foc.step(
+        {.current = {.a = 0.0F, .b = 0.0F, .c = 0.0F}, .sin_theta = 0.0F, .cos_theta = 1.0F},
+        0.00005F);
+    expect(out.current.d == 0.0F && out.current.q == 0.0F, "FOC current transform");
+    expect(out.duty.a == 0.5F && out.duty.b > 0.7F && out.duty.c < 0.3F, "FOC centered duty");
+
+    std::array<arc::MotionStep<3>, 8> steps{};
+    const auto plan = arc::MotionPlan<3>::line(
+        std::span(steps),
+        {.delta = {4, 2, 1}, .ticks_per_step = 10U});
+    expect(plan.has_value() && plan->size() == 4U, "Motion line size");
+    expect(steps[0].mask == 0x1U && steps[1].mask == 0x3U && steps[3].mask == 0x7U, "Motion Bresenham masks");
+
+    const auto active = arc::net::Tdma::window(1'225U, {.period_us = 4'000U, .slot_us = 1'000U, .guard_us = 50U, .slot = 1U});
+    expect(active.active && active.start_us == 1050U && active.end_us == 1950U, "TDMA active window");
+    const auto idle = arc::net::Tdma::window(2'225U, {.period_us = 4'000U, .slot_us = 1'000U, .guard_us = 50U, .slot = 1U});
+    expect(!idle.active, "TDMA inactive outside slot");
+}
+
+void test_netrpc_pms_secure_update()
+{
+    enum class Op : std::uint8_t { set = 2U };
+    struct WireCall {
+        std::uint32_t serial{};
+        Op op{};
+        std::int16_t value{};
+    };
+    using Wire = arc::pack::StructOf<WireCall, &WireCall::serial, &WireCall::op, &WireCall::value>;
+
+    std::array<std::uint8_t, Wire::bytes> frame{};
+    const auto encoded = arc::net::NetRpc<Wire>::encode(frame, WireCall{.serial = 9U, .op = Op::set, .value = -3});
+    expect(encoded.has_value(), "NetRPC encode");
+    WireCall decoded{};
+    expect(arc::net::NetRpc<Wire>::decode(*encoded, decoded).has_value(), "NetRPC decode");
+    expect(decoded.serial == 9U && decoded.op == Op::set && decoded.value == -3, "NetRPC roundtrip");
+
+    struct PmsPolicy {
+        static esp_err_t lock(const std::span<const arc::PmsRegion> in) noexcept
+        {
+            pms_policy_regions = in.size();
+            return ESP_OK;
+        }
+        static esp_err_t unlock() noexcept
+        {
+            pms_policy_regions = 0U;
+            return ESP_OK;
+        }
+    };
+
+    const std::array pms{
+        arc::PmsRegion{.base = frame.data(), .bytes = frame.size(), .core0 = arc::PmsAccess::read_write, .core1 = arc::PmsAccess::read},
+    };
+    expect(arc::Pms<PmsPolicy>::lock(std::span(pms)) == ESP_OK && pms_policy_regions == 1U, "PMS policy lock");
+    expect(arc::Pms<PmsPolicy>::unlock() == ESP_OK && pms_policy_regions == 0U, "PMS policy unlock");
+
+    struct Crypto {
+        bool verified{};
+        esp_err_t open(
+            std::span<const std::uint8_t> in,
+            std::span<std::uint8_t> out,
+            std::span<const std::uint8_t>,
+            std::span<const std::uint8_t>,
+            std::span<const std::uint8_t>) noexcept
+        {
+            std::memcpy(out.data(), in.data(), in.size());
+            return ESP_OK;
+        }
+        esp_err_t verify(std::span<const std::uint8_t>) noexcept
+        {
+            verified = true;
+            return ESP_OK;
+        }
+    };
+    struct Writer {
+        std::size_t bytes{};
+        bool done{};
+        esp_err_t begin(std::size_t) noexcept
+        {
+            return ESP_OK;
+        }
+        esp_err_t write(const void*, std::size_t size) noexcept
+        {
+            bytes += size;
+            return ESP_OK;
+        }
+        esp_err_t finish() noexcept
+        {
+            done = true;
+            return ESP_OK;
+        }
+    };
+
+    arc::SecureUpdate<Crypto, Writer> update{};
+    std::array<std::uint8_t, 4> cipher{1, 2, 3, 4};
+    std::array<std::uint8_t, 4> plain{};
+    expect(update.begin(4U) == ESP_OK, "SecureUpdate begin");
+    expect(update.write({.ciphertext = cipher, .nonce = cipher, .aad = {}, .tag = cipher}, plain) == ESP_OK,
+           "SecureUpdate write");
+    expect(update.finish(cipher) == ESP_OK && update.crypto.verified && update.writer.done, "SecureUpdate finish");
+    expect(update.writer.bytes == 4U && plain[3] == 4U, "SecureUpdate plaintext write");
 }
 
 void test_log_lane()
@@ -1141,6 +1304,24 @@ void test_log_lane()
     });
     expect(drained == 3U, "LogLane drain count");
     expect(payload_sum == 24U, "LogLane payloads");
+}
+
+void test_trace_event()
+{
+    std::array<char, 256> out{};
+    const auto begin = arc::TraceEventWriter::json_begin(std::span(out));
+    expect(begin.has_value(), "TraceEvent JSON begin");
+    expect(std::memcmp(begin->data(), "{\"traceEvents\":[", begin->size()) == 0, "TraceEvent begin text");
+
+    const arc::LogEvent event{.tick = 1234U, .id = 55U, .payload = 77U, .aux = 1U};
+    const auto encoded = arc::TraceEventWriter::json_event(std::span(out), event, true, "core1.loop");
+    expect(encoded.has_value(), "TraceEvent JSON event");
+    expect(std::strstr(out.data(), "\"name\":\"core1.loop\"") != nullptr, "TraceEvent name");
+    expect(std::strstr(out.data(), "\"ts\":1234") != nullptr, "TraceEvent timestamp");
+    expect(std::strstr(out.data(), "\"payload\":77") != nullptr, "TraceEvent payload");
+
+    std::array<char, 8> small{};
+    expect(!arc::TraceEventWriter::json_event(std::span(small), event), "TraceEvent small buffer rejects");
 }
 
 void test_postmortem()
@@ -1192,6 +1373,18 @@ void test_timesync()
         arc::TimeSyncConfig{.kp_shift = 1, .ki_shift = 8, .max_step_us = 5, .max_integral_us = 1'000});
     expect(second.correction_us == 5, "TimeSync correction clamp");
     expect(second.filtered_offset_us == 115, "TimeSync filtered offset");
+
+    const auto hw = sync.discipline_hw(
+        {
+            .local_send_hw = 4000,
+            .remote_recv_hw = 8000,
+            .remote_send_hw = 8400,
+            .local_recv_hw = 4800,
+            .local_hw_to_us_shift = 2,
+            .remote_hw_to_us_shift = 3,
+        },
+        arc::TimeSyncConfig{.kp_shift = 1, .ki_shift = 4, .max_step_us = 1000, .max_integral_us = 1000});
+    expect(hw.samples == 3U, "TimeSync hardware timestamp sample count");
 }
 
 void test_pack()
@@ -1219,6 +1412,59 @@ void test_pack()
            "Pack little encode");
     expect((little == std::array<std::uint8_t, 7>{0x41U, 0x34U, 0x12U, 0xfeU, 0xffU, 0xffU, 0xffU}),
            "Pack little endian");
+
+    struct PlainTelemetry {
+        std::uint32_t seq{};
+        std::int16_t temp{};
+    };
+    using PlainWire = arc::pack::StructOf<PlainTelemetry, &PlainTelemetry::seq, &PlainTelemetry::temp>;
+    static_assert(PlainWire::bytes == 6U);
+
+    const PlainTelemetry plain{.seq = 0x01020304U, .temp = -20};
+    std::array<std::uint8_t, PlainWire::bytes> plain_frame{};
+    const auto plain_encoded = arc::pack::serialize<arc::pack::Endian::big, PlainWire>(plain_frame, plain);
+    expect(plain_encoded.has_value(), "Pack struct encode");
+    expect((plain_frame == std::array<std::uint8_t, 6>{0x01U, 0x02U, 0x03U, 0x04U, 0xffU, 0xecU}),
+           "Pack struct big endian");
+
+    PlainTelemetry decoded{};
+    expect(arc::pack::deserialize<arc::pack::Endian::big, PlainWire>(*plain_encoded, decoded).has_value(),
+           "Pack struct decode");
+    expect(decoded.seq == plain.seq && decoded.temp == plain.temp, "Pack struct roundtrip");
+}
+
+void test_rcu()
+{
+    struct Config {
+        std::uint32_t seq{};
+        std::array<std::int16_t, 4> taps{};
+    };
+
+    arc::Rcu<Config> config{};
+    config.write({.seq = 1U, .taps = {1, 2, 3, 4}});
+    expect(config.read().seq == 1U && config.read().taps[3] == 4, "RCU first publish");
+
+    auto& staging = config.staging();
+    staging = {.seq = 2U, .taps = {5, 6, 7, 8}};
+    expect(config.read().seq == 1U, "RCU staging invisible");
+    config.publish();
+    expect(config.read().seq == 2U && config.read().taps[0] == 5, "RCU publish flips buffer");
+}
+
+void test_ulp_shared()
+{
+    struct Payload {
+        std::uint32_t seq{};
+        std::uint32_t flags{};
+    };
+
+    static_assert(alignof(arc::Ulp::Shared<Payload>) == 8U);
+    arc::Ulp::Shared<Payload> shared{};
+    shared.write({.seq = 7U, .flags = 0x55U});
+
+    Payload out{};
+    expect(shared.read(out), "ULP shared reads stable snapshot");
+    expect(out.seq == 7U && out.flags == 0x55U, "ULP shared payload");
 }
 
 void test_probe_stats()
@@ -1562,6 +1808,7 @@ int main()
     test_mpsc_threads();
     test_fanin();
     test_checked_fanin();
+    test_rpc_lane();
     test_mqtt();
     test_ws();
     test_coap();
@@ -1569,10 +1816,15 @@ int main()
     test_http_server();
     test_caps();
     test_dsp();
+    test_foc_motion_tdma();
+    test_netrpc_pms_secure_update();
     test_log_lane();
+    test_trace_event();
     test_postmortem();
     test_timesync();
     test_pack();
+    test_rcu();
+    test_ulp_shared();
     test_probe_stats();
     test_seqreg();
     test_claim();

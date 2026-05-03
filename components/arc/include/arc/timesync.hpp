@@ -12,6 +12,15 @@ struct TimeSyncSample {
     std::int64_t local_recv_us{};
 };
 
+struct TimeSyncHwSample {
+    std::int64_t local_send_hw{};
+    std::int64_t remote_recv_hw{};
+    std::int64_t remote_send_hw{};
+    std::int64_t local_recv_hw{};
+    std::int32_t local_hw_to_us_shift{};
+    std::int32_t remote_hw_to_us_shift{};
+};
+
 struct TimeSyncConfig {
     std::int32_t kp_shift{3};
     std::int32_t ki_shift{8};
@@ -77,6 +86,20 @@ struct TimeSync {
             .samples = stats.samples + 1U,
         };
         return stats;
+    }
+
+    [[nodiscard]] TimeSyncStats discipline_hw(
+        const TimeSyncHwSample sample,
+        const TimeSyncConfig config = {}) noexcept
+    {
+        return discipline(
+            {
+                .local_send_us = shift(sample.local_send_hw, sample.local_hw_to_us_shift),
+                .remote_recv_us = shift(sample.remote_recv_hw, sample.remote_hw_to_us_shift),
+                .remote_send_us = shift(sample.remote_send_hw, sample.remote_hw_to_us_shift),
+                .local_recv_us = shift(sample.local_recv_hw, sample.local_hw_to_us_shift),
+            },
+            config);
     }
 
 private:

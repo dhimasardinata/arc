@@ -103,6 +103,27 @@ struct Temp {
         return value;
     }
 
+    [[nodiscard]] static esp_err_t read_milli(int& value) noexcept
+    {
+        float c = 0.0F;
+        const auto err = read(c);
+        if (err != ESP_OK) {
+            return err;
+        }
+        value = static_cast<int>(c * 1000.0F);
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static Result<int> milli_result() noexcept
+    {
+        int value{};
+        const auto err = read_milli(value);
+        if (err != ESP_OK) {
+            return fail(err);
+        }
+        return value;
+    }
+
     [[nodiscard]] static float celsius()
     {
         start();
@@ -114,7 +135,11 @@ struct Temp {
 
     [[nodiscard]] static int milli()
     {
-        return static_cast<int>(celsius() * 1000.0F);
+        start();
+
+        int value{};
+        ESP_ERROR_CHECK(read_milli(value));
+        return value;
     }
 
     [[nodiscard]] static temperature_sensor_handle_t native()

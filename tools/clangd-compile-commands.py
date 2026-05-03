@@ -77,8 +77,19 @@ def project_dirs() -> list[Path]:
     return projects
 
 
+def default_database_for_project(project: Path) -> Path | None:
+    candidates = [
+        path
+        for path in (project / "build", *sorted(project.glob("build-*")))
+        if (path / "compile_commands.json").is_file()
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (path / "compile_commands.json").stat().st_mtime) / "compile_commands.json"
+
+
 def default_databases() -> list[Path]:
-    return [project / "build" / "compile_commands.json" for project in project_dirs()]
+    return [database for project in project_dirs() if (database := default_database_for_project(project)) is not None]
 
 
 def database_from_arg(path: Path) -> Path:
