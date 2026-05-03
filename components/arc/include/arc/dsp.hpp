@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <limits>
 #include <type_traits>
 
@@ -95,6 +96,121 @@ template <typename T>
         .c = clamp(T{0.5} + (phase.c * scale), T{}, T{1}),
     };
 }
+
+template <typename T>
+[[nodiscard]] constexpr Phase3<T> duty_svpwm(
+    const AlphaBeta<T> voltage,
+    const T bus_voltage) noexcept
+{
+    if (bus_voltage <= T{}) {
+        return {T{0.5}, T{0.5}, T{0.5}};
+    }
+
+    auto phase = inverse_clarke(voltage);
+    const auto min_v = phase.a < phase.b ? (phase.a < phase.c ? phase.a : phase.c) : (phase.b < phase.c ? phase.b : phase.c);
+    const auto max_v = phase.a > phase.b ? (phase.a > phase.c ? phase.a : phase.c) : (phase.b > phase.c ? phase.b : phase.c);
+    const auto offset = (max_v + min_v) * T{-0.5};
+    const auto scale = T{0.5} / bus_voltage;
+    return {
+        .a = clamp(T{0.5} + ((phase.a + offset) * scale), T{}, T{1}),
+        .b = clamp(T{0.5} + ((phase.b + offset) * scale), T{}, T{1}),
+        .c = clamp(T{0.5} + ((phase.c + offset) * scale), T{}, T{1}),
+    };
+}
+
+template <typename T>
+struct PllObserver {
+    T angle{};
+    T velocity{};
+
+    ARC_HOT void step(
+        const T measured_angle,
+        const T kp,
+        const T ki,
+        const T dt) noexcept
+    {
+        auto error = measured_angle - angle;
+        while (error > T{3.141592653589793}) {
+            error -= T{6.283185307179586};
+        }
+        while (error < T{-3.141592653589793}) {
+            error += T{6.283185307179586};
+        }
+        velocity += (ki * error * dt);
+        angle += ((velocity + (kp * error)) * dt);
+        while (angle >= T{6.283185307179586}) {
+            angle -= T{6.283185307179586};
+        }
+        while (angle < T{}) {
+            angle += T{6.283185307179586};
+        }
+    }
+};
+
+template <typename T>
+struct SlidingModeObserver {
+    T estimated_alpha{};
+    T estimated_beta{};
+
+    ARC_HOT void step(
+        const AlphaBeta<T> current,
+        const AlphaBeta<T> voltage,
+        const T gain,
+        const T dt) noexcept
+    {
+        const auto err_a = current.alpha - estimated_alpha;
+        const auto err_b = current.beta - estimated_beta;
+        estimated_alpha += ((voltage.alpha + clamp(err_a * gain, T{-1}, T{1})) * dt);
+        estimated_beta += ((voltage.beta + clamp(err_b * gain, T{-1}, T{1})) * dt);
+    }
+};
+
+struct ScalarDsp {
+    [[nodiscard]] ARC_HOT static inline float dot_f32(
+        const float* __restrict lhs,
+        const float* __restrict rhs,
+        const std::size_t count) noexcept
+    {
+        float acc{};
+#pragma GCC ivdep
+        for (std::size_t i = 0; i < count; ++i) {
+            acc += lhs[i] * rhs[i];
+        }
+        return acc;
+    }
+
+    ARC_HOT static inline void mac_f32(
+        float* __restrict acc,
+        const float* __restrict in,
+        const float gain,
+        const std::size_t count) noexcept
+    {
+#pragma GCC ivdep
+        for (std::size_t i = 0; i < count; ++i) {
+            acc[i] += in[i] * gain;
+        }
+    }
+};
+
+template <typename Backend = ScalarDsp>
+struct DspAccel {
+    [[nodiscard]] ARC_HOT static inline float dot_f32(
+        const std::span<const float> lhs,
+        const std::span<const float> rhs) noexcept
+    {
+        const auto count = lhs.size() < rhs.size() ? lhs.size() : rhs.size();
+        return Backend::dot_f32(lhs.data(), rhs.data(), count);
+    }
+
+    ARC_HOT static inline void mac_f32(
+        const std::span<float> acc,
+        const std::span<const float> in,
+        const float gain) noexcept
+    {
+        const auto count = acc.size() < in.size() ? acc.size() : in.size();
+        Backend::mac_f32(acc.data(), in.data(), gain, count);
+    }
+};
 
 template <typename T>
 [[nodiscard]] ARC_HOT inline T dot(

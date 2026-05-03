@@ -34,6 +34,7 @@ struct FocConfig {
     dsp::Pid<T>::Gains d_gains{};
     dsp::Pid<T>::Gains q_gains{};
     dsp::Pid<T>::Limits limits{};
+    bool svpwm{true};
 };
 
 template <typename T>
@@ -63,7 +64,7 @@ struct FocMath {
         return {
             .current = current,
             .voltage = output,
-            .duty = dsp::duty_centered(output, target.bus),
+            .duty = config.svpwm ? dsp::duty_svpwm(output, target.bus) : dsp::duty_centered(output, target.bus),
         };
     }
 };

@@ -5,11 +5,13 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <memory_resource>
 #include <span>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "arc/any.hpp"
 #include "arc/caps.hpp"
@@ -35,7 +37,9 @@
 #include "arc/mpsc.hpp"
 #include "arc/netrpc.hpp"
 #include "arc/pack.hpp"
+#include "arc/perfetto.hpp"
 #include "arc/pms.hpp"
+#include "arc/pmr.hpp"
 #include "arc/postmortem.hpp"
 #include "arc/probe.hpp"
 #include "arc/provisioning.hpp"
@@ -53,6 +57,14 @@
 #include "arc/trace_stream.hpp"
 #include "arc/ulp.hpp"
 #include "arc/ws.hpp"
+#include "arc/w5500.hpp"
+
+struct ReflectedTelemetry {
+    std::uint32_t seq{};
+    std::int16_t temp{};
+};
+
+ARC_PACK_REFLECT(ReflectedTelemetry, &ReflectedTelemetry::seq, &ReflectedTelemetry::temp);
 
 namespace {
 
@@ -98,6 +110,7 @@ void expect(const bool condition, const char* const message)
 
 std::size_t pms_policy_regions{};
 bool flash_policy_active{};
+std::size_t w5500_policy_bytes{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -1099,6 +1112,12 @@ void test_caps()
     expect((reinterpret_cast<std::uintptr_t>(dma.data()) & (arc::cache_line - 1U)) == 0U,
            "DMA cap buffer preserves cache-line alignment");
     expect(heap_caps_last_calloc_bytes == padded, "DMA cap buffer allocates whole cache lines");
+
+    arc::PmrCapsResource<MALLOC_CAP_SPIRAM> psram{};
+    std::pmr::vector<std::uint8_t> vec{&psram};
+    vec.resize(4U);
+    vec[3] = 9U;
+    expect(vec.size() == 4U && vec[3] == 9U, "PMR caps vector allocates");
 }
 
 void test_dsp()
@@ -1179,6 +1198,11 @@ void test_dsp()
     expect(park.d == 1.0F && park.q == 0.0F, "DSP Park transform");
     const auto phase = arc::dsp::inverse_clarke(arc::dsp::AlphaBeta<float>{.alpha = 1.0F, .beta = 0.0F});
     expect(phase.a == 1.0F && phase.b == -0.5F && phase.c == -0.5F, "DSP inverse Clarke");
+
+    const std::array accel_lhs{1.0F, 2.0F};
+    const std::array accel_rhs{3.0F, 4.0F};
+    const auto accel = arc::dsp::DspAccel<>::dot_f32(std::span<const float>{accel_lhs}, std::span<const float>{accel_rhs});
+    expect(accel == 11.0F, "DSP accel dot fallback");
 }
 
 void test_foc_motion_tdma()
@@ -1211,6 +1235,17 @@ void test_foc_motion_tdma()
     expect(active.active && active.start_us == 1050U && active.end_us == 1950U, "TDMA active window");
     const auto idle = arc::net::Tdma::window(2'225U, {.period_us = 4'000U, .slot_us = 1'000U, .guard_us = 50U, .slot = 1U});
     expect(!idle.active, "TDMA inactive outside slot");
+
+    const auto s = arc::SCurve<float>::sample(100.0F, 2.0F, 1.0F);
+    expect(s.position == 50.0F && s.velocity > 90.0F, "S-curve midpoint");
+
+    arc::dsp::PllObserver<float> pll{};
+    pll.step(1.0F, 10.0F, 1.0F, 0.01F);
+    expect(pll.angle > 0.0F && pll.velocity > 0.0F, "FOC PLL observer");
+
+    arc::dsp::SlidingModeObserver<float> smo{};
+    smo.step({.alpha = 1.0F, .beta = -1.0F}, {.alpha = 0.5F, .beta = -0.5F}, 2.0F, 0.1F);
+    expect(smo.estimated_alpha > 0.0F && smo.estimated_beta < 0.0F, "FOC sliding observer");
 }
 
 void test_netrpc_pms_secure_update()
@@ -1361,6 +1396,10 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
     expect(stream.finish() == ESP_OK, "TraceStream finish");
     expect(std::strstr(stream.sink.bytes.data(), "\"name\":\"core1\"") != nullptr, "TraceStream output");
 
+    std::array<std::uint8_t, 32> pf{};
+    const auto perfetto = arc::PerfettoWriter::event(pf, {.tick = 300U, .id = 2U, .payload = 4U, .aux = 1U});
+    expect(perfetto.has_value() && perfetto->size() > 0U && pf[0] == 0x08U, "Perfetto binary event");
+
     arc::Provisioning<32, 64, 128> provisioning{};
     const std::array<std::uint8_t, 4> nonce{1, 2, 3, 4};
     const std::array<std::uint8_t, 3> key{5, 6, 7};
@@ -1374,6 +1413,17 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
     expect(eth.push(frame), "Ethernet frame push");
     arc::net::EthernetRing<128, 4>::Frame popped{};
     expect(eth.pop(popped) && popped.size == frame.size() && popped.bytes[5] == 5U, "Ethernet frame pop");
+
+    struct SpiPolicy {
+        static esp_err_t writev(const std::array<std::uint8_t, 3>& header, std::span<const std::uint8_t> frame) noexcept
+        {
+            w5500_policy_bytes = header.size() + frame.size();
+            return header[2] == arc::net::W5500MacRaw::write ? ESP_OK : ESP_FAIL;
+        }
+    };
+    arc::net::W5500Raw<SpiPolicy, 128, 4> w5500{};
+    expect(w5500.send(frame) == ESP_OK && w5500_policy_bytes == 9U, "W5500 raw send");
+    expect(w5500.ingest(frame) == ESP_OK, "W5500 raw ingest");
 
     struct FlashPolicy {
         static esp_err_t enter() noexcept
@@ -1545,6 +1595,17 @@ void test_pack()
     expect(arc::pack::deserialize<arc::pack::Endian::big, PlainWire>(*plain_encoded, decoded).has_value(),
            "Pack struct decode");
     expect(decoded.seq == plain.seq && decoded.temp == plain.temp, "Pack struct roundtrip");
+
+    using ReflectedWire = arc::pack::Reflect<ReflectedTelemetry>;
+    static_assert(ReflectedWire::bytes == 6U);
+    ReflectedTelemetry reflected{.seq = 7U, .temp = -8};
+    std::array<std::uint8_t, ReflectedWire::bytes> reflected_frame{};
+    expect(arc::pack::serialize<arc::pack::Endian::big, ReflectedWire>(reflected_frame, reflected).has_value(),
+           "Pack reflected encode");
+    ReflectedTelemetry reflected_out{};
+    expect(arc::pack::deserialize<arc::pack::Endian::big, ReflectedWire>(reflected_frame, reflected_out).has_value(),
+           "Pack reflected decode");
+    expect(reflected_out.seq == reflected.seq && reflected_out.temp == reflected.temp, "Pack reflected roundtrip");
 }
 
 void test_rcu()

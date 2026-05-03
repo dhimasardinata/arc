@@ -29,8 +29,10 @@
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/netrpc.hpp"
+#include "arc/perfetto.hpp"
 #include "arc/place.hpp"
 #include "arc/plane.hpp"
+#include "arc/pmr.hpp"
 #include "arc/postmortem.hpp"
 #include "arc/pms.hpp"
 #include "arc/probe.hpp"
@@ -58,6 +60,7 @@
 #include "arc/trace_stream.hpp"
 #include "arc/ws.hpp"
 #include "arc/wave.hpp"
+#include "arc/w5500.hpp"
 
 #if __has_include("host/ble_gap.h") && __has_include("nimble/nimble_port.h")
 #include "arc/ble.hpp"

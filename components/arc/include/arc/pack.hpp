@@ -195,6 +195,23 @@ private:
 template <typename Object, auto... Members>
 using StructOf = Struct<Object, Field<Members>...>;
 
+template <typename Object>
+struct ReflectMembers;
+
+template <typename Object>
+concept Reflected = requires {
+    typename ReflectMembers<Object>::Codec;
+};
+
+template <Reflected Object>
+using Reflect = typename ReflectMembers<Object>::Codec;
+
+#define ARC_PACK_REFLECT(Type, ...)                           \
+    template <>                                               \
+    struct arc::pack::ReflectMembers<Type> {                  \
+        using Codec = arc::pack::StructOf<Type, __VA_ARGS__>; \
+    }
+
 template <Endian Order = Endian::big, typename Codec, typename Object>
 [[nodiscard]] Result<std::span<const std::uint8_t>> serialize(
     const std::span<std::uint8_t> out,

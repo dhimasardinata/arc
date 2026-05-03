@@ -62,4 +62,38 @@ struct MotionPlan {
     }
 };
 
+template <typename T>
+struct SCurvePoint {
+    T position{};
+    T velocity{};
+    T acceleration{};
+};
+
+template <typename T>
+struct SCurve {
+    [[nodiscard]] static constexpr SCurvePoint<T> sample(
+        const T distance,
+        const T duration,
+        const T t) noexcept
+    {
+        if (duration <= T{}) {
+            return {};
+        }
+
+        const auto u_raw = t <= T{} ? T{} : (t >= duration ? T{1} : t / duration);
+        const auto u2 = u_raw * u_raw;
+        const auto u3 = u2 * u_raw;
+        const auto u4 = u3 * u_raw;
+        const auto u5 = u4 * u_raw;
+        const auto s = (T{10} * u3) - (T{15} * u4) + (T{6} * u5);
+        const auto ds = ((T{30} * u2) - (T{60} * u3) + (T{30} * u4)) / duration;
+        const auto dds = ((T{60} * u_raw) - (T{180} * u2) + (T{120} * u3)) / (duration * duration);
+        return {
+            .position = distance * s,
+            .velocity = distance * ds,
+            .acceleration = distance * dds,
+        };
+    }
+};
+
 }  // namespace arc
