@@ -38,6 +38,7 @@
 #include "arc/matrix.hpp"
 #include "arc/motion.hpp"
 #include "arc/mmu_span.hpp"
+#include "arc/ml.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/netrpc.hpp"
@@ -57,6 +58,7 @@
 #include "arc/secure_update.hpp"
 #include "arc/swarm.hpp"
 #include "arc/tdma.hpp"
+#include "arc/tee.hpp"
 #include "arc/timesync.hpp"
 #include "arc/trace_event.hpp"
 #include "arc/trace_stream.hpp"
@@ -119,6 +121,9 @@ std::size_t w5500_policy_bytes{};
 std::size_t bare_core_boots{};
 std::size_t crypto_dma_bytes{};
 std::size_t interrupt_binds{};
+std::size_t tee_regions{};
+std::size_t tee_trusted_peripherals{};
+std::size_t tee_untrusted_peripherals{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -1342,6 +1347,56 @@ void test_foc_motion_tdma()
     expect(smo.estimated_alpha > 0.0F && smo.estimated_beta < 0.0F, "FOC sliding observer");
 }
 
+void test_ml_tensor()
+{
+    arc::ml::Tensor<float, 1, 4> input{};
+    input[0] = 1.0F;
+    input[1] = -2.0F;
+    input[2] = 3.0F;
+    input[3] = 4.0F;
+
+    static_assert(decltype(input)::rank == 2U);
+    static_assert(decltype(input)::size == 4U);
+    static_assert(decltype(input)::shape[1] == 4U);
+
+    const std::array<float, 8> weights{
+        1.0F,
+        1.0F,
+        1.0F,
+        1.0F,
+        1.0F,
+        -1.0F,
+        0.0F,
+        0.5F,
+    };
+    const std::array<float, 2> bias{0.5F, -1.0F};
+    arc::ml::Tensor<float, 2> output{};
+    const arc::ml::Dense<4, 2> dense{
+        .weights = std::span<const float, 8>{weights},
+        .bias = std::span<const float, 2>{bias},
+    };
+    expect(dense.eval(std::span<const float, 4>{input.values}, output.span()).has_value(), "ML dense eval");
+    expect(output[0] == 6.5F && output[1] == 4.0F, "ML dense output");
+
+    output[1] = -3.0F;
+    arc::ml::relu(output.span());
+    expect(output[1] == 0.0F && arc::ml::argmax(std::span<const float, 2>{output.values}) == 0U, "ML relu argmax");
+
+    const std::array<std::int8_t, 4> qw{1, 2, 3, 4};
+    const std::array<std::int32_t, 1> qb{0};
+    const std::array<std::int8_t, 4> qx{1, 1, 1, 1};
+    std::array<std::int8_t, 1> qy{};
+    const arc::ml::QuantDenseS8<4, 1> qdense{
+        .weights = std::span<const std::int8_t, 4>{qw},
+        .bias = std::span<const std::int32_t, 1>{qb},
+        .multiplier = 1,
+        .shift = 0,
+    };
+    expect(qdense.eval(std::span<const std::int8_t, 4>{qx}, std::span<std::int8_t, 1>{qy}).has_value(),
+           "ML quant dense eval");
+    expect(qy[0] == 10, "ML quant dense output");
+}
+
 void test_netrpc_pms_secure_update()
 {
     enum class Op : std::uint8_t { set = 2U };
@@ -1377,6 +1432,51 @@ void test_netrpc_pms_secure_update()
     };
     expect(arc::Pms<PmsPolicy>::lock(std::span(pms)) == ESP_OK && pms_policy_regions == 1U, "PMS policy lock");
     expect(arc::Pms<PmsPolicy>::unlock() == ESP_OK && pms_policy_regions == 0U, "PMS policy unlock");
+
+    struct TeePolicy {
+        static esp_err_t configure(const std::span<const arc::WorldRegion> regions) noexcept
+        {
+            tee_regions = regions.size();
+            return ESP_OK;
+        }
+        static esp_err_t core_world(std::uint32_t, arc::World) noexcept
+        {
+            return ESP_OK;
+        }
+        static esp_err_t peripheral_world(const std::uint32_t, const arc::World world) noexcept
+        {
+            if (world == arc::World::trusted) {
+                ++tee_trusted_peripherals;
+            } else {
+                ++tee_untrusted_peripherals;
+            }
+            return ESP_OK;
+        }
+    };
+    const std::array worlds{
+        arc::WorldRegion{
+            .base = frame.data(),
+            .bytes = frame.size(),
+            .owner = arc::World::trusted,
+            .trusted = arc::PmsAccess::read_write,
+            .untrusted = arc::PmsAccess::none,
+        },
+    };
+    const std::array trusted_peripherals{1U, 2U};
+    const std::array untrusted_peripherals{3U};
+    expect(arc::WorldGuard<TeePolicy>::apply(
+               {
+                   .regions = std::span<const arc::WorldRegion>{worlds},
+                   .trusted_peripherals = std::span<const std::uint32_t>{trusted_peripherals},
+                   .untrusted_peripherals = std::span<const std::uint32_t>{untrusted_peripherals},
+               })
+               .has_value(),
+           "TEE plan apply");
+    expect(tee_regions == 1U && tee_trusted_peripherals == 2U && tee_untrusted_peripherals == 1U, "TEE world split");
+
+    arc::TrustedObject<arc::TeeAsset::crypto, std::uint32_t> trusted_key{};
+    trusted_key.get() = 0xCAFEU;
+    expect(trusted_key.get() == 0xCAFEU, "TEE trusted object");
 
     struct Crypto {
         bool verified{};
@@ -1602,6 +1702,23 @@ void test_postmortem()
     expect(lane.push(99U, 1U, 2U), "Postmortem lane push");
     expect(Dump::capture(lane) == 1U, "Postmortem capture count");
     expect(Dump::event(3).id == 99U, "Postmortem capture event");
+
+    arc::PostmortemFaultFrame fault{
+        .cause = 29U,
+        .pc = 0x1000U,
+        .ps = 0x20U,
+        .sp = 0x2000U,
+        .a0 = 0x3000U,
+        .excvaddr = 0x4000U,
+        .core = 1U,
+        .frames = 2U,
+        .trace = {0x1000U, 0x1010U},
+    };
+    Dump::capture_fault(fault);
+    expect(Dump::has_fault(), "Postmortem fault present");
+    expect(Dump::fault().cause == 29U && Dump::fault().trace[1] == 0x1010U, "Postmortem fault frame");
+    Dump::clear_fault();
+    expect(!Dump::has_fault(), "Postmortem fault clear");
 }
 
 void test_timesync()
@@ -1643,6 +1760,19 @@ void test_timesync()
         },
         arc::TimeSyncConfig{.kp_shift = 1, .ki_shift = 4, .max_step_us = 1000, .max_integral_us = 1000});
     expect(hw.samples == 3U, "TimeSync hardware timestamp sample count");
+
+    arc::PtpClock ptp{};
+    const auto ptp_stats = ptp.discipline(
+        arc::PtpSample{
+            .origin_ns = 1'000'000,
+            .ingress_ns = 1'000'120,
+            .egress_ns = 1'000'140,
+            .receive_ns = 1'000'040,
+        },
+        arc::PtpConfig{.kp_shift = 0, .ki_shift = 8, .max_step_ns = 1'000, .max_integral_ns = 1'000});
+    expect(ptp_stats.raw_offset_ns == 110, "PTP raw offset");
+    expect(ptp_stats.filtered_offset_ns == 110, "PTP filtered offset");
+    expect(ptp.local_to_grandmaster(1'000'000) == 1'000'110, "PTP local to grandmaster");
 }
 
 void test_pack()
@@ -2149,6 +2279,7 @@ int main()
     test_caps();
     test_dsp();
     test_foc_motion_tdma();
+    test_ml_tensor();
     test_netrpc_pms_secure_update();
     test_matrix_kalman_storage_swarm();
     test_trace_provision_ethernet_flashoff_hil_ecs();

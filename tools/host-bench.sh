@@ -3,23 +3,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD="$(mktemp -d)"
-trap 'rm -rf "$BUILD"' EXIT
+BUILD="${ARC_HOST_BUILD_DIR:-$ROOT/build/host}"
 
 CXX="${CXX:-g++}"
 
-"$CXX" \
-    -std=gnu++23 \
-    -O3 \
-    -DNDEBUG \
-    -Wall \
-    -Wextra \
-    -Werror \
-    -pthread \
-    -I"$ROOT/tests/host/stubs" \
-    -I"$ROOT/components/arc/include" \
-    "$ROOT/tests/host/bench.cpp" \
-    -o "$BUILD/arc-host-bench"
+cmake -S "$ROOT/tests/host" -B "$BUILD" -G Ninja -DCMAKE_CXX_COMPILER="$CXX" >/dev/null
+cmake --build "$BUILD" --target arc-host-bench
 
 BENCH_OUTPUT="$("$BUILD/arc-host-bench")"
 CXX_VERSION="$("$CXX" --version | sed -n '1p')"

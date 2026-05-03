@@ -82,6 +82,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::dsp::Matrix` and `arc::dsp::Kalman` add fixed-size matrix math and diagonal-measurement Kalman correction for sensor fusion without allocation.
 - `arc::dsp::DspAccel`, `duty_svpwm`, `PllObserver`, `SlidingModeObserver`, and `arc::SCurve` extend the motor-control plane for accelerated kernels and smoother trajectories.
 - `arc::simd::float32x4_t` exposes an explicit 128-bit float vector type for S3-focused math kernels that should not rely on auto-vectorization alone.
+- `arc::ml::Tensor`, `Dense`, and `QuantDenseS8` provide a zero-allocation inference surface for fixed-shape float or int8 models stored in flash/PSRAM spans.
 - `arc::BareCore<Program>` defines the true-AMP Core 1 boot contract for board policies that hold APP CPU outside FreeRTOS and jump directly into a static control loop.
 - `arc::DmaChain<N>` builds static scatter-gather descriptor rings for CPU-free waveform, display, and camera pipelines.
 - `arc::CryptoDma` describes hardware-to-hardware AES/GCM/SHA descriptor jobs so board policies can wire GDMA lanes without payload copies.
@@ -91,6 +92,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::CacheLock` is a policy facade for locking hot code/data regions into cache when a board needs cache-miss-free control loops.
 - `arc::RtcRing<T, Capacity>` gives the ULP RISC-V and Xtensa cores a trivially copyable SPSC lane in RTC-capable storage.
 - `arc::WorldGuard`, `HardwareGuard`, and `ICacheLock` expose policy-based hooks for S3 isolation, watchpoints, and instruction-cache pinning without baking private register layouts into public headers.
+- `arc::TeePlan` and `TrustedObject` formalize secure/non-secure world assignment for memory, cores, and critical peripherals.
 - `arc::InterruptMatrix` and `RawVector` expose direct interrupt routing contracts for board-specific low-latency ISR stubs.
 - `arc::pack::Overlay<Codec>` reads endian-correct fields directly from DMA/network spans without copying into a local struct.
 - `arc::ulp::riscv::assemble(...)` emits tiny ULP RISC-V programs as compile-time `std::array<uint32_t, N>` blobs.
@@ -98,6 +100,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::TraceEventWriter` turns binary log events into Chrome/Perfetto trace-event JSON fragments from caller-owned buffers.
 - `arc::TraceStream` drains binary log lanes into a caller-provided UDP/WebSocket/file sink as live Perfetto JSON chunks.
 - `arc::PerfettoWriter` emits compact binary trace records when JSON bandwidth is too expensive.
+- `arc::PostmortemFaultFrame` stores compact hard-fault registers and stack PCs in RTC memory for reboot-time reporting.
 - `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, and `arc::DeadlineStats` read the Xtensa cycle counter so hot-path latency, period jitter, and control-loop budget slack can be measured, not guessed.
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency defaults with runtime duty retuning.
@@ -107,6 +110,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Pm` gives typed ESP-IDF PM locks for CPU/APB/no-light-sleep critical sections when DFS is enabled.
 - `arc::Rng` exposes the ESP32-S3 hardware random source for fixed buffers and typed values.
 - `arc::Time` reads the global SYSTIMER-backed microsecond clock for cross-core timestamps.
+- `arc::PtpClock` disciplines nanosecond hardware timestamp samples for sub-microsecond TSN-style node synchronization.
 - `arc::rtos` converts `std::chrono` durations to bounded FreeRTOS millisecond/tick values for APIs that sleep or wait.
 - `arc::Sha` hashes buffers through Espressif's accelerated PSA/mbedTLS SHA path with `arc::Result` output.
 - `arc::Aes` and `arc::Gcm` wrap AES block/stream/GCM operations with explicit key setup and caller-owned buffers.
@@ -250,8 +254,8 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 | Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp`, `arc/netrpc.hpp`, `arc/swarm.hpp`, `arc/ethernet.hpp`, `arc/w5500.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::HttpServer`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap`, `arc::net::NetRpc`, `arc::net::SwarmSchedule`, `arc::net::EthernetRing`, `arc::net::W5500Raw` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream` |
 | Binary records and optimizer hints | `arc/pack.hpp`, `arc/perfetto.hpp`, `arc/assume.hpp` | `arc::pack::Schema`, `arc::pack::StructOf`, `arc::pack::Reflect`, `arc::pack::Endian`, `arc::PerfettoWriter`, `arc::assume` |
-| Control and motion | `arc/dsp.hpp`, `arc/simd.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/foc.hpp`, `arc/motion.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::simd::float32x4_t`, `arc::dsp::Matrix`, `arc::dsp::Kalman`, `arc::Foc`, `arc::MotionPlan`, `arc::SCurve`, `arc::SwarmSoa`, `arc::Hil` |
-| Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp`, `arc/pms.hpp`, `arc/flash_off.hpp`, `arc/crypto_dma.hpp`, `arc/interrupt_matrix.hpp`, `arc/provisioning.hpp`, `arc/pmr.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::Xts`, `arc::Fuse`, `arc::Rng`, `arc::Pms`, `arc::FlashOff`, `arc::CryptoDma`, `arc::InterruptMatrix`, `arc::Provisioning`, `arc::PmrCapsResource` |
+| Control and motion | `arc/dsp.hpp`, `arc/simd.hpp`, `arc/ml.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/foc.hpp`, `arc/motion.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::simd::float32x4_t`, `arc::ml::Tensor`, `arc::ml::Dense`, `arc::ml::QuantDenseS8`, `arc::dsp::Matrix`, `arc::dsp::Kalman`, `arc::Foc`, `arc::MotionPlan`, `arc::SCurve`, `arc::SwarmSoa`, `arc::Hil` |
+| Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp`, `arc/pms.hpp`, `arc/tee.hpp`, `arc/flash_off.hpp`, `arc/crypto_dma.hpp`, `arc/interrupt_matrix.hpp`, `arc/provisioning.hpp`, `arc/pmr.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::Xts`, `arc::Fuse`, `arc::Rng`, `arc::Pms`, `arc::WorldGuard`, `arc::TeePlan`, `arc::FlashOff`, `arc::CryptoDma`, `arc::InterruptMatrix`, `arc::Provisioning`, `arc::PmrCapsResource` |
 
 </details>
 
@@ -897,7 +901,7 @@ python "$IDF_PATH/components/partition_table/gen_esp32part.py" build/partition_t
 Dump source/docs into one clean folder:
 
 ```bash
-python tools/dump-source.py
+go run tools/dump-source.go
 ```
 
 The dump output is the flat folder `dump/files`. It only contains files, not nested folders. Original paths are encoded into filenames with `__`, and `MANIFEST.txt` maps dump filenames back to source paths. It only copies C/C++ sources, headers, README files, CMake/text files, and `partitions*.csv`; it skips shell scripts, generated builds, ESP-IDF, `.espressif`, and all `sdkconfig*` files.
@@ -3090,11 +3094,11 @@ GitHub-hosted runners are still ephemeral, so host packages installed by `apt` d
 
 Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared `esp32s3` lock in `cmake/arc-idf.cmake`.
 
-CI validates clangd coverage with `./tools/clangd-compile-commands.py --validate-arc-headers -o compile_commands.json`. The script prefers compact root-project compile commands, adds discovered ESP-IDF component include roots for public headers, and applies a bounded per-header compiler timeout so a malformed inferred command fails with a header-specific error instead of hanging the workflow.
+CI validates clangd coverage with `go run tools/clangd-compile-commands.go --validate-arc-headers -o compile_commands.json`. The Go path handles fast compile-database merge/editor refreshes and delegates strict header syntax validation to the Python compatibility engine until that deepest validation path is fully ported.
 
 Editor diagnostics use the same database. VS Code and Zed project settings keep C/C++ routed through `clangd`, point it at the repo `compile_commands.json`, and only allow wildcard ESP-IDF query-driver paths so local user toolchain paths do not leak into source control.
 
-CI also executes `./tools/host-tests.sh` before the ESP-IDF build. That host test binary compiles pure Arc logic against tiny ESP attribute stubs and exercises SPSC single/batch transfer, MPSC under real producer contention, Fanin round-robin and batch drain behavior, wire codecs, stream helpers, SeqReg snapshots, and DSP/FIR math without flashing hardware.
+CI also executes `./tools/host-tests.sh` before the ESP-IDF build. The host binary now builds through `tests/host/CMakeLists.txt` and Ninja in `build/host`, so local reruns reuse object files instead of recompiling every source from scratch. It exercises SPSC single/batch transfer, MPSC under real producer contention, Fanin round-robin and batch drain behavior, wire codecs, stream helpers, SeqReg snapshots, and DSP/FIR math without flashing hardware.
 
 CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports grouped host-runner throughput with explicit `surface` tags for Arc and standard-library rows. It covers Arc SPSC batch/single lanes, MPSC/DenseMPSC, Fanin batch/single drains, SeqReg, stream helpers, DSP, codecs, practical telemetry/control/protocol usage mixes, and standard-library baselines where a fair local baseline exists. The output includes compiler and host context so runner changes are visible next to timing changes. It is not marketed as an ESP32-S3 cycle benchmark or as an Arduino/raw-IDF shootout; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start. `tools/framework-compare.sh` adds host-buildable framework measurements after that step without duplicating the Arc host benchmark in CI, while `examples/bench` is the on-device leg for real ESP32-S3 compare runs.
 

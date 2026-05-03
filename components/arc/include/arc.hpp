@@ -34,6 +34,7 @@
 #include "arc/matrix.hpp"
 #include "arc/motion.hpp"
 #include "arc/mmu_span.hpp"
+#include "arc/ml.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/netrpc.hpp"

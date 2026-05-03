@@ -12,7 +12,8 @@
 namespace arc {
 
 inline constexpr std::uint32_t postmortem_magic = 0x4152'4350U;
-inline constexpr std::uint32_t postmortem_version = 1U;
+inline constexpr std::uint32_t postmortem_version = 2U;
+inline constexpr std::size_t postmortem_trace_depth = 16U;
 
 struct PostmortemHeader {
     std::uint32_t magic{};
@@ -25,6 +26,20 @@ struct PostmortemHeader {
 
 static_assert(std::is_trivially_copyable_v<PostmortemHeader>);
 
+struct PostmortemFaultFrame {
+    std::uint32_t cause{};
+    std::uintptr_t pc{};
+    std::uintptr_t ps{};
+    std::uintptr_t sp{};
+    std::uintptr_t a0{};
+    std::uintptr_t excvaddr{};
+    std::uint32_t core{};
+    std::uint32_t frames{};
+    std::array<std::uintptr_t, postmortem_trace_depth> trace{};
+};
+
+static_assert(std::is_trivially_copyable_v<PostmortemFaultFrame>);
+
 template <std::size_t Capacity>
 struct Postmortem {
     static_assert(Capacity > 0U, "postmortem capacity must be non-zero");
@@ -32,6 +47,8 @@ struct Postmortem {
 
     struct Store {
         PostmortemHeader header{};
+        std::uint32_t fault_valid{};
+        PostmortemFaultFrame fault{};
         std::array<LogEvent, Capacity> events{};
     };
 
@@ -51,6 +68,34 @@ struct Postmortem {
         store.header.magic = postmortem_magic;
         store.header.version = postmortem_version;
         store.header.capacity = Capacity;
+    }
+
+    [[nodiscard]] static bool has_fault() noexcept
+    {
+        return valid() && store.fault_valid != 0U;
+    }
+
+    [[nodiscard]] static const PostmortemFaultFrame& fault() noexcept
+    {
+        return store.fault;
+    }
+
+    static void clear_fault() noexcept
+    {
+        store.fault_valid = 0U;
+        store.fault = {};
+    }
+
+    static void capture_fault(PostmortemFaultFrame frame) noexcept
+    {
+        if (!valid()) {
+            clear();
+        }
+        if (frame.frames > postmortem_trace_depth) {
+            frame.frames = postmortem_trace_depth;
+        }
+        store.fault = frame;
+        store.fault_valid = 1U;
     }
 
     [[nodiscard]] static bool valid() noexcept

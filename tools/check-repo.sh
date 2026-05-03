@@ -103,7 +103,7 @@ if ! grep -qE '\./tools/host-bench\.sh' .github/workflows/build.yml; then
     die "build workflow must run host benchmarks before firmware builds"
 fi
 
-if ! grep -qE '\./tools/clangd-compile-commands\.py --validate-arc-headers' .github/workflows/build.yml; then
+if ! grep -qE 'go run tools/clangd-compile-commands\.go --validate-arc-headers' .github/workflows/build.yml; then
     die "build workflow must validate Arc header compile commands"
 fi
 

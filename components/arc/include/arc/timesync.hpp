@@ -36,6 +36,28 @@ struct TimeSyncStats {
     std::uint32_t samples{};
 };
 
+struct PtpSample {
+    std::int64_t origin_ns{};
+    std::int64_t ingress_ns{};
+    std::int64_t egress_ns{};
+    std::int64_t receive_ns{};
+};
+
+struct PtpConfig {
+    std::int32_t kp_shift{4};
+    std::int32_t ki_shift{10};
+    std::int64_t max_step_ns{1'000'000};
+    std::int64_t max_integral_ns{10'000'000};
+};
+
+struct PtpStats {
+    std::int64_t raw_offset_ns{};
+    std::int64_t filtered_offset_ns{};
+    std::int64_t delay_ns{};
+    std::int64_t correction_ns{};
+    std::uint32_t samples{};
+};
+
 struct TimeSync {
     std::int64_t offset_us{};
     std::int64_t integral_us{};
@@ -102,7 +124,6 @@ struct TimeSync {
             config);
     }
 
-private:
     [[nodiscard]] static constexpr std::int64_t clamp(
         const std::int64_t value,
         const std::int64_t lo,
@@ -150,6 +171,62 @@ private:
             return std::numeric_limits<std::int64_t>::max();
         }
         return saturating_add(lhs, -rhs);
+    }
+};
+
+struct PtpClock {
+    std::int64_t offset_ns{};
+    std::int64_t integral_ns{};
+    PtpStats stats{};
+
+    void clear() noexcept
+    {
+        *this = {};
+    }
+
+    [[nodiscard]] std::int64_t local_to_grandmaster(const std::int64_t local_ns) const noexcept
+    {
+        return TimeSync::saturating_add(local_ns, offset_ns);
+    }
+
+    [[nodiscard]] std::int64_t grandmaster_to_local(const std::int64_t remote_ns) const noexcept
+    {
+        return TimeSync::saturating_sub(remote_ns, offset_ns);
+    }
+
+    [[nodiscard]] PtpStats discipline(
+        const PtpSample sample,
+        const PtpConfig config = {}) noexcept
+    {
+        const auto leg_out = TimeSync::saturating_sub(sample.ingress_ns, sample.origin_ns);
+        const auto leg_back = TimeSync::saturating_sub(sample.egress_ns, sample.receive_ns);
+        const auto measured = TimeSync::div2(TimeSync::saturating_add(leg_out, leg_back));
+        const auto remote_turn = TimeSync::saturating_sub(sample.egress_ns, sample.ingress_ns);
+        const auto local_span = TimeSync::saturating_sub(sample.receive_ns, sample.origin_ns);
+        const auto delay = TimeSync::saturating_sub(local_span, remote_turn);
+        const auto error = TimeSync::saturating_sub(measured, offset_ns);
+
+        integral_ns = TimeSync::clamp(
+            TimeSync::saturating_add(integral_ns, error),
+            -config.max_integral_ns,
+            config.max_integral_ns);
+
+        const auto p = TimeSync::shift(error, config.kp_shift);
+        const auto i = TimeSync::shift(integral_ns, config.ki_shift);
+        const auto correction = TimeSync::clamp(
+            TimeSync::saturating_add(p, i),
+            -config.max_step_ns,
+            config.max_step_ns);
+        offset_ns = TimeSync::saturating_add(offset_ns, correction);
+
+        stats = PtpStats{
+            .raw_offset_ns = measured,
+            .filtered_offset_ns = offset_ns,
+            .delay_ns = delay,
+            .correction_ns = correction,
+            .samples = stats.samples + 1U,
+        };
+        return stats;
     }
 };
 
