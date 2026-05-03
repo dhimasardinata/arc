@@ -81,6 +81,11 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::MotionPlan` emits bounded Bresenham step masks into caller-owned buffers for synchronized multi-axis motion.
 - `arc::dsp::Matrix` and `arc::dsp::Kalman` add fixed-size matrix math and diagonal-measurement Kalman correction for sensor fusion without allocation.
 - `arc::dsp::DspAccel`, `duty_svpwm`, `PllObserver`, `SlidingModeObserver`, and `arc::SCurve` extend the motor-control plane for accelerated kernels and smoother trajectories.
+- `arc::simd::float32x4_t` exposes an explicit 128-bit float vector type for S3-focused math kernels that should not rely on auto-vectorization alone.
+- `arc::DmaChain<N>` builds static scatter-gather descriptor rings for CPU-free waveform, display, and camera pipelines.
+- `arc::Task<void>` provides heapless coroutine state machines when the coroutine frame is allocated from an explicit `arc::TaskArena`.
+- `arc::CacheLock` is a policy facade for locking hot code/data regions into cache when a board needs cache-miss-free control loops.
+- `arc::RtcRing<T, Capacity>` gives the ULP RISC-V and Xtensa cores a trivially copyable SPSC lane in RTC-capable storage.
 - `arc::LogLane` gives Core 1 a lock-free binary event lane that Core 0 can drain and format later.
 - `arc::TraceEventWriter` turns binary log events into Chrome/Perfetto trace-event JSON fragments from caller-owned buffers.
 - `arc::TraceStream` drains binary log lanes into a caller-provided UDP/WebSocket/file sink as live Perfetto JSON chunks.
@@ -227,17 +232,17 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 
 | Area | Headers | Primary types |
 | --- | --- | --- |
-| Core plane | `arc/task.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos` |
+| Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
-| Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/copy.hpp`, `arc/place.hpp`, `arc/prefetch.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::Copy`, `arc::prefetch` |
-| Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp`, `arc/rpc.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem`, `arc::RpcLane` |
+| Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/place.hpp`, `arc/prefetch.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::DmaChain`, `arc::Copy`, `arc::prefetch` |
+| Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp`, `arc/rpc.hpp`, `arc/rtc_ring.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem`, `arc::RpcLane`, `arc::RtcRing` |
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/timesync.hpp`, `arc/tdma.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::EtmRoute`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::TimeSync`, `arc::net::Tdma` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp`, `arc/flash_log.hpp`, `arc/secure_update.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space`, `arc::FlashLog`, `arc::SecureUpdate` |
 | Network and radio | `arc/net.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp`, `arc/netrpc.hpp`, `arc/swarm.hpp`, `arc/ethernet.hpp`, `arc/w5500.hpp` | `arc::net::Radio`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::HttpServer`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap`, `arc::net::NetRpc`, `arc::net::SwarmSchedule`, `arc::net::EthernetRing`, `arc::net::W5500Raw` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream` |
 | Binary records and optimizer hints | `arc/pack.hpp`, `arc/perfetto.hpp`, `arc/assume.hpp` | `arc::pack::Schema`, `arc::pack::StructOf`, `arc::pack::Reflect`, `arc::pack::Endian`, `arc::PerfettoWriter`, `arc::assume` |
-| Control and motion | `arc/dsp.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/foc.hpp`, `arc/motion.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::dsp::Matrix`, `arc::dsp::Kalman`, `arc::Foc`, `arc::MotionPlan`, `arc::SCurve`, `arc::SwarmSoa`, `arc::Hil` |
+| Control and motion | `arc/dsp.hpp`, `arc/simd.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/foc.hpp`, `arc/motion.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::simd::float32x4_t`, `arc::dsp::Matrix`, `arc::dsp::Kalman`, `arc::Foc`, `arc::MotionPlan`, `arc::SCurve`, `arc::SwarmSoa`, `arc::Hil` |
 | Security and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp`, `arc/pms.hpp`, `arc/flash_off.hpp`, `arc/provisioning.hpp`, `arc/pmr.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::Xts`, `arc::Fuse`, `arc::Rng`, `arc::Pms`, `arc::FlashOff`, `arc::Provisioning`, `arc::PmrCapsResource` |
 
 </details>

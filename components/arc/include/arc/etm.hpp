@@ -324,4 +324,15 @@ private:
     Etm channel_;
 };
 
+template <EtmEventSource Event, EtmTaskSink Task>
+struct EtmInterlock {
+    [[nodiscard]] static Result<EtmRoute<Event, Task>> arm(
+        Event event,
+        Task task,
+        const esp_etm_channel_config_t& cfg = {}) noexcept
+    {
+        return EtmRoute<Event, Task>::make(std::move(event), std::move(task), cfg);
+    }
+};
+
 }  // namespace arc
