@@ -16,13 +16,20 @@
 #include "arc/claim.hpp"
 #include "arc/concepts.hpp"
 #include "arc/dsp.hpp"
+#include "arc/ecs.hpp"
+#include "arc/ethernet.hpp"
 #include "arc/fanin.hpp"
 #include "arc/file.hpp"
+#include "arc/flash_log.hpp"
+#include "arc/flash_off.hpp"
 #include "arc/foc.hpp"
+#include "arc/hil.hpp"
 #include "arc/http_server.hpp"
 #include "arc/init.hpp"
+#include "arc/kalman.hpp"
 #include "arc/coap.hpp"
 #include "arc/log.hpp"
+#include "arc/matrix.hpp"
 #include "arc/motion.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
@@ -31,6 +38,7 @@
 #include "arc/pms.hpp"
 #include "arc/postmortem.hpp"
 #include "arc/probe.hpp"
+#include "arc/provisioning.hpp"
 #include "arc/rcu.hpp"
 #include "arc/rpc.hpp"
 #include "arc/rtos.hpp"
@@ -38,9 +46,11 @@
 #include "arc/spsc.hpp"
 #include "arc/stream.hpp"
 #include "arc/secure_update.hpp"
+#include "arc/swarm.hpp"
 #include "arc/tdma.hpp"
 #include "arc/timesync.hpp"
 #include "arc/trace_event.hpp"
+#include "arc/trace_stream.hpp"
 #include "arc/ulp.hpp"
 #include "arc/ws.hpp"
 
@@ -87,6 +97,7 @@ void expect(const bool condition, const char* const message)
 }
 
 std::size_t pms_policy_regions{};
+bool flash_policy_active{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -1285,6 +1296,109 @@ void test_netrpc_pms_secure_update()
     expect(update.writer.bytes == 4U && plain[3] == 4U, "SecureUpdate plaintext write");
 }
 
+void test_matrix_kalman_storage_swarm()
+{
+    arc::dsp::Matrix<int, 2, 2> a{{1, 2, 3, 4}};
+    arc::dsp::Matrix<int, 2, 1> x{{5, 6}};
+    const auto y = arc::dsp::mul_vec(a, x);
+    expect(y(0, 0) == 17 && y(1, 0) == 39, "Matrix vector multiply");
+    const auto at = arc::dsp::transpose(a);
+    expect(at(0, 1) == 3 && at(1, 0) == 2, "Matrix transpose");
+
+    arc::dsp::Kalman<float, 1, 1> filter{};
+    filter.x(0, 0) = 0.0F;
+    filter.p(0, 0) = 1.0F;
+    filter.predict(arc::dsp::Matrix<float, 1, 1>{{1.0F}}, arc::dsp::Matrix<float, 1, 1>{{0.0F}});
+    filter.correct_diagonal(
+        arc::dsp::Matrix<float, 1, 1>{{1.0F}},
+        arc::dsp::Matrix<float, 1, 1>{{1.0F}},
+        arc::dsp::Matrix<float, 1, 1>{{10.0F}});
+    expect(filter.x(0, 0) == 5.0F, "Kalman diagonal correction");
+
+    struct Sink {
+        std::size_t bytes{};
+        esp_err_t write(std::span<const std::uint8_t> data) noexcept
+        {
+            bytes += data.size();
+            return ESP_OK;
+        }
+    };
+    struct Record {
+        std::uint32_t seq{};
+        std::uint32_t value{};
+    };
+    arc::FlashLog<Record, 4, Sink> log{};
+    expect(log.push({.seq = 1U, .value = 2U}), "FlashLog push");
+    expect(log.flush() == ESP_OK && log.sink.bytes == sizeof(Record), "FlashLog flush");
+
+    const arc::net::SwarmSchedule<3> schedule{
+        .node_ids = {10U, 20U, 30U},
+        .tdma = {.period_us = 3'000U, .slot_us = 1'000U, .guard_us = 20U, .slot = 0U},
+    };
+    expect(schedule.slot_for(20U) == 1U, "Swarm slot lookup");
+    expect(schedule.window(20U, 1'100U).active, "Swarm TDMA window");
+}
+
+void test_trace_provision_ethernet_flashoff_hil_ecs()
+{
+    struct TraceSink {
+        std::array<char, 384> bytes{};
+        std::size_t pos{};
+        esp_err_t write(std::span<const char> data) noexcept
+        {
+            if (bytes.size() - pos < data.size()) {
+                return ESP_ERR_NO_MEM;
+            }
+            std::memcpy(bytes.data() + pos, data.data(), data.size());
+            pos += data.size();
+            return ESP_OK;
+        }
+    };
+    arc::LogLane<4> lane{};
+    expect(lane.push(arc::log_id("trace"), 7U, 1U), "TraceStream event push");
+    arc::TraceStream<192, TraceSink> stream{};
+    expect(stream.drain(lane, "core1") == ESP_OK, "TraceStream drain");
+    expect(stream.finish() == ESP_OK, "TraceStream finish");
+    expect(std::strstr(stream.sink.bytes.data(), "\"name\":\"core1\"") != nullptr, "TraceStream output");
+
+    arc::Provisioning<32, 64, 128> provisioning{};
+    const std::array<std::uint8_t, 4> nonce{1, 2, 3, 4};
+    const std::array<std::uint8_t, 3> key{5, 6, 7};
+    const std::array<std::uint8_t, 4> ssid{'a', 'r', 'c', 0};
+    expect(provisioning.begin(nonce) == ESP_OK, "Provisioning begin");
+    expect(provisioning.keys(key) == ESP_OK, "Provisioning keys");
+    expect(provisioning.credentials(ssid, key) == ESP_OK && provisioning.ready(), "Provisioning credentials");
+
+    arc::net::EthernetRing<128, 4> eth{};
+    const std::array<std::uint8_t, 6> frame{0, 1, 2, 3, 4, 5};
+    expect(eth.push(frame), "Ethernet frame push");
+    arc::net::EthernetRing<128, 4>::Frame popped{};
+    expect(eth.pop(popped) && popped.size == frame.size() && popped.bytes[5] == 5U, "Ethernet frame pop");
+
+    struct FlashPolicy {
+        static esp_err_t enter() noexcept
+        {
+            flash_policy_active = true;
+            return ESP_OK;
+        }
+        static esp_err_t leave() noexcept
+        {
+            flash_policy_active = false;
+            return ESP_OK;
+        }
+    };
+    arc::FlashOff<FlashPolicy> flash{};
+    expect(flash.enter() == ESP_OK && flash.on() && flash_policy_active, "FlashOff enter");
+    expect(flash.leave() == ESP_OK && !flash.on() && !flash_policy_active, "FlashOff leave");
+
+    expect(arc::Hil::within({.expected_tick = 100U, .observed_tick = 103U, .tolerance_ticks = 3U}), "HIL within deadline");
+    expect(!arc::Hil::within({.expected_tick = 100U, .observed_tick = 104U, .tolerance_ticks = 3U}), "HIL rejects late");
+
+    arc::SwarmSoa<4> swarm{};
+    expect(swarm.push(1U, 1.0F, 2.0F, 0.1F, 0.2F), "ECS swarm push");
+    expect(swarm.id.span()[0] == 1U && swarm.vx.span()[0] == 0.1F, "ECS SoA spans");
+}
+
 void test_log_lane()
 {
     static_assert(arc::log_id("core1.overrun") != arc::log_id("core1.watchdog"));
@@ -1818,6 +1932,8 @@ int main()
     test_dsp();
     test_foc_motion_tdma();
     test_netrpc_pms_secure_update();
+    test_matrix_kalman_storage_swarm();
+    test_trace_provision_ethernet_flashoff_hil_ecs();
     test_log_lane();
     test_trace_event();
     test_postmortem();
