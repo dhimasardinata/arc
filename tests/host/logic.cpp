@@ -19,6 +19,7 @@
 #include "arc/any.hpp"
 #include "arc/acoustic_slam.hpp"
 #include "arc/bare_core.hpp"
+#include "arc/blackbox.hpp"
 #include "arc/caps.hpp"
 #include "arc/chaos.hpp"
 #include "arc/claim.hpp"
@@ -27,6 +28,7 @@
 #include "arc/csi.hpp"
 #include "arc/crypto_dma.hpp"
 #include "arc/dsp.hpp"
+#include "arc/digital_twin.hpp"
 #include "arc/ecs.hpp"
 #include "arc/ethernet.hpp"
 #include "arc/fanin.hpp"
@@ -46,8 +48,10 @@
 #include "arc/isp.hpp"
 #include "arc/kalman.hpp"
 #include "arc/kyber.hpp"
+#include "arc/jit.hpp"
 #include "arc/coap.hpp"
 #include "arc/cloak.hpp"
+#include "arc/lifi.hpp"
 #include "arc/log.hpp"
 #include "arc/copy.hpp"
 #include "arc/fabric.hpp"
@@ -72,6 +76,7 @@
 #include "arc/pru.hpp"
 #include "arc/puf.hpp"
 #include "arc/rcu.hpp"
+#include "arc/rdma.hpp"
 #include "arc/rpc.hpp"
 #include "arc/rtos.hpp"
 #include "arc/seq.hpp"
@@ -195,6 +200,14 @@ std::size_t fabric_bytes{};
 std::size_t hil_actions{};
 std::size_t usb_host_started{};
 std::size_t usb_host_submitted{};
+std::uintptr_t rdma_store_addr{};
+std::size_t rdma_store_bytes{};
+std::size_t lifi_sent_symbols{};
+std::size_t lifi_armed{};
+std::size_t jit_finalized_words{};
+std::uint32_t blackbox_hash_acc{};
+std::size_t blackbox_write_bytes{};
+float digital_twin_last_output{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -3482,6 +3495,157 @@ void test_current_goal_surfaces()
                usb_bytes.has_value() && *usb_bytes == 6U && usb_host_started == 1U && usb_host_submitted == 1U &&
                arc::usb::Host::stop<UsbHostPolicy>().has_value(),
            "USB host policy facade");
+
+    struct RdmaPolicy {
+        static esp_err_t store(const std::uintptr_t dst, const std::span<const std::uint8_t> bytes) noexcept
+        {
+            rdma_store_addr = dst;
+            rdma_store_bytes = bytes.size();
+            auto* out = reinterpret_cast<std::uint8_t*>(dst);
+            for (std::size_t i = 0U; i < bytes.size(); ++i) {
+                out[i] = bytes[i];
+            }
+            return ESP_OK;
+        }
+
+        static esp_err_t promiscuous(const bool) noexcept
+        {
+            return ESP_OK;
+        }
+    };
+    alignas(16) std::array<std::uint8_t, 16> rdma_dst{};
+    const arc::net::RdmaWindow rdma_window{
+        .node = 2U,
+        .base = reinterpret_cast<std::uintptr_t>(rdma_dst.data()),
+        .bytes = rdma_dst.size(),
+    };
+    const std::array<std::uint8_t, 3> rdma_payload{7U, 8U, 9U};
+    const auto rdma_frame = arc::net::Rdma::write<8>(rdma_window, 1U, rdma_payload, 4U);
+    expect(rdma_frame.has_value() &&
+               arc::net::Rdma::apply<RdmaPolicy>(rdma_window, *rdma_frame).has_value() &&
+               rdma_dst[4] == 7U && rdma_dst[6] == 9U &&
+               rdma_store_addr == rdma_window.base + 4U && rdma_store_bytes == rdma_payload.size() &&
+               arc::net::Rdma::promiscuous<RdmaPolicy>().has_value(),
+           "RDMA raw-frame write applies to aligned window");
+
+    struct LiFiPolicy {
+        static esp_err_t send(const std::span<const arc::optical::LiFiSymbol> symbols) noexcept
+        {
+            lifi_sent_symbols = symbols.size();
+            return ESP_OK;
+        }
+
+        static esp_err_t arm_receiver() noexcept
+        {
+            ++lifi_armed;
+            return ESP_OK;
+        }
+    };
+    const std::array<std::uint8_t, 1> lifi_bytes{0b1010'0000U};
+    std::array<arc::optical::LiFiSymbol, 8> lifi_symbols{};
+    const auto lifi_encoded = arc::optical::LiFi::encode(lifi_bytes, lifi_symbols, {.half_ticks = 3U});
+    expect(lifi_encoded.has_value() && lifi_encoded->size() == 8U &&
+               (*lifi_encoded)[0].first_high && !(*lifi_encoded)[0].second_high &&
+               !(*lifi_encoded)[1].first_high && (*lifi_encoded)[1].second_high &&
+               arc::optical::LiFi::transmit<LiFiPolicy>(*lifi_encoded).has_value() &&
+               arc::optical::LiFi::arm_receiver<LiFiPolicy>().has_value() &&
+               lifi_sent_symbols == 8U && lifi_armed == 1U,
+           "LiFi Manchester plan and policy hooks");
+
+    struct JitPolicy {
+        static std::uint32_t exit() noexcept
+        {
+            return arc::vm::PseudoXtensaJitPolicy::exit();
+        }
+
+        static std::uint32_t alu(const arc::vm::BpfInsn insn) noexcept
+        {
+            return arc::vm::PseudoXtensaJitPolicy::alu(insn);
+        }
+
+        static esp_err_t finalize(const std::span<const std::uint32_t> image) noexcept
+        {
+            jit_finalized_words = image.size();
+            return ESP_OK;
+        }
+    };
+    const std::array jit_program{
+        arc::vm::BpfInsn::make(arc::vm::BpfOp::mov_imm, 0U, 0U, 0, 7),
+        arc::vm::BpfInsn::make(arc::vm::BpfOp::add_imm, 0U, 0U, 0, 5),
+        arc::vm::BpfInsn::make(arc::vm::BpfOp::exit),
+    };
+    std::array<std::uint32_t, 4> jit_image{};
+    const auto translated = arc::vm::Jit::translate<JitPolicy>(jit_program, jit_image);
+    expect(translated.has_value() && translated->size() == jit_program.size() &&
+               jit_finalized_words == jit_program.size() &&
+               (*translated)[0] == arc::vm::PseudoXtensaJitPolicy::alu(jit_program[0]),
+           "BPF JIT emits bounded executable image");
+
+    struct BlackBoxHash {
+        static void begin() noexcept
+        {
+            blackbox_hash_acc = 0U;
+        }
+
+        static void update(const std::span<const std::uint8_t> bytes) noexcept
+        {
+            for (const auto byte : bytes) {
+                blackbox_hash_acc += byte;
+            }
+        }
+
+        static esp_err_t finish(const std::span<std::uint8_t, 4> out) noexcept
+        {
+            out[0] = static_cast<std::uint8_t>(blackbox_hash_acc & 0xffU);
+            out[1] = static_cast<std::uint8_t>((blackbox_hash_acc >> 8U) & 0xffU);
+            out[2] = 0U;
+            out[3] = 0U;
+            return ESP_OK;
+        }
+    };
+    struct BlackBoxStore {
+        static esp_err_t write_encrypted(const std::uint32_t, const std::span<const std::uint8_t> bytes) noexcept
+        {
+            blackbox_write_bytes += bytes.size();
+            return ESP_OK;
+        }
+    };
+    blackbox_write_bytes = 0U;
+    const std::array<std::uint8_t, 4> previous_root{};
+    const std::array<std::uint8_t, 2> die_key{1U, 2U};
+    const std::array<std::uint8_t, 3> flight_record{3U, 4U, 5U};
+    const auto sealed = arc::covert::BlackBox::seal<BlackBoxHash, 4>(
+        9U,
+        flight_record,
+        std::span<const std::uint8_t, 4>{previous_root},
+        die_key);
+    expect(sealed.has_value() &&
+               arc::covert::BlackBox::append<BlackBoxStore>(32U, *sealed, flight_record).has_value() &&
+               sealed->payload_bytes == flight_record.size() &&
+               blackbox_write_bytes == sizeof(*sealed) + flight_record.size(),
+           "BlackBox seals Merkle-linked encrypted record");
+
+    using Twin = arc::hil::DigitalTwin<float, 2, 1, 1>;
+    struct TwinCapture {
+        static arc::Result<std::uint32_t> sample_ticks() noexcept
+        {
+            return 77U;
+        }
+    };
+    struct TwinEncoder {
+        static esp_err_t emit(const std::span<const float, 1> output) noexcept
+        {
+            digital_twin_last_output = output[0];
+            return ESP_OK;
+        }
+    };
+    Twin::State twin_state{};
+    Twin::Model twin_model{};
+    twin_model.d[0][0] = 2.0F;
+    const auto twin = Twin::tick<TwinCapture, TwinEncoder>(twin_state, twin_model, Twin::InputVec{3.0F});
+    expect(twin.has_value() && near(twin->output[0], 6.0F) &&
+               near(digital_twin_last_output, 6.0F) && twin->captured_ticks == 77U,
+           "DigitalTwin captures PWM and emits simulated encoder state");
 }
 
 void test_refinit()

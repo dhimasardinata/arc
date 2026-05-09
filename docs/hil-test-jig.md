@@ -16,6 +16,11 @@ This is the hardware test shape for faults that host tests cannot prove.
 Use `arc::HilScript<N>` to describe which node applies each `arc::HilFault`, at
 which tick, and for how long. Board policy implements `Policy::apply(HilAction)`.
 
+For nanosecond-scale closed-loop tests, use `arc::hil::DigitalTwin` on a
+simulator S3. The capture policy samples DUT PWM timing, the twin steps a fixed
+`arc::dsp::StateSpace` model, and the encoder policy emits ABI/Z-style feedback
+through board-owned RMT/GPIO wiring.
+
 ## Pass Criteria
 
 - `arc::I2cBus::init()` returns a recoverable error and can be retried after the

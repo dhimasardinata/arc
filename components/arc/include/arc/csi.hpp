@@ -221,15 +221,14 @@ struct EspWifiCsiPolicy {
         callback = next;
         user = next_user;
 
-        const wifi_csi_config_t native{
-            .lltf_en = config.lltf,
-            .htltf_en = config.htltf,
-            .stbc_htltf2_en = config.stbc_htltf2,
-            .ltf_merge_en = config.ltf_merge,
-            .channel_filter_en = config.channel_filter,
-            .manu_scale = config.manual_scale,
-            .shift = config.shift,
-        };
+        wifi_csi_config_t native{};
+        native.lltf_en = config.lltf;
+        native.htltf_en = config.htltf;
+        native.stbc_htltf2_en = config.stbc_htltf2;
+        native.ltf_merge_en = config.ltf_merge;
+        native.channel_filter_en = config.channel_filter;
+        native.manu_scale = config.manual_scale;
+        native.shift = config.shift;
         if (const auto err = esp_wifi_set_csi_config(&native); err != ESP_OK) {
             return err;
         }
