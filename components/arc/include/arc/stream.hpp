@@ -1,11 +1,14 @@
 #pragma once
 
 #include <array>
+#include <charconv>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <string_view>
+#include <system_error>
 #include <type_traits>
 
 #include "esp_err.h"
@@ -157,6 +160,166 @@ struct Stream {
     [[nodiscard]] static Result<std::size_t> read_frame16(Io& io, const std::span<T, Extent> data) noexcept
     {
         return read_frame16(io, data.data(), data.size_bytes());
+    }
+};
+
+struct Rtp {
+    static constexpr std::size_t header_bytes = 12U;
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> packet(
+        const std::span<std::uint8_t> out,
+        const std::span<const std::uint8_t> payload,
+        const std::uint16_t sequence,
+        const std::uint32_t timestamp,
+        const std::uint32_t ssrc,
+        const std::uint8_t payload_type = 96U,
+        const bool marker = false) noexcept
+    {
+        if (out.size() < header_bytes + payload.size()) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        if (payload_type > 0x7fU) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        out[0] = 0x80U;
+        out[1] = static_cast<std::uint8_t>((marker ? 0x80U : 0U) | payload_type);
+        out[2] = static_cast<std::uint8_t>(sequence >> 8U);
+        out[3] = static_cast<std::uint8_t>(sequence);
+        out[4] = static_cast<std::uint8_t>(timestamp >> 24U);
+        out[5] = static_cast<std::uint8_t>(timestamp >> 16U);
+        out[6] = static_cast<std::uint8_t>(timestamp >> 8U);
+        out[7] = static_cast<std::uint8_t>(timestamp);
+        out[8] = static_cast<std::uint8_t>(ssrc >> 24U);
+        out[9] = static_cast<std::uint8_t>(ssrc >> 16U);
+        out[10] = static_cast<std::uint8_t>(ssrc >> 8U);
+        out[11] = static_cast<std::uint8_t>(ssrc);
+        if (!payload.empty()) {
+            std::memcpy(out.data() + header_bytes, payload.data(), payload.size());
+        }
+        return out.first(header_bytes + payload.size());
+    }
+
+    template <ByteStream Io>
+    [[nodiscard]] static Status write(
+        Io& io,
+        const std::span<const std::uint8_t> payload,
+        const std::uint16_t sequence,
+        const std::uint32_t timestamp,
+        const std::uint32_t ssrc,
+        const std::uint8_t payload_type = 96U,
+        const bool marker = false) noexcept
+    {
+        std::array<std::uint8_t, header_bytes> header{};
+        auto framed = packet(
+            std::span(header),
+            std::span<const std::uint8_t>{},
+            sequence,
+            timestamp,
+            ssrc,
+            payload_type,
+            marker);
+        if (!framed) {
+            return Status{fail(framed.error())};
+        }
+        auto sent = io.send_all(header.data(), header.size());
+        if (!sent) {
+            return sent;
+        }
+        return payload.empty() ? ok() : io.send_all(payload.data(), payload.size());
+    }
+};
+
+struct Mjpeg {
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> part(
+        const std::span<std::uint8_t> out,
+        const std::span<const std::uint8_t> jpeg,
+        const std::string_view boundary = "arc") noexcept
+    {
+        if (boundary.empty() || boundary.size() > 64U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        auto* cursor = out.data();
+        auto remaining = out.size();
+        const auto append = [&](const std::string_view text) noexcept -> bool {
+            if (remaining < text.size()) {
+                return false;
+            }
+            std::memcpy(cursor, text.data(), text.size());
+            cursor += text.size();
+            remaining -= text.size();
+            return true;
+        };
+
+        if (!append("--") || !append(boundary) ||
+            !append("\r\nContent-Type: image/jpeg\r\nContent-Length: ")) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+
+        std::array<char, 20> digits{};
+        const auto [ptr, ec] = std::to_chars(digits.data(), digits.data() + digits.size(), jpeg.size());
+        if (ec != std::errc{}) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (!append(std::string_view{digits.data(), static_cast<std::size_t>(ptr - digits.data())}) ||
+            !append("\r\n\r\n")) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        if (remaining < jpeg.size() + 2U) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        if (!jpeg.empty()) {
+            std::memcpy(cursor, jpeg.data(), jpeg.size());
+            cursor += jpeg.size();
+            remaining -= jpeg.size();
+        }
+        if (!append("\r\n")) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        return out.first(static_cast<std::size_t>(cursor - out.data()));
+    }
+
+    template <ByteStream Io>
+    [[nodiscard]] static Status write_part(
+        Io& io,
+        const std::span<const std::uint8_t> jpeg,
+        const std::string_view boundary = "arc") noexcept
+    {
+        std::array<std::uint8_t, 128> header{};
+        auto* cursor = header.data();
+        auto remaining = header.size();
+        const auto append = [&](const std::string_view text) noexcept -> bool {
+            if (remaining < text.size()) {
+                return false;
+            }
+            std::memcpy(cursor, text.data(), text.size());
+            cursor += text.size();
+            remaining -= text.size();
+            return true;
+        };
+
+        std::array<char, 20> digits{};
+        const auto [ptr, ec] = std::to_chars(digits.data(), digits.data() + digits.size(), jpeg.size());
+        if (ec != std::errc{} ||
+            !append("--") ||
+            !append(boundary) ||
+            !append("\r\nContent-Type: image/jpeg\r\nContent-Length: ") ||
+            !append(std::string_view{digits.data(), static_cast<std::size_t>(ptr - digits.data())}) ||
+            !append("\r\n\r\n")) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+
+        auto sent = io.send_all(header.data(), static_cast<std::size_t>(cursor - header.data()));
+        if (!sent) {
+            return sent;
+        }
+        sent = jpeg.empty() ? ok() : io.send_all(jpeg.data(), jpeg.size());
+        if (!sent) {
+            return sent;
+        }
+        constexpr std::array<std::uint8_t, 2> crlf{'\r', '\n'};
+        return io.send_all(crlf.data(), crlf.size());
     }
 };
 

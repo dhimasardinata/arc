@@ -41,6 +41,8 @@ struct Ulp {
         static_assert(std::is_trivially_destructible_v<T>, "ULP shared payload must be trivially destructible");
         static_assert((sizeof(T) % 4U) == 0U, "ULP shared payload size must be word aligned");
 
+        using value_type = T;
+
         Word seq{};
         alignas(8) T value{};
 

@@ -59,6 +59,35 @@ struct DmaChain {
         return desc.data();
     }
 
+    [[nodiscard]] constexpr const DmaDesc* head() const noexcept
+    {
+        return desc.data();
+    }
+
+    [[nodiscard]] constexpr DmaDesc* tail() noexcept
+    {
+        return &desc[N - 1U];
+    }
+
+    [[nodiscard]] constexpr const DmaDesc* tail() const noexcept
+    {
+        return &desc[N - 1U];
+    }
+
+    [[nodiscard]] constexpr std::size_t size() const noexcept
+    {
+        return N;
+    }
+
+    [[nodiscard]] constexpr std::size_t bytes() const noexcept
+    {
+        std::size_t total{};
+        for (const auto& item : desc) {
+            total += item.length;
+        }
+        return total;
+    }
+
     std::array<DmaDesc, N> desc{};
 };
 

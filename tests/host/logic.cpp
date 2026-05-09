@@ -1,12 +1,14 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <memory_resource>
 #include <span>
+#include <string_view>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <thread>
@@ -32,6 +34,7 @@
 #include "arc/http_server.hpp"
 #include "arc/init.hpp"
 #include "arc/interrupt_matrix.hpp"
+#include "arc/isp.hpp"
 #include "arc/kalman.hpp"
 #include "arc/coap.hpp"
 #include "arc/log.hpp"
@@ -44,11 +47,13 @@
 #include "arc/netrpc.hpp"
 #include "arc/pack.hpp"
 #include "arc/perfetto.hpp"
+#include "arc/pipeline.hpp"
 #include "arc/pms.hpp"
 #include "arc/pmr.hpp"
 #include "arc/postmortem.hpp"
 #include "arc/probe.hpp"
 #include "arc/provisioning.hpp"
+#include "arc/pru.hpp"
 #include "arc/rcu.hpp"
 #include "arc/rpc.hpp"
 #include "arc/rtos.hpp"
@@ -56,6 +61,7 @@
 #include "arc/spsc.hpp"
 #include "arc/stream.hpp"
 #include "arc/secure_update.hpp"
+#include "arc/simd.hpp"
 #include "arc/swarm.hpp"
 #include "arc/tdma.hpp"
 #include "arc/tee.hpp"
@@ -63,6 +69,9 @@
 #include "arc/trace_event.hpp"
 #include "arc/trace_stream.hpp"
 #include "arc/ulp.hpp"
+#include "arc/ulp_cxx.hpp"
+#include "arc/usb_device.hpp"
+#include "arc/vision.hpp"
 #include "arc/ws.hpp"
 #include "arc/w5500.hpp"
 
@@ -97,6 +106,11 @@ static_assert(arc::claim_proof<1, 2, 3>() != arc::claim_proof<1, 2, 4>());
 static_assert(arc::Result<int>{2}.and_then([](int value) { return arc::Result<int>{value + 1}; }).value() == 3);
 static_assert(arc::status_code(arc::ok()) == ESP_OK);
 
+[[nodiscard]] bool near(const float lhs, const float rhs, const float epsilon = 0.0001F) noexcept
+{
+    return std::fabs(lhs - rhs) <= epsilon;
+}
+
 #if defined(__has_feature)
 #if __has_feature(thread_sanitizer)
 #define ARC_HOST_TSAN 1
@@ -118,6 +132,8 @@ void expect(const bool condition, const char* const message)
 std::size_t pms_policy_regions{};
 bool flash_policy_active{};
 std::size_t w5500_policy_bytes{};
+bool ulp_policy_gpio{};
+bool ulp_policy_woke{};
 std::size_t bare_core_boots{};
 std::size_t crypto_dma_bytes{};
 std::size_t interrupt_binds{};
@@ -1323,6 +1339,54 @@ void test_foc_motion_tdma()
     expect(out.current.d == 0.0F && out.current.q == 0.0F, "FOC current transform");
     expect(out.duty.a == 0.5F && out.duty.b > 0.7F && out.duty.c < 0.3F, "FOC centered duty");
 
+    arc::DualFoc<arc::Foc<Bridge, Scope, Encoder, float>, arc::Foc<Bridge, Scope, Encoder, float>> dual{};
+    dual.a.config = foc.config;
+    dual.b.config = foc.config;
+    dual.a.target.write({.d = 0.0F, .q = 0.5F, .bus = 2.0F});
+    dual.b.target.write({.d = 0.0F, .q = -0.5F, .bus = 2.0F});
+    const auto dual_out = dual.step(
+        {
+            .a = {.current = {.a = 0.0F, .b = 0.0F, .c = 0.0F}, .sin_theta = 0.0F, .cos_theta = 1.0F},
+            .b = {.current = {.a = 0.0F, .b = 0.0F, .c = 0.0F}, .sin_theta = 0.0F, .cos_theta = 1.0F},
+        },
+        0.00005F);
+    expect(dual_out.a.duty.b > dual_out.a.duty.c && dual_out.b.duty.b < dual_out.b.duty.c, "Dual FOC outputs");
+
+    struct SyncA {
+        [[nodiscard]] static constexpr std::uint32_t frequency() noexcept
+        {
+            return 20'000U;
+        }
+    };
+    struct SyncB {
+        [[nodiscard]] static constexpr std::uint32_t frequency() noexcept
+        {
+            return 20'000U;
+        }
+    };
+    static_assert(arc::BridgeCarrierSync<SyncA, SyncB>::same_frequency());
+    const auto sync = arc::BridgeCarrierSync<SyncA, SyncB>::plan(arc::FocCarrierSample::center, 4U);
+    expect(sync.valid() && sync.phase_ticks == 4U, "FOC carrier sync plan");
+    struct AdcTask {};
+    const arc::FocEtmCurrentTrigger<SyncA, AdcTask> trigger{
+        .sample = arc::FocCarrierSample::peak,
+        .phase_ticks = 2U,
+    };
+    expect(trigger.plan().current_sample == arc::FocCarrierSample::peak && trigger.plan().phase_ticks == 2U,
+           "FOC ETM trigger plan");
+
+    struct SpiEncoder {};
+    struct PcntEncoder {};
+    arc::FocEncoderFusion<SpiEncoder, PcntEncoder, arc::dsp::Kalman<float, 2, 1>, float> fusion{};
+    const auto fused = fusion.step({
+        .absolute_angle = 1.25F,
+        .incremental_angle = 1.0F,
+        .velocity = 0.5F,
+        .absolute_valid = true,
+    });
+    expect(fused == 1.25F && fusion.filter.x(0, 0) == 1.25F && fusion.filter.x(1, 0) == 0.5F,
+           "FOC encoder fusion");
+
     std::array<arc::MotionStep<3>, 8> steps{};
     const auto plan = arc::MotionPlan<3>::line(
         std::span(steps),
@@ -1395,6 +1459,78 @@ void test_ml_tensor()
     expect(qdense.eval(std::span<const std::int8_t, 4>{qx}, std::span<std::int8_t, 1>{qy}).has_value(),
            "ML quant dense eval");
     expect(qy[0] == 10, "ML quant dense output");
+}
+
+void test_simd_ml_pipeline()
+{
+    const std::array<std::int8_t, 16> lhs{1, 2, 3, 4, 5, 6, 7, 8, -1, -2, -3, -4, -5, -6, -7, -8};
+    const std::array<std::int8_t, 16> rhs{1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1};
+    expect(arc::simd::dot_s8(std::span(lhs), std::span(rhs)) == 72, "SIMD int8 dot");
+    expect(arc::simd::pie::ee_mac_s8(0, arc::simd::load_s8x16(lhs.data()), arc::simd::load_s8x16(rhs.data())) == 72,
+           "PIE int8 MAC wrapper");
+    expect(std::string_view{arc::simd::pie::MacS8x16::instruction} == "ee.mac.s8", "PIE int8 wrapper name");
+
+    const std::array<std::uint8_t, 4> white_yuv{235, 128, 235, 128};
+    std::array<std::uint16_t, 2> rgb{};
+    const auto pixels = arc::simd::yuv422_to_rgb565(std::span(white_yuv), std::span(rgb));
+    expect(pixels.has_value() && *pixels == 2U && rgb[0] == 0xffffU && rgb[1] == 0xffffU, "YUV422 RGB565 conversion");
+
+    std::array<arc::simd::ComplexF32, 4> spectrum{
+        arc::simd::ComplexF32{.re = 1.0F},
+        arc::simd::ComplexF32{},
+        arc::simd::ComplexF32{},
+        arc::simd::ComplexF32{},
+    };
+    expect(arc::simd::fft_radix2(std::span(spectrum)).has_value(), "SIMD FFT runs");
+    expect(near(spectrum[0].re, 1.0F) && near(spectrum[1].re, 1.0F) && near(spectrum[2].re, 1.0F), "SIMD FFT impulse");
+
+    const std::array<std::int8_t, 9> conv_in{1, 2, 3, 4, 5, 6, 7, 8, 9};
+    const std::array<std::int8_t, 4> conv_w{1, 1, 1, 1};
+    const std::array<std::int32_t, 1> conv_b{0};
+    std::array<std::int8_t, arc::ml::Conv2dS8<3, 3, 1, 1, 2, 2>::output_size> conv_out{};
+    const arc::ml::Conv2dS8<3, 3, 1, 1, 2, 2> conv{
+        .weights = std::span<const std::int8_t, 4>{conv_w},
+        .bias = std::span<const std::int32_t, 1>{conv_b},
+    };
+    const arc::MmuSpan<std::int8_t> mapped_conv{
+        .region = {},
+        .values = std::span<const std::int8_t>{conv_w},
+    };
+    const auto mapped_weights = arc::ml::mapped_weights<std::int8_t, 4>(mapped_conv);
+    expect(mapped_weights.has_value() && mapped_weights->data() == conv_w.data(), "ML MmuSpan mapped weights");
+    expect(conv.eval(std::span<const std::int8_t, 9>{conv_in}, std::span(conv_out)).has_value(), "Conv2D S8 eval");
+    expect(conv_out[0] == 12 && conv_out[1] == 16 && conv_out[2] == 24 && conv_out[3] == 28, "Conv2D S8 output");
+
+    const std::array<std::int8_t, 8> depth_in{1, 2, 3, 4, 5, 6, 7, 8};
+    const std::array<std::int8_t, 2> depth_w{1, 2};
+    const std::array<std::int32_t, 2> depth_b{0, 0};
+    std::array<std::int8_t, arc::ml::DepthwiseConv2dS8<2, 2, 2, 1, 1>::output_size> depth_out{};
+    const arc::ml::DepthwiseConv2dS8<2, 2, 2, 1, 1> depth{
+        .weights = std::span<const std::int8_t, 2>{depth_w},
+        .bias = std::span<const std::int32_t, 2>{depth_b},
+    };
+    expect(depth.eval(std::span<const std::int8_t, 8>{depth_in}, std::span(depth_out)).has_value(),
+           "Depthwise Conv2D S8 eval");
+    expect(depth_out[0] == 1 && depth_out[1] == 4 && depth_out[7] == 16, "Depthwise Conv2D S8 output");
+
+    const std::array<std::int8_t, 4> pool_in{1, 4, 2, 3};
+    std::array<std::int8_t, arc::ml::MaxPool2d<std::int8_t, 2, 2, 1, 2, 2>::output_size> pool_out{};
+    expect(arc::ml::MaxPool2d<std::int8_t, 2, 2, 1, 2, 2>::eval(std::span(pool_in), std::span(pool_out)).has_value(),
+           "MaxPool eval");
+    expect(pool_out[0] == 4, "MaxPool output");
+
+    struct TinyGraph {
+        using Context = std::uint32_t;
+
+        static arc::Status run(Context& context) noexcept
+        {
+            ++context;
+            return arc::ok();
+        }
+    };
+    std::uint32_t graph_context{};
+    arc::ml::Core1Inference<TinyGraph>::loop(&graph_context);
+    expect(graph_context == 1U, "ML Core1 inference program");
 }
 
 void test_netrpc_pms_secure_update()
@@ -1839,7 +1975,7 @@ void test_static_silicon_facades()
     };
 
     std::array<std::byte, 256> stack{};
-    auto token = std::uint32_t{0xA5U};
+    static std::uint32_t token{0xA5U};
     expect((arc::BareCore<BareProgram, MockBarePolicy>::boot(stack, &token).has_value()), "BareCore boot");
     expect(bare_core_boots == 1U && MockBarePolicy::config.stack.size() == stack.size(), "BareCore policy handoff");
     expect(MockBarePolicy::context == &token, "BareCore context");
@@ -2130,6 +2266,233 @@ void test_stream()
     expect(!arc::net::Stream::read_frame16(io, std::span(out)), "Stream oversized frame rejects");
 }
 
+void test_pipeline_usb_ulp()
+{
+    arc::DmaChain<2> camera{};
+    arc::DmaChain<2> display{};
+    std::array<std::uint8_t, 8> camera_bytes{};
+    std::array<std::uint8_t, 8> display_bytes{};
+    camera.bind(0, std::span(camera_bytes).first(4));
+    camera.bind(1, std::span(camera_bytes).subspan(4), true);
+    display.bind(0, std::span(display_bytes).first(4));
+    display.bind(1, std::span(display_bytes).subspan(4), true);
+
+    arc::Pipeline<2> pipe{};
+    expect(pipe.bind(0, arc::endpoint(camera)).has_value(), "Pipeline source bind");
+    expect(pipe.bind(1, arc::endpoint(display)).has_value(), "Pipeline sink bind");
+    expect(pipe.link_linear().has_value(), "Pipeline linear link");
+    expect(camera.tail()->next == display.head() && display.tail()->next == nullptr, "Pipeline descriptor chain");
+
+    std::array<std::uint8_t, 16> frame{};
+    arc::DmaChain<2> rows{};
+    const arc::Dma2dWindow crop{.x_bytes = 1U, .y = 1U, .width_bytes = 2U, .height = 2U, .stride_bytes = 4U};
+    expect(arc::bind_rows(rows, std::span(frame), crop).has_value(), "Pipeline 2D row bind");
+    expect(rows.desc[0].buffer == frame.data() + 5U && rows.desc[1].buffer == frame.data() + 9U, "Pipeline 2D offsets");
+    expect(rows.desc[0].length == 2U && rows.desc[1].next == nullptr, "Pipeline 2D lengths");
+
+    const std::array<std::uint8_t, 2> payload{0xaaU, 0x55U};
+    std::array<std::uint8_t, 32> packet{};
+    const auto rtp = arc::net::Rtp::packet(std::span(packet), std::span(payload), 7U, 0x01020304U, 0xaabbccddU, 97U, true);
+    expect(rtp.has_value() && rtp->size() == 14U, "RTP packet size");
+    expect(packet[1] == 0xe1U && packet[2] == 0U && packet[3] == 7U && packet[12] == 0xaaU, "RTP packet layout");
+
+    std::array<std::uint8_t, 96> part{};
+    const auto mjpeg = arc::net::Mjpeg::part(std::span(part), std::span(payload), "cam");
+    expect(mjpeg.has_value() && mjpeg->size() > payload.size(), "MJPEG part");
+    expect(part[0] == '-' && part[2] == 'c' && part[mjpeg->size() - 2U] == '\r', "MJPEG boundary layout");
+
+    constexpr auto bulk = arc::usb::Bulk<0x01U, 0x82U>::descriptors();
+    static_assert(bulk.size() == 32U);
+    static_assert(bulk[1] == static_cast<std::uint8_t>(arc::usb::DescriptorType::configuration));
+    static_assert(bulk[2] == 32U);
+    static_assert(bulk[27] == 0x82U);
+    constexpr auto uvc = arc::usb::Uvc<0x83U>::descriptors();
+    static_assert(uvc[14] == static_cast<std::uint8_t>(arc::usb::Class::video));
+    constexpr auto uac = arc::usb::Uac<0x84U>::descriptors();
+    static_assert(uac[14] == static_cast<std::uint8_t>(arc::usb::Class::audio));
+
+    arc::Spsc<std::uint8_t, 4> fifo{};
+    expect(arc::usb::Fifo<decltype(fifo)>::write(fifo, std::span(payload)).has_value(), "USB FIFO write");
+    std::array<std::uint8_t, 2> fifo_out{};
+    const auto read = arc::usb::Fifo<decltype(fifo)>::read(fifo, std::span(fifo_out));
+    expect(read.has_value() && *read == 2U && fifo_out == payload, "USB FIFO read");
+
+    struct UlpPolicy {
+        static esp_err_t gpio_output(int pin) noexcept
+        {
+            return pin == 4 ? ESP_OK : ESP_ERR_INVALID_ARG;
+        }
+
+        static esp_err_t gpio_input(int pin) noexcept
+        {
+            return pin == 4 ? ESP_OK : ESP_ERR_INVALID_ARG;
+        }
+
+        static void gpio_write(int, const bool high) noexcept
+        {
+            ulp_policy_gpio = high;
+        }
+
+        static bool gpio_read(int) noexcept
+        {
+            return ulp_policy_gpio;
+        }
+
+        static arc::Result<std::uint16_t> adc_read(int channel) noexcept
+        {
+            return channel == 2 ? arc::Result<std::uint16_t>{123U} : arc::fail(ESP_ERR_INVALID_ARG);
+        }
+
+        static esp_err_t i2c_write(int port, std::uint8_t address, std::span<const std::uint8_t> data) noexcept
+        {
+            return port == 0 && address == 0x68U && data.size() == 2U ? ESP_OK : ESP_ERR_INVALID_ARG;
+        }
+
+        static esp_err_t i2c_read(int port, std::uint8_t address, std::span<std::uint8_t> data) noexcept
+        {
+            if (port != 0 || address != 0x68U || data.empty()) {
+                return ESP_ERR_INVALID_ARG;
+            }
+            data[0] = 0x42U;
+            return ESP_OK;
+        }
+
+        static esp_err_t wake_main() noexcept
+        {
+            ulp_policy_woke = true;
+            return ESP_OK;
+        }
+    };
+
+    expect(arc::ulp::Gpio<4, UlpPolicy>::output().has_value(), "ULP GPIO output");
+    arc::ulp::Gpio<4, UlpPolicy>::high();
+    expect(arc::ulp::Gpio<4, UlpPolicy>::read(), "ULP GPIO read");
+    expect(arc::ulp::Adc<2, UlpPolicy>::read_raw().value() == 123U, "ULP ADC read");
+    std::array<std::uint8_t, 2> i2c_out{1U, 2U};
+    expect(arc::ulp::I2c<0, UlpPolicy>::write(0x68U, std::span(i2c_out)).has_value(), "ULP I2C write");
+    std::array<std::uint8_t, 1> i2c_in{};
+    expect(arc::ulp::I2c<0, UlpPolicy>::read(0x68U, std::span(i2c_in)).has_value() && i2c_in[0] == 0x42U,
+           "ULP I2C read");
+
+    struct Shared {
+        using value_type = std::uint32_t;
+        std::uint32_t value{};
+
+        void write(const std::uint32_t next) noexcept
+        {
+            value = next;
+        }
+    };
+    struct Model {
+        using Input = std::uint16_t;
+
+        static std::uint32_t eval(const Input value) noexcept
+        {
+            return static_cast<std::uint32_t>(value) * 2U;
+        }
+
+        static bool wake(const std::uint32_t value) noexcept
+        {
+            return value > 10U;
+        }
+    };
+
+    Shared shared{};
+    expect(arc::ulp::SleepFsm<Model, Shared, UlpPolicy>::run_once(shared, 6U).has_value(), "ULP sleep FSM run");
+    expect(shared.value == 12U && ulp_policy_woke, "ULP sleep FSM wake");
+}
+
+void test_pru_isp_vision()
+{
+    static_assert(arc::PruTiming{.hz = 40'000'000U, .width = 16U}.valid());
+
+    std::array<std::uint16_t, 8> waveform{0x0001U, 0x0002U, 0x0004U, 0x0008U, 0x0010U, 0x0020U, 0x0040U, 0x0080U};
+    arc::DmaChain<2> out_chain{};
+    expect(arc::PruOut<2>::bind(out_chain, std::span(waveform), 4U).has_value(), "PRU out DMA bind");
+    expect(out_chain.desc[0].length == 8U && out_chain.desc[1].next == out_chain.head(), "PRU out circular chain");
+
+    const std::array<std::uint16_t, 2> patch{0xaaaaU, 0x5555U};
+    expect(arc::PruOut<2>::mutate_ahead(waveform, {.read = 6U, .guard = 2U}, std::span(patch)).has_value(),
+           "PRU out mutate ahead");
+    expect(waveform[0] == 0xaaaaU && waveform[1] == 0x5555U, "PRU out mutation wraps");
+
+    std::array<std::uint16_t, 8> capture{};
+    arc::DmaChain<2> in_chain{};
+    expect(arc::PruIn<2>::bind(in_chain, std::span(capture), 4U).has_value(), "PRU in DMA bind");
+    expect(in_chain.desc[0].length == 8U && in_chain.desc[1].next == in_chain.head(), "PRU in circular chain");
+
+    const std::array<std::uint8_t, 16> raw{
+        240U,
+        64U,
+        220U,
+        64U,
+        80U,
+        16U,
+        96U,
+        24U,
+        230U,
+        72U,
+        210U,
+        80U,
+        70U,
+        18U,
+        88U,
+        28U,
+    };
+    std::array<std::uint16_t, 16> rgb{};
+    const auto debayered = arc::isp::Debayer::rgb565(std::span(raw), 4U, 4U, std::span(rgb), arc::isp::Bayer::rggb);
+    expect(debayered.has_value() && *debayered == rgb.size(), "ISP debayer RGB565");
+    const auto stats = arc::isp::AecAwb::measure_rgb565(std::span(rgb));
+    const auto tuning = arc::isp::AecAwb::tune(stats);
+    expect(stats.pixels == rgb.size() && tuning.red_gain_q8 != 0U, "ISP AEC/AWB tuning");
+
+    const std::array<std::uint8_t, 16> gray{
+        0U,
+        0U,
+        255U,
+        255U,
+        0U,
+        0U,
+        255U,
+        255U,
+        0U,
+        0U,
+        255U,
+        255U,
+        0U,
+        0U,
+        255U,
+        255U,
+    };
+    std::array<std::uint8_t, 16> edges{};
+    expect(arc::vision::Sobel::edges(std::span(gray), 4U, 4U, std::span(edges), 0U).has_value(),
+           "Vision Sobel edges");
+    expect(edges[5] != 0U || edges[6] != 0U, "Vision Sobel detects edge");
+
+    const std::array<std::uint8_t, 16> shifted{
+        0U,
+        0U,
+        0U,
+        255U,
+        0U,
+        0U,
+        0U,
+        255U,
+        0U,
+        0U,
+        0U,
+        255U,
+        0U,
+        0U,
+        0U,
+        255U,
+    };
+    const auto flow = arc::vision::OpticalFlow::lucas_kanade(std::span(gray), std::span(shifted), 4U, 4U);
+    expect(flow.has_value(), "Vision optical flow");
+    const auto target = arc::vision::VisualServo::target_from_flow({.dx_q8 = 256, .confidence = 1U}, 0.25F, 12.0F);
+    expect(target.q == -0.25F && target.bus == 12.0F, "Vision flow to FOC target");
+}
+
 void test_refinit()
 {
     std::uint32_t state{};
@@ -2280,6 +2643,7 @@ int main()
     test_dsp();
     test_foc_motion_tdma();
     test_ml_tensor();
+    test_simd_ml_pipeline();
     test_netrpc_pms_secure_update();
     test_matrix_kalman_storage_swarm();
     test_trace_provision_ethernet_flashoff_hil_ecs();
@@ -2296,6 +2660,8 @@ int main()
     test_claim();
     test_file();
     test_stream();
+    test_pipeline_usb_ulp();
+    test_pru_isp_vision();
     test_refinit();
     std::puts("arc host tests: OK");
 }
