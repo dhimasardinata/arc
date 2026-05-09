@@ -20,6 +20,7 @@
 #include "arc/caps.hpp"
 #include "arc/claim.hpp"
 #include "arc/concepts.hpp"
+#include "arc/csi.hpp"
 #include "arc/crypto_dma.hpp"
 #include "arc/dsp.hpp"
 #include "arc/ecs.hpp"
@@ -31,6 +32,7 @@
 #include "arc/foc.hpp"
 #include "arc/fsm.hpp"
 #include "arc/hil.hpp"
+#include "arc/hotpatch.hpp"
 #include "arc/http_server.hpp"
 #include "arc/init.hpp"
 #include "arc/interrupt_matrix.hpp"
@@ -141,6 +143,13 @@ std::size_t interrupt_binds{};
 std::size_t tee_regions{};
 std::size_t tee_trusted_peripherals{};
 std::size_t tee_untrusted_peripherals{};
+bool csi_policy_started{};
+arc::net::CsiCallback csi_policy_callback{};
+void* csi_policy_user{};
+std::size_t hotpatch_locks{};
+std::size_t hotpatch_stores{};
+std::size_t hotpatch_syncs{};
+std::size_t hotpatch_unlocks{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -1573,6 +1582,136 @@ void test_simd_ml_pipeline()
     expect(graph_context == 1U, "ML Core1 inference program");
 }
 
+void test_csi_hotpatch()
+{
+    struct CsiPolicy {
+        static esp_err_t start(
+            arc::net::CsiConfig,
+            const arc::net::CsiCallback callback,
+            void* const user) noexcept
+        {
+            csi_policy_started = true;
+            csi_policy_callback = callback;
+            csi_policy_user = user;
+            return ESP_OK;
+        }
+
+        static esp_err_t stop() noexcept
+        {
+            csi_policy_started = false;
+            csi_policy_callback = nullptr;
+            csi_policy_user = nullptr;
+            return ESP_OK;
+        }
+    };
+
+    std::size_t csi_callbacks{};
+    const auto csi_callback = [](void* user, const arc::net::CsiRawView& raw) noexcept {
+        auto* const count = static_cast<std::size_t*>(user);
+        *count += raw.iq.size();
+    };
+    expect(arc::net::CsiRx<CsiPolicy>::start({}, csi_callback, &csi_callbacks).has_value(), "CSI policy start");
+
+    const arc::net::CsiMeta meta{
+        .mac = {1U, 2U, 3U, 4U, 5U, 6U},
+        .rssi = -40,
+        .rate = 1U,
+        .channel = 6U,
+        .timestamp_us = 1234U,
+    };
+    const std::array<std::int8_t, 8> raw_iq{3, 4, 0, 5, -3, 4, -4, 3};
+    csi_policy_callback(csi_policy_user, {.meta = meta, .iq = std::span<const std::int8_t>{raw_iq}});
+    expect(csi_callbacks == raw_iq.size(), "CSI raw callback hook");
+
+    auto csi_frame = arc::net::Csi::frame<8>(meta, std::span<const std::int8_t>{raw_iq});
+    expect(csi_frame.has_value() && csi_frame->used == 4U, "CSI frame parse");
+    const auto stats = arc::net::Csi::stats(*csi_frame);
+    expect(stats.bins == 4U && near(stats.amplitude_mean, 5.0F), "CSI RF stats");
+
+    arc::Spsc<arc::net::CsiFrame<8>, 4> csi_queue{};
+    expect(arc::net::Csi::push(csi_queue, meta, std::span<const std::int8_t>{raw_iq}).has_value(), "CSI SPSC push");
+    arc::net::CsiFrame<8> popped{};
+    expect(csi_queue.try_pop(popped) && popped.meta.channel == 6U, "CSI SPSC pop");
+
+    std::array<float, 3> features{};
+    expect(arc::net::Csi::features(*csi_frame, std::span<float, 3>{features}).has_value(), "CSI feature vector");
+    std::array<std::int8_t, 3> quantized{};
+    expect(arc::net::Csi::quantize(std::span<const float, 3>{features}, std::span<std::int8_t, 3>{quantized}, 1.0F).has_value(),
+           "CSI quantize RF tensor");
+    const std::array<std::int8_t, 6> weights{1, 0, 0, -1, 0, 0};
+    const std::array<std::int32_t, 2> bias{0, 0};
+    std::array<std::int8_t, 2> logits{};
+    const arc::ml::QuantDenseS8<3, 2> classifier{
+        .weights = std::span<const std::int8_t, 6>{weights},
+        .bias = std::span<const std::int32_t, 2>{bias},
+        .multiplier = 1,
+        .shift = 0,
+    };
+    expect(classifier.eval(std::span<const std::int8_t, 3>{quantized}, std::span<std::int8_t, 2>{logits}).has_value(),
+           "CSI semantic presence classifier");
+    expect(logits[0] > logits[1], "CSI classifier output");
+    expect(arc::net::CsiRx<CsiPolicy>::stop().has_value() && !csi_policy_started, "CSI policy stop");
+
+    struct PatchHeap {
+        static void* allocate(const std::size_t bytes) noexcept
+        {
+            return std::malloc(bytes);
+        }
+
+        static void release(void* const pointer) noexcept
+        {
+            std::free(pointer);
+        }
+
+        static esp_err_t sync_code(void*, std::size_t) noexcept
+        {
+            ++hotpatch_syncs;
+            return ESP_OK;
+        }
+    };
+
+    const std::array<std::uint8_t, 4> payload{0xaaU, 0xbbU, 0xccU, 0xddU};
+    {
+        auto image = arc::HotPatch::load<PatchHeap>(std::span<const std::uint8_t>{payload}, 2U);
+        expect(image.has_value() && image->entry() == static_cast<std::uint8_t*>(image->block.memory) + 2U,
+               "HotPatch executable payload load");
+    }
+
+    struct PatchPolicy {
+        static esp_err_t lock_code(arc::CacheRegion) noexcept
+        {
+            ++hotpatch_locks;
+            return ESP_OK;
+        }
+
+        static esp_err_t store_instruction(void* const target, const std::uint32_t instruction) noexcept
+        {
+            ++hotpatch_stores;
+            __atomic_store_n(static_cast<std::uint32_t*>(target), instruction, __ATOMIC_RELEASE);
+            return ESP_OK;
+        }
+
+        static esp_err_t sync_code(void*, std::size_t) noexcept
+        {
+            ++hotpatch_syncs;
+            return ESP_OK;
+        }
+
+        static esp_err_t unlock_all() noexcept
+        {
+            ++hotpatch_unlocks;
+            return ESP_OK;
+        }
+    };
+
+    std::uint32_t target_instruction{};
+    const std::uint32_t replacement_instruction{0x00abcdefU};
+    const auto patched = arc::HotPatch::install<PatchPolicy, arc::Mask<0U>>(
+        {.target = &target_instruction, .replacement = reinterpret_cast<const void*>(0x40001000U), .instruction = replacement_instruction});
+    expect(patched.has_value() && target_instruction == replacement_instruction, "HotPatch atomic detour install");
+    expect(hotpatch_locks == 1U && hotpatch_stores == 1U && hotpatch_unlocks == 1U, "HotPatch policy hooks");
+}
+
 void test_netrpc_pms_secure_update()
 {
     enum class Op : std::uint8_t { set = 2U };
@@ -2774,6 +2913,7 @@ int main()
     test_foc_motion_tdma();
     test_ml_tensor();
     test_simd_ml_pipeline();
+    test_csi_hotpatch();
     test_netrpc_pms_secure_update();
     test_matrix_kalman_storage_swarm();
     test_trace_provision_ethernet_flashoff_hil_ecs();
