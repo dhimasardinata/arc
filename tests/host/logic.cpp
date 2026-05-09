@@ -20,6 +20,7 @@
 #include "arc/caps.hpp"
 #include "arc/claim.hpp"
 #include "arc/concepts.hpp"
+#include "arc/covert.hpp"
 #include "arc/csi.hpp"
 #include "arc/crypto_dma.hpp"
 #include "arc/dsp.hpp"
@@ -47,6 +48,7 @@
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/netrpc.hpp"
+#include "arc/paillier.hpp"
 #include "arc/pack.hpp"
 #include "arc/perfetto.hpp"
 #include "arc/pipeline.hpp"
@@ -72,6 +74,7 @@
 #include "arc/trace_stream.hpp"
 #include "arc/ulp.hpp"
 #include "arc/ulp_cxx.hpp"
+#include "arc/ulp_ml.hpp"
 #include "arc/usb_device.hpp"
 #include "arc/vm.hpp"
 #include "arc/vision.hpp"
@@ -150,6 +153,10 @@ std::size_t hotpatch_locks{};
 std::size_t hotpatch_stores{};
 std::size_t hotpatch_syncs{};
 std::size_t hotpatch_unlocks{};
+std::uint32_t covert_hz{};
+std::uint32_t covert_duty{};
+int covert_density{};
+bool semantic_wake{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -2762,6 +2769,151 @@ void test_vm_bpf()
            "BPF sandbox configures VM memory region");
 }
 
+void test_ulp_ml_paillier_covert()
+{
+    const std::array<std::int8_t, 2> ulp_weights{1, 1};
+    const std::array<std::int32_t, 1> ulp_bias{0};
+    const arc::ulp::ml::QuantDenseS8<2, 1> ulp_dense{
+        .weights = ulp_weights.data(),
+        .bias = ulp_bias.data(),
+    };
+    const std::array<std::int8_t, 2> ulp_input{2, 4};
+    std::array<std::int8_t, 1> ulp_logits{};
+    expect(ulp_dense.eval(std::span<const std::int8_t, 2>{ulp_input}, std::span<std::int8_t, 1>{ulp_logits}),
+           "ULP ML dense eval");
+    expect(ulp_logits[0] == 6, "ULP ML dense output");
+
+    struct WakePolicy {
+        static esp_err_t i2c_read(int port, std::uint8_t address, std::span<std::uint8_t> data) noexcept
+        {
+            if (port != 0 || address != 0x1dU || data.size() != 2U) {
+                return ESP_ERR_INVALID_ARG;
+            }
+            data[0] = 130U;
+            data[1] = 132U;
+            return ESP_OK;
+        }
+
+        static esp_err_t i2c_write(int, std::uint8_t, std::span<const std::uint8_t>) noexcept
+        {
+            return ESP_OK;
+        }
+
+        static esp_err_t wake_main() noexcept
+        {
+            semantic_wake = true;
+            return ESP_OK;
+        }
+    };
+    semantic_wake = false;
+    ulp_logits = {};
+    expect(arc::ulp::ml::SemanticWake<0, 0x1dU, 2, 1, WakePolicy>::run_once(
+               ulp_dense,
+               std::span<std::int8_t, 1>{ulp_logits},
+               5)
+               .has_value(),
+           "ULP semantic wake workflow");
+    expect(semantic_wake && ulp_logits[0] == 6, "ULP semantic wake triggers");
+
+    struct ToyInt {
+        std::uint64_t value{};
+
+        ToyInt() = default;
+        constexpr ToyInt(const std::uint64_t next)
+            : value{next}
+        {
+        }
+
+        [[nodiscard]] std::expected<ToyInt, int> clone() const noexcept
+        {
+            return *this;
+        }
+
+        [[nodiscard]] std::expected<ToyInt, int> mul_mod(
+            const ToyInt& rhs,
+            const ToyInt& modulus) const noexcept
+        {
+            return ToyInt{(value * rhs.value) % modulus.value};
+        }
+
+        [[nodiscard]] std::expected<ToyInt, int> exp_mod(
+            const ToyInt& exponent,
+            const ToyInt& modulus,
+            ToyInt* = nullptr) const noexcept
+        {
+            auto base = value % modulus.value;
+            auto exp = exponent.value;
+            auto out = std::uint64_t{1U};
+            while (exp != 0U) {
+                if ((exp & 1U) != 0U) {
+                    out = (out * base) % modulus.value;
+                }
+                base = (base * base) % modulus.value;
+                exp >>= 1U;
+            }
+            return ToyInt{out};
+        }
+    };
+
+    const arc::crypto::PaillierPublic<ToyInt> key{
+        .n = ToyInt{5},
+        .n2 = ToyInt{25},
+        .g = ToyInt{6},
+    };
+    const auto c3 = arc::crypto::Paillier<ToyInt>::encrypt(key, ToyInt{3}, ToyInt{2});
+    const auto c4 = arc::crypto::Paillier<ToyInt>::encrypt(key, ToyInt{4}, ToyInt{2});
+    expect(c3.has_value() && c4.has_value(), "Paillier encrypt toy values");
+    const auto sum = arc::crypto::Paillier<ToyInt>::add(key, *c3, *c4);
+    expect(sum.has_value() && sum->value == 14U, "Paillier homomorphic add");
+    const auto plus_plain = arc::crypto::Paillier<ToyInt>::add_plain(key, *c3, ToyInt{4});
+    expect(plus_plain.has_value() && plus_plain->value == 2U, "Paillier add plaintext");
+    const std::array encrypted{*c3, *c4};
+    const auto aggregate = arc::crypto::Paillier<ToyInt>::aggregate(key, std::span<const ToyInt>{encrypted});
+    expect(aggregate.has_value() && aggregate->value == sum->value, "Paillier aggregate ciphertexts");
+
+    struct PwmCarrier {
+        static esp_err_t hz(const std::uint32_t value) noexcept
+        {
+            covert_hz = value;
+            return ESP_OK;
+        }
+
+        static esp_err_t duty(const std::uint32_t value) noexcept
+        {
+            covert_duty = value;
+            return ESP_OK;
+        }
+    };
+    struct SigmaCarrier {
+        static esp_err_t set(const int value) noexcept
+        {
+            covert_density = value;
+            return ESP_OK;
+        }
+    };
+
+    constexpr arc::covert::FskConfig fsk{
+        .mark_hz = 2'400'000U,
+        .space_hz = 2'100'000U,
+        .symbol_us = 50U,
+        .duty_permille = 500U,
+        .mark_density = 80,
+        .space_density = -80,
+    };
+    std::array<arc::covert::FskSymbol, 8> symbols{};
+    const std::array<std::uint8_t, 1> bits{0b1010'0000U};
+    expect(arc::covert::Fsk::plan(std::span<arc::covert::FskSymbol, 8>{symbols}, std::span<const std::uint8_t>{bits}, fsk).has_value(),
+           "Covert FSK plan bytes");
+    expect(symbols[0].mark && !symbols[1].mark && symbols[0].hz == fsk.mark_hz, "Covert FSK symbol mapping");
+
+    expect(arc::covert::EmTx<PwmCarrier>::bit(true, fsk).has_value(), "Covert EM PWM mark");
+    expect(covert_hz == fsk.mark_hz && covert_duty == fsk.duty_permille, "Covert EM PWM retune");
+    expect(arc::covert::EmTx<SigmaCarrier>::bit(false, fsk).has_value(), "Covert EM Sigma space");
+    expect(covert_density == fsk.space_density, "Covert Sigma density");
+    expect(arc::covert::SonicTx<PwmCarrier>::bit(false, fsk).has_value(), "Covert sonic PWM space");
+    expect(covert_hz == fsk.space_hz, "Covert sonic frequency");
+}
+
 void test_refinit()
 {
     std::uint32_t state{};
@@ -2933,6 +3085,7 @@ int main()
     test_pipeline_usb_ulp();
     test_pru_isp_vision();
     test_vm_bpf();
+    test_ulp_ml_paillier_covert();
     test_refinit();
     std::puts("arc host tests: OK");
 }
