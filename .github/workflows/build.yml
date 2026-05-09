@@ -15,6 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - uses: actions/setup-python@v5
         with:
@@ -64,7 +66,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ env.ARC_IDF_REF }}-py${{ env.ARC_PYTHON }}-${{ github.ref_name }}
+          key: ${{ runner.os }}-ccache-${{ env.ARC_IDF_REF }}-py${{ env.ARC_PYTHON }}-${{ hashFiles('components/**/*.hpp', 'components/**/*.cpp', 'examples/**/CMakeLists.txt', 'examples/**/sdkconfig.defaults', 'cmake/**/*.cmake') }}
           restore-keys: |
             ${{ runner.os }}-ccache-${{ env.ARC_IDF_REF }}-py${{ env.ARC_PYTHON }}-
             ${{ runner.os }}-ccache-${{ env.ARC_IDF_VERSION }}-py${{ env.ARC_PYTHON }}-
@@ -117,7 +119,12 @@ jobs:
         run: |
           export ARC_IDF_PATH="$HOME/esp-idf"
           export IDF_CCACHE_ENABLE=1
-          ccache --max-size 300M || true
+          export CCACHE_BASEDIR="$PWD"
+          export CCACHE_DIR="$HOME/.ccache"
+          export CCACHE_COMPRESS=1
+          export CCACHE_COMPRESSLEVEL=6
+          ccache --max-size 2G || true
+          ccache --set-config=sloppiness=file_macro,time_macros,include_file_mtime,include_file_ctime || true
           . ./env.sh
           dump_idf_logs() {
             local label="$1"
@@ -156,11 +163,19 @@ jobs:
             popd >/dev/null
             echo "::endgroup::"
           done
+          ccache --show-stats || true
 
       - name: Validate clangd database
         shell: bash
+        env:
+          ARC_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          go run tools/clangd-compile-commands.go --validate-arc-headers -o compile_commands.json
+          extra_args=()
+          if [[ -n "${ARC_BASE_SHA:-}" && ! "$ARC_BASE_SHA" =~ ^0+$ ]]; then
+            git fetch --no-tags --depth=1 origin "$ARC_BASE_SHA" || true
+            extra_args+=(--changed-arc-headers "$ARC_BASE_SHA")
+          fi
+          go run tools/clangd-compile-commands.go --validate-arc-headers -o compile_commands.json "${extra_args[@]}"
 
       - name: Host benchmarks
         shell: bash

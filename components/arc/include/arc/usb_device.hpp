@@ -20,7 +20,9 @@ enum class DescriptorType : std::uint8_t {
 };
 
 enum class Class : std::uint8_t {
+    communications = 0x02U,
     audio = 0x01U,
+    cdc_data = 0x0aU,
     video = 0x0eU,
     vendor = 0xffU,
 };
@@ -30,6 +32,27 @@ enum class EndpointAttr : std::uint8_t {
     isochronous = 0x01U,
     bulk = 0x02U,
     interrupt = 0x03U,
+};
+
+enum class StandardRequest : std::uint8_t {
+    set_address = 5U,
+    get_descriptor = 6U,
+    set_configuration = 9U,
+};
+
+enum class DeviceState : std::uint8_t {
+    detached,
+    powered,
+    addressed,
+    configured,
+};
+
+struct SetupPacket {
+    std::uint8_t request_type{};
+    std::uint8_t request{};
+    std::uint16_t value{};
+    std::uint16_t index{};
+    std::uint16_t length{};
 };
 
 struct DeviceDescriptor {
@@ -224,6 +247,57 @@ struct Bulk {
     }
 };
 
+template <std::uint8_t NotifyEndpoint, std::uint8_t OutEndpoint, std::uint8_t InEndpoint, std::uint16_t PacketBytes = 64U>
+struct Cdc {
+    static_assert((NotifyEndpoint & 0x80U) != 0U, "CDC notify endpoint must be IN");
+    static_assert((OutEndpoint & 0x80U) == 0U, "CDC OUT endpoint must not set the IN bit");
+    static_assert((InEndpoint & 0x80U) != 0U, "CDC IN endpoint must set the IN bit");
+
+    [[nodiscard]] static consteval auto descriptors(const std::uint8_t control = 0U, const std::uint8_t data = 1U) noexcept
+    {
+        constexpr auto total = 9U + 9U + 7U + 9U + 7U + 7U;
+        const auto cfg = ConfigurationDescriptor{
+            .total_length = total,
+            .interfaces = 2U,
+        }
+                             .bytes();
+        const auto ctrl = InterfaceDescriptor{
+            .number = control,
+            .endpoints = 1U,
+            .klass = Class::communications,
+            .subclass = 2U,
+            .protocol = 1U,
+        }
+                              .bytes();
+        const auto notify = EndpointDescriptor{
+            .address = NotifyEndpoint,
+            .attributes = EndpointAttr::interrupt,
+            .max_packet = 16U,
+            .interval = 8U,
+        }
+                                .bytes();
+        const auto data_ifc = InterfaceDescriptor{
+            .number = data,
+            .endpoints = 2U,
+            .klass = Class::cdc_data,
+        }
+                                  .bytes();
+        const auto out = EndpointDescriptor{
+            .address = OutEndpoint,
+            .attributes = EndpointAttr::bulk,
+            .max_packet = PacketBytes,
+        }
+                             .bytes();
+        const auto in = EndpointDescriptor{
+            .address = InEndpoint,
+            .attributes = EndpointAttr::bulk,
+            .max_packet = PacketBytes,
+        }
+                            .bytes();
+        return concat(concat(concat(concat(concat(cfg, ctrl), notify), data_ifc), out), in);
+    }
+};
+
 template <std::uint8_t InEndpoint, std::uint16_t PacketBytes = 512U>
 struct Uvc {
     static_assert((InEndpoint & 0x80U) != 0U, "UVC endpoint must be IN");
@@ -314,6 +388,50 @@ struct Fifo {
             ++count;
         }
         return count;
+    }
+};
+
+template <typename ClassDriver, typename Policy>
+struct Device {
+    DeviceState state{DeviceState::powered};
+    std::uint8_t address{};
+    std::uint8_t configuration{};
+    DeviceDescriptor device{};
+
+    [[nodiscard]] Status setup(const SetupPacket packet) noexcept
+    {
+        const auto request = static_cast<StandardRequest>(packet.request);
+        switch (request) {
+            case StandardRequest::get_descriptor:
+                return descriptor(packet.value, packet.length);
+            case StandardRequest::set_address:
+                address = static_cast<std::uint8_t>(packet.value & 0x7fU);
+                state = address == 0U ? DeviceState::powered : DeviceState::addressed;
+                return status(Policy::set_address(address));
+            case StandardRequest::set_configuration:
+                configuration = static_cast<std::uint8_t>(packet.value & 0xffU);
+                state = configuration == 0U ? DeviceState::addressed : DeviceState::configured;
+                return status(Policy::configured(configuration));
+            default:
+                return Status{fail(ESP_ERR_NOT_SUPPORTED)};
+        }
+    }
+
+private:
+    [[nodiscard]] Status descriptor(const std::uint16_t value, const std::uint16_t length) noexcept
+    {
+        const auto type = static_cast<DescriptorType>(value >> 8U);
+        if (type == DescriptorType::device) {
+            const auto bytes = device.bytes();
+            const auto count = length < bytes.size() ? length : bytes.size();
+            return status(Policy::ep0_write(std::span<const std::uint8_t>{bytes.data(), count}));
+        }
+        if (type == DescriptorType::configuration) {
+            constexpr auto bytes = ClassDriver::descriptors();
+            const auto count = length < bytes.size() ? length : bytes.size();
+            return status(Policy::ep0_write(std::span<const std::uint8_t>{bytes.data(), count}));
+        }
+        return Status{fail(ESP_ERR_NOT_SUPPORTED)};
     }
 };
 

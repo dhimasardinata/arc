@@ -691,6 +691,7 @@ def include_owner(
     include: str,
     components: dict[str, dict[str, Any]],
     search_cache: dict[str, str | None],
+    match_cache: dict[str, tuple[tuple[int, int, str, Path], ...]],
 ) -> str | None:
     cached = search_cache.get(include)
     if include in search_cache:
@@ -705,17 +706,12 @@ def include_owner(
             return name
 
     parts = Path(include).parts
+    basename = parts[-1]
     matches: list[tuple[int, int, str, Path]] = []
-    for name, info in components.items():
-        root = info.get("root")
-        if not isinstance(root, Path) or not root.is_dir():
+    for rank, depth, name, candidate in component_header_matches(basename, components, match_cache):
+        if tuple(candidate.parts[-len(parts) :]) != parts:
             continue
-
-        for candidate in root.rglob(parts[-1]):
-            if tuple(candidate.parts[-len(parts) :]) != parts:
-                continue
-            include_root = include_root_for_match(candidate, include)
-            matches.append((0 if "esp32s3" in candidate.parts else 1, len(candidate.parts), name, include_root))
+        matches.append((rank, depth, name, include_root_for_match(candidate, include)))
 
     if not matches:
         search_cache[include] = None
@@ -727,6 +723,31 @@ def include_owner(
     info["include_dirs"] = dirs
     search_cache[include] = owner
     return owner
+
+
+def component_header_matches(
+    basename: str,
+    components: dict[str, dict[str, Any]],
+    cache: dict[str, tuple[tuple[int, int, str, Path], ...]],
+) -> tuple[tuple[int, int, str, Path], ...]:
+    cached = cache.get(basename)
+    if cached is not None:
+        return cached
+
+    matches: list[tuple[int, int, str, Path]] = []
+    for name, info in components.items():
+        root = info.get("root")
+        if not isinstance(root, Path) or not root.is_dir():
+            continue
+
+        for candidate in root.rglob(basename):
+            if not candidate.is_file() or not esp32s3_compatible_path(candidate):
+                continue
+            matches.append((0 if "esp32s3" in candidate.parts else 1, len(candidate.parts), name, candidate.resolve()))
+
+    resolved = tuple(sorted(matches))
+    cache[basename] = resolved
+    return resolved
 
 
 def component_public_dirs(
@@ -804,6 +825,7 @@ def missing_include_dirs(
     components: dict[str, dict[str, Any]],
     cache: dict[tuple[Path, str], bool],
     owner_cache: dict[str, str | None],
+    match_cache: dict[str, tuple[tuple[int, int, str, Path], ...]],
 ) -> tuple[Path, ...] | None:
     available = set(dirs)
     extras: list[Path] = []
@@ -813,7 +835,7 @@ def missing_include_dirs(
         if has_include(include, search_dirs, cache):
             continue
 
-        owner = include_owner(include, components, owner_cache)
+        owner = include_owner(include, components, owner_cache, match_cache)
         if owner is None:
             continue
 
@@ -826,6 +848,45 @@ def missing_include_dirs(
             return None
 
     return tuple(extras)
+
+
+def changed_arc_headers(base: str) -> set[Path]:
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--name-only",
+                "--diff-filter=ACMRTUXB",
+                base,
+                "--",
+                "components/arc/include",
+            ],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+        )
+    except (FileNotFoundError, PermissionError):
+        return set()
+
+    if proc.returncode != 0:
+        return set()
+
+    headers: set[Path] = set()
+    for line in proc.stdout.splitlines():
+        path = (ROOT / line).resolve()
+        if path.suffix.lower() in HEADER_SUFFIXES and under(path, ARC_INCLUDE_DIR):
+            headers.add(path)
+    return headers
+
+
+def auto_validate_jobs(requested: int | None) -> int:
+    if requested is not None and requested > 0:
+        return requested
+    cpus = os.cpu_count() or 2
+    return max(1, min(8, cpus // 2 if cpus > 2 else cpus))
 
 
 def entry_args_for_file(
@@ -1039,6 +1100,7 @@ def arc_header_commands(
     validate: bool = False,
     validate_timeout: float = 15.0,
     validate_jobs: int | None = None,
+    only_headers: set[Path] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     headers = arc_header_index()
     if not headers:
@@ -1048,12 +1110,15 @@ def arc_header_commands(
     components = component_info(databases)
     include_cache: dict[tuple[Path, str], bool] = {}
     owner_cache: dict[str, str | None] = {}
+    match_cache: dict[str, tuple[tuple[int, int, str, Path], ...]] = {}
     dependency_cache: dict[Path, tuple[str, ...]] = {}
     header_commands: list[dict[str, Any]] = []
     selected_headers: list[Path] = []
     failures: list[str] = []
 
     for header in sorted(headers.values()):
+        if only_headers is not None and header not in only_headers:
+            continue
         includes = header_external_includes(header, headers, dependency_cache)
         selected: dict[str, Any] | None = None
         error: str | None = None
@@ -1062,7 +1127,7 @@ def arc_header_commands(
         for _, entry, dirs in header_candidates:
             extras = ()
             if not all(has_include(include, dirs, include_cache) for include in includes):
-                extras = missing_include_dirs(includes, dirs, components, include_cache, owner_cache)
+                extras = missing_include_dirs(includes, dirs, components, include_cache, owner_cache, match_cache)
                 if extras is None:
                     continue
 
@@ -1090,7 +1155,7 @@ def arc_header_commands(
 
     if validate and header_commands:
         support_dirs = validation_support_dirs(databases, components)
-        workers = max(1, validate_jobs if validate_jobs is not None else 1)
+        workers = auto_validate_jobs(validate_jobs)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
                 executor.submit(
@@ -1147,6 +1212,16 @@ def main() -> int:
         default=int(os.environ.get("ARC_CLANGD_VALIDATE_JOBS", "0")),
         help="Parallel compiler jobs when --validate-arc-headers is used. Defaults to a conservative auto value.",
     )
+    parser.add_argument(
+        "--changed-arc-headers",
+        nargs="?",
+        const="HEAD~1",
+        metavar="BASE",
+        help=(
+            "Only infer/validate public Arc headers changed since BASE. "
+            "When BASE is omitted, HEAD~1 is used. Falls back to all headers if no changed headers are found."
+        ),
+    )
     args = parser.parse_args()
 
     if args.inputs:
@@ -1175,12 +1250,14 @@ def main() -> int:
     header_commands: list[dict[str, Any]] = []
     header_failures: list[str] = []
     if not args.no_arc_headers:
+        only_headers = changed_arc_headers(args.changed_arc_headers) if args.changed_arc_headers else None
         header_commands, header_failures = arc_header_commands(
             commands,
             databases,
             validate=args.validate_arc_headers,
             validate_timeout=args.validate_timeout,
             validate_jobs=args.validate_jobs if args.validate_jobs > 0 else None,
+            only_headers=only_headers if only_headers else None,
         )
         commands.extend(header_commands)
 

@@ -19,9 +19,12 @@
 #include "arc/any.hpp"
 #include "arc/acoustic_slam.hpp"
 #include "arc/bare_core.hpp"
+#include "arc/ble_mesh.hpp"
 #include "arc/blackbox.hpp"
 #include "arc/caps.hpp"
+#include "arc/cert_bundle.hpp"
 #include "arc/chaos.hpp"
+#include "arc/cli.hpp"
 #include "arc/claim.hpp"
 #include "arc/concepts.hpp"
 #include "arc/covert.hpp"
@@ -44,6 +47,7 @@
 #include "arc/http_server.hpp"
 #include "arc/init.hpp"
 #include "arc/interrupt_matrix.hpp"
+#include "arc/ipc.hpp"
 #include "arc/intermittent.hpp"
 #include "arc/isp.hpp"
 #include "arc/kalman.hpp"
@@ -64,6 +68,7 @@
 #include "arc/mpsc.hpp"
 #include "arc/nav.hpp"
 #include "arc/netrpc.hpp"
+#include "arc/nvs_crypto.hpp"
 #include "arc/paillier.hpp"
 #include "arc/pack.hpp"
 #include "arc/perfetto.hpp"
@@ -85,11 +90,14 @@
 #include "arc/secure_update.hpp"
 #include "arc/sdr.hpp"
 #include "arc/simd.hpp"
+#include "arc/sdio_slave.hpp"
 #include "arc/snn.hpp"
+#include "arc/secure_boot.hpp"
 #include "arc/star_tracker.hpp"
 #include "arc/swarm.hpp"
 #include "arc/tdma.hpp"
 #include "arc/tee.hpp"
+#include "arc/thread.hpp"
 #include "arc/timesync.hpp"
 #include "arc/trace_event.hpp"
 #include "arc/trace_stream.hpp"
@@ -208,6 +216,21 @@ std::size_t jit_finalized_words{};
 std::uint32_t blackbox_hash_acc{};
 std::size_t blackbox_write_bytes{};
 float digital_twin_last_output{};
+int cli_drive_left{};
+int cli_drive_right{};
+float cli_kp{};
+std::size_t sdio_queued_bytes{};
+std::uint32_t sdio_irq_bits{};
+std::uint8_t usb_device_address{};
+std::uint8_t usb_configuration{};
+std::size_t usb_ep0_bytes{};
+std::uint16_t thread_peer_rloc{};
+std::uint16_t ble_mesh_group{};
+arc::IpcCore ipc_core{};
+bool ipc_called{};
+std::size_t cert_bundle_bytes{};
+std::string_view nvs_crypto_partition{};
+std::uint8_t secure_boot_revoked{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -3646,6 +3669,209 @@ void test_current_goal_surfaces()
     expect(twin.has_value() && near(twin->output[0], 6.0F) &&
                near(digital_twin_last_output, 6.0F) && twin->captured_ticks == 77U,
            "DigitalTwin captures PWM and emits simulated encoder state");
+
+    const auto drive_cb = +[](const int left, const int right) noexcept -> arc::Status {
+        cli_drive_left = left;
+        cli_drive_right = right;
+        return arc::ok();
+    };
+    const auto kp_cb = +[](const float value) noexcept -> arc::Status {
+        cli_kp = value;
+        return arc::ok();
+    };
+    const arc::Cli<arc::Command<"drive", int, int>, arc::Command<"set_kp", float>> cli{
+        .commands = {arc::Command<"drive", int, int>{drive_cb}, arc::Command<"set_kp", float>{kp_cb}},
+    };
+    constexpr std::string_view drive_line = "drive -3 7";
+    constexpr std::string_view kp_line = "set_kp 1.5";
+    expect(cli.parse(std::span<const char>{drive_line.data(), drive_line.size()}).has_value() &&
+               cli.parse(std::span<const char>{kp_line.data(), kp_line.size()}).has_value() &&
+               cli_drive_left == -3 && cli_drive_right == 7 && near(cli_kp, 1.5F),
+           "Cli parses fixed command arguments without mutation");
+
+    struct SdioPolicy {
+        static esp_err_t sdio_start(const arc::SdioSlaveConfig config) noexcept
+        {
+            return config.block_bytes == 512U ? ESP_OK : ESP_ERR_INVALID_ARG;
+        }
+
+        static esp_err_t sdio_queue(const std::span<std::uint8_t> buffer) noexcept
+        {
+            sdio_queued_bytes = buffer.size();
+            return ESP_OK;
+        }
+
+        static arc::Result<arc::SdioSlaveTransfer> sdio_finish(const std::uint32_t) noexcept
+        {
+            return arc::SdioSlaveTransfer{.address = 0x1000U, .bytes = sdio_queued_bytes};
+        }
+
+        static esp_err_t sdio_interrupt(const std::uint32_t bits) noexcept
+        {
+            sdio_irq_bits = bits;
+            return ESP_OK;
+        }
+    };
+    std::array<std::uint8_t, 32> sdio_buffer{};
+    expect(arc::SdioSlave::start<SdioPolicy>().has_value() &&
+               arc::SdioSlave::queue_coherent<SdioPolicy>(sdio_buffer).has_value(),
+           "SdioSlave queues coherent DMA");
+    const auto sdio_done = arc::SdioSlave::finish_coherent<SdioPolicy>(10U);
+    expect(
+        sdio_done.has_value() &&
+            arc::SdioSlave::interrupt_host<SdioPolicy>(0x2U).has_value() &&
+            sdio_done->bytes == sdio_buffer.size() && sdio_queued_bytes == sdio_buffer.size() && sdio_irq_bits == 0x2U,
+        "SdioSlave finishes coherent DMA and host interrupt");
+
+    struct UsbDevicePolicy {
+        static esp_err_t ep0_write(const std::span<const std::uint8_t> bytes) noexcept
+        {
+            usb_ep0_bytes = bytes.size();
+            return ESP_OK;
+        }
+
+        static esp_err_t set_address(const std::uint8_t address) noexcept
+        {
+            usb_device_address = address;
+            return ESP_OK;
+        }
+
+        static esp_err_t configured(const std::uint8_t configuration) noexcept
+        {
+            usb_configuration = configuration;
+            return ESP_OK;
+        }
+    };
+    arc::usb::Device<arc::usb::Cdc<0x83U, 0x01U, 0x82U>, UsbDevicePolicy> usb_ch9{
+        .device = {.vendor = 0x1209U, .product = 0x0002U},
+    };
+    expect(usb_ch9.setup({.request = static_cast<std::uint8_t>(arc::usb::StandardRequest::get_descriptor),
+                          .value = static_cast<std::uint16_t>(static_cast<std::uint16_t>(arc::usb::DescriptorType::device) << 8U),
+                          .length = 18U})
+                   .has_value() &&
+               usb_ep0_bytes == 18U &&
+               usb_ch9.setup({.request = static_cast<std::uint8_t>(arc::usb::StandardRequest::set_address),
+                              .value = 5U})
+                   .has_value() &&
+               usb_device_address == 5U && usb_ch9.state == arc::usb::DeviceState::addressed &&
+               usb_ch9.setup({.request = static_cast<std::uint8_t>(arc::usb::StandardRequest::set_configuration),
+                              .value = 1U})
+                   .has_value() &&
+               usb_configuration == 1U && usb_ch9.state == arc::usb::DeviceState::configured,
+           "USB Device handles Chapter 9 address/configure requests");
+
+    struct ThreadPolicy {
+        static esp_err_t thread_attach(const arc::net::ThreadDataset& dataset) noexcept
+        {
+            return dataset.channel == 15U ? ESP_OK : ESP_ERR_INVALID_ARG;
+        }
+
+        static esp_err_t thread_send(const arc::net::ThreadPeer& peer, const std::span<const std::uint8_t>) noexcept
+        {
+            thread_peer_rloc = peer.rloc16;
+            return ESP_OK;
+        }
+    };
+    const arc::net::ThreadDataset thread_dataset{.pan_id = 0x1234U, .channel = 15U};
+    const arc::net::ThreadPeer thread_peer{.rloc16 = 0x4400U};
+    expect(arc::net::Thread::attach<ThreadPolicy>(thread_dataset).has_value() &&
+               arc::net::Thread::send<ThreadPolicy>(thread_peer, rdma_payload).has_value() &&
+               thread_peer_rloc == thread_peer.rloc16,
+           "Thread policy bridge validates dataset and peer send");
+
+    struct BleMeshPolicy {
+        static esp_err_t mesh_provision(const arc::ble::MeshAddress address) noexcept
+        {
+            return address.unicast == 1U ? ESP_OK : ESP_ERR_INVALID_ARG;
+        }
+
+        static esp_err_t mesh_publish(
+            const arc::ble::MeshAddress address,
+            const arc::ble::MeshModel,
+            const std::span<const std::uint8_t>) noexcept
+        {
+            ble_mesh_group = address.group;
+            return ESP_OK;
+        }
+    };
+    const arc::ble::MeshAddress mesh_address{.unicast = 1U, .group = 0xc001U};
+    expect(arc::ble::Mesh::provision<BleMeshPolicy>(mesh_address).has_value() &&
+               arc::ble::Mesh::publish<BleMeshPolicy>(mesh_address, {.company = 0x02E5U, .model = 1U}, rdma_payload).has_value() &&
+               ble_mesh_group == mesh_address.group,
+           "BLE Mesh policy bridge provisions and publishes");
+
+    struct IpcPolicy {
+        static esp_err_t ipc_call(const arc::IpcCore core, arc::Ipc::Fn fn, void* arg) noexcept
+        {
+            ipc_core = core;
+            fn(arg);
+            return ESP_OK;
+        }
+
+        static esp_err_t ipc_halt(const arc::IpcCore core) noexcept
+        {
+            ipc_core = core;
+            return ESP_OK;
+        }
+    };
+    const auto ipc_fn = +[](void*) noexcept {
+        ipc_called = true;
+    };
+    ipc_called = false;
+    expect(arc::Ipc::call<IpcPolicy>(arc::IpcCore::core1, ipc_fn).has_value() &&
+               ipc_called && ipc_core == arc::IpcCore::core1 &&
+               arc::Ipc::emergency_halt<IpcPolicy>(arc::IpcCore::core0).has_value() &&
+               ipc_core == arc::IpcCore::core0,
+           "Ipc policy bridge calls opposite core hooks");
+
+    struct CertPolicy {
+        static esp_err_t cert_bundle_attach(const arc::x509::CertBundle bundle) noexcept
+        {
+            cert_bundle_bytes = bundle.der.size();
+            return ESP_OK;
+        }
+    };
+    const std::array<std::uint8_t, 3> cert_der{0x30U, 0x01U, 0x00U};
+    expect(arc::x509::Bundle::attach<CertPolicy>({.der = cert_der, .certificates = 1U}).has_value() &&
+               cert_bundle_bytes == cert_der.size(),
+           "x509 bundle policy attaches DER roots");
+
+    struct NvsPolicy {
+        static esp_err_t nvs_mount_encrypted(const arc::NvsCryptoConfig config) noexcept
+        {
+            nvs_crypto_partition = config.partition;
+            return ESP_OK;
+        }
+    };
+    expect(arc::NvsCrypto::mount<NvsPolicy>({.partition = "cfg", .key_partition = "keys", .generate_keys = true}).has_value() &&
+               nvs_crypto_partition == "cfg",
+           "NVS crypto mounts encrypted partition policy");
+
+    struct SecureBootPolicy {
+        static arc::Result<arc::secure::BootState> secure_boot_state() noexcept
+        {
+            return arc::secure::BootState{.enabled = true, .digest_valid = true};
+        }
+
+        static esp_err_t secure_boot_revoke(const std::uint8_t key) noexcept
+        {
+            secure_boot_revoked = key;
+            return ESP_OK;
+        }
+
+        static arc::Result<arc::secure::BootDigest> secure_boot_digest() noexcept
+        {
+            arc::secure::BootDigest digest{};
+            digest.sha256[0] = 0xA5U;
+            return digest;
+        }
+    };
+    const auto boot_state = arc::secure::SecureBoot::state<SecureBootPolicy>();
+    const auto boot_digest = arc::secure::SecureBoot::digest<SecureBootPolicy>();
+    expect(boot_state.has_value() && boot_state->enabled && boot_state->digest_valid &&
+               arc::secure::SecureBoot::revoke<SecureBootPolicy>(2U).has_value() &&
+               secure_boot_revoked == 2U && boot_digest.has_value() && boot_digest->sha256[0] == 0xA5U,
+           "SecureBoot exposes state revoke and digest hooks");
 }
 
 void test_refinit()
