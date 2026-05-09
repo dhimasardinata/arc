@@ -1038,6 +1038,7 @@ def arc_header_commands(
     databases: list[Path],
     validate: bool = False,
     validate_timeout: float = 15.0,
+    validate_jobs: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     headers = arc_header_index()
     if not headers:
@@ -1089,7 +1090,7 @@ def arc_header_commands(
 
     if validate and header_commands:
         support_dirs = validation_support_dirs(databases, components)
-        workers = max(1, min(4, os.cpu_count() or 1))
+        workers = max(1, validate_jobs if validate_jobs is not None else 1)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
                 executor.submit(
@@ -1137,8 +1138,14 @@ def main() -> int:
     parser.add_argument(
         "--validate-timeout",
         type=float,
-        default=float(os.environ.get("ARC_CLANGD_VALIDATE_TIMEOUT", "60")),
+        default=float(os.environ.get("ARC_CLANGD_VALIDATE_TIMEOUT", "120")),
         help="Per-header compiler timeout in seconds when --validate-arc-headers is used.",
+    )
+    parser.add_argument(
+        "--validate-jobs",
+        type=int,
+        default=int(os.environ.get("ARC_CLANGD_VALIDATE_JOBS", "0")),
+        help="Parallel compiler jobs when --validate-arc-headers is used. Defaults to a conservative auto value.",
     )
     args = parser.parse_args()
 
@@ -1173,6 +1180,7 @@ def main() -> int:
             databases,
             validate=args.validate_arc_headers,
             validate_timeout=args.validate_timeout,
+            validate_jobs=args.validate_jobs if args.validate_jobs > 0 else None,
         )
         commands.extend(header_commands)
 

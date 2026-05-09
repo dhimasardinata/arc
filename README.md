@@ -59,6 +59,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Pulse` uses MCPWM for higher-grade waveform generation than LEDC when period and edge placement matter.
 - `arc::Bridge` drives complementary MCPWM pairs with explicit dead-time and optional hardware brake input.
 - `arc::Capture` timestamps edges in hardware through the MCPWM capture block.
+- `arc::matrix::FlexRoute` wraps GPIO matrix in/out policy hooks and reroutes failed PWM signals to spare pads without rebooting the app.
 - `arc::Etm` owns ESP32-S3 Event Task Matrix channels so peripheral events can trigger peripheral tasks without waking a CPU, while `arc::EtmRoute` keeps the event, task, and channel lifetime bound together.
 - `arc::AdcBus`, `arc::AdcOne`, and `arc::Scope` cover calibrated ADC oneshot reads and continuous DMA capture without mixing the ownership models.
 - `arc::Copy` offloads memory movement to the async DMA memcpy engine.
@@ -85,10 +86,12 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::simd::float32x4_t`, `int8x16_t`, `uint8x16_t`, `dot_s8`, `yuv422_to_rgb565`, and `fft_radix2` expose explicit S3-focused math kernels that should not rely on auto-vectorization alone.
 - `arc::ml::Tensor`, `Dense`, `QuantDenseS8`, `Conv2dS8`, `DepthwiseConv2dS8`, `MaxPool2d`, `mapped_weights`, and `Core1Inference` provide a zero-allocation inference surface for fixed-shape models stored in flash/PSRAM spans.
 - `arc::BareCore<Program>` defines the true-AMP Core 1 boot contract for board policies that hold APP CPU outside FreeRTOS and jump directly into a static control loop.
+- `arc::power::Intermittent` stores dying-gasp CPU, Tight-loop stack, and RCU state bytes in RTC no-init storage so a board policy can resurrect after brownout.
 - `arc::DmaChain<N>` builds static scatter-gather descriptor rings for CPU-free waveform, display, and camera pipelines.
 - `arc::Pipeline`, `DmaEndpoint`, `Dma2dWindow`, and `bind_rows(...)` compose descriptor rings and 2D frame windows without making DMA topology implicit.
 - `arc::PruOut`, `PruIn`, `PruTiming`, and `PruCursor` describe PRU-style LCD_CAM/I2S DMA waveform output and parallel capture rings for protocols the ESP32-S3 does not expose as a named peripheral.
 - `arc::sdr::PulseSynth` and `Tx` turn caller-owned audio or bit spans into 1-bit LCD_CAM pulse streams for AM/FM/OOK software-defined radio experiments.
+- `arc::dsp::Wavefront` computes 3D acoustic focus phases and synthesizes 16+ channel ultrasonic frames for `arc::I2sTdm` output.
 - `arc::CryptoDma` describes hardware-to-hardware AES/GCM/SHA descriptor jobs so board policies can wire GDMA lanes without payload copies.
 - `arc::MmuSpan<T>` maps flash/PSRAM-backed regions into typed read-only spans for lookup tables, samples, and model weights.
 - `arc::Task<void>` provides heapless coroutine state machines when the coroutine frame is allocated from an explicit `arc::TaskArena`.
@@ -101,6 +104,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::vm::BPF`, `BpfInsn`, and `BpfSandbox` run bounded zero-allocation bytecode against caller-owned memory and expose a WorldGuard-backed protection hook for downloaded control blocks.
 - `arc::vm::Hypervisor` maps untrusted Core 0 partitions into restricted worlds, binds trap policy hooks, and returns explicit emulate/resume/terminate decisions.
 - `arc::crypto::Kyber` adds zero-allocation ML-KEM-shaped keypair, encapsulation, decapsulation, polynomial, NTT, and pointwise surfaces over caller-owned spans or `arc::CapsBuf`.
+- `arc::crypto::Puf` samples SRAM/ADC startup entropy, extracts stable bits, and derives SHA-256 keys when the SHA accelerator headers are available.
 - `arc::crypto::Paillier` composes `exp_mod` and `mul_mod` style big-integer backends for privacy-preserving encrypted telemetry aggregation.
 - `arc::InterruptMatrix` and `RawVector` expose direct interrupt routing contracts for board-specific low-latency ISR stubs.
 - `arc::pack::Overlay<Codec>` reads endian-correct fields directly from DMA/network spans without copying into a local struct.
@@ -109,6 +113,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::ulp::ml::QuantDenseS8` and `SemanticWake` run stripped-down int8 inference over ULP I2C samples before deciding whether the main cores should wake.
 - `arc::isp::Debayer` and `AecAwb` turn raw camera spans into RGB565 frames and exposure/white-balance feedback without owning camera policy.
 - `arc::vision::Sobel`, `OpticalFlow`, and `VisualServo` add caller-buffer vision kernels that can feed the motor-control plane.
+- `arc::vision::StarTracker` thresholds DMA camera frames, extracts sub-pixel centroids, and matches triangle signatures against `arc::MmuSpan` star catalogs.
 - `arc::LogLane` gives Core 1 a lock-free binary event lane that Core 0 can drain and format later.
 - `arc::TraceEventWriter` turns binary log events into Chrome/Perfetto trace-event JSON fragments from caller-owned buffers.
 - `arc::TraceStream` drains binary log lanes into a caller-provided UDP/WebSocket/file sink as live Perfetto JSON chunks.
@@ -264,19 +269,19 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 
 | Area | Headers | Primary types |
 | --- | --- | --- |
-| Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::BareCore`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos`, `arc::fsm::Automaton` |
+| Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos`, `arc::fsm::Automaton` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/hotpatch.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/pipeline.hpp`, `arc/mmu_span.hpp`, `arc/place.hpp`, `arc/prefetch.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::HotPatch`, `arc::HotPatchImage`, `arc::HotPatchDetour`, `arc::DmaChain`, `arc::DmaEndpoint`, `arc::Pipeline`, `arc::Dma2dWindow`, `arc::bind_rows`, `arc::MmuSpan`, `arc::Copy`, `arc::prefetch` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp`, `arc/rpc.hpp`, `arc/rtc_ring.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem`, `arc::RpcLane`, `arc::RtcRing` |
-| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/timesync.hpp`, `arc/tdma.hpp`, `arc/covert.hpp`, `arc/sdr.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::EtmRoute`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::TimeSync`, `arc::net::Tdma`, `arc::covert::Fsk`, `arc::covert::EmTx`, `arc::covert::SonicTx`, `arc::sdr::PulseSynth`, `arc::sdr::Tx` |
+| GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/flexroute.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/timesync.hpp`, `arc/tdma.hpp`, `arc/covert.hpp`, `arc/sdr.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::matrix::FlexRoute`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::EtmRoute`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::TimeSync`, `arc::net::Tdma`, `arc::covert::Fsk`, `arc::covert::EmTx`, `arc::covert::SonicTx`, `arc::sdr::PulseSynth`, `arc::sdr::Tx` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp`, `arc/pru.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp`, `arc::PruOut`, `arc::PruIn`, `arc::PruTiming`, `arc::PruCursor` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp`, `arc/flash_log.hpp`, `arc/secure_update.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space`, `arc::FlashLog`, `arc::SecureUpdate` |
 | Network and radio | `arc/net.hpp`, `arc/csi.hpp`, `arc/sdr.hpp`, `arc/acoustic_slam.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp`, `arc/netrpc.hpp`, `arc/swarm.hpp`, `arc/ethernet.hpp`, `arc/w5500.hpp` | `arc::net::Radio`, `arc::net::Csi`, `arc::net::CsiRx`, `arc::net::EspWifiCsiPolicy`, `arc::sdr::Tx`, `arc::swarm::AcousticSlam`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::HttpServer`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap`, `arc::net::NetRpc`, `arc::net::SwarmSchedule`, `arc::net::DistributedRcu`, `arc::net::DeadReckoning`, `arc::net::EthernetRing`, `arc::net::W5500Raw` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream`, `arc::net::Rtp`, `arc::net::Mjpeg` |
 | Binary records and optimizer hints | `arc/pack.hpp`, `arc/perfetto.hpp`, `arc/assume.hpp` | `arc::pack::Schema`, `arc::pack::StructOf`, `arc::pack::Reflect`, `arc::pack::Endian`, `arc::PerfettoWriter`, `arc::assume` |
-| Control, ML, and vision | `arc/dsp.hpp`, `arc/simd.hpp`, `arc/ml.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/foc.hpp`, `arc/motion.hpp`, `arc/isp.hpp`, `arc/vision.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::dsp::Beamform`, `arc::dsp::Aec`, `arc::simd::float32x4_t`, `arc::simd::int8x16_t`, `arc::simd::dot_s8`, `arc::simd::yuv422_to_rgb565`, `arc::simd::fft_radix2`, `arc::ml::Tensor`, `arc::ml::Dense`, `arc::ml::QuantDenseS8`, `arc::ml::Conv2dS8`, `arc::ml::DepthwiseConv2dS8`, `arc::ml::MaxPool2d`, `arc::ml::mapped_weights`, `arc::ml::Core1Inference`, `arc::dsp::Matrix`, `arc::dsp::Kalman`, `arc::Foc`, `arc::DualFoc`, `arc::FocEncoderFusion`, `arc::MotionPlan`, `arc::SCurve`, `arc::isp::Debayer`, `arc::isp::AecAwb`, `arc::vision::Sobel`, `arc::vision::OpticalFlow`, `arc::vision::VisualServo`, `arc::SwarmSoa`, `arc::Hil` |
+| Control, ML, and vision | `arc/dsp.hpp`, `arc/wavefront.hpp`, `arc/simd.hpp`, `arc/ml.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/foc.hpp`, `arc/motion.hpp`, `arc/isp.hpp`, `arc/vision.hpp`, `arc/star_tracker.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::dsp::Beamform`, `arc::dsp::Aec`, `arc::dsp::Wavefront`, `arc::simd::float32x4_t`, `arc::simd::int8x16_t`, `arc::simd::dot_s8`, `arc::simd::yuv422_to_rgb565`, `arc::simd::fft_radix2`, `arc::ml::Tensor`, `arc::ml::Dense`, `arc::ml::QuantDenseS8`, `arc::ml::Conv2dS8`, `arc::ml::DepthwiseConv2dS8`, `arc::ml::MaxPool2d`, `arc::ml::mapped_weights`, `arc::ml::Core1Inference`, `arc::dsp::Matrix`, `arc::dsp::Kalman`, `arc::Foc`, `arc::DualFoc`, `arc::FocEncoderFusion`, `arc::MotionPlan`, `arc::SCurve`, `arc::isp::Debayer`, `arc::isp::AecAwb`, `arc::vision::Sobel`, `arc::vision::OpticalFlow`, `arc::vision::VisualServo`, `arc::vision::StarTracker`, `arc::SwarmSoa`, `arc::Hil` |
 | USB and low-power logic | `arc/usb.hpp`, `arc/usb_device.hpp`, `arc/ulp.hpp`, `arc/ulp_asm.hpp`, `arc/ulp_cxx.hpp`, `arc/ulp_ml.hpp` | `arc::Usb`, `arc::usb::DeviceDescriptor`, `arc::usb::Bulk`, `arc::usb::Uvc`, `arc::usb::Uac`, `arc::usb::Fifo`, `arc::Ulp`, `arc::ulp::riscv::assemble`, `arc::ulp::Gpio`, `arc::ulp::Adc`, `arc::ulp::I2c`, `arc::ulp::SleepFsm`, `arc::ulp::ml::QuantDenseS8`, `arc::ulp::ml::SemanticWake` |
-| Security, VM, and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/kyber.hpp`, `arc/paillier.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp`, `arc/pms.hpp`, `arc/tee.hpp`, `arc/vm.hpp`, `arc/hypervisor.hpp`, `arc/chaos.hpp`, `arc/flash_off.hpp`, `arc/crypto_dma.hpp`, `arc/interrupt_matrix.hpp`, `arc/provisioning.hpp`, `arc/pmr.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::crypto::Kyber`, `arc::crypto::Paillier`, `arc::Xts`, `arc::Fuse`, `arc::Rng`, `arc::Pms`, `arc::WorldGuard`, `arc::TeePlan`, `arc::vm::BPF`, `arc::vm::BpfInsn`, `arc::vm::BpfSandbox`, `arc::vm::Hypervisor`, `arc::chaos::Monkey`, `arc::FlashOff`, `arc::CryptoDma`, `arc::InterruptMatrix`, `arc::Provisioning`, `arc::PmrCapsResource` |
+| Security, VM, and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/puf.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/kyber.hpp`, `arc/paillier.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp`, `arc/pms.hpp`, `arc/tee.hpp`, `arc/vm.hpp`, `arc/hypervisor.hpp`, `arc/chaos.hpp`, `arc/flash_off.hpp`, `arc/crypto_dma.hpp`, `arc/interrupt_matrix.hpp`, `arc/provisioning.hpp`, `arc/pmr.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::crypto::Puf`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::crypto::Kyber`, `arc::crypto::Paillier`, `arc::Xts`, `arc::Fuse`, `arc::Rng`, `arc::Pms`, `arc::WorldGuard`, `arc::TeePlan`, `arc::vm::BPF`, `arc::vm::BpfInsn`, `arc::vm::BpfSandbox`, `arc::vm::Hypervisor`, `arc::chaos::Monkey`, `arc::FlashOff`, `arc::CryptoDma`, `arc::InterruptMatrix`, `arc::Provisioning`, `arc::PmrCapsResource` |
 
 </details>
 
@@ -386,6 +391,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 │               ├── fanin.hpp
 │               ├── fence.hpp
 │               ├── file.hpp
+│               ├── flexroute.hpp
 │               ├── fs.hpp
 │               ├── foc.hpp
 │               ├── fuse.hpp
@@ -401,6 +407,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 │               ├── i2c_slave.hpp
 │               ├── i80.hpp
 │               ├── i2s.hpp
+│               ├── intermittent.hpp
 │               ├── isp.hpp
 │               ├── kyber.hpp
 │               ├── ml.hpp
@@ -414,6 +421,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 │               ├── pru.hpp
 │               ├── probe.hpp
 │               ├── pulse.hpp
+│               ├── puf.hpp
 │               ├── pwm.hpp
 │               ├── reg.hpp
 │               ├── result.hpp
@@ -432,6 +440,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 │               ├── spi_slave.hpp
 │               ├── space.hpp
 │               ├── spsc.hpp
+│               ├── star_tracker.hpp
 │               ├── store.hpp
 │               ├── task.hpp
 │               ├── temp.hpp
@@ -451,6 +460,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 │               ├── usb_device.hpp
 │               ├── vision.hpp
 │               ├── vm.hpp
+│               ├── wavefront.hpp
 │               ├── wdt.hpp
 │               ├── ws.hpp
 │               ├── xts.hpp
@@ -481,6 +491,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 - Hardware MCPWM waveform generation with runtime frequency and duty retuning
 - Hardware complementary MCPWM pairs with explicit dead-time and brake/fault shutdown
 - Hardware MCPWM edge capture for period/high/low measurement
+- GPIO matrix self-healing plans that move failed output/input signals to spare pads through board policy hooks
 - Hardware ADC streaming through the digital controller and DMA
 - Hardware async memory copy through the ESP32-S3 DMA memcpy path
 - Static DMA endpoint and pipeline composition for multi-stage descriptor graphs and 2D frame-window row binding
@@ -490,6 +501,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 - Hardware I2C master/slave bus/device binding for sensors, EEPROMs, displays, control chips, and peer controllers
 - Hardware SPI master/slave transfers with explicit bus/device composition and DMA-capable paths
 - Hardware I2S streaming with duplex DMA and event counters
+- 16+ channel acoustic wavefront phase planning and interleaved synthesis for TDM playback
 - Hardware UART serial lanes for GPS, modems, consoles, and legacy links
 - Hardware USB Serial/JTAG byte IO for cabled control channels
 - Hardware USB OTG PHY ownership for native host/device stack bring-up
@@ -500,6 +512,8 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 - Hardware timebase and alarms through GPTimer
 - Deep-sleep and light-sleep entry with explicit wake-source and power-domain policy
 - Hardware-backed AES, GCM, SHA, HMAC, Digital Signature, and XTS flash-encryption paths through Espressif's crypto drivers
+- PUF-style SRAM/ADC entropy capture with Von Neumann extraction and SHA-256 key derivation hooks
+- RTC no-init dying-gasp checkpoints for intermittent, batteryless execution policies
 - ULP RISC-V and FSM load/run/control hooks for low-power coprocessor work
 - Policy-based ULP C++ GPIO/I2C/ADC/SleepFsm helpers for tiny always-on sensing loops
 - ULP-side int8 dense inference over I2C sensor samples for semantic wake decisions before the main cores power up
@@ -511,6 +525,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 - ML-KEM-shaped Kyber keypair/encapsulation/decapsulation, SIMD-assisted pointwise products, NTT round-trips, and zero-allocation buffers
 - Distributed RCU snapshots, TDMA slot enforcement, and Kalman dead-reckoning hooks for ESP-NOW fleets
 - Acoustic FMCW chirp generation, TDoA extraction, 3D trilateration, and Kalman correction for synchronized swarms
+- Camera-frame star thresholding, sub-pixel centroid extraction, and compressed-catalog triangle matching
 - PMS/TEE-backed micro-hypervisor partition planning, trap binding, and explicit emulation/termination decisions
 - Bounded chaos injection for SRAM flips, I2C stalls, ESP-NOW packet drops, and Tight-loop budget overruns with Postmortem logging
 - Paillier encrypted telemetry aggregation over `Mpi`-style modular exponentiation/multiplication backends
@@ -585,6 +600,7 @@ Feature names map directly to hardware lanes:
 - `copy`
 - `csi`
 - `eap`
+- `flexroute`
 - `fuse`
 - `mcpwm`
 - `rmt`
@@ -600,6 +616,7 @@ Feature names map directly to hardware lanes:
 - `mdns`
 - `i2c`
 - `i2s`
+- `intermittent`
 - `hypervisor`
 - `kyber`
 - `spi`
@@ -615,10 +632,12 @@ Feature names map directly to hardware lanes:
 - `otg`
 - `paillier`
 - `pm`
+- `puf`
 - `rng`
 - `rtc`
 - `sdr`
 - `space`
+- `star_tracker`
 - `time`
 - `trax`
 - `fs`
@@ -629,6 +648,7 @@ Feature names map directly to hardware lanes:
 - `ulp`
 - `ulp_ml`
 - `usb`
+- `wavefront`
 - `wdt`
 - `xts`
 - `espnow`
@@ -3214,6 +3234,11 @@ For hardware numbers, build and flash `examples/bench` on an ESP32-S3. That firm
 - `arc::sdr` prepares LCD_CAM pulse streams and board-policy TX hooks; spectrum policy, filtering, and legal transmit decisions stay with the application.
 - `arc::swarm::AcousticSlam` provides chirp/TDoA/trilateration primitives, while scheduling, peer trust, and microphone calibration stay with the swarm app.
 - `arc::vm::Hypervisor` plans restricted partitions and trap decisions; exact PMS exception vectors remain board-policy code.
+- `arc::power::Intermittent` stores a checkpoint image; exact brownout ISR wiring and register restore remain board-policy code.
+- `arc::crypto::Puf` extracts and hashes entropy spans; enrollment, helper data policy, and key lifecycle stay above Arc.
+- `arc::matrix::FlexRoute` chooses spare matrix routes, while board policy still owns pin safety, external wiring, and signal legality.
+- `arc::dsp::Wavefront` plans and synthesizes acoustic phases; transducer calibration, drive limits, and ultrasonic safety stay with the app.
+- `arc::vision::StarTracker` matches compact triangle signatures; optics calibration, catalog generation, and attitude filtering stay with the app.
 - `arc::chaos` injects bounded faults and records them, but production safety envelopes decide when the monkey is allowed to run.
 - `arc::Pipeline` and `arc::PruOut` are where descriptor topology belongs before a board policy connects LCD_CAM/I2S hardware.
 - `arc::isp` and `arc::vision` are caller-buffer kernels for camera frames; camera register policy still belongs with `arc::I2c` and the board driver.

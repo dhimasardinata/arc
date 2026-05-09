@@ -69,12 +69,14 @@ func main() {
 	var noArcHeaders bool
 	var validateArcHeaders bool
 	var validateTimeout float64
+	var validateJobs int
 	flags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	flags.StringVar(&output, "o", filepath.Join(root, "compile_commands.json"), "output compile_commands.json path")
 	flags.StringVar(&output, "output", filepath.Join(root, "compile_commands.json"), "output compile_commands.json path")
 	flags.BoolVar(&noArcHeaders, "no-arc-headers", false, "do not add Arc header commands")
 	flags.BoolVar(&validateArcHeaders, "validate-arc-headers", false, "delegate strict header validation to Python compatibility path")
-	flags.Float64Var(&validateTimeout, "validate-timeout", 60, "per-header validation timeout")
+	flags.Float64Var(&validateTimeout, "validate-timeout", 120, "per-header validation timeout")
+	flags.IntVar(&validateJobs, "validate-jobs", 0, "parallel compiler jobs for header validation")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		fatal(err)
 	}
@@ -88,6 +90,7 @@ func main() {
 		cmd.Stderr = os.Stderr
 		cmd.Stdin = os.Stdin
 		_ = validateTimeout
+		_ = validateJobs
 		if err := cmd.Run(); err != nil {
 			var exit *exec.ExitError
 			if errors.As(err, &exit) {

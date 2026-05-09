@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
@@ -32,6 +33,7 @@
 #include "arc/file.hpp"
 #include "arc/flash_log.hpp"
 #include "arc/flash_off.hpp"
+#include "arc/flexroute.hpp"
 #include "arc/foc.hpp"
 #include "arc/fsm.hpp"
 #include "arc/hil.hpp"
@@ -40,6 +42,7 @@
 #include "arc/http_server.hpp"
 #include "arc/init.hpp"
 #include "arc/interrupt_matrix.hpp"
+#include "arc/intermittent.hpp"
 #include "arc/isp.hpp"
 #include "arc/kalman.hpp"
 #include "arc/kyber.hpp"
@@ -62,6 +65,7 @@
 #include "arc/probe.hpp"
 #include "arc/provisioning.hpp"
 #include "arc/pru.hpp"
+#include "arc/puf.hpp"
 #include "arc/rcu.hpp"
 #include "arc/rpc.hpp"
 #include "arc/rtos.hpp"
@@ -71,6 +75,7 @@
 #include "arc/secure_update.hpp"
 #include "arc/sdr.hpp"
 #include "arc/simd.hpp"
+#include "arc/star_tracker.hpp"
 #include "arc/swarm.hpp"
 #include "arc/tdma.hpp"
 #include "arc/tee.hpp"
@@ -83,6 +88,7 @@
 #include "arc/usb_device.hpp"
 #include "arc/vm.hpp"
 #include "arc/vision.hpp"
+#include "arc/wavefront.hpp"
 #include "arc/ws.hpp"
 #include "arc/w5500.hpp"
 
@@ -169,6 +175,11 @@ std::size_t chaos_flips{};
 std::size_t chaos_stalls{};
 std::size_t chaos_drops{};
 std::size_t chaos_overruns{};
+std::uint16_t intermittent_bod_mv{};
+bool intermittent_restored{};
+std::uint32_t flexroute_gpio{};
+std::uint32_t flexroute_detached{};
+std::size_t wavefront_writes{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -3125,6 +3136,170 @@ void test_goal_wave_surfaces()
     expect(recovered.read() == 99U, "Chaos RCU recovery");
 }
 
+void test_resilient_edge_goal_surfaces()
+{
+    using Intermittent = arc::power::Intermittent<64>;
+    Intermittent::clear();
+    intermittent_bod_mv = 0U;
+    intermittent_restored = false;
+
+    struct IntermittentPolicy {
+        static esp_err_t bod_arm(const std::uint16_t threshold_mv, void (*)(void*) noexcept) noexcept
+        {
+            intermittent_bod_mv = threshold_mv;
+            return ESP_OK;
+        }
+
+        static void dying_gasp(void*) noexcept {}
+
+        static esp_err_t restore(
+            const std::uintptr_t pc,
+            const std::uintptr_t sp,
+            const std::span<const std::byte> image) noexcept
+        {
+            intermittent_restored = pc == 0x1234U && sp == 0x5678U && image.size() == 6U;
+            return ESP_OK;
+        }
+    };
+
+    const auto brownout = arc::power::BrownoutPlan::above_death(3'100U);
+    expect(brownout.threshold_mv == 3'200U && Intermittent::arm<IntermittentPolicy>(brownout).has_value() &&
+               intermittent_bod_mv == 3'200U,
+           "Intermittent brownout threshold");
+    const std::array stack{std::byte{0x10}, std::byte{0x11}, std::byte{0x12}, std::byte{0x13}};
+    const std::array rcu_state{std::byte{0x20}, std::byte{0x21}};
+    expect(Intermittent::save({.pc = 0x1234U, .sp = 0x5678U}, stack, rcu_state).has_value() &&
+               Intermittent::ready() &&
+               Intermittent::checkpoint.frame.bytes == 6U &&
+               Intermittent::checkpoint.image[0] == std::byte{0x10} &&
+               Intermittent::checkpoint.image[4] == std::byte{0x20},
+           "Intermittent checkpoint image");
+    expect(Intermittent::resume<IntermittentPolicy>().has_value() && intermittent_restored,
+           "Intermittent restore hook");
+
+    const std::array entropy_sram{std::byte{0xA5}, std::byte{0x3C}, std::byte{0x5A}};
+    std::array<std::uint8_t, 4> raw_entropy{};
+    expect(arc::crypto::Puf::sample_sram_decay(entropy_sram, raw_entropy).has_value() &&
+               raw_entropy[0] == 0xA5U && raw_entropy[2] == 0x5AU,
+           "PUF SRAM decay sample");
+    const std::array<std::uint8_t, 1> raw_pairs{0b0001'1011U};
+    std::array<std::uint8_t, 1> stable_bits{};
+    const auto puf_stats = arc::crypto::Puf::von_neumann(raw_pairs, stable_bits);
+    expect(puf_stats.raw_bits == 8U && puf_stats.stable_bits == 2U && puf_stats.ones == 1U && stable_bits[0] == 0b10U,
+           "PUF von Neumann extractor");
+    struct PufAdc {
+        static arc::Result<std::uint16_t> read() noexcept
+        {
+            static std::uint16_t sample{100U};
+            sample = static_cast<std::uint16_t>(sample + 7U);
+            return sample;
+        }
+    };
+    arc::dsp::Biquad<std::int32_t>::State puf_filter{};
+    std::array<std::uint16_t, 3> adc_noise{};
+    expect(arc::crypto::Puf::sample_adc_noise<PufAdc>(adc_noise, puf_filter).has_value() &&
+               adc_noise[0] != 0U && adc_noise[2] > adc_noise[0],
+           "PUF ADC noise filter");
+    struct PufHash {
+        static arc::Result<std::array<std::uint8_t, 32>> sha256(const std::span<const std::uint8_t> stable) noexcept
+        {
+            std::array<std::uint8_t, 32> key{};
+            key[0] = static_cast<std::uint8_t>(stable.size());
+            key[31] = stable.empty() ? 0U : stable[0];
+            return key;
+        }
+    };
+    const auto puf_key = arc::crypto::Puf::derive_key_with<PufHash>(stable_bits);
+    expect(puf_key.has_value() && (*puf_key)[0] == stable_bits.size() && (*puf_key)[31] == stable_bits[0],
+           "PUF key derivation hook");
+
+    flexroute_gpio = 0U;
+    flexroute_detached = 0U;
+    struct FlexPolicy {
+        static esp_err_t matrix_out(
+            const std::uint32_t gpio,
+            const std::uint32_t signal,
+            const bool,
+            const bool) noexcept
+        {
+            flexroute_gpio = gpio + signal;
+            return ESP_OK;
+        }
+
+        static esp_err_t matrix_in(const std::uint32_t gpio, const std::uint32_t signal, const bool) noexcept
+        {
+            flexroute_gpio = gpio + signal;
+            return ESP_OK;
+        }
+
+        static esp_err_t matrix_detach(const std::uint32_t gpio, const arc::matrix::RouteDir) noexcept
+        {
+            flexroute_detached = gpio;
+            return ESP_OK;
+        }
+    };
+    arc::matrix::FlexRoutePlan<1> route_plan{
+        .active = {.signal = 99U, .gpio = 4U},
+        .spare_gpio = {18U},
+    };
+    const auto healed = arc::matrix::FlexRoute::heal<FlexPolicy>(
+        route_plan,
+        {.expected_hz = 40'000U, .measured_hz = 0U, .tolerance_hz = 10U});
+    expect(healed.has_value() && healed->gpio == 18U && route_plan.active.gpio == 18U &&
+               flexroute_detached == 4U && flexroute_gpio == 117U,
+           "FlexRoute reroutes failed PWM");
+
+    std::array<arc::dsp::Transducer, 16> transducers{};
+    for (std::size_t i = 0U; i < transducers.size(); ++i) {
+        transducers[i].pos.x_mm = static_cast<float>(i * 5U);
+        transducers[i].gain = 1.0F;
+    }
+    const auto wave_plan = arc::dsp::Wavefront::focus<16>(
+        std::span<const arc::dsp::Transducer, 16>{transducers},
+        {.x_mm = 35.0F, .z_mm = 100.0F});
+    std::array<std::int16_t, 64> wave_samples{};
+    expect(wave_plan.has_value() &&
+               arc::dsp::Wavefront::synthesize<16>(*wave_plan, wave_samples, 4U).has_value() &&
+               wave_samples[1] != wave_samples[17],
+           "Wavefront 16-channel synthesis");
+    struct WaveTdm {
+        static arc::Result<std::size_t> write(const std::span<std::int16_t> samples, const std::uint32_t) noexcept
+        {
+            wavefront_writes = samples.size();
+            return samples.size();
+        }
+    };
+    expect(arc::dsp::Wavefront::stream<WaveTdm>(std::span<std::int16_t, 64>{wave_samples}).has_value() &&
+               wavefront_writes == wave_samples.size(),
+           "Wavefront I2S TDM stream hook");
+
+    std::array<std::uint8_t, 25> stars_frame{};
+    stars_frame[6] = 240U;
+    stars_frame[8] = 230U;
+    stars_frame[17] = 220U;
+    std::array<std::uint8_t, 25> stars_mask{};
+    expect(arc::vision::StarTracker::threshold(stars_frame, stars_mask, 200U).value() == 3U &&
+               stars_mask[6] == 255U,
+           "StarTracker SIMD threshold");
+    std::array<arc::vision::StarPoint, 4> stars{};
+    const auto star_count = arc::vision::StarTracker::centroids(stars_frame, 5U, 5U, 200U, stars);
+    expect(star_count.has_value() && *star_count == 3U && stars[0].x_q4 == 16U && stars[2].y_q4 == 48U,
+           "StarTracker sub-pixel centroids");
+    auto signature = arc::vision::StarTracker::triangle(stars[0], stars[1], stars[2]);
+    signature.pitch_rad = 0.1F;
+    signature.yaw_rad = -0.2F;
+    signature.roll_rad = 0.3F;
+    const std::array catalog{signature};
+    const arc::MmuSpan<arc::vision::StarTriangle> mapped_catalog{
+        .values = std::span<const arc::vision::StarTriangle>{catalog},
+    };
+    const auto pose = arc::vision::StarTracker::match(
+        std::span<const arc::vision::StarPoint>{stars.data(), *star_count},
+        mapped_catalog);
+    expect(pose.has_value() && pose->matches == 1U && near(pose->yaw_rad, -0.2F),
+           "StarTracker MMU catalog match");
+}
+
 void test_refinit()
 {
     std::uint32_t state{};
@@ -3298,6 +3473,7 @@ int main()
     test_vm_bpf();
     test_ulp_ml_paillier_covert();
     test_goal_wave_surfaces();
+    test_resilient_edge_goal_surfaces();
     test_refinit();
     std::puts("arc host tests: OK");
 }
