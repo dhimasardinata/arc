@@ -114,6 +114,11 @@ jobs:
           chmod +x tools/host-tests.sh
           ./tools/host-tests.sh
 
+      - name: Host schema generator
+        shell: bash
+        run: |
+          go run tools/arc-gen.go -root .
+
       - name: Build all
         shell: bash
         run: |

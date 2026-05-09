@@ -32,6 +32,7 @@
 #include "arc/crypto_dma.hpp"
 #include "arc/dsp.hpp"
 #include "arc/digital_twin.hpp"
+#include "arc/distributed_mmu.hpp"
 #include "arc/ecs.hpp"
 #include "arc/ethernet.hpp"
 #include "arc/fanin.hpp"
@@ -76,6 +77,7 @@
 #include "arc/pms.hpp"
 #include "arc/pmr.hpp"
 #include "arc/postmortem.hpp"
+#include "arc/power_governor.hpp"
 #include "arc/probe.hpp"
 #include "arc/provisioning.hpp"
 #include "arc/pru.hpp"
@@ -100,6 +102,7 @@
 #include "arc/thread.hpp"
 #include "arc/timesync.hpp"
 #include "arc/trace_event.hpp"
+#include "arc/trace_live.hpp"
 #include "arc/trace_stream.hpp"
 #include "arc/ulp.hpp"
 #include "arc/ulp_cxx.hpp"
@@ -107,6 +110,7 @@
 #include "arc/usb_device.hpp"
 #include "arc/usb_host.hpp"
 #include "arc/vm.hpp"
+#include "arc/wasm_aot.hpp"
 #include "arc/vision.hpp"
 #include "arc/wavefront.hpp"
 #include "arc/ws.hpp"
@@ -231,6 +235,17 @@ bool ipc_called{};
 std::size_t cert_bundle_bytes{};
 std::string_view nvs_crypto_partition{};
 std::uint8_t secure_boot_revoked{};
+std::size_t distributed_fetch_bytes{};
+std::uintptr_t distributed_remap_line{};
+std::uint8_t distributed_resume_core{};
+std::size_t live_trace_bytes{};
+std::size_t live_trace_sink_bytes{};
+std::uint32_t live_trace_swaps{};
+std::uint32_t governor_boosts{};
+std::uint32_t governor_releases{};
+std::size_t wasm_finalized_words{};
+std::size_t wasm_guard_regions{};
+std::array<std::uint8_t, 64> live_trace_buffer{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -3551,6 +3566,112 @@ void test_current_goal_surfaces()
                arc::net::Rdma::promiscuous<RdmaPolicy>().has_value(),
            "RDMA raw-frame write applies to aligned window");
 
+    struct DistributedMmuPolicy {
+        static esp_err_t fetch_line(
+            const arc::mmu::RemoteLineRequest request,
+            const std::span<std::uint8_t> out) noexcept
+        {
+            distributed_fetch_bytes = out.size();
+            for (std::size_t i = 0U; i < out.size(); ++i) {
+                out[i] = static_cast<std::uint8_t>(request.node + i);
+            }
+            return ESP_OK;
+        }
+
+        static esp_err_t remap_line(
+            const arc::mmu::RemoteFault&,
+            const std::span<const std::uint8_t> line) noexcept
+        {
+            distributed_remap_line = reinterpret_cast<std::uintptr_t>(line.data());
+            return ESP_OK;
+        }
+
+        static esp_err_t resume(const std::uint8_t core) noexcept
+        {
+            distributed_resume_core = core;
+            return ESP_OK;
+        }
+    };
+    std::array<std::uint8_t, 32> distributed_line{};
+    const arc::mmu::RemoteFault remote_fault{
+        .address = 0x2004U,
+        .span_base = 0x2000U,
+        .span_bytes = 128U,
+        .node = 7U,
+        .core = 1U,
+        .line_bytes = 32U,
+    };
+    const auto remote_resume = arc::mmu::DistributedPager::service_fault<DistributedMmuPolicy>(
+        remote_fault,
+        distributed_line);
+    expect(remote_resume.has_value() && remote_resume->request.node == 7U &&
+               remote_resume->request.line == 0x2000U && remote_resume->resumed &&
+               distributed_fetch_bytes == distributed_line.size() &&
+               distributed_remap_line == reinterpret_cast<std::uintptr_t>(distributed_line.data()) &&
+               distributed_resume_core == 1U && distributed_line[1] == 8U,
+           "DistributedPager fetches remote cache line and resumes trapped core");
+
+    struct TraceLivePolicy {
+        static esp_err_t trace_arm(const arc::trace::LiveStreamConfig config) noexcept
+        {
+            live_trace_bytes = config.watermark_bytes;
+            return ESP_OK;
+        }
+
+        static arc::Result<arc::trace::LiveChunk> trace_half_full(const std::size_t watermark) noexcept
+        {
+            return arc::trace::LiveChunk{.bytes = std::span<const std::uint8_t>{live_trace_buffer}.first(watermark), .bank = 1U};
+        }
+
+        static esp_err_t trace_swap() noexcept
+        {
+            ++live_trace_swaps;
+            return ESP_OK;
+        }
+    };
+    struct TraceSink {
+        esp_err_t write(const std::span<const std::uint8_t> bytes) noexcept
+        {
+            live_trace_sink_bytes += bytes.size();
+            return ESP_OK;
+        }
+    };
+    TraceSink trace_sink{};
+    live_trace_swaps = 0U;
+    live_trace_sink_bytes = 0U;
+    expect(arc::trace::LiveStream::arm<TraceLivePolicy>({.bank_bytes = 64U, .watermark_bytes = 32U}).has_value() &&
+               arc::trace::LiveStream::drain_half_full_isr<TraceLivePolicy>(
+                   trace_sink,
+                   {.bank_bytes = 64U, .watermark_bytes = 32U})
+                   .has_value() &&
+               live_trace_bytes == 32U && live_trace_sink_bytes == 32U && live_trace_swaps == 1U,
+           "LiveStream swaps TRAX bank and exfiltrates half-full chunk");
+
+    struct GovernorPolicy {
+        static esp_err_t cpu_boost() noexcept
+        {
+            ++governor_boosts;
+            return ESP_OK;
+        }
+
+        static esp_err_t cpu_release() noexcept
+        {
+            ++governor_releases;
+            return ESP_OK;
+        }
+    };
+    governor_boosts = 0U;
+    governor_releases = 0U;
+    arc::power::Governor<float> hot_governor{};
+    const auto hot_decision = hot_governor.tick<GovernorPolicy>(130U, 100U, {.guard_cycles = 0, .min_samples = 1U});
+    arc::power::Governor<float> cool_governor{};
+    const auto cool_decision = cool_governor.tick<GovernorPolicy>(50U, 100U, {.guard_cycles = 0, .min_samples = 1U});
+    expect(hot_decision.has_value() && cool_decision.has_value() &&
+               hot_decision->action == arc::power::GovernorAction::boost &&
+               cool_decision->action == arc::power::GovernorAction::release &&
+               governor_boosts == 1U && governor_releases == 1U,
+           "Governor predicts slack and applies CPU lock policy");
+
     struct LiFiPolicy {
         static esp_err_t send(const std::span<const arc::optical::LiFiSymbol> symbols) noexcept
         {
@@ -3603,6 +3724,62 @@ void test_current_goal_surfaces()
                jit_finalized_words == jit_program.size() &&
                (*translated)[0] == arc::vm::PseudoXtensaJitPolicy::alu(jit_program[0]),
            "BPF JIT emits bounded executable image");
+
+    struct WasmPolicy {
+        static std::uint32_t i32_const(const std::int32_t value) noexcept
+        {
+            return 0x4100'0000U | static_cast<std::uint32_t>(value & 0xffff);
+        }
+
+        static std::uint32_t i32_add() noexcept
+        {
+            return 0x6aU;
+        }
+
+        static std::uint32_t i32_sub() noexcept
+        {
+            return 0x6bU;
+        }
+
+        static std::uint32_t i32_mul() noexcept
+        {
+            return 0x6cU;
+        }
+
+        static std::uint32_t end() noexcept
+        {
+            return 0x0bU;
+        }
+
+        static esp_err_t finalize(const std::span<const std::uint32_t> image) noexcept
+        {
+            wasm_finalized_words = image.size();
+            return ESP_OK;
+        }
+    };
+    struct WasmGuardPolicy {
+        static esp_err_t configure(const std::span<const arc::WorldRegion> regions) noexcept
+        {
+            wasm_guard_regions = regions.size();
+            return ESP_OK;
+        }
+    };
+    const std::array<std::uint8_t, 6> wasm_code{
+        0x41U,
+        0x07U,
+        0x41U,
+        0x05U,
+        0x6aU,
+        0x0bU,
+    };
+    std::array<std::uint32_t, 8> wasm_image{};
+    const auto wasm_translated = arc::vm::WasmAot::translate<WasmPolicy>(wasm_code, wasm_image);
+    expect(wasm_translated.has_value() && wasm_translated->size() == 4U &&
+               (*wasm_translated)[0] == 0x4100'0007U && (*wasm_translated)[2] == 0x6aU &&
+               wasm_finalized_words == 4U &&
+               arc::vm::WasmSandbox::protect<WasmGuardPolicy>(*wasm_translated).has_value() &&
+               wasm_guard_regions == 1U,
+           "WasmAot translates bounded WASM ops into protected executable image");
 
     struct BlackBoxHash {
         static void begin() noexcept
