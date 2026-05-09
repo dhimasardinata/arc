@@ -124,6 +124,12 @@ jobs:
         run: |
           go run tools/arc-audit.go -root .
 
+      - name: Host formal specs
+        shell: bash
+        run: |
+          chmod +x tools/arc-prove.sh
+          ./tools/arc-prove.sh
+
       - name: Build all
         shell: bash
         run: |

@@ -59,7 +59,10 @@
 #include "arc/lifi.hpp"
 #include "arc/log.hpp"
 #include "arc/copy.hpp"
+#include "arc/cnc.hpp"
 #include "arc/fabric.hpp"
+#include "arc/hls.hpp"
+#include "arc/hyper_matrix.hpp"
 #include "arc/matrix.hpp"
 #include "arc/migrator.hpp"
 #include "arc/maglev.hpp"
@@ -258,6 +261,8 @@ std::uint32_t migration_ip{};
 std::uint32_t migration_sp{};
 std::uint16_t profiler_current{};
 std::uint32_t profiler_pc{};
+std::uint32_t hypermatrix_node{};
+std::size_t hypermatrix_bytes{};
 std::array<std::uint8_t, 64> live_trace_buffer{};
 
 struct MockStaticI2c {
@@ -4245,6 +4250,75 @@ void test_current_goal_surfaces()
            "SecureBoot exposes state revoke and digest hooks");
 }
 
+void test_hive_goal_surfaces()
+{
+    using Matrix = arc::swarm::HyperMatrix<2, 1, 1, 1, 1, 1>;
+    const std::array<arc::swarm::Pose6, Matrix::cells> grid{
+        arc::swarm::Pose6{.x_mm = 0.0F, .time_us = 10},
+        arc::swarm::Pose6{.x_mm = 100.0F, .time_us = 10},
+    };
+    auto hyper = Matrix::seeded(std::span<const arc::swarm::Pose6, Matrix::cells>{grid});
+    expect(hyper.observe(Matrix::from_vslam({.tx_mm = 100.0F, .tracks = 3U}, 10, 4.0F)).has_value() &&
+               hyper.observe(Matrix::from_ftm({.x_mm = 100.0F}, 11, 4.0F)).has_value() &&
+               hyper.observe(Matrix::from_acoustic({.x_mm = 100.0F}, 12, 16.0F)).has_value(),
+           "HyperMatrix fuses visual RF and acoustic observations");
+    const auto hyper_pose = hyper.estimate();
+    struct HyperPolicy {
+        static esp_err_t send(const std::uint32_t node, const std::span<const std::uint8_t> bytes) noexcept
+        {
+            hypermatrix_node = node;
+            hypermatrix_bytes = bytes.size();
+            return ESP_OK;
+        }
+    };
+    alignas(16) std::array<std::uint8_t, 128> hyper_remote{};
+    std::array<std::uint8_t, 128> hyper_scratch{};
+    const arc::net::RdmaWindow hyper_window{
+        .node = 8U,
+        .base = reinterpret_cast<std::uintptr_t>(hyper_remote.data()),
+        .bytes = hyper_remote.size(),
+    };
+    hypermatrix_node = 0U;
+    hypermatrix_bytes = 0U;
+    expect(hyper_pose.has_value() && hyper_pose->x_mm > 80.0F &&
+               hyper.publish_rdma<HyperPolicy>(hyper_window, 1U, hyper_scratch).has_value() &&
+               hypermatrix_node == 8U && hypermatrix_bytes > sizeof(arc::swarm::HyperMatrixHeader),
+           "HyperMatrix publishes shared 6D tensor state through RDMA frame");
+
+    const auto corexy = arc::cnc::Kinematics::corexy(10.0F, 5.0F, {.steps_per_mm = 80.0F, .ticks_per_step = 2U});
+    const auto delta = arc::cnc::Kinematics::delta({0.0F, 0.0F, 10.0F}, {.arm_mm = 120.0F, .radius_mm = 30.0F, .steps_per_mm = 10.0F});
+    const auto five = arc::cnc::Kinematics::five_axis(
+        {1.0F, 2.0F, 3.0F, 4.0F, 5.0F},
+        {10.0F, 10.0F, 10.0F, 10.0F, 2.0F});
+    const std::string_view line{"N7 G1 X10 Y5 F1200"};
+    const auto block = arc::cnc::GCode::parse_line(std::span<const char>{line.data(), line.size()});
+    std::array<arc::MotionStep<2>, 128> cnc_steps{};
+    const auto planned = block.has_value()
+        ? arc::cnc::GCode::plan_linear<2>(*block, {0.0F, 0.0F}, 10.0F, cnc_steps)
+        : arc::Result<std::span<const arc::MotionStep<2>>>{arc::fail(ESP_ERR_INVALID_STATE)};
+    expect(corexy.delta[0] == 1200 && corexy.delta[1] == 400 && corexy.ticks_per_step == 2U &&
+               delta.has_value() && delta->delta[0] > 0 &&
+               five.delta[0] == 10 && five.delta[4] == 10 &&
+               block.has_value() && block->command == arc::cnc::Command::linear &&
+               block->line == 7U && block->has_axis[0] && block->axis[0] == 10.0F &&
+               planned.has_value() && planned->size() == 100U,
+           "CNC kinematics and zero-allocation G-code feed MotionPlan");
+
+    const std::array<int, 4> coeffs{1, 2, 3, 4};
+    const std::array<int, 4> samples{2, 2, 2, 2};
+    const auto fir = arc::hls::fir<int, 4>(
+        std::span<const int, 4>{coeffs},
+        std::span<const int, 4>{samples});
+    const auto dot = arc::hls::dot<int, 4>(
+        std::span<const int, 4>{coeffs},
+        std::span<const int, 4>{samples});
+    constexpr auto dense_spec = arc::hls::DenseSpec<4, 2>::hls_spec();
+    expect(fir.has_value() && *fir == 20 && dot.has_value() && *dot == 20 &&
+               dense_spec.static_bounds && dense_spec.heapless &&
+               dense_spec.latency_cycles == 8U,
+           "HLS helpers expose fixed-bound heapless kernel metadata");
+}
+
 void test_refinit()
 {
     std::uint32_t state{};
@@ -4420,6 +4494,7 @@ int main()
     test_goal_wave_surfaces();
     test_resilient_edge_goal_surfaces();
     test_current_goal_surfaces();
+    test_hive_goal_surfaces();
     test_refinit();
     std::puts("arc host tests: OK");
 }

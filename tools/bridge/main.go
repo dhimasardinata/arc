@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -193,6 +194,74 @@ func perfettoPowerJSON(topic string, receiveNS int64, fields []decodedField, pow
 	b.WriteString(decodedValue(fields, pcField))
 	b.WriteString(`}}`)
 	return b.String()
+}
+
+func flightValidationJSON(field string, minValue float64, maxValue float64, fields []decodedField) string {
+	valueText := decodedValue(fields, field)
+	value, err := strconv.ParseFloat(valueText, 64)
+	ok := err == nil && value >= minValue && value <= maxValue
+	var b strings.Builder
+	b.WriteString(`{"type":"arc.flight.telemetry","field":`)
+	b.WriteString(jsonQuote(field))
+	b.WriteString(`,"value":`)
+	if err == nil {
+		b.WriteString(strconv.FormatFloat(value, 'g', -1, 64))
+	} else {
+		b.WriteString(`null`)
+	}
+	b.WriteString(`,"ok":`)
+	if ok {
+		b.WriteString(`true`)
+	} else {
+		b.WriteString(`false`)
+	}
+	b.WriteByte('}')
+	return b.String()
+}
+
+func runHotpatchPlan(path string, src uint, dst uint, chunkBytes int, signature string, entryOffset uint) error {
+	if src == 0 || dst == 0 {
+		return fmt.Errorf("hotpatch src and dst must be non-zero")
+	}
+	if chunkBytes <= 0 || chunkBytes > 240 {
+		return fmt.Errorf("hotpatch chunk must be in range 1..240")
+	}
+	image, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if len(image) == 0 {
+		return fmt.Errorf("hotpatch image must not be empty")
+	}
+	sum := sha1.Sum(image)
+	hex := fmt.Sprintf("%x", sum[:])
+	for offset := 0; offset < len(image); offset += chunkBytes {
+		end := offset + chunkBytes
+		if end > len(image) {
+			end = len(image)
+		}
+		chunk := image[offset:end]
+		var b strings.Builder
+		b.WriteString(`{"type":"arc.hotpatch.chunk","fabric":{"src":`)
+		b.WriteString(strconv.FormatUint(uint64(src), 10))
+		b.WriteString(`,"dst":`)
+		b.WriteString(strconv.FormatUint(uint64(dst), 10))
+		b.WriteString(`,"ttl":2},"rdma":{"offset":`)
+		b.WriteString(strconv.Itoa(offset))
+		b.WriteString(`,"bytes":`)
+		b.WriteString(strconv.Itoa(len(chunk)))
+		b.WriteString(`},"hotpatch":{"entry_offset":`)
+		b.WriteString(strconv.FormatUint(uint64(entryOffset), 10))
+		b.WriteString(`,"sha1":`)
+		b.WriteString(jsonQuote(hex))
+		b.WriteString(`,"pq_signature":`)
+		b.WriteString(jsonQuote(signature))
+		b.WriteString(`},"payload":`)
+		b.WriteString(jsonQuote(encodeBase64(chunk)))
+		b.WriteByte('}')
+		fmt.Println(b.String())
+	}
+	return nil
 }
 
 func schemaJSON(fields []field, frameSize int, endian string) string {
@@ -396,7 +465,23 @@ func main() {
 	perfettoPower := flag.Bool("perfetto-power", false, "emit Perfetto counter JSON for power/current fields")
 	powerField := flag.String("power-field", "milliamps", "decoded field name containing current in milliamps")
 	pcField := flag.String("pc-field", "pc", "decoded field name containing instruction/program counter")
+	flightField := flag.String("flight-field", "", "decoded telemetry field to validate for physical CI")
+	flightMin := flag.Float64("flight-min", 0, "minimum accepted flight telemetry value")
+	flightMax := flag.Float64("flight-max", 0, "maximum accepted flight telemetry value")
+	hotpatchPlan := flag.String("hotpatch-plan", "", "PIE binary path to chunk into Fabric/RDMA hotpatch JSON")
+	hotpatchSrc := flag.Uint("hotpatch-src", 1, "source node id for hotpatch plan")
+	hotpatchDst := flag.Uint("hotpatch-dst", 0, "destination node id for hotpatch plan")
+	hotpatchChunk := flag.Int("hotpatch-chunk", 200, "hotpatch chunk bytes, sized for ESP-NOW payloads")
+	hotpatchSignature := flag.String("hotpatch-signature", "", "post-quantum signature or signature reference")
+	hotpatchEntry := flag.Uint("hotpatch-entry", 0, "hotpatch entry offset in PIE payload")
 	flag.Parse()
+
+	if *hotpatchPlan != "" {
+		if err := runHotpatchPlan(*hotpatchPlan, *hotpatchSrc, *hotpatchDst, *hotpatchChunk, *hotpatchSignature, *hotpatchEntry); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	fields, frameSize, err := parseSchema(*schemaText)
 	if err != nil {
@@ -442,6 +527,9 @@ func main() {
 				fmt.Println(perfettoPowerJSON(*topic, receiveNS, values, *powerField, *pcField))
 			} else {
 				fmt.Println(string(line))
+			}
+			if *flightField != "" {
+				fmt.Println(flightValidationJSON(*flightField, *flightMin, *flightMax, values))
 			}
 			stream.publish(line)
 		}
