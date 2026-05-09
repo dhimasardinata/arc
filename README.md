@@ -276,7 +276,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 
 Arc project docs: `docs/architecture.md` explains the Core 0/Core 1 substrate choices, and `docs/hil-test-jig.md` describes the three-node physical fault test shape.
 
-Host tooling: `tests/host/fuzz_codecs.cpp` is an opt-in libFuzzer harness for HTTP, MQTT, WebSocket, and CoAP parsers, and `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL for off-device telemetry ingestion.
+Host tooling: `tests/host/fuzz_codecs.cpp` is an opt-in libFuzzer harness for HTTP, MQTT, WebSocket, and CoAP parsers. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, while `tools/bridge/main.go` listens for UDP telemetry and republishes decoded frames over a dependency-free WebSocket bridge.
 
 <details>
 <summary>Quick API Map</summary>
