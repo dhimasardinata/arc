@@ -30,6 +30,12 @@ step succeeds. Destructors roll back failed setup; `pass()` publishes readiness.
 and cache handoff part of the call site. A buffer crossing DMA, PSRAM, or another
 core should not rely on comments to describe ownership.
 
+ML and DSP spans that feed `arc::simd` kernels should come from `arc::simdbuf`
+or equivalent 16-byte-aligned storage when performance matters. Vision kernels
+keep integer-safe defaults unless silicon data says otherwise; for example,
+`arc::vision::StarTracker::isqrt` should be compared against an S3-targeted
+`sqrt` lane in `examples/bench` before replacing the integer path.
+
 ## Silicon-Facing Policy
 
 Arc public headers expose static, caller-owned algorithms and policy hooks. Board
