@@ -71,6 +71,7 @@
 #include "arc/ulp.hpp"
 #include "arc/ulp_cxx.hpp"
 #include "arc/usb_device.hpp"
+#include "arc/vm.hpp"
 #include "arc/vision.hpp"
 #include "arc/ws.hpp"
 #include "arc/w5500.hpp"
@@ -1318,6 +1319,45 @@ void test_dsp()
     const std::array accel_rhs{3.0F, 4.0F};
     const auto accel = arc::dsp::DspAccel<>::dot_f32(std::span<const float>{accel_lhs}, std::span<const float>{accel_rhs});
     expect(accel == 11.0F, "DSP accel dot fallback");
+
+    using Beam = arc::dsp::Beamform<float, 2>;
+    const std::array<float, 5> mic0{1.0F, 0.0F, 0.0F, 0.0F, 0.0F};
+    const std::array<float, 5> mic1{0.0F, 1.0F, 0.0F, 0.0F, 0.0F};
+    std::array<float, 4> beam_out{};
+    const Beam::Inputs beam_inputs{std::span<const float>{mic0}, std::span<const float>{mic1}};
+    const auto beamed = Beam::delay_sum(
+        beam_inputs,
+        {.delay_samples = {0U, 1U}, .gain = {1.0F, 1.0F}, .scale = 0.5F},
+        std::span(beam_out));
+    expect(beamed.has_value() && *beamed == beam_out.size() && beam_out[0] == 1.0F, "DSP Beamform delay sum");
+
+    const auto lag = Beam::lag_xcorr(std::span<const float>{mic0}, std::span<const float>{mic1}, 2U);
+    expect(lag.has_value() && lag->lag_samples == 1, "DSP Beamform xcorr lag");
+
+    std::array<arc::simd::ComplexF32, 4> ref_fft{{
+        {.re = 1.0F},
+        {},
+        {},
+        {},
+    }};
+    std::array<arc::simd::ComplexF32, 4> delayed_fft{{
+        {},
+        {.re = 1.0F},
+        {},
+        {},
+    }};
+    std::array<arc::simd::ComplexF32, 4> gcc{};
+    const auto estimate = Beam::gcc_phat(std::span(ref_fft), std::span(delayed_fft), std::span(gcc), 1U, 48'000.0F, 0.05F);
+    expect(estimate.has_value() && estimate->confidence > 0.0F, "DSP Beamform GCC-PHAT estimate");
+
+    using Echo = arc::dsp::Aec<float, 2>;
+    Echo::State echo{};
+    const std::array<float, 4> far{1.0F, 0.0F, 0.0F, 0.0F};
+    const std::array<float, 4> mic{0.5F, 0.0F, 0.0F, 0.0F};
+    std::array<float, 4> clean{};
+    const auto cancelled = Echo::run(std::span(clean), echo, std::span<const float>{far}, std::span<const float>{mic});
+    expect(cancelled.has_value() && *cancelled == clean.size(), "DSP AEC run");
+    expect(echo.taps[0] > 0.0F, "DSP AEC adapts tap");
 }
 
 void test_foc_motion_tdma()
@@ -1702,6 +1742,36 @@ void test_matrix_kalman_storage_swarm()
     };
     expect(schedule.slot_for(20U) == 1U, "Swarm slot lookup");
     expect(schedule.window(20U, 1'100U).active, "Swarm TDMA window");
+
+    using Fleet = arc::net::DistributedRcu<Record, 3>;
+    arc::TimeSync fleet_clock{};
+    Fleet master{20U};
+    master.write({.seq = 7U, .value = 42U});
+    const auto frame = master.transmit(schedule, fleet_clock, 1'100);
+    expect(frame.has_value() && frame->node_id == 20U, "DistributedRcu TDMA transmit");
+
+    const auto wire = Fleet::bytes(*frame);
+    const auto decoded = Fleet::parse(wire);
+    expect(decoded.has_value() && decoded->value.value == 42U, "DistributedRcu wire parse");
+
+    Fleet slave{10U};
+    expect(slave.assign(0U, 20U).has_value(), "DistributedRcu assign remote");
+    const auto slot = slave.ingest(*decoded, schedule, 1'120);
+    expect(slot.has_value() && *slot == 0U, "DistributedRcu ingest slot");
+    const auto remote = slave.read_remote(20U);
+    expect(remote.has_value() && (*remote)->value == 42U, "DistributedRcu remote RCU read");
+    expect(slave.stale(20U, 1'400, 100), "DistributedRcu stale detection");
+
+    arc::dsp::Kalman<float, 1, 1> reckon{};
+    reckon.x(0, 0) = 2.0F;
+    const auto predicted = arc::net::DeadReckoning::predict_if_stale(
+        reckon,
+        1'400,
+        1'120,
+        100,
+        arc::dsp::Matrix<float, 1, 1>{{2.0F}},
+        arc::dsp::Matrix<float, 1, 1>{{0.0F}});
+    expect(predicted && reckon.x(0, 0) == 4.0F, "DeadReckoning Kalman fallback");
 }
 
 void test_trace_provision_ethernet_flashoff_hil_ecs()
@@ -2493,6 +2563,66 @@ void test_pru_isp_vision()
     expect(target.q == -0.25F && target.bus == 12.0F, "Vision flow to FOC target");
 }
 
+void test_vm_bpf()
+{
+    using Insn = arc::vm::BpfInsn;
+    using Op = arc::vm::BpfOp;
+
+    const std::array program{
+        Insn::make(Op::mov_reg, 0U, 1U),
+        Insn::make(Op::add_imm, 0U, 0U, 0, 5),
+        Insn::make(Op::store32, 2U, 0U),
+        Insn::make(Op::exit),
+    };
+
+    const auto program_bytes = std::span<const std::uint8_t>{
+        reinterpret_cast<const std::uint8_t*>(program.data()),
+        program.size() * sizeof(Insn),
+    };
+
+    std::array<std::uint8_t, 128> ws_frame{};
+    const auto framed = arc::net::Ws::binary(std::span(ws_frame), program_bytes);
+    expect(framed.has_value(), "BPF program WebSocket frame");
+    const auto parsed = arc::net::Ws::parse(*framed);
+    expect(parsed.has_value() && parsed->opcode == arc::net::WsOpcode::binary, "BPF program WebSocket parse");
+
+    std::array<Insn, 8> decoded{};
+    const auto bytecode = arc::vm::BPF<>::decode(parsed->payload, std::span(decoded));
+    expect(bytecode.has_value() && bytecode->size() == program.size(), "BPF decode binary block");
+
+    std::array<std::uint8_t, 8> memory{};
+    arc::vm::BPF<> vm{};
+    const std::array<std::int64_t, 2> args{7, 0};
+    const auto result = vm.run(*bytecode, std::span(memory), std::span<const std::int64_t>{args});
+    std::uint32_t stored{};
+    std::memcpy(&stored, memory.data(), sizeof(stored));
+    expect(result.has_value() && result->value == 12 && stored == 12U, "BPF VM executes and stores");
+    expect(!vm.run(*bytecode, std::span(memory), std::span<const std::int64_t>{args}, {.writable_memory = false}),
+           "BPF VM rejects store into read-only memory");
+
+    struct BpfPolicy {
+        static esp_err_t configure(std::span<const arc::WorldRegion> regions) noexcept
+        {
+            tee_regions = regions.size();
+            return regions.size() == 1U && regions[0].untrusted == arc::PmsAccess::read ? ESP_OK : ESP_FAIL;
+        }
+
+        static esp_err_t core_world(std::uint32_t, arc::World) noexcept
+        {
+            return ESP_OK;
+        }
+
+        static esp_err_t peripheral_world(std::uint32_t, arc::World) noexcept
+        {
+            return ESP_OK;
+        }
+    };
+
+    tee_regions = 0U;
+    expect(arc::vm::BpfSandbox::protect<BpfPolicy>(std::span(memory)).has_value() && tee_regions == 1U,
+           "BPF sandbox configures VM memory region");
+}
+
 void test_refinit()
 {
     std::uint32_t state{};
@@ -2662,6 +2792,7 @@ int main()
     test_stream();
     test_pipeline_usb_ulp();
     test_pru_isp_vision();
+    test_vm_bpf();
     test_refinit();
     std::puts("arc host tests: OK");
 }

@@ -90,11 +90,11 @@ template <std::size_t Descriptors>
 struct PruIn {
     static_assert(Descriptors > 0U, "PRU input needs at least one descriptor");
 
-    template <typename T>
+    template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
     [[nodiscard]] static Status bind(
         DmaChain<Descriptors>& chain,
-        const std::span<T> capture,
+        const std::span<T, Extent> capture,
         const std::size_t samples_per_desc,
         const bool circular = true) noexcept
     {

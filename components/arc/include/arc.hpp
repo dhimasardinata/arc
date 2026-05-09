@@ -75,6 +75,7 @@
 #include "arc/trace_stream.hpp"
 #include "arc/ulp_asm.hpp"
 #include "arc/ulp_cxx.hpp"
+#include "arc/vm.hpp"
 #include "arc/usb_device.hpp"
 #include "arc/vision.hpp"
 #include "arc/watch.hpp"

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -8,6 +9,8 @@
 #include <type_traits>
 
 #include "arc/place.hpp"
+#include "arc/result.hpp"
+#include "arc/simd.hpp"
 
 namespace arc::dsp {
 
@@ -472,6 +475,222 @@ struct Sos {
         for (std::size_t i = 0; i < count; ++i) {
             out[i] = step(state, coeffs, in[i]);
         }
+    }
+};
+
+template <typename T>
+struct BeamEstimate {
+    std::int32_t lag_samples{};
+    T confidence{};
+    T angle_rad{};
+};
+
+template <typename T, std::size_t Channels>
+struct Beamform {
+    static_assert(Channels > 0U, "Beamform needs at least one channel");
+    static_assert(std::is_arithmetic_v<T>, "Beamform works on arithmetic sample types");
+
+    using Inputs = std::array<std::span<const T>, Channels>;
+
+    struct DelaySumPlan {
+        std::array<std::size_t, Channels> delay_samples{};
+        std::array<T, Channels> gain{};
+        T scale{T{1}};
+    };
+
+    [[nodiscard]] ARC_HOT static Result<std::size_t> delay_sum(
+        const Inputs& inputs,
+        const DelaySumPlan& plan,
+        const std::span<T> out) noexcept
+    {
+        if (out.empty()) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        for (std::size_t channel = 0; channel < Channels; ++channel) {
+            if (inputs[channel].empty() || plan.delay_samples[channel] >= inputs[channel].size()) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+        }
+
+        auto produced = std::size_t{};
+        for (; produced < out.size(); ++produced) {
+            T acc{};
+            for (std::size_t channel = 0; channel < Channels; ++channel) {
+                const auto index = produced + plan.delay_samples[channel];
+                if (index >= inputs[channel].size()) {
+                    return produced;
+                }
+                acc += inputs[channel][index] * plan.gain[channel];
+            }
+            out[produced] = acc * plan.scale;
+        }
+        return produced;
+    }
+
+    [[nodiscard]] ARC_HOT static Result<BeamEstimate<T>> lag_xcorr(
+        const std::span<const T> reference,
+        const std::span<const T> delayed,
+        const std::size_t max_lag) noexcept
+    {
+        if (reference.empty() || delayed.empty() || max_lag == 0U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        BeamEstimate<T> best{};
+        auto best_ready = false;
+        const auto signed_max = static_cast<std::int32_t>(max_lag);
+        for (auto lag = -signed_max; lag <= signed_max; ++lag) {
+            T acc{};
+            auto count = std::size_t{};
+            for (std::size_t i = 0; i < reference.size(); ++i) {
+                const auto j_signed = static_cast<std::int64_t>(i) + lag;
+                if (j_signed < 0 || static_cast<std::uint64_t>(j_signed) >= delayed.size()) {
+                    continue;
+                }
+                acc += reference[i] * delayed[static_cast<std::size_t>(j_signed)];
+                ++count;
+            }
+            if (count == 0U) {
+                continue;
+            }
+            const auto score = acc < T{} ? -acc : acc;
+            if (!best_ready || score > best.confidence) {
+                best = {
+                    .lag_samples = lag,
+                    .confidence = score,
+                    .angle_rad = {},
+                };
+                best_ready = true;
+            }
+        }
+        return best_ready ? Result<BeamEstimate<T>>{best} : fail(ESP_ERR_INVALID_STATE);
+    }
+
+    [[nodiscard]] ARC_HOT static Result<BeamEstimate<float>> gcc_phat(
+        const std::span<simd::ComplexF32> reference,
+        const std::span<simd::ComplexF32> delayed,
+        const std::span<simd::ComplexF32> scratch,
+        const std::size_t max_lag,
+        const float sample_hz,
+        const float mic_spacing_m,
+        const float sound_mps = 343.0F) noexcept
+    {
+        if (reference.size() != delayed.size() || scratch.size() < reference.size() ||
+            !simd::is_power_of_two(reference.size()) || max_lag == 0U ||
+            sample_hz <= 0.0F || mic_spacing_m <= 0.0F || sound_mps <= 0.0F) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        auto status = simd::fft_radix2(reference);
+        if (!status) {
+            return fail(status.error());
+        }
+        status = simd::fft_radix2(delayed);
+        if (!status) {
+            return fail(status.error());
+        }
+
+        for (std::size_t i = 0; i < reference.size(); ++i) {
+            const simd::ComplexF32 conj_delayed{
+                .re = delayed[i].re,
+                .im = -delayed[i].im,
+            };
+            const auto cross = reference[i] * conj_delayed;
+            const auto mag = std::sqrt((cross.re * cross.re) + (cross.im * cross.im));
+            scratch[i] = mag > 0.0F ? simd::ComplexF32{.re = cross.re / mag, .im = cross.im / mag} : simd::ComplexF32{};
+        }
+
+        status = simd::fft_radix2(scratch.first(reference.size()), true);
+        if (!status) {
+            return fail(status.error());
+        }
+
+        BeamEstimate<float> best{};
+        auto best_ready = false;
+        const auto bounded_lag = max_lag < (reference.size() / 2U) ? max_lag : (reference.size() / 2U);
+        const auto signed_max = static_cast<std::int32_t>(bounded_lag);
+        for (auto lag = -signed_max; lag <= signed_max; ++lag) {
+            const auto index = lag < 0 ? reference.size() - static_cast<std::size_t>(-lag) : static_cast<std::size_t>(lag);
+            const auto score = scratch[index].re < 0.0F ? -scratch[index].re : scratch[index].re;
+            if (!best_ready || score > best.confidence) {
+                const auto delay_s = static_cast<float>(lag) / sample_hz;
+                const auto ratio = clamp((delay_s * sound_mps) / mic_spacing_m, -1.0F, 1.0F);
+                best = {
+                    .lag_samples = lag,
+                    .confidence = score,
+                    .angle_rad = std::asin(ratio),
+                };
+                best_ready = true;
+            }
+        }
+        return best_ready ? Result<BeamEstimate<float>>{best} : fail(ESP_ERR_INVALID_STATE);
+    }
+};
+
+template <typename T, std::size_t Taps>
+struct Aec {
+    static_assert(Taps > 0U, "AEC tap count must be non-zero");
+    static_assert(std::is_floating_point_v<T>, "AEC works on floating-point sample types");
+
+    struct Config {
+        T mu{T{0.25}};
+        T epsilon{static_cast<T>(0.000001)};
+        T leak{T{1}};
+    };
+
+    struct State {
+        std::array<T, Taps> taps{};
+        std::array<T, Taps> history{};
+        std::size_t head{};
+    };
+
+    static void clear(State& state) noexcept
+    {
+        state = {};
+    }
+
+    [[nodiscard]] ARC_HOT static T step(
+        State& state,
+        const T far_end,
+        const T microphone,
+        const Config config = {}) noexcept
+    {
+        state.head = state.head == 0U ? Taps - 1U : state.head - 1U;
+        state.history[state.head] = far_end;
+
+        T echo{};
+        T power{config.epsilon};
+        for (std::size_t i = 0; i < Taps; ++i) {
+            const auto slot = state.head + i < Taps ? state.head + i : state.head + i - Taps;
+            const auto sample = state.history[slot];
+            echo += state.taps[i] * sample;
+            power += sample * sample;
+        }
+
+        const auto error = microphone - echo;
+        const auto adapt = power != T{} ? (config.mu * error) / power : T{};
+        for (std::size_t i = 0; i < Taps; ++i) {
+            const auto slot = state.head + i < Taps ? state.head + i : state.head + i - Taps;
+            state.taps[i] = (state.taps[i] * config.leak) + (adapt * state.history[slot]);
+        }
+        return error;
+    }
+
+    [[nodiscard]] ARC_HOT static Result<std::size_t> run(
+        const std::span<T> out,
+        State& state,
+        const std::span<const T> far_end,
+        const std::span<const T> microphone,
+        const Config config = {}) noexcept
+    {
+        const auto count = out.size() < far_end.size() ? (out.size() < microphone.size() ? out.size() : microphone.size()) : (far_end.size() < microphone.size() ? far_end.size() : microphone.size());
+        if (count == 0U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        for (std::size_t i = 0; i < count; ++i) {
+            out[i] = step(state, far_end[i], microphone[i], config);
+        }
+        return count;
     }
 };
 
