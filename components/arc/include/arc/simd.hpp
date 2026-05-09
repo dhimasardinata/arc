@@ -14,9 +14,11 @@ namespace simd {
 
 using float32x4_t = float __attribute__((vector_size(16)));
 using int8x16_t = std::int8_t __attribute__((vector_size(16)));
+using int16x8_t = std::int16_t __attribute__((vector_size(16)));
 using uint8x16_t = std::uint8_t __attribute__((vector_size(16)));
 
 inline constexpr std::size_t int8x16_lanes = 16U;
+inline constexpr std::size_t int16x8_lanes = 8U;
 
 template <typename V>
 [[nodiscard]] inline V load_unaligned(const void* const ptr) noexcept
@@ -46,6 +48,16 @@ struct MacS8x16 {
 }
 
 inline void store_s8x16(std::int8_t* const ptr, const int8x16_t value) noexcept
+{
+    store_unaligned(ptr, value);
+}
+
+[[nodiscard]] inline int16x8_t load_s16x8(const std::int16_t* const ptr) noexcept
+{
+    return load_unaligned<int16x8_t>(ptr);
+}
+
+inline void store_s16x8(std::int16_t* const ptr, const int16x8_t value) noexcept
 {
     store_unaligned(ptr, value);
 }

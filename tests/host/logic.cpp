@@ -16,8 +16,10 @@
 #include <vector>
 
 #include "arc/any.hpp"
+#include "arc/acoustic_slam.hpp"
 #include "arc/bare_core.hpp"
 #include "arc/caps.hpp"
+#include "arc/chaos.hpp"
 #include "arc/claim.hpp"
 #include "arc/concepts.hpp"
 #include "arc/covert.hpp"
@@ -34,11 +36,13 @@
 #include "arc/fsm.hpp"
 #include "arc/hil.hpp"
 #include "arc/hotpatch.hpp"
+#include "arc/hypervisor.hpp"
 #include "arc/http_server.hpp"
 #include "arc/init.hpp"
 #include "arc/interrupt_matrix.hpp"
 #include "arc/isp.hpp"
 #include "arc/kalman.hpp"
+#include "arc/kyber.hpp"
 #include "arc/coap.hpp"
 #include "arc/log.hpp"
 #include "arc/matrix.hpp"
@@ -65,6 +69,7 @@
 #include "arc/spsc.hpp"
 #include "arc/stream.hpp"
 #include "arc/secure_update.hpp"
+#include "arc/sdr.hpp"
 #include "arc/simd.hpp"
 #include "arc/swarm.hpp"
 #include "arc/tdma.hpp"
@@ -157,6 +162,13 @@ std::uint32_t covert_hz{};
 std::uint32_t covert_duty{};
 int covert_density{};
 bool semantic_wake{};
+std::size_t sdr_words{};
+std::size_t hypervisor_regions{};
+std::size_t hypervisor_traps{};
+std::size_t chaos_flips{};
+std::size_t chaos_stalls{};
+std::size_t chaos_drops{};
+std::size_t chaos_overruns{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -2914,6 +2926,205 @@ void test_ulp_ml_paillier_covert()
     expect(covert_hz == fsk.space_hz, "Covert sonic frequency");
 }
 
+void test_goal_wave_surfaces()
+{
+    using Kem = arc::crypto::Kyber512;
+    Kem::Poly poly{};
+    for (std::size_t i = 0U; i < poly.size(); ++i) {
+        poly[i] = static_cast<std::int16_t>(i & 0x7fU);
+    }
+    const auto original = poly;
+    expect(Kem::ntt(std::span<std::int16_t, Kem::n>{poly}).has_value(), "Kyber NTT");
+    expect(Kem::inverse_ntt(std::span<std::int16_t, Kem::n>{poly}).has_value(), "Kyber inverse NTT");
+    expect(poly == original, "Kyber NTT roundtrip");
+
+    Kem::Poly product{};
+    expect(Kem::pointwise(
+               std::span<std::int16_t, Kem::n>{product},
+               std::span<const std::int16_t, Kem::n>{original},
+               std::span<const std::int16_t, Kem::n>{original})
+               .has_value(),
+           "Kyber SIMD pointwise product");
+    expect(product[5] == Kem::mul(5, 5), "Kyber pointwise coefficient");
+
+    const std::array<std::uint8_t, 4> seed{1, 2, 3, 4};
+    const std::array<std::uint8_t, 4> coins{9, 10, 11, 12};
+    std::array<std::uint8_t, Kem::public_key_bytes> public_key{};
+    std::array<std::uint8_t, Kem::secret_key_bytes> secret_key{};
+    std::array<std::uint8_t, Kem::ciphertext_bytes> ciphertext{};
+    std::array<std::uint8_t, Kem::shared_bytes> shared{};
+    std::array<std::uint8_t, Kem::shared_bytes> opened{};
+    expect(Kem::keypair(seed, public_key, secret_key).has_value(), "Kyber zero-alloc keypair");
+    expect(Kem::encapsulate(public_key, coins, ciphertext, shared).has_value(), "Kyber zero-alloc encapsulate");
+    expect(Kem::decapsulate(secret_key, ciphertext, opened).has_value() && opened == shared, "Kyber zero-alloc decapsulate");
+    expect(ciphertext[0] != ciphertext[1] && shared[0] != 0U, "Kyber KEM fills buffers");
+
+    constexpr arc::sdr::TxConfig sdr_cfg{
+        .sample_hz = 1'000'000U,
+        .carrier_hz = 100'000U,
+        .deviation_hz = 25'000U,
+        .gpio = 4U,
+        .one_word = 0x10U,
+    };
+    std::array<std::uint16_t, 16> rf_words{};
+    const std::array<std::int16_t, 4> audio{0, 16'000, -16'000, 0};
+    const auto fm = arc::sdr::PulseSynth::fm(rf_words, audio, sdr_cfg);
+    expect(fm.has_value() && fm->words == audio.size(), "SDR FM pulse synthesis");
+    const std::array<std::uint8_t, 1> ook_bits{0b1010'0000U};
+    const auto ook = arc::sdr::PulseSynth::ook(rf_words, ook_bits, sdr_cfg);
+    expect(ook.has_value() && rf_words[0] == sdr_cfg.one_word && rf_words[1] == 0U, "SDR OOK pulse synthesis");
+    arc::DmaChain<1> rf_dma{};
+    expect(arc::sdr::bind_dma(rf_dma, std::span<std::uint16_t>{rf_words}).has_value() && rf_dma.head()->buffer == rf_words.data(),
+           "SDR DMA bind");
+    struct SdrPolicy {
+        static esp_err_t lcd_cam_start(const arc::sdr::TxConfig& config, const std::span<const std::uint16_t> words) noexcept
+        {
+            sdr_words = config.gpio == 4U ? words.size() : 0U;
+            return ESP_OK;
+        }
+
+        static esp_err_t lcd_cam_stop() noexcept
+        {
+            return ESP_OK;
+        }
+    };
+    expect(arc::sdr::Tx<SdrPolicy>::start(sdr_cfg, std::span<const std::uint16_t>{rf_words}).has_value() &&
+               sdr_words == rf_words.size(),
+           "SDR LCD_CAM policy start");
+
+    std::array<std::int16_t, 64> chirp{};
+    expect(arc::swarm::AcousticSlam::fmcw_chirp(chirp).has_value() && chirp[1] != 0, "Acoustic FMCW chirp");
+    const std::array<std::int16_t, 6> ref{1, 2, 3, 4, 0, 0};
+    const std::array<std::int16_t, 6> delayed{0, 1, 2, 3, 4, 0};
+    const auto tdoa = arc::swarm::AcousticSlam::tdoa(ref, delayed, 1'000U, 3U);
+    expect(tdoa.has_value() && tdoa->lag_samples == 1 && near(tdoa->delta_mm, 343.0F, 0.1F), "Acoustic TDoA");
+    std::array<arc::simd::ComplexF32, 8> fft_ref{};
+    std::array<arc::simd::ComplexF32, 8> fft_delayed{};
+    std::array<arc::simd::ComplexF32, 8> fft_scratch{};
+    fft_ref[1].re = 1.0F;
+    fft_delayed[2].re = 1.0F;
+    const auto phat = arc::swarm::AcousticSlam::gcc_phat_tdoa(fft_ref, fft_delayed, fft_scratch, 3U, 1'000.0F);
+    expect(phat.has_value(), "Acoustic SIMD FFT GCC-PHAT");
+
+    const std::array<arc::swarm::AcousticAnchor, 4> anchors{
+        arc::swarm::AcousticAnchor{.node_id = 1U, .position = {}},
+        arc::swarm::AcousticAnchor{.node_id = 2U, .position = {.x_mm = 1'000.0F}},
+        arc::swarm::AcousticAnchor{.node_id = 3U, .position = {.y_mm = 1'000.0F}},
+        arc::swarm::AcousticAnchor{.node_id = 4U, .position = {.z_mm = 1'000.0F}},
+    };
+    const arc::swarm::Position3 target{.x_mm = 300.0F, .y_mm = 400.0F, .z_mm = 500.0F};
+    std::array<float, 4> ranges{};
+    for (std::size_t i = 0U; i < anchors.size(); ++i) {
+        const auto dx = target.x_mm - anchors[i].position.x_mm;
+        const auto dy = target.y_mm - anchors[i].position.y_mm;
+        const auto dz = target.z_mm - anchors[i].position.z_mm;
+        ranges[i] = std::sqrt((dx * dx) + (dy * dy) + (dz * dz));
+    }
+    const auto solved = arc::swarm::AcousticSlam::solve(std::span<const arc::swarm::AcousticAnchor, 4>{anchors}, std::span<const float, 4>{ranges});
+    expect(solved.has_value() && near(solved->x_mm, target.x_mm, 0.5F) && near(solved->z_mm, target.z_mm, 0.5F),
+           "Acoustic 3D trilateration");
+    arc::dsp::Kalman<float, 6, 3> slam_filter{};
+    expect(arc::swarm::AcousticSlam::correct_filter(slam_filter, *solved).has_value(), "Acoustic Kalman correction");
+
+    struct HyperPolicy {
+        static esp_err_t configure(const std::span<const arc::WorldRegion> regions) noexcept
+        {
+            hypervisor_regions = regions.size();
+            return regions.size() == 2U ? ESP_OK : ESP_ERR_INVALID_ARG;
+        }
+
+        static esp_err_t core_world(std::uint32_t, arc::World) noexcept
+        {
+            return ESP_OK;
+        }
+
+        static esp_err_t peripheral_world(std::uint32_t, arc::World) noexcept
+        {
+            return ESP_OK;
+        }
+
+        static esp_err_t bind_traps() noexcept
+        {
+            ++hypervisor_traps;
+            return ESP_OK;
+        }
+
+        static esp_err_t start_core0(void (*)(void*) noexcept, void*) noexcept
+        {
+            return ESP_OK;
+        }
+
+        static arc::Result<arc::vm::TrapDecision> handle_trap(const arc::vm::TrapFrame& frame) noexcept
+        {
+            return arc::vm::TrapDecision{
+                .action = frame.kind == arc::vm::TrapKind::peripheral ? arc::vm::TrapAction::emulate : arc::vm::TrapAction::terminate,
+                .value = 0x55U,
+            };
+        }
+    };
+    std::array<std::uint8_t, 16> guest_code{};
+    std::array<std::uint8_t, 32> guest_ram{};
+    const std::array<std::uint32_t, 1> trusted_peripherals{7U};
+    const arc::vm::Partition partition{
+        .code = guest_code,
+        .ram = guest_ram,
+        .trusted_peripherals = trusted_peripherals,
+    };
+    expect(arc::vm::Hypervisor::apply<HyperPolicy>(partition).has_value() &&
+               hypervisor_regions == 2U && hypervisor_traps == 1U,
+           "Hypervisor partition apply");
+    const auto trap = arc::vm::Hypervisor::trap<HyperPolicy>({
+        .kind = arc::vm::TrapKind::peripheral,
+        .address = 0x6000'0000U,
+    });
+    expect(trap.has_value() && trap->action == arc::vm::TrapAction::emulate && trap->value == 0x55U,
+           "Hypervisor trap emulation");
+
+    struct ChaosPolicy {
+        static esp_err_t flip_sram(const std::span<std::uint8_t> sram, const std::size_t index, const std::uint8_t mask) noexcept
+        {
+            sram[index] ^= mask;
+            ++chaos_flips;
+            return ESP_OK;
+        }
+
+        static esp_err_t stall_i2c(const std::uint32_t) noexcept
+        {
+            ++chaos_stalls;
+            return ESP_OK;
+        }
+
+        static esp_err_t drop_espnow(const bool drop) noexcept
+        {
+            chaos_drops += drop ? 1U : 0U;
+            return ESP_OK;
+        }
+
+        static esp_err_t tight_overrun(const std::uint32_t) noexcept
+        {
+            ++chaos_overruns;
+            return ESP_OK;
+        }
+    };
+    using ChaosDump = arc::Postmortem<8>;
+    ChaosDump::clear();
+    arc::chaos::State chaos{};
+    std::array<std::uint8_t, 4> sram{0x10U, 0x20U, 0x30U, 0x40U};
+    expect(arc::chaos::Monkey::inject<ChaosPolicy>(chaos, arc::chaos::Fault::bit_flip, {}, sram).has_value() &&
+               chaos_flips == 1U,
+           "Chaos SRAM bit flip");
+    expect(!arc::chaos::Monkey::drop_espnow_33(chaos) &&
+               !arc::chaos::Monkey::drop_espnow_33(chaos) &&
+               arc::chaos::Monkey::drop_espnow_33(chaos),
+           "Chaos exact ESP-NOW 33 percent drop cadence");
+    arc::chaos::Monkey::record<ChaosDump>({.fault = arc::chaos::Fault::tight_overrun, .payload = 1U, .aux = 2U});
+    expect(ChaosDump::size() == 1U && ChaosDump::event(0).payload == static_cast<std::uint32_t>(arc::chaos::Fault::tight_overrun),
+           "Chaos Postmortem record");
+    arc::Rcu<std::uint32_t> recovered{};
+    arc::chaos::Monkey::recover_rcu(recovered, 99U);
+    expect(recovered.read() == 99U, "Chaos RCU recovery");
+}
+
 void test_refinit()
 {
     std::uint32_t state{};
@@ -3086,6 +3297,7 @@ int main()
     test_pru_isp_vision();
     test_vm_bpf();
     test_ulp_ml_paillier_covert();
+    test_goal_wave_surfaces();
     test_refinit();
     std::puts("arc host tests: OK");
 }
