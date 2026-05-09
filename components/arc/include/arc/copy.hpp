@@ -258,6 +258,38 @@ struct Copy {
         wait(sent());
     }
 
+    [[nodiscard]] static bool wait_for(
+        const Ticket& ticket,
+        const std::uint32_t spin_budget) noexcept
+    {
+        return wait_for(ticket.target, spin_budget);
+    }
+
+    [[nodiscard]] static bool wait_for(
+        const StrictTicket& ticket,
+        const std::uint32_t spin_budget) noexcept
+    {
+        return wait_for(ticket.target, spin_budget);
+    }
+
+    template <typename YieldPolicy>
+    [[nodiscard]] static bool wait_yield(
+        const Ticket& ticket,
+        const std::uint32_t spin_budget,
+        const std::uint32_t max_yields) noexcept
+    {
+        return wait_yield<YieldPolicy>(ticket.target, spin_budget, max_yields);
+    }
+
+    template <typename YieldPolicy>
+    [[nodiscard]] static bool wait_yield(
+        const StrictTicket& ticket,
+        const std::uint32_t spin_budget,
+        const std::uint32_t max_yields) noexcept
+    {
+        return wait_yield<YieldPolicy>(ticket.target, spin_budget, max_yields);
+    }
+
 private:
     struct State {
         async_memcpy_handle_t driver{};
@@ -323,6 +355,46 @@ private:
         while (seq_before(done(), target)) {
             __asm__ __volatile__("nop");
         }
+    }
+
+    [[nodiscard]] static bool wait_for(
+        const std::uint32_t target,
+        const std::uint32_t spin_budget) noexcept
+    {
+        auto spins = std::uint32_t{};
+        while (seq_before(done(), target)) {
+            if (spin_budget != 0U && spins++ >= spin_budget) {
+                return false;
+            }
+            __asm__ __volatile__("nop");
+        }
+        return true;
+    }
+
+    template <typename YieldPolicy>
+    [[nodiscard]] static bool wait_yield(
+        const std::uint32_t target,
+        const std::uint32_t spin_budget,
+        const std::uint32_t max_yields) noexcept
+    {
+        auto spins = std::uint32_t{};
+        auto yields = std::uint32_t{};
+        while (seq_before(done(), target)) {
+            if (spin_budget == 0U || spins++ < spin_budget) {
+                __asm__ __volatile__("nop");
+                continue;
+            }
+            spins = 0U;
+            if (max_yields != 0U && yields++ >= max_yields) {
+                return false;
+            }
+            if constexpr (requires { YieldPolicy::yield(); }) {
+                YieldPolicy::yield();
+            } else {
+                __asm__ __volatile__("nop");
+            }
+        }
+        return true;
     }
 
     template <bool Strict>

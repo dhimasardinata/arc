@@ -1,6 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
+
+#include "arc/result.hpp"
 
 namespace arc {
 
@@ -17,6 +20,48 @@ struct Hil {
             ? deadline.observed_tick - deadline.expected_tick
             : deadline.expected_tick - deadline.observed_tick;
         return diff <= deadline.tolerance_ticks;
+    }
+};
+
+enum class HilRole : std::uint8_t {
+    device_under_test,
+    physical_chaos,
+    radio_jammer,
+};
+
+enum class HilFault : std::uint8_t {
+    i2c_short_to_ground,
+    spi_cs_drop,
+    can_priority_spam,
+    espnow_jam,
+};
+
+struct HilAction {
+    HilRole role{};
+    HilFault fault{};
+    std::uint32_t at_tick{};
+    std::uint32_t duration_ticks{};
+};
+
+template <std::size_t Actions>
+struct HilScript {
+    static_assert(Actions > 0U, "HIL script needs at least one action");
+
+    HilAction actions[Actions]{};
+
+    template <typename Policy>
+    [[nodiscard]] Status run_due(const std::uint32_t tick) const noexcept
+    {
+        for (const auto action : actions) {
+            if (action.duration_ticks == 0U || tick < action.at_tick || tick >= action.at_tick + action.duration_ticks) {
+                continue;
+            }
+            const auto applied = Policy::apply(action);
+            if (applied != ESP_OK) {
+                return Status{fail(applied)};
+            }
+        }
+        return ok();
     }
 };
 

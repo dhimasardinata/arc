@@ -63,6 +63,8 @@ struct ClaimSlot {
 
 namespace detail {
 
+// Claim locks are for init/topology ownership. Runtime mixed-priority paths
+// should use a task-aware gate or mask interrupts before taking the spin gate.
 IRAM_ATTR [[gnu::always_inline]] inline void claim_lock(std::uint32_t& gate) noexcept
 {
     for (;;) {

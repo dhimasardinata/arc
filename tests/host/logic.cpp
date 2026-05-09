@@ -47,13 +47,18 @@
 #include "arc/kalman.hpp"
 #include "arc/kyber.hpp"
 #include "arc/coap.hpp"
+#include "arc/cloak.hpp"
 #include "arc/log.hpp"
+#include "arc/copy.hpp"
+#include "arc/fabric.hpp"
 #include "arc/matrix.hpp"
+#include "arc/maglev.hpp"
 #include "arc/motion.hpp"
 #include "arc/mmu_span.hpp"
 #include "arc/ml.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/mpsc.hpp"
+#include "arc/nav.hpp"
 #include "arc/netrpc.hpp"
 #include "arc/paillier.hpp"
 #include "arc/pack.hpp"
@@ -75,6 +80,7 @@
 #include "arc/secure_update.hpp"
 #include "arc/sdr.hpp"
 #include "arc/simd.hpp"
+#include "arc/snn.hpp"
 #include "arc/star_tracker.hpp"
 #include "arc/swarm.hpp"
 #include "arc/tdma.hpp"
@@ -86,6 +92,7 @@
 #include "arc/ulp_cxx.hpp"
 #include "arc/ulp_ml.hpp"
 #include "arc/usb_device.hpp"
+#include "arc/usb_host.hpp"
 #include "arc/vm.hpp"
 #include "arc/vision.hpp"
 #include "arc/wavefront.hpp"
@@ -180,6 +187,14 @@ bool intermittent_restored{};
 std::uint32_t flexroute_gpio{};
 std::uint32_t flexroute_detached{};
 std::size_t wavefront_writes{};
+std::uint32_t copy_yields{};
+std::uint32_t cloak_heavy{};
+std::uint32_t cloak_light{};
+std::uint32_t fabric_next_hop{};
+std::size_t fabric_bytes{};
+std::size_t hil_actions{};
+std::size_t usb_host_started{};
+std::size_t usb_host_submitted{};
 
 struct MockStaticI2c {
     static inline std::size_t sent{};
@@ -3300,6 +3315,175 @@ void test_resilient_edge_goal_surfaces()
            "StarTracker MMU catalog match");
 }
 
+void test_current_goal_surfaces()
+{
+    const arc::Copy<>::Ticket pending_copy{.target = 1U};
+    expect(!arc::Copy<>::wait_for(pending_copy, 2U), "Copy bounded wait reports unfinished target");
+    struct CopyYield {
+        static void yield() noexcept
+        {
+            ++copy_yields;
+        }
+    };
+    copy_yields = 0U;
+    expect(!arc::Copy<>::wait_yield<CopyYield>(pending_copy, 1U, 2U) && copy_yields == 2U,
+           "Copy wait_yield calls policy instead of hard spinning forever");
+
+    struct CloakPolicy {
+        static std::uint32_t rng() noexcept
+        {
+            return 3U;
+        }
+
+        static void heavy() noexcept
+        {
+            ++cloak_heavy;
+        }
+
+        static void light() noexcept
+        {
+            ++cloak_light;
+        }
+    };
+    cloak_heavy = 0U;
+    cloak_light = 0U;
+    const std::array cloak_dummy{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+    const auto cloak_stats = arc::crypto::Cloak::scramble<CloakPolicy>(
+        {.stall_mask = 0x03U, .dummy_reads = 3U},
+        cloak_dummy);
+    expect(cloak_stats.stalls == 4U && cloak_stats.dummy_reads == 3U, "Cloak scrambling budget");
+    const auto flatten_stats = arc::crypto::Cloak::flatten<CloakPolicy>({.flatten_ticks = 3U}, 1U);
+    expect(flatten_stats.flatten_heavy == 1U && flatten_stats.flatten_light == 2U &&
+               cloak_heavy == 1U && cloak_light == 2U,
+           "Cloak power flatten policy hooks");
+    const auto cloaked = arc::crypto::Cloak::run<CloakPolicy>(
+        {.stall_mask = 0U, .dummy_reads = 1U, .flatten_ticks = 1U},
+        cloak_dummy,
+        []() noexcept { return 42; });
+    expect(cloaked == 42, "Cloak run returns protected result");
+
+    arc::nav::Eskf<float>::State eskf{};
+    const auto predicted = arc::nav::Eskf<float>::predict(
+        eskf,
+        {.gyro_rad_s = {0.0F, 0.0F, 1.0F}, .accel_m_s2 = {1.0F, 0.0F, 0.0F}, .dt_s = 0.01F});
+    expect(predicted.has_value() && eskf.velocity[0] > 0.0F && eskf.covariance(0, 0) > 0.0F,
+           "ESKF IMU prediction");
+    expect(arc::nav::Eskf<float>::correct_pose(eskf, {1.0F, 2.0F, 3.0F}, {.w = 1.0F}, 0.5F).has_value() &&
+               near(eskf.position[0], 0.50005F, 0.001F),
+           "ESKF slow sensor correction");
+
+    std::array<std::int8_t, 32> snn_weights{};
+    for (auto& weight : snn_weights) {
+        weight = 8;
+    }
+    arc::ml::Snn<16, 2> snn{
+        .weights = std::span<const std::int8_t, 32>{snn_weights},
+        .params = {.threshold = 64, .leak = 0, .reset = 0},
+    };
+    const std::array<std::int8_t, 16> snn_input{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    std::array<std::uint8_t, 2> snn_spikes{};
+    expect(snn.step(std::span<const std::int8_t, 16>{snn_input}, std::span<std::uint8_t, 2>{snn_spikes}).has_value() &&
+               snn_spikes[0] == 1U && snn_spikes[1] == 1U,
+           "SNN LIF layer spikes");
+
+    struct FabricPolicy {
+        static esp_err_t send(const std::uint32_t next_hop, const std::span<const std::uint8_t> bytes) noexcept
+        {
+            fabric_next_hop = next_hop;
+            fabric_bytes = bytes.size();
+            return ESP_OK;
+        }
+    };
+    const arc::net::FabricTable<1> fabric_routes{.routes = {arc::net::FabricRoute{.dst = 4U, .next_hop = 2U, .ttl = 2U}}};
+    auto fabric_packet = arc::net::Fabric::make<8>(1U, 4U, std::span<const std::uint8_t>{snn_spikes}, 2U);
+    const arc::net::SwarmSchedule<2> mesh_schedule{
+        .node_ids = {1U, 2U},
+        .tdma = {.period_us = 200U, .slot_us = 100U},
+    };
+    expect(fabric_packet.has_value() &&
+               arc::net::Fabric::forward<FabricPolicy>(fabric_routes, *fabric_packet, mesh_schedule, 150U).has_value() &&
+               fabric_next_hop == 2U && fabric_bytes == 2U && fabric_packet->ttl == 1U,
+           "Fabric deterministic TDMA forward");
+
+    using Mag = arc::MagLev<1>;
+    Mag::State mag_state{};
+    Mag::Model mag_model{};
+    mag_model.d[0][0] = 1.0F;
+    const auto mag_duty = Mag::stabilize(mag_state, mag_model, Mag::Vec{2.0F}, {.min = -0.5F, .max = 0.5F});
+    expect(mag_duty.has_value() && near((*mag_duty)[0], 0.5F), "MagLev state-space clamp");
+
+    struct HilPolicy {
+        static esp_err_t apply(const arc::HilAction&) noexcept
+        {
+            ++hil_actions;
+            return ESP_OK;
+        }
+    };
+    const arc::HilScript<2> hil_script{.actions = {
+                                           arc::HilAction{
+                                               .role = arc::HilRole::physical_chaos,
+                                               .fault = arc::HilFault::i2c_short_to_ground,
+                                               .at_tick = 10U,
+                                               .duration_ticks = 5U,
+                                           },
+                                           arc::HilAction{
+                                               .role = arc::HilRole::radio_jammer,
+                                               .fault = arc::HilFault::espnow_jam,
+                                               .at_tick = 12U,
+                                               .duration_ticks = 1U,
+                                           },
+                                       }};
+    hil_actions = 0U;
+    expect(hil_script.run_due<HilPolicy>(12U).has_value() && hil_actions == 2U, "HIL script applies due faults");
+
+    const std::array<std::int16_t, 4> audio_samples{10, -10, 20, -20};
+    std::array<std::int8_t, 2> audio_bins{};
+    expect(arc::ulp::ml::AudioSignature<4, 2>::bins(
+               std::span<const std::int16_t, 4>{audio_samples},
+               std::span<std::int8_t, 2>{audio_bins},
+               10) &&
+               audio_bins[0] == 2 && audio_bins[1] == 4,
+           "ULP audio signature bins");
+
+    struct UsbHostPolicy {
+        static esp_err_t host_start(const arc::usb::HostConfig&) noexcept
+        {
+            ++usb_host_started;
+            return ESP_OK;
+        }
+
+        static arc::Result<arc::usb::HostDevice> host_poll(const std::uint32_t) noexcept
+        {
+            return arc::usb::HostDevice{.address = 2U, .vid = 0x1209U, .pid = 0x0001U, .configured = true};
+        }
+
+        static arc::Result<std::size_t> host_submit(const arc::usb::HostTransfer transfer) noexcept
+        {
+            ++usb_host_submitted;
+            return transfer.tx.size() + transfer.rx.size();
+        }
+
+        static esp_err_t host_stop() noexcept
+        {
+            return ESP_OK;
+        }
+    };
+    std::array<std::uint8_t, 2> usb_tx{1U, 2U};
+    std::array<std::uint8_t, 4> usb_rx{};
+    const auto usb_device = arc::usb::Host::poll<UsbHostPolicy>();
+    const auto usb_bytes = arc::usb::Host::submit<UsbHostPolicy>({
+        .address = 2U,
+        .endpoint = 1U,
+        .tx = usb_tx,
+        .rx = usb_rx,
+    });
+    expect(arc::usb::Host::start<UsbHostPolicy>().has_value() &&
+               usb_device.has_value() && usb_device->configured &&
+               usb_bytes.has_value() && *usb_bytes == 6U && usb_host_started == 1U && usb_host_submitted == 1U &&
+               arc::usb::Host::stop<UsbHostPolicy>().has_value(),
+           "USB host policy facade");
+}
+
 void test_refinit()
 {
     std::uint32_t state{};
@@ -3474,6 +3658,7 @@ int main()
     test_ulp_ml_paillier_covert();
     test_goal_wave_surfaces();
     test_resilient_edge_goal_surfaces();
+    test_current_goal_surfaces();
     test_refinit();
     std::puts("arc host tests: OK");
 }

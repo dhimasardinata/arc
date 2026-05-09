@@ -70,11 +70,7 @@ template <Endian Order, typename Field>
                   (Order == Endian::little && std::endian::native == std::endian::big)) {
         raw = std::byteswap(raw);
     }
-    if constexpr (std::is_enum_v<std::remove_cvref_t<Field>>) {
-        return static_cast<Field>(static_cast<WireTypeT<Field>>(raw));
-    } else {
-        return static_cast<Field>(static_cast<WireTypeT<Field>>(raw));
-    }
+    return static_cast<Field>(static_cast<WireTypeT<Field>>(raw));
 }
 
 }  // namespace detail

@@ -572,6 +572,7 @@ struct RefLease {
 
     [[nodiscard]] static RefLease adopt(std::uint32_t& state) noexcept
     {
+        configASSERT(RefInit::refs(state) > 0U);
         return RefLease(state);
     }
 

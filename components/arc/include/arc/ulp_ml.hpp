@@ -84,6 +84,62 @@ template <std::size_t Bytes>
     return out;
 }
 
+template <std::size_t Samples, std::size_t Bins>
+struct AudioSignature {
+    static_assert(Samples > 0U && Bins > 0U, "audio signature dimensions must be non-zero");
+    static_assert((Samples % Bins) == 0U, "samples must split evenly into bins");
+
+    [[nodiscard]] static constexpr bool bins(
+        const std::span<const std::int16_t, Samples> samples,
+        const std::span<std::int8_t, Bins> out,
+        const std::int32_t scale = 256) noexcept
+    {
+        if (scale <= 0) {
+            return false;
+        }
+        constexpr auto bin_samples = Samples / Bins;
+        for (std::size_t bin = 0U; bin < Bins; ++bin) {
+            std::int32_t energy{};
+            for (std::size_t i = 0U; i < bin_samples; ++i) {
+                const auto sample = samples[(bin * bin_samples) + i];
+                energy += sample < 0 ? -sample : sample;
+            }
+            out[bin] = saturate_s8(energy / scale);
+        }
+        return true;
+    }
+};
+
+template <typename Source, std::size_t Samples, std::size_t Bins, std::size_t Classes, typename Policy = IoStubPolicy>
+struct AudioSignatureWake {
+    using Model = QuantDenseS8<Bins, Classes>;
+
+    [[nodiscard]] static Status run_once(
+        const Model& model,
+        const std::span<std::int8_t, Classes> logits,
+        const std::int8_t threshold,
+        const std::int32_t scale = 256) noexcept
+    {
+        std::array<std::int16_t, Samples> samples{};
+        auto read = Source::read(std::span<std::int16_t, Samples>{samples});
+        if (!read) {
+            return read;
+        }
+
+        std::array<std::int8_t, Bins> features{};
+        if (!AudioSignature<Samples, Bins>::bins(std::span<const std::int16_t, Samples>{samples}, features, scale) ||
+            !model.eval(std::span<const std::int8_t, Bins>{features}, logits)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+
+        auto best = logits[0];
+        for (std::size_t i = 1U; i < Classes; ++i) {
+            best = logits[i] > best ? logits[i] : best;
+        }
+        return best >= threshold ? status(Policy::wake_main()) : ok();
+    }
+};
+
 template <int Port,
           std::uint8_t Address,
           std::size_t Bytes,
