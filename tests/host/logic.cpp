@@ -61,6 +61,7 @@
 #include "arc/copy.hpp"
 #include "arc/fabric.hpp"
 #include "arc/matrix.hpp"
+#include "arc/migrator.hpp"
 #include "arc/maglev.hpp"
 #include "arc/motion.hpp"
 #include "arc/mmu_span.hpp"
@@ -77,6 +78,7 @@
 #include "arc/pms.hpp"
 #include "arc/pmr.hpp"
 #include "arc/postmortem.hpp"
+#include "arc/power_profiler.hpp"
 #include "arc/power_governor.hpp"
 #include "arc/probe.hpp"
 #include "arc/provisioning.hpp"
@@ -112,6 +114,8 @@
 #include "arc/vm.hpp"
 #include "arc/wasm_aot.hpp"
 #include "arc/vision.hpp"
+#include "arc/vslam.hpp"
+#include "arc/ftm.hpp"
 #include "arc/wavefront.hpp"
 #include "arc/ws.hpp"
 #include "arc/w5500.hpp"
@@ -245,6 +249,15 @@ std::uint32_t governor_boosts{};
 std::uint32_t governor_releases{};
 std::size_t wasm_finalized_words{};
 std::size_t wasm_guard_regions{};
+std::uint8_t ftm_channel{};
+std::uint8_t ftm_frames{};
+std::uint16_t migration_peer{};
+std::size_t migration_bytes{};
+std::uint32_t migration_process{};
+std::uint32_t migration_ip{};
+std::uint32_t migration_sp{};
+std::uint16_t profiler_current{};
+std::uint32_t profiler_pc{};
 std::array<std::uint8_t, 64> live_trace_buffer{};
 
 struct MockStaticI2c {
@@ -3671,6 +3684,187 @@ void test_current_goal_surfaces()
                cool_decision->action == arc::power::GovernorAction::release &&
                governor_boosts == 1U && governor_releases == 1U,
            "Governor predicts slack and applies CPU lock policy");
+
+    struct VslamCamera {
+        static esp_err_t capture_gray(const std::span<std::uint8_t> frame) noexcept
+        {
+            for (std::size_t i = 0U; i < frame.size(); ++i) {
+                frame[i] = static_cast<std::uint8_t>(i);
+            }
+            return ESP_OK;
+        }
+    };
+    std::array<std::uint8_t, 100> gray{};
+    const auto captured_gray = arc::vision::VSlam::capture_gray<VslamCamera>(gray);
+    expect(captured_gray.has_value() && (*captured_gray)[7] == 7U,
+           "VSlam captures grayscale frames into caller DMA span");
+    for (auto& pixel : gray) {
+        pixel = 10U;
+    }
+    constexpr std::array<std::array<int, 2>, 16> fast_circle{{
+        {{0, -3}},
+        {{1, -3}},
+        {{2, -2}},
+        {{3, -1}},
+        {{3, 0}},
+        {{3, 1}},
+        {{2, 2}},
+        {{1, 3}},
+        {{0, 3}},
+        {{-1, 3}},
+        {{-2, 2}},
+        {{-3, 1}},
+        {{-3, 0}},
+        {{-3, -1}},
+        {{-2, -2}},
+        {{-1, -3}},
+    }};
+    for (const auto& offset : fast_circle) {
+        const auto yy = static_cast<std::size_t>(5 + offset[1]);
+        const auto xx = static_cast<std::size_t>(5 + offset[0]);
+        gray[(yy * 10U) + xx] = 240U;
+    }
+    std::array<arc::vision::Corner, 64> corners{};
+    const auto fast = arc::vision::VSlam::fast_corners(gray, 10U, 10U, corners, 40U);
+    const std::array<arc::vision::Corner, 2> prev_corners{
+        arc::vision::Corner{.x = 10U, .y = 10U, .score = 12U},
+        arc::vision::Corner{.x = 20U, .y = 12U, .score = 12U},
+    };
+    const std::array<arc::vision::Corner, 2> curr_corners{
+        arc::vision::Corner{.x = 12U, .y = 11U, .score = 12U},
+        arc::vision::Corner{.x = 22U, .y = 13U, .score = 12U},
+    };
+    const auto essential = arc::vision::VSlam::essential_from_flow(prev_corners, curr_corners, 2U, 100.0F);
+    arc::nav::Eskf<float>::State vision_state{};
+    expect(fast.has_value() && !fast->empty() && essential.has_value() &&
+               near(essential->essential(1, 2), -0.02F) &&
+               arc::vision::VSlam::correct_filter(vision_state, essential->delta, 1.0F).has_value() &&
+               near(vision_state.position[0], 0.02F, 0.001F),
+           "VSlam extracts FAST corners, solves essential delta, and corrects ESKF");
+
+    struct FtmPolicy {
+        static esp_err_t ftm_initiate(
+            const arc::net::FtmPeer peer,
+            const arc::net::FtmSessionConfig config) noexcept
+        {
+            ftm_channel = peer.channel;
+            ftm_frames = config.frames;
+            return ESP_OK;
+        }
+    };
+    const std::array<arc::net::FtmPeer, 4> ftm_peers{
+        arc::net::FtmPeer{.node_id = 1U, .position = {.x_mm = 0.0F, .y_mm = 0.0F, .z_mm = 0.0F}, .channel = 6U},
+        arc::net::FtmPeer{.node_id = 2U, .position = {.x_mm = 1000.0F, .y_mm = 0.0F, .z_mm = 0.0F}, .channel = 6U},
+        arc::net::FtmPeer{.node_id = 3U, .position = {.x_mm = 0.0F, .y_mm = 1000.0F, .z_mm = 0.0F}, .channel = 6U},
+        arc::net::FtmPeer{.node_id = 4U, .position = {.x_mm = 0.0F, .y_mm = 0.0F, .z_mm = 1000.0F}, .channel = 6U},
+    };
+    const arc::swarm::Position3 rf_point{.x_mm = 100.0F, .y_mm = 200.0F, .z_mm = 300.0F};
+    const auto rf_range = [](const arc::swarm::Position3 anchor, const arc::swarm::Position3 point) noexcept {
+        const auto dx = point.x_mm - anchor.x_mm;
+        const auto dy = point.y_mm - anchor.y_mm;
+        const auto dz = point.z_mm - anchor.z_mm;
+        return std::sqrt((dx * dx) + (dy * dy) + (dz * dz));
+    };
+    const std::array<arc::net::FtmMeasurement, 4> ftm_ranges{
+        arc::net::FtmMeasurement{.node_id = 1U, .distance_mm = rf_range(ftm_peers[0].position, rf_point)},
+        arc::net::FtmMeasurement{.node_id = 2U, .distance_mm = rf_range(ftm_peers[1].position, rf_point)},
+        arc::net::FtmMeasurement{.node_id = 3U, .distance_mm = rf_range(ftm_peers[2].position, rf_point)},
+        arc::net::FtmMeasurement{.node_id = 4U, .distance_mm = rf_range(ftm_peers[3].position, rf_point)},
+    };
+    ftm_channel = 0U;
+    ftm_frames = 0U;
+    const auto ftm_position = arc::net::Ftm::trilaterate(
+        std::span<const arc::net::FtmPeer, 4>{ftm_peers},
+        std::span<const arc::net::FtmMeasurement, 4>{ftm_ranges});
+    expect(arc::net::Ftm::initiate<FtmPolicy>(ftm_peers[0], {.frames = 16U}).has_value() &&
+               ftm_channel == 6U && ftm_frames == 16U &&
+               arc::net::Ftm::measurement(9U, 10U).distance_mm > 0.0F &&
+               ftm_position.has_value() && near(ftm_position->x_mm, rf_point.x_mm, 0.1F) &&
+               near(ftm_position->y_mm, rf_point.y_mm, 0.1F) &&
+               near(ftm_position->z_mm, rf_point.z_mm, 0.1F),
+           "FTM starts ESP-IDF session policy and solves RF trilateration");
+
+    struct MigrationPolicy {
+        static esp_err_t send(
+            const std::uint16_t peer,
+            const std::span<const std::uint8_t> bytes) noexcept
+        {
+            migration_peer = peer;
+            migration_bytes = bytes.size();
+            return ESP_OK;
+        }
+
+        static esp_err_t resume_wasm(
+            const std::uint32_t process,
+            const std::uint32_t ip,
+            const std::uint32_t sp,
+            const std::span<std::uint8_t>) noexcept
+        {
+            migration_process = process;
+            migration_ip = ip;
+            migration_sp = sp;
+            return ESP_OK;
+        }
+    };
+    const std::array<std::uint8_t, 4> wasm_memory{1U, 2U, 3U, 4U};
+    const auto migrate_decision = arc::swarm::Migrator::from_governor(
+        {.action = arc::power::GovernorAction::boost, .predicted_slack = -5, .overrun_risk = true},
+        77U);
+    const auto migration_frame = arc::swarm::Migrator::snapshot<16>(
+        3U,
+        {
+            .linear_memory = wasm_memory,
+            .stack_pointer = 0x100U,
+            .instruction_pointer = 0x200U,
+            .fuel = 9U,
+        });
+    std::array<std::uint8_t, 16> resumed_memory{};
+    migration_peer = 0U;
+    migration_bytes = 0U;
+    migration_process = 0U;
+    expect(migrate_decision.migrate && migration_frame.has_value() &&
+               arc::swarm::Migrator::teleport<MigrationPolicy>(migrate_decision.peer, *migration_frame).has_value() &&
+               arc::swarm::Migrator::resume<MigrationPolicy>(*migration_frame, resumed_memory).has_value() &&
+               migration_peer == 77U && migration_bytes > wasm_memory.size() &&
+               migration_process == 3U && migration_ip == 0x200U && migration_sp == 0x100U &&
+               resumed_memory[0] == 1U && resumed_memory[3] == 4U,
+           "Migrator snapshots, teleports, and resumes WASM process state");
+
+    struct ProfilerPolicy {
+        static arc::Result<std::uint16_t> current_milliamps() noexcept
+        {
+            return profiler_current;
+        }
+
+        static arc::Result<std::uint32_t> program_counter() noexcept
+        {
+            return profiler_pc;
+        }
+    };
+    profiler_current = 123U;
+    profiler_pc = 0x40080000U;
+    const auto power_sample = arc::power::Profiler::sample<ProfilerPolicy>(50U);
+    const std::array<std::uint16_t, 2> current_lsb{10U, 20U};
+    const std::array<std::uint32_t, 2> pcs{0x10U, 0x20U};
+    std::array<arc::power::PowerSample, 2> power_samples{};
+    std::array<std::uint8_t, 128> perfetto_json{};
+    const auto interleaved = arc::power::Profiler::interleave(
+        current_lsb,
+        pcs,
+        power_samples,
+        {.sample_hz = 40'000U, .milliamps_per_lsb = 2.0F});
+    const auto heatmap = power_sample.has_value()
+        ? arc::power::Profiler::perfetto_counter(perfetto_json, *power_sample)
+        : arc::Result<std::span<const std::uint8_t>>{arc::fail(ESP_ERR_INVALID_STATE)};
+    const std::string_view heatmap_text{
+        heatmap.has_value() ? reinterpret_cast<const char*>(heatmap->data()) : "",
+        heatmap.has_value() ? heatmap->size() : 0U,
+    };
+    expect(power_sample.has_value() && power_sample->milliamps == 123U &&
+               interleaved.has_value() && interleaved->size() == 2U &&
+               (*interleaved)[1].tick == 25U && (*interleaved)[1].milliamps == 40U &&
+               heatmap.has_value() && heatmap_text.find("milliamps") != std::string_view::npos,
+           "Power Profiler interleaves 40kHz current samples with trace PCs");
 
     struct LiFiPolicy {
         static esp_err_t send(const std::span<const arc::optical::LiFiSymbol> symbols) noexcept

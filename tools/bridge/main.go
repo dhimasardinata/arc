@@ -21,6 +21,11 @@ type field struct {
 	size int
 }
 
+type decodedField struct {
+	name  string
+	value string
+}
+
 var typeSize = map[string]int{
 	"u8":  1,
 	"i8":  1,
@@ -120,8 +125,36 @@ func jsonQuote(text string) string {
 	return b.String()
 }
 
-func decodeFrame(fields []field, order binary.ByteOrder, frame []byte) string {
+func fieldString(f field, order binary.ByteOrder, frame []byte) string {
+	switch f.kind {
+	case "u8":
+		return strconv.FormatUint(uint64(frame[0]), 10)
+	case "i8":
+		return strconv.FormatInt(int64(int8(frame[0])), 10)
+	case "u16":
+		return strconv.FormatUint(uint64(order.Uint16(frame)), 10)
+	case "i16":
+		return strconv.FormatInt(int64(int16(order.Uint16(frame))), 10)
+	case "u32":
+		return strconv.FormatUint(uint64(order.Uint32(frame)), 10)
+	case "i32":
+		return strconv.FormatInt(int64(int32(order.Uint32(frame))), 10)
+	case "u64":
+		return strconv.FormatUint(order.Uint64(frame), 10)
+	case "i64":
+		return strconv.FormatInt(int64(order.Uint64(frame)), 10)
+	case "f32":
+		return strconv.FormatFloat(float64(math.Float32frombits(order.Uint32(frame))), 'g', -1, 32)
+	case "f64":
+		return strconv.FormatFloat(math.Float64frombits(order.Uint64(frame)), 'g', -1, 64)
+	default:
+		return "0"
+	}
+}
+
+func decodeFrame(fields []field, order binary.ByteOrder, frame []byte, values []decodedField) (string, []decodedField) {
 	var b strings.Builder
+	values = values[:0]
 	b.WriteByte('{')
 	pos := 0
 	for index, f := range fields {
@@ -130,31 +163,35 @@ func decodeFrame(fields []field, order binary.ByteOrder, frame []byte) string {
 		}
 		b.WriteString(jsonQuote(f.name))
 		b.WriteByte(':')
-		switch f.kind {
-		case "u8":
-			b.WriteString(strconv.FormatUint(uint64(frame[pos]), 10))
-		case "i8":
-			b.WriteString(strconv.FormatInt(int64(int8(frame[pos])), 10))
-		case "u16":
-			b.WriteString(strconv.FormatUint(uint64(order.Uint16(frame[pos:])), 10))
-		case "i16":
-			b.WriteString(strconv.FormatInt(int64(int16(order.Uint16(frame[pos:]))), 10))
-		case "u32":
-			b.WriteString(strconv.FormatUint(uint64(order.Uint32(frame[pos:])), 10))
-		case "i32":
-			b.WriteString(strconv.FormatInt(int64(int32(order.Uint32(frame[pos:]))), 10))
-		case "u64":
-			b.WriteString(strconv.FormatUint(order.Uint64(frame[pos:]), 10))
-		case "i64":
-			b.WriteString(strconv.FormatInt(int64(order.Uint64(frame[pos:])), 10))
-		case "f32":
-			b.WriteString(strconv.FormatFloat(float64(math.Float32frombits(order.Uint32(frame[pos:]))), 'g', -1, 32))
-		case "f64":
-			b.WriteString(strconv.FormatFloat(math.Float64frombits(order.Uint64(frame[pos:])), 'g', -1, 64))
-		}
+		value := fieldString(f, order, frame[pos:])
+		values = append(values, decodedField{name: f.name, value: value})
+		b.WriteString(value)
 		pos += f.size
 	}
 	b.WriteByte('}')
+	return b.String(), values
+}
+
+func decodedValue(fields []decodedField, name string) string {
+	for _, field := range fields {
+		if field.name == name {
+			return field.value
+		}
+	}
+	return "0"
+}
+
+func perfettoPowerJSON(topic string, receiveNS int64, fields []decodedField, powerField string, pcField string) string {
+	var b strings.Builder
+	b.WriteString(`{"name":"arc.power","ph":"C","ts":`)
+	b.WriteString(strconv.FormatInt(receiveNS/1000, 10))
+	b.WriteString(`,"args":{"topic":`)
+	b.WriteString(jsonQuote(topic))
+	b.WriteString(`,"milliamps":`)
+	b.WriteString(decodedValue(fields, powerField))
+	b.WriteString(`,"pc":`)
+	b.WriteString(decodedValue(fields, pcField))
+	b.WriteString(`}}`)
 	return b.String()
 }
 
@@ -356,6 +393,9 @@ func main() {
 	schemaText := flag.String("schema", "", "Comma list like u32:seq,i16:temp")
 	endian := flag.String("endian", "big", "big or little")
 	topic := flag.String("topic", "/arc/telemetry", "Foxglove topic")
+	perfettoPower := flag.Bool("perfetto-power", false, "emit Perfetto counter JSON for power/current fields")
+	powerField := flag.String("power-field", "milliamps", "decoded field name containing current in milliamps")
+	pcField := flag.String("pc-field", "pc", "decoded field name containing instruction/program counter")
 	flag.Parse()
 
 	fields, frameSize, err := parseSchema(*schemaText)
@@ -379,6 +419,7 @@ func main() {
 	defer conn.Close()
 
 	buf := make([]byte, 64*1024)
+	decodedScratch := make([]decodedField, 0, len(fields))
 	for {
 		n, _, err := conn.ReadFrom(buf)
 		if err != nil {
@@ -389,13 +430,19 @@ func main() {
 			continue
 		}
 		for off := 0; off < n; off += frameSize {
+			receiveNS := time.Now().UnixNano()
+			message, values := decodeFrame(fields, order, buf[off:off+frameSize], decodedScratch)
 			line := []byte(
 				`{"topic":` + jsonQuote(*topic) +
-					`,"receive_time":` + strconv.FormatInt(time.Now().UnixNano(), 10) +
-					`,"message":` + decodeFrame(fields, order, buf[off:off+frameSize]) +
+					`,"receive_time":` + strconv.FormatInt(receiveNS, 10) +
+					`,"message":` + message +
 					`}`,
 			)
-			fmt.Println(string(line))
+			if *perfettoPower {
+				fmt.Println(perfettoPowerJSON(*topic, receiveNS, values, *powerField, *pcField))
+			} else {
+				fmt.Println(string(line))
+			}
 			stream.publish(line)
 		}
 	}

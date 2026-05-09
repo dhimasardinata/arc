@@ -119,6 +119,11 @@ jobs:
         run: |
           go run tools/arc-gen.go -root .
 
+      - name: Host realtime audit
+        shell: bash
+        run: |
+          go run tools/arc-audit.go -root .
+
       - name: Build all
         shell: bash
         run: |
