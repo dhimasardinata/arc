@@ -933,7 +933,7 @@ Arc has experimental ESP32-S31 scaffolding without changing the default ESP32-S3
 - `ARC_TARGET=esp32s31` only configures when `ARC_EXPERIMENTAL_ESP32S31=ON` is also set.
 - Any unknown `ARC_TARGET` fails during configure.
 
-ESP32-S3 examples now live under `examples/esp32s3/`. Target-neutral examples live under `examples/portable/`. ESP32-S31 scaffolds live under `examples/esp32s31/` and are intentionally skipped by default CI until ESP-IDF exposes a usable `esp32s31` target.
+ESP32-S3 examples now live under `examples/esp32s3/` and each declares `arc_target(esp32s3)`, so they fail fast instead of inheriting an incompatible experimental target from the shell. Target-neutral examples live under `examples/portable/`. ESP32-S31 scaffolds live under `examples/esp32s31/`, declare `arc_target(esp32s31)`, and are intentionally skipped by default CI until ESP-IDF exposes a usable `esp32s31` target.
 
 Example S31 configure flow:
 

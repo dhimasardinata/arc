@@ -91,6 +91,18 @@ for file in "${project_cmakelists[@]}"; do
     fi
 done
 
+while IFS= read -r file; do
+    if ! grep -qE 'arc_target\(esp32s3\)' "$file"; then
+        die "$file must declare arc_target(esp32s3)"
+    fi
+done < <(find examples/esp32s3 -mindepth 2 -maxdepth 2 -type f -name CMakeLists.txt | sort)
+
+while IFS= read -r file; do
+    if ! grep -qE 'arc_target\(esp32s31\)' "$file"; then
+        die "$file must declare arc_target(esp32s31)"
+    fi
+done < <(find examples/esp32s31 -mindepth 2 -maxdepth 2 -type f -name CMakeLists.txt | sort)
+
 if ! grep -qE 'set\(ARC_TARGET "esp32s3".*CACHE STRING' cmake/arc-idf.cmake; then
     die "cmake/arc-idf.cmake no longer defaults ARC_TARGET to esp32s3"
 fi

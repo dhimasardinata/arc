@@ -26,6 +26,7 @@ else()
 endif()
 
 include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/arc-idf.cmake)
+arc_target(esp32s3)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(arc_bench)
 
