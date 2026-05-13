@@ -15,6 +15,11 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+sys.dont_write_bytecode = True
+
+from arc_projects import projects as arc_projects  # noqa: E402
+
 DEFAULT_OUTPUT = ROOT / "compile_commands.json"
 ARC_INCLUDE_DIR = ROOT / "components" / "arc" / "include"
 CXX_SOURCE_SUFFIXES = {".cc", ".cpp", ".cxx", ".c++"}
@@ -68,15 +73,7 @@ def display(path: Path) -> str:
 
 
 def project_dirs() -> list[Path]:
-    examples = ROOT / "examples"
-    projects = [ROOT]
-    if examples.is_dir():
-        projects.extend(
-            cmake.parent
-            for cmake in sorted(examples.rglob("CMakeLists.txt"))
-            if cmake.parent.name != "main" and (cmake.parent / "main" / "CMakeLists.txt").is_file()
-        )
-    return projects
+    return [project.path for project in arc_projects()]
 
 
 def default_database_for_project(project: Path) -> Path | None:

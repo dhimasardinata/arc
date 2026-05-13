@@ -22,6 +22,21 @@ grep_files() {
     grep -nE "$pattern" "${files[@]}"
 }
 
+load_arc_projects() {
+    local target_var="$1"
+    shift
+    local output
+    if ! output="$(./tools/arc-projects.py "$@")"; then
+        die "tools/arc-projects.py failed"
+    fi
+
+    local -n projects_ref="$target_var"
+    projects_ref=()
+    if [[ -n "$output" ]]; then
+        mapfile -t projects_ref <<< "$output"
+    fi
+}
+
 git diff --check --cached >/dev/null 2>&1 || die "staged diff contains whitespace errors"
 
 ./tools/format.sh --check || die "format check failed; run ./tools/format.sh"
@@ -77,13 +92,15 @@ if grep_files '^[[:space:]]*idf\.py set-target ' "${docs[@]}" >/dev/null 2>&1; t
     die "docs or workflows still tell users to run set-target; use ARC_TARGET through cmake/arc-idf.cmake"
 fi
 
-mapfile -t project_cmakelists < <(
-    {
-        printf '%s\n' CMakeLists.txt
-        find examples -mindepth 2 -maxdepth 3 -type f -name CMakeLists.txt \
-            ! -path '*/main/CMakeLists.txt' | sort
-    }
-)
+load_arc_projects project_dirs
+project_cmakelists=()
+for dir in "${project_dirs[@]}"; do
+    if [[ "$dir" == "." ]]; then
+        project_cmakelists+=("CMakeLists.txt")
+    else
+        project_cmakelists+=("$dir/CMakeLists.txt")
+    fi
+done
 
 for file in "${project_cmakelists[@]}"; do
     if ! grep -qE 'arc-idf\.cmake' "$file"; then
@@ -95,17 +112,19 @@ if ! grep -qE 'arc_target\(esp32s3\)' CMakeLists.txt; then
     die "root firmware CMakeLists.txt must declare arc_target(esp32s3)"
 fi
 
-while IFS= read -r file; do
-    if ! grep -qE 'arc_target\(esp32s3\)' "$file"; then
-        die "$file must declare arc_target(esp32s3)"
+load_arc_projects esp32s3_dirs --examples --target esp32s3
+for dir in "${esp32s3_dirs[@]}"; do
+    if ! grep -qE 'arc_target\(esp32s3\)' "$dir/CMakeLists.txt"; then
+        die "$dir/CMakeLists.txt must declare arc_target(esp32s3)"
     fi
-done < <(find examples/esp32s3 -mindepth 2 -maxdepth 2 -type f -name CMakeLists.txt | sort)
+done
 
-while IFS= read -r file; do
-    if ! grep -qE 'arc_target\(esp32s31\)' "$file"; then
-        die "$file must declare arc_target(esp32s31)"
+load_arc_projects esp32s31_dirs --examples --target esp32s31
+for dir in "${esp32s31_dirs[@]}"; do
+    if ! grep -qE 'arc_target\(esp32s31\)' "$dir/CMakeLists.txt"; then
+        die "$dir/CMakeLists.txt must declare arc_target(esp32s31)"
     fi
-done < <(find examples/esp32s31 -mindepth 2 -maxdepth 2 -type f -name CMakeLists.txt | sort)
+done
 
 if ! grep -qE 'set\(ARC_TARGET "esp32s3".*CACHE STRING' cmake/arc-idf.cmake; then
     die "cmake/arc-idf.cmake no longer defaults ARC_TARGET to esp32s3"
@@ -153,12 +172,12 @@ if ! grep -qE 'ARC_TARGET:-esp32s3|arc_target.*esp32s3' env.sh env.fish; then
     die "env loaders no longer default IDF_TARGET to esp32s3"
 fi
 
-if ! grep -qE 'find examples -mindepth 2 -maxdepth 3' .github/workflows/build.yml; then
-    die "build workflow must auto-discover nested examples instead of hardcoding a partial list"
+if ! grep -qE '\./tools/arc-projects\.py --buildable' .github/workflows/build.yml; then
+    die "build workflow must discover build projects through tools/arc-projects.py"
 fi
 
-if ! grep -qE 'examples/esp32s31/\*' .github/workflows/build.yml; then
-    die "build workflow must skip experimental ESP32-S31 examples by default"
+if grep -qE 'find examples -mindepth .*CMakeLists\.txt' .github/workflows/build.yml; then
+    die "build workflow must not duplicate raw example project discovery"
 fi
 
 if ! grep -qE '\./tools/host-tests\.sh' .github/workflows/build.yml; then
@@ -190,13 +209,17 @@ required_exec=(
     tools/sync-idf.sh
     tools/dump-source.py
     tools/arc-pack-bridge.py
+    tools/arc-projects.py
     tools/clangd-compile-commands.py
     tools/format.sh
     tools/install-git-hooks.sh
 )
-while IFS= read -r file; do
-    required_exec+=("$file")
-done < <(find examples -mindepth 2 -maxdepth 3 -type f -name env.sh | sort)
+load_arc_projects example_dirs --examples
+for dir in "${example_dirs[@]}"; do
+    if [[ -f "$dir/env.sh" ]]; then
+        required_exec+=("$dir/env.sh")
+    fi
+done
 
 for file in "${required_exec[@]}"; do
     [[ -x "$file" ]] || die "$file must stay executable"

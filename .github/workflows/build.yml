@@ -160,16 +160,16 @@ jobs:
               ! -name 'ota_data_initial.bin' \
               -printf '%f\n' | head -n 1
           }
-          mapfile -t project_dirs < <(
-            printf '.\n'
-            find examples -mindepth 2 -maxdepth 3 -type f -name CMakeLists.txt \
-              ! -path '*/main/CMakeLists.txt' -printf '%h\n' | sort
-          )
+          project_output="$(./tools/arc-projects.py --buildable)"
+          project_dirs=()
+          if [[ -n "$project_output" ]]; then
+            mapfile -t project_dirs <<< "$project_output"
+          fi
+          if ((${#project_dirs[@]} == 0)); then
+            echo "no Arc build projects discovered"
+            exit 1
+          fi
           for dir in "${project_dirs[@]}"; do
-            if [[ "$dir" == examples/esp32s31/* ]]; then
-              echo "skip experimental $dir; requires ARC_TARGET=esp32s31 and preview ESP-IDF support"
-              continue
-            fi
             if [[ "$dir" == "." ]]; then
               label=root
             else
