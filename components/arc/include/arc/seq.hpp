@@ -43,7 +43,7 @@ struct alignas(cache_line) SeqReg {
         const auto next = seq + 2U;
         const auto slot = index(next);
         __atomic_store_n(&seq_, seq + 1U, __ATOMIC_RELEASE);
-        acq_rel_fence();
+        sync_fence();
         __builtin_memcpy(&slots_[slot], &value, sizeof(T));
         release_fence();
         __atomic_store_n(&seq_, next, __ATOMIC_RELEASE);

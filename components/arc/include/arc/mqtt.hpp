@@ -26,8 +26,8 @@ enum class MqttType : std::uint8_t {
 };
 
 enum class MqttQos : std::uint8_t {
-    at_most_once = 0U,
-    at_least_once = 1U,
+    at_most = 0U,
+    at_least = 1U,
     exactly_once = 2U,
 };
 
@@ -66,21 +66,21 @@ struct MqttPublish {
     const void* data{};
     std::size_t bytes{};
     std::uint16_t packet{};
-    MqttQos qos{MqttQos::at_most_once};
+    MqttQos qos{MqttQos::at_most};
     bool dup{};
     bool retain{};
 };
 
 struct MqttSubscription {
     const char* filter{};
-    MqttQos qos{MqttQos::at_most_once};
+    MqttQos qos{MqttQos::at_most};
 };
 
 struct MqttPublishView {
     std::span<const std::uint8_t> topic{};
     std::span<const std::uint8_t> payload{};
     std::uint16_t packet{};
-    MqttQos qos{MqttQos::at_most_once};
+    MqttQos qos{MqttQos::at_most};
     bool dup{};
     bool retain{};
 };
@@ -218,7 +218,7 @@ struct Mqtt {
         const char* const topic,
         const std::span<T, Extent> data,
         const std::uint16_t packet = 0U,
-        const MqttQos qos = MqttQos::at_most_once,
+        const MqttQos qos = MqttQos::at_most,
         const bool dup = false,
         const bool retain = false) noexcept
     {
@@ -330,7 +330,7 @@ struct Mqtt {
 
         const auto qos = packet.qos();
         std::uint16_t id = 0U;
-        if (qos != MqttQos::at_most_once) {
+        if (qos != MqttQos::at_most) {
             if (packet.body.size() < pos + 2U) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
@@ -668,13 +668,13 @@ public:
     [[nodiscard]] constexpr bool ping_due(const std::uint64_t now_ms) const noexcept
     {
         return online() && keep_alive_s_ != 0U && !awaiting_ping_ &&
-            elapsed(last_tx_ms_, now_ms) >= keep_alive_ms();
+            elapsed(last_tx_ms_, now_ms) >= alive_ms();
     }
 
     [[nodiscard]] constexpr bool expired(const std::uint64_t now_ms) const noexcept
     {
         return online() && keep_alive_s_ != 0U &&
-            elapsed(last_rx_ms_, now_ms) >= broker_timeout_ms();
+            elapsed(last_rx_ms_, now_ms) >= broker_ms();
     }
 
     [[nodiscard]] Result<std::span<const std::uint8_t>> ping(
@@ -725,14 +725,14 @@ public:
     }
 
 private:
-    [[nodiscard]] constexpr std::uint64_t keep_alive_ms() const noexcept
+    [[nodiscard]] constexpr std::uint64_t alive_ms() const noexcept
     {
         return static_cast<std::uint64_t>(keep_alive_s_) * 1000ULL;
     }
 
-    [[nodiscard]] constexpr std::uint64_t broker_timeout_ms() const noexcept
+    [[nodiscard]] constexpr std::uint64_t broker_ms() const noexcept
     {
-        return keep_alive_ms() + (keep_alive_ms() / 2U);
+        return alive_ms() + (alive_ms() / 2U);
     }
 
     [[nodiscard]] static constexpr std::uint64_t elapsed(

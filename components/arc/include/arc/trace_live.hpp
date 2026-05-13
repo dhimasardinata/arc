@@ -31,9 +31,9 @@ struct LiveStream {
     }
 
     template <typename Policy>
-    [[nodiscard]] static Result<LiveChunk> half_full_isr(const LiveStreamConfig config = {}) noexcept
+    [[nodiscard]] static Result<LiveChunk> half_isr(const LiveStreamConfig config = {}) noexcept
     {
-        auto chunk = Policy::trace_half_full(config.watermark_bytes);
+        auto chunk = Policy::trace_half(config.watermark_bytes);
         if (!chunk) {
             return fail(chunk.error());
         }
@@ -59,11 +59,11 @@ struct LiveStream {
     }
 
     template <typename Policy, typename Sink>
-    [[nodiscard]] static Status drain_half_full_isr(
+    [[nodiscard]] static Status drain_isr(
         Sink& sink,
         const LiveStreamConfig config = {}) noexcept
     {
-        auto chunk = half_full_isr<Policy>(config);
+        auto chunk = half_isr<Policy>(config);
         if (!chunk) {
             return Status{fail(chunk.error())};
         }

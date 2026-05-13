@@ -51,11 +51,11 @@ struct Ftm {
         const std::uint32_t node_id,
         const std::uint32_t rtt_ns) noexcept
     {
-        constexpr auto light_mm_s = 299'792'458'000.0F;
+        constexpr auto light_mmps = 299'792'458'000.0F;
         return {
             .node_id = node_id,
             .rtt_ns = rtt_ns,
-            .distance_mm = (static_cast<float>(rtt_ns) * light_mm_s) / 2'000'000'000.0F,
+            .distance_mm = (static_cast<float>(rtt_ns) * light_mmps) / 2'000'000'000.0F,
         };
     }
 

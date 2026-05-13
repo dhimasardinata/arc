@@ -114,7 +114,7 @@ struct DistributedRcu {
         const TimeSync& clock,
         const std::int64_t local_now_us) noexcept
     {
-        const auto swarm_now = clock.local_to_remote(local_now_us);
+        const auto swarm_now = clock.to_remote(local_now_us);
         if (swarm_now < 0) {
             return fail(ESP_ERR_INVALID_ARG);
         }
@@ -128,7 +128,7 @@ struct DistributedRcu {
         const Frame& next,
         const std::int64_t local_rx_us) noexcept
     {
-        auto* const slot = find_or_empty(next.node_id);
+        auto* const slot = find_slot(next.node_id);
         if (slot == nullptr) {
             return fail(ESP_ERR_NOT_FOUND);
         }
@@ -177,7 +177,7 @@ struct DistributedRcu {
         if (slot == nullptr || !slot->valid || timeout_us <= 0) {
             return true;
         }
-        return TimeSync::saturating_sub(now_us, slot->last_rx_us) > timeout_us;
+        return TimeSync::sat_sub(now_us, slot->last_rx_us) > timeout_us;
     }
 
     [[nodiscard]] static std::span<const std::uint8_t> bytes(const Frame& frame) noexcept
@@ -219,7 +219,7 @@ private:
         return nullptr;
     }
 
-    [[nodiscard]] RemoteSlot* find_or_empty(const std::uint32_t node_id) noexcept
+    [[nodiscard]] RemoteSlot* find_slot(const std::uint32_t node_id) noexcept
     {
         if (auto* const slot = find(node_id); slot != nullptr) {
             return slot;
@@ -235,7 +235,7 @@ private:
 
 struct DeadReckoning {
     template <typename Filter, typename A, typename Q>
-    [[nodiscard]] static bool predict_if_stale(
+    [[nodiscard]] static bool predict_stale(
         Filter& filter,
         const std::int64_t now_us,
         const std::int64_t last_rx_us,
@@ -243,7 +243,7 @@ struct DeadReckoning {
         const A& a,
         const Q& q) noexcept
     {
-        if (timeout_us <= 0 || TimeSync::saturating_sub(now_us, last_rx_us) <= timeout_us) {
+        if (timeout_us <= 0 || TimeSync::sat_sub(now_us, last_rx_us) <= timeout_us) {
             return false;
         }
         filter.predict(a, q);

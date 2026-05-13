@@ -73,9 +73,9 @@ struct AcousticSlam {
         const std::span<const std::int16_t> delayed,
         const std::uint32_t sample_hz,
         const std::size_t max_lag,
-        const float sound_mm_s = 343'000.0F) noexcept
+        const float sound_mmps = 343'000.0F) noexcept
     {
-        if (sample_hz == 0U || sound_mm_s <= 0.0F) {
+        if (sample_hz == 0U || sound_mmps <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -111,20 +111,20 @@ struct AcousticSlam {
         const auto dt_s = static_cast<float>(best_lag) / static_cast<float>(sample_hz);
         return TdoaEstimate{
             .lag_samples = best_lag,
-            .delta_mm = dt_s * sound_mm_s,
+            .delta_mm = dt_s * sound_mmps,
             .confidence = static_cast<float>(best_score),
         };
     }
 
-    [[nodiscard]] static Result<TdoaEstimate> gcc_phat_tdoa(
+    [[nodiscard]] static Result<TdoaEstimate> gcc_tdoa(
         const std::span<simd::ComplexF32> reference,
         const std::span<simd::ComplexF32> delayed,
         const std::span<simd::ComplexF32> scratch,
         const std::size_t max_lag,
         const float sample_hz,
-        const float sound_mm_s = 343'000.0F) noexcept
+        const float sound_mmps = 343'000.0F) noexcept
     {
-        if (sample_hz <= 0.0F || sound_mm_s <= 0.0F) {
+        if (sample_hz <= 0.0F || sound_mmps <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -135,33 +135,33 @@ struct AcousticSlam {
             max_lag,
             sample_hz,
             1.0F,
-            sound_mm_s / 1000.0F);
+            sound_mmps / 1000.0F);
         if (!estimate) {
             return fail(estimate.error());
         }
         const auto dt_s = static_cast<float>(estimate->lag_samples) / sample_hz;
         return TdoaEstimate{
             .lag_samples = estimate->lag_samples,
-            .delta_mm = dt_s * sound_mm_s,
+            .delta_mm = dt_s * sound_mmps,
             .confidence = estimate->confidence,
         };
     }
 
-    [[nodiscard]] static Result<float> range_from_sync(
+    [[nodiscard]] static Result<float> sync_range(
         const TimeSync& clock,
         const std::int64_t local_rx_us,
         const std::int64_t remote_tx_us,
-        const float sound_mm_s = 343'000.0F) noexcept
+        const float sound_mmps = 343'000.0F) noexcept
     {
-        if (sound_mm_s <= 0.0F) {
+        if (sound_mmps <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
-        const auto remote_tx_local_us = clock.remote_to_local(remote_tx_us);
-        const auto flight_us = TimeSync::saturating_sub(local_rx_us, remote_tx_local_us);
+        const auto tx_local = clock.to_local(remote_tx_us);
+        const auto flight_us = TimeSync::sat_sub(local_rx_us, tx_local);
         if (flight_us < 0) {
             return fail(ESP_ERR_INVALID_STATE);
         }
-        return (static_cast<float>(flight_us) * sound_mm_s) / 1'000'000.0F;
+        return (static_cast<float>(flight_us) * sound_mmps) / 1'000'000.0F;
     }
 
     template <std::size_t Anchors>
@@ -220,7 +220,7 @@ struct AcousticSlam {
     }
 
     template <typename Sonic>
-    [[nodiscard]] static Status emit_chirp_symbol(const covert::FskConfig config) noexcept
+    [[nodiscard]] static Status emit_chirp(const covert::FskConfig config) noexcept
     {
         return Sonic::bit(true, config);
     }

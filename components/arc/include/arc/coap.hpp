@@ -33,14 +33,14 @@ enum class CoapCode : std::uint8_t {
     content = 0x45U,
     bad_request = 0x80U,
     not_found = 0x84U,
-    method_not_allowed = 0x85U,
+    not_allowed = 0x85U,
     internal_error = 0xA0U,
 };
 
 enum class CoapOptionNumber : std::uint16_t {
     uri_host = 3U,
     etag = 4U,
-    if_none_match = 5U,
+    none_match = 5U,
     observe = 6U,
     uri_port = 7U,
     location_path = 8U,

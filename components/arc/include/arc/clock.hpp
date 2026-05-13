@@ -16,10 +16,10 @@ namespace arc {
 enum class ClockSource : std::uint8_t {
     systimer,
     cycle_counter,
-    locked_cycle_counter,
+    locked_cycles,
 };
 
-[[nodiscard]] consteval bool clock_dfs_possible() noexcept
+[[nodiscard]] consteval bool dfs_possible() noexcept
 {
 #if defined(CONFIG_PM_ENABLE) && CONFIG_PM_ENABLE
     return true;
@@ -109,11 +109,11 @@ struct Clock {
     }
 
     template <ClockSource Source>
-    static consteval void require_stable_source() noexcept
+    static consteval void require_stable() noexcept
     {
         static_assert(
-            Source != ClockSource::cycle_counter || !clock_dfs_possible(),
-            "ClockSource::cycle_counter is not DFS-safe when CONFIG_PM_ENABLE is set; use ClockSource::systimer or hold arc::CpuLock and request ClockSource::locked_cycle_counter");
+            Source != ClockSource::cycle_counter || !dfs_possible(),
+            "ClockSource::cycle_counter is not DFS-safe when CONFIG_PM_ENABLE is set; use ClockSource::systimer or hold arc::CpuLock and request ClockSource::locked_cycles");
     }
 };
 

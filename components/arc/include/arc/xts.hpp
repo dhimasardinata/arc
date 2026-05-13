@@ -18,10 +18,10 @@ template <typename T>
 concept XtsBytes = std::is_trivially_copyable_v<std::remove_cv_t<T>>;
 
 struct Xts {
-    static_assert(Soc::flash_xts, "XTS flash encryption is not supported on this target");
+    static_assert(Soc::xts, "XTS flash encryption is not supported on this target");
 
     static constexpr std::size_t block = 16U;
-    static constexpr std::size_t max_block = Soc::flash_xts_block;
+    static constexpr std::size_t max_block = Soc::xts_block;
 
     [[nodiscard]] static constexpr bool aligned(
         const std::uint32_t address,

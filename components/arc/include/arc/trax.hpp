@@ -5,6 +5,9 @@
 #include "esp_cpu.h"
 #include "esp_err.h"
 
+#include "arc/soc/target.hpp"
+
+#if ARC_TARGET_ARCH_XTENSA
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
@@ -18,9 +21,11 @@
 #include "sdkconfig.h"
 #include "xt_trax.h"
 #include "xtensa/config/core-isa.h"
+#endif
 
 namespace arc {
 
+#if ARC_TARGET_ARCH_XTENSA
 struct Trax {
     static_assert(XCHAL_HAVE_TRAX != 0, "Xtensa TRAX is not supported on this target");
 
@@ -131,5 +136,85 @@ struct Trax {
         return id == 0 ? Bank::pro : Bank::app;
     }
 };
+#else
+struct Trax {
+    enum class Bank : std::uint8_t {
+        pro,
+        app,
+        pro_app,
+        app_pro,
+    };
+
+    enum class Unit : std::uint8_t {
+        word,
+        inst,
+    };
+
+    template <typename Target = soc::Target>
+    [[nodiscard]] static esp_err_t enable() noexcept
+    {
+        static_assert(soc::has<soc::Cap::trax, Target>, "arc::Trax is not available on ESP32-S31/RISC-V");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    template <typename Target = soc::Target>
+    [[nodiscard]] static esp_err_t enable(const Bank bank) noexcept
+    {
+        static_cast<void>(bank);
+        static_assert(soc::has<soc::Cap::trax, Target>, "arc::Trax is not available on ESP32-S31/RISC-V");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    template <typename Target = soc::Target>
+    [[nodiscard]] static esp_err_t both(const bool swap = false) noexcept
+    {
+        static_cast<void>(swap);
+        static_assert(soc::has<soc::Cap::trax, Target>, "arc::Trax is not available on ESP32-S31/RISC-V");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    template <typename Target = soc::Target>
+    [[nodiscard]] static esp_err_t start(const Unit unit = Unit::word) noexcept
+    {
+        static_cast<void>(unit);
+        static_assert(soc::has<soc::Cap::trax, Target>, "arc::Trax is not available on ESP32-S31/RISC-V");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    template <typename Target = soc::Target>
+    [[nodiscard]] static esp_err_t words() noexcept
+    {
+        return start<Target>(Unit::word);
+    }
+
+    template <typename Target = soc::Target>
+    [[nodiscard]] static esp_err_t instr() noexcept
+    {
+        return start<Target>(Unit::inst);
+    }
+
+    template <typename Target = soc::Target>
+    [[nodiscard]] static bool active() noexcept
+    {
+        static_assert(soc::has<soc::Cap::trax, Target>, "arc::Trax is not available on ESP32-S31/RISC-V");
+        return false;
+    }
+
+    template <typename Target = soc::Target>
+    [[nodiscard]] static esp_err_t stop(const int delay = 0) noexcept
+    {
+        static_cast<void>(delay);
+        static_assert(soc::has<soc::Cap::trax, Target>, "arc::Trax is not available on ESP32-S31/RISC-V");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    template <typename Target = soc::Target>
+    [[nodiscard]] static Bank core(const int id = 0) noexcept
+    {
+        static_assert(soc::has<soc::Cap::trax, Target>, "arc::Trax is not available on ESP32-S31/RISC-V");
+        return id == 0 ? Bank::pro : Bank::app;
+    }
+};
+#endif
 
 }  // namespace arc

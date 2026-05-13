@@ -6,33 +6,33 @@
 namespace arc {
 
 struct TimeSyncSample {
-    std::int64_t local_send_us{};
-    std::int64_t remote_recv_us{};
-    std::int64_t remote_send_us{};
-    std::int64_t local_recv_us{};
+    std::int64_t local_tx{};
+    std::int64_t remote_rx{};
+    std::int64_t remote_tx{};
+    std::int64_t local_rx{};
 };
 
 struct TimeSyncHwSample {
-    std::int64_t local_send_hw{};
-    std::int64_t remote_recv_hw{};
-    std::int64_t remote_send_hw{};
-    std::int64_t local_recv_hw{};
-    std::int32_t local_hw_to_us_shift{};
-    std::int32_t remote_hw_to_us_shift{};
+    std::int64_t local_tx{};
+    std::int64_t remote_rx{};
+    std::int64_t remote_tx{};
+    std::int64_t local_rx{};
+    std::int32_t local_shift{};
+    std::int32_t remote_shift{};
 };
 
 struct TimeSyncConfig {
     std::int32_t kp_shift{3};
     std::int32_t ki_shift{8};
-    std::int64_t max_step_us{250'000};
-    std::int64_t max_integral_us{1'000'000};
+    std::int64_t step_max{250'000};
+    std::int64_t integral_max{1'000'000};
 };
 
 struct TimeSyncStats {
-    std::int64_t raw_offset_us{};
-    std::int64_t filtered_offset_us{};
-    std::int64_t delay_us{};
-    std::int64_t correction_us{};
+    std::int64_t raw_offset{};
+    std::int64_t filt_offset{};
+    std::int64_t delay{};
+    std::int64_t correction{};
     std::uint32_t samples{};
 };
 
@@ -46,15 +46,15 @@ struct PtpSample {
 struct PtpConfig {
     std::int32_t kp_shift{4};
     std::int32_t ki_shift{10};
-    std::int64_t max_step_ns{1'000'000};
-    std::int64_t max_integral_ns{10'000'000};
+    std::int64_t step_max{1'000'000};
+    std::int64_t integral_max{10'000'000};
 };
 
 struct PtpStats {
-    std::int64_t raw_offset_ns{};
-    std::int64_t filtered_offset_ns{};
-    std::int64_t delay_ns{};
-    std::int64_t correction_ns{};
+    std::int64_t raw_offset{};
+    std::int64_t filt_offset{};
+    std::int64_t delay{};
+    std::int64_t correction{};
     std::uint32_t samples{};
 };
 
@@ -68,43 +68,43 @@ struct TimeSync {
         *this = {};
     }
 
-    [[nodiscard]] std::int64_t local_to_remote(const std::int64_t local_us) const noexcept
+    [[nodiscard]] std::int64_t to_remote(const std::int64_t local_us) const noexcept
     {
-        return saturating_add(local_us, offset_us);
+        return sat_add(local_us, offset_us);
     }
 
-    [[nodiscard]] std::int64_t remote_to_local(const std::int64_t remote_us) const noexcept
+    [[nodiscard]] std::int64_t to_local(const std::int64_t remote_us) const noexcept
     {
-        return saturating_sub(remote_us, offset_us);
+        return sat_sub(remote_us, offset_us);
     }
 
     [[nodiscard]] TimeSyncStats discipline(
         const TimeSyncSample sample,
         const TimeSyncConfig config = {}) noexcept
     {
-        const auto leg_out = saturating_sub(sample.remote_recv_us, sample.local_send_us);
-        const auto leg_back = saturating_sub(sample.remote_send_us, sample.local_recv_us);
-        const auto measured = div2(saturating_add(leg_out, leg_back));
-        const auto remote_turn = saturating_sub(sample.remote_send_us, sample.remote_recv_us);
-        const auto local_span = saturating_sub(sample.local_recv_us, sample.local_send_us);
-        const auto delay = saturating_sub(local_span, remote_turn);
-        const auto error = saturating_sub(measured, offset_us);
+        const auto leg_out = sat_sub(sample.remote_rx, sample.local_tx);
+        const auto leg_back = sat_sub(sample.remote_tx, sample.local_rx);
+        const auto measured = div2(sat_add(leg_out, leg_back));
+        const auto remote_turn = sat_sub(sample.remote_tx, sample.remote_rx);
+        const auto local_span = sat_sub(sample.local_rx, sample.local_tx);
+        const auto delay = sat_sub(local_span, remote_turn);
+        const auto error = sat_sub(measured, offset_us);
 
         integral_us = clamp(
-            saturating_add(integral_us, error),
-            -config.max_integral_us,
-            config.max_integral_us);
+            sat_add(integral_us, error),
+            -config.integral_max,
+            config.integral_max);
 
         const auto p = shift(error, config.kp_shift);
         const auto i = shift(integral_us, config.ki_shift);
-        const auto correction = clamp(saturating_add(p, i), -config.max_step_us, config.max_step_us);
-        offset_us = saturating_add(offset_us, correction);
+        const auto correction = clamp(sat_add(p, i), -config.step_max, config.step_max);
+        offset_us = sat_add(offset_us, correction);
 
         stats = TimeSyncStats{
-            .raw_offset_us = measured,
-            .filtered_offset_us = offset_us,
-            .delay_us = delay,
-            .correction_us = correction,
+            .raw_offset = measured,
+            .filt_offset = offset_us,
+            .delay = delay,
+            .correction = correction,
             .samples = stats.samples + 1U,
         };
         return stats;
@@ -116,10 +116,10 @@ struct TimeSync {
     {
         return discipline(
             {
-                .local_send_us = shift(sample.local_send_hw, sample.local_hw_to_us_shift),
-                .remote_recv_us = shift(sample.remote_recv_hw, sample.remote_hw_to_us_shift),
-                .remote_send_us = shift(sample.remote_send_hw, sample.remote_hw_to_us_shift),
-                .local_recv_us = shift(sample.local_recv_hw, sample.local_hw_to_us_shift),
+                .local_tx = shift(sample.local_tx, sample.local_shift),
+                .remote_rx = shift(sample.remote_rx, sample.remote_shift),
+                .remote_tx = shift(sample.remote_tx, sample.remote_shift),
+                .local_rx = shift(sample.local_rx, sample.local_shift),
             },
             config);
     }
@@ -150,7 +150,7 @@ struct TimeSync {
         return value / (std::int64_t{1} << bits);
     }
 
-    [[nodiscard]] static constexpr std::int64_t saturating_add(
+    [[nodiscard]] static constexpr std::int64_t sat_add(
         const std::int64_t lhs,
         const std::int64_t rhs) noexcept
     {
@@ -163,14 +163,14 @@ struct TimeSync {
         return lhs + rhs;
     }
 
-    [[nodiscard]] static constexpr std::int64_t saturating_sub(
+    [[nodiscard]] static constexpr std::int64_t sat_sub(
         const std::int64_t lhs,
         const std::int64_t rhs) noexcept
     {
         if (rhs == std::numeric_limits<std::int64_t>::min()) {
             return std::numeric_limits<std::int64_t>::max();
         }
-        return saturating_add(lhs, -rhs);
+        return sat_add(lhs, -rhs);
     }
 };
 
@@ -184,46 +184,46 @@ struct PtpClock {
         *this = {};
     }
 
-    [[nodiscard]] std::int64_t local_to_grandmaster(const std::int64_t local_ns) const noexcept
+    [[nodiscard]] std::int64_t to_master(const std::int64_t local_ns) const noexcept
     {
-        return TimeSync::saturating_add(local_ns, offset_ns);
+        return TimeSync::sat_add(local_ns, offset_ns);
     }
 
-    [[nodiscard]] std::int64_t grandmaster_to_local(const std::int64_t remote_ns) const noexcept
+    [[nodiscard]] std::int64_t to_local(const std::int64_t remote_ns) const noexcept
     {
-        return TimeSync::saturating_sub(remote_ns, offset_ns);
+        return TimeSync::sat_sub(remote_ns, offset_ns);
     }
 
     [[nodiscard]] PtpStats discipline(
         const PtpSample sample,
         const PtpConfig config = {}) noexcept
     {
-        const auto leg_out = TimeSync::saturating_sub(sample.ingress_ns, sample.origin_ns);
-        const auto leg_back = TimeSync::saturating_sub(sample.egress_ns, sample.receive_ns);
-        const auto measured = TimeSync::div2(TimeSync::saturating_add(leg_out, leg_back));
-        const auto remote_turn = TimeSync::saturating_sub(sample.egress_ns, sample.ingress_ns);
-        const auto local_span = TimeSync::saturating_sub(sample.receive_ns, sample.origin_ns);
-        const auto delay = TimeSync::saturating_sub(local_span, remote_turn);
-        const auto error = TimeSync::saturating_sub(measured, offset_ns);
+        const auto leg_out = TimeSync::sat_sub(sample.ingress_ns, sample.origin_ns);
+        const auto leg_back = TimeSync::sat_sub(sample.egress_ns, sample.receive_ns);
+        const auto measured = TimeSync::div2(TimeSync::sat_add(leg_out, leg_back));
+        const auto remote_turn = TimeSync::sat_sub(sample.egress_ns, sample.ingress_ns);
+        const auto local_span = TimeSync::sat_sub(sample.receive_ns, sample.origin_ns);
+        const auto delay = TimeSync::sat_sub(local_span, remote_turn);
+        const auto error = TimeSync::sat_sub(measured, offset_ns);
 
         integral_ns = TimeSync::clamp(
-            TimeSync::saturating_add(integral_ns, error),
-            -config.max_integral_ns,
-            config.max_integral_ns);
+            TimeSync::sat_add(integral_ns, error),
+            -config.integral_max,
+            config.integral_max);
 
         const auto p = TimeSync::shift(error, config.kp_shift);
         const auto i = TimeSync::shift(integral_ns, config.ki_shift);
         const auto correction = TimeSync::clamp(
-            TimeSync::saturating_add(p, i),
-            -config.max_step_ns,
-            config.max_step_ns);
-        offset_ns = TimeSync::saturating_add(offset_ns, correction);
+            TimeSync::sat_add(p, i),
+            -config.step_max,
+            config.step_max);
+        offset_ns = TimeSync::sat_add(offset_ns, correction);
 
         stats = PtpStats{
-            .raw_offset_ns = measured,
-            .filtered_offset_ns = offset_ns,
-            .delay_ns = delay,
-            .correction_ns = correction,
+            .raw_offset = measured,
+            .filt_offset = offset_ns,
+            .delay = delay,
+            .correction = correction,
             .samples = stats.samples + 1U,
         };
         return stats;

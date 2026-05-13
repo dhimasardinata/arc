@@ -535,14 +535,14 @@ struct I2sTdm {
         return span;
     }
 
-    [[nodiscard]] static consteval std::uint32_t effective_total_slots() noexcept
+    [[nodiscard]] static consteval std::uint32_t total_slots() noexcept
     {
         return Total == I2S_TDM_AUTO_SLOT_NUM ? span_slots() : Total;
     }
 
     [[nodiscard]] static consteval i2s_mclk_multiple_t mclk_multiple() noexcept
     {
-        if constexpr (effective_total_slots() > 2U) {
+        if constexpr (total_slots() > 2U) {
             return I2S_MCLK_MULTIPLE_512;
         } else if constexpr (Bits == I2S_DATA_BIT_WIDTH_24BIT) {
             return I2S_MCLK_MULTIPLE_384;
@@ -841,7 +841,7 @@ struct I2sTdm {
 
     [[nodiscard]] static constexpr std::uint32_t slots() noexcept
     {
-        return effective_total_slots();
+        return total_slots();
     }
 
     [[nodiscard]] static std::uint32_t sent() noexcept
@@ -914,7 +914,7 @@ private:
         cfg.big_endian = false;
         cfg.bit_order_lsb = false;
         cfg.skip_mask = false;
-        cfg.total_slot = effective_total_slots();
+        cfg.total_slot = total_slots();
 
         if constexpr (Format == I2sTdmFmt::pcm_short) {
             cfg.ws_width = 1U;

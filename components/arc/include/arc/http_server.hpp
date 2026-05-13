@@ -106,7 +106,7 @@ struct HttpServer {
         std::span<const char> in,
         std::span<HttpHeaderView> headers) noexcept
     {
-        const auto head_end = find_headers_end(in);
+        const auto head_end = headers_end(in);
         if (head_end == npos) {
             return fail(ESP_ERR_INVALID_ARG);
         }
@@ -276,7 +276,7 @@ private:
         return npos;
     }
 
-    [[nodiscard]] static constexpr std::size_t find_headers_end(std::span<const char> value) noexcept
+    [[nodiscard]] static constexpr std::size_t headers_end(std::span<const char> value) noexcept
     {
         for (std::size_t i = 0; i + 3U < value.size(); ++i) {
             if (value[i] == '\r' && value[i + 1U] == '\n' && value[i + 2U] == '\r' && value[i + 3U] == '\n') {

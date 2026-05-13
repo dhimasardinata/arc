@@ -29,21 +29,21 @@ struct GCodeBlock {
     Command command{Command::none};
     std::array<float, 6> axis{};
     std::array<bool, 6> has_axis{};
-    float feed_mm_min{};
+    float feed{};
     bool has_feed{};
     std::uint32_t line{};
 };
 
 struct CoreXYConfig {
-    float steps_per_mm{80.0F};
-    std::uint32_t ticks_per_step{1U};
+    float steps_mm{80.0F};
+    std::uint32_t ticks_step{1U};
 };
 
 struct DeltaConfig {
     float arm_mm{220.0F};
     float radius_mm{90.0F};
-    float steps_per_mm{80.0F};
-    std::uint32_t ticks_per_step{1U};
+    float steps_mm{80.0F};
+    std::uint32_t ticks_step{1U};
 };
 
 struct Kinematics {
@@ -54,10 +54,10 @@ struct Kinematics {
     {
         return {
             .delta = {
-                round_i32((x_mm + y_mm) * config.steps_per_mm),
-                round_i32((x_mm - y_mm) * config.steps_per_mm),
+                round_i32((x_mm + y_mm) * config.steps_mm),
+                round_i32((x_mm - y_mm) * config.steps_mm),
             },
-            .ticks_per_step = config.ticks_per_step,
+            .ticks_step = config.ticks_step,
         };
     }
 
@@ -65,12 +65,12 @@ struct Kinematics {
         const std::array<float, 3> xyz_mm,
         const DeltaConfig config = {}) noexcept
     {
-        if (config.arm_mm <= 0.0F || config.radius_mm <= 0.0F || config.steps_per_mm <= 0.0F) {
+        if (config.arm_mm <= 0.0F || config.radius_mm <= 0.0F || config.steps_mm <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         constexpr std::array<float, 3> tower_x{1.0F, -0.5F, -0.5F};
         constexpr std::array<float, 3> tower_y{0.0F, 0.8660254038F, -0.8660254038F};
-        MotionSegment<3> out{.ticks_per_step = config.ticks_per_step};
+        MotionSegment<3> out{.ticks_step = config.ticks_step};
         for (std::size_t i = 0U; i < 3U; ++i) {
             const auto dx = xyz_mm[0] - (tower_x[i] * config.radius_mm);
             const auto dy = xyz_mm[1] - (tower_y[i] * config.radius_mm);
@@ -78,24 +78,24 @@ struct Kinematics {
             if (reach <= 0.0F) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
-            out.delta[i] = round_i32((xyz_mm[2] + std::sqrt(reach)) * config.steps_per_mm);
+            out.delta[i] = round_i32((xyz_mm[2] + std::sqrt(reach)) * config.steps_mm);
         }
         return out;
     }
 
     [[nodiscard]] static MotionSegment<5> five_axis(
         const std::array<float, 5> target,
-        const std::array<float, 5> steps_per_unit,
-        const std::uint32_t ticks_per_step = 1U) noexcept
+        const std::array<float, 5> steps_unit,
+        const std::uint32_t ticks_step = 1U) noexcept
     {
-        MotionSegment<5> out{.ticks_per_step = ticks_per_step};
+        MotionSegment<5> out{.ticks_step = ticks_step};
         const simd::float32x4_t target4{target[0], target[1], target[2], target[3]};
-        const simd::float32x4_t scale4{steps_per_unit[0], steps_per_unit[1], steps_per_unit[2], steps_per_unit[3]};
+        const simd::float32x4_t scale4{steps_unit[0], steps_unit[1], steps_unit[2], steps_unit[3]};
         const auto steps4 = target4 * scale4;
         for (std::size_t i = 0U; i < 4U; ++i) {
             out.delta[i] = round_i32(steps4[i]);
         }
-        out.delta[4] = round_i32(target[4] * steps_per_unit[4]);
+        out.delta[4] = round_i32(target[4] * steps_unit[4]);
         return out;
     }
 
@@ -134,7 +134,7 @@ struct GCode {
             } else if (word == 'M') {
                 out.command = Command::spindle;
             } else if (word == 'F') {
-                out.feed_mm_min = value;
+                out.feed = value;
                 out.has_feed = true;
             } else if (word == 'N') {
                 out.line = static_cast<std::uint32_t>(value);
@@ -166,17 +166,17 @@ struct GCode {
     [[nodiscard]] static Result<std::span<const MotionStep<Axes>>> plan_linear(
         const GCodeBlock block,
         const std::array<float, Axes> current,
-        const float steps_per_mm,
+        const float steps_mm,
         const std::span<MotionStep<Axes>> out,
-        const std::uint32_t ticks_per_step = 1U) noexcept
+        const std::uint32_t ticks_step = 1U) noexcept
     {
         if (block.command != Command::linear && block.command != Command::rapid) {
             return fail(ESP_ERR_INVALID_ARG);
         }
-        MotionSegment<Axes> segment{.ticks_per_step = ticks_per_step};
+        MotionSegment<Axes> segment{.ticks_step = ticks_step};
         for (std::size_t axis = 0U; axis < Axes; ++axis) {
             const auto target = block.has_axis[axis] ? block.axis[axis] : current[axis];
-            segment.delta[axis] = Kinematics::round_i32((target - current[axis]) * steps_per_mm);
+            segment.delta[axis] = Kinematics::round_i32((target - current[axis]) * steps_mm);
         }
         return MotionPlan<Axes>::line(out, segment);
     }

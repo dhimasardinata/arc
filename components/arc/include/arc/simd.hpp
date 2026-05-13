@@ -78,7 +78,7 @@ inline void store_s16x8(std::int16_t* const ptr, const int16x8_t value) noexcept
 
 namespace pie {
 
-[[nodiscard]] inline std::int32_t ee_mac_s8(
+[[nodiscard]] inline std::int32_t mac_s8(
     const std::int32_t acc,
     const int8x16_t lhs,
     const int8x16_t rhs,
@@ -125,54 +125,56 @@ namespace pie {
     return static_cast<std::uint8_t>(value);
 }
 
-[[nodiscard]] inline std::uint16_t rgb565(
-    const std::uint8_t r,
-    const std::uint8_t g,
-    const std::uint8_t b) noexcept
-{
-    return static_cast<std::uint16_t>(
-        (static_cast<std::uint16_t>(r & 0xf8U) << 8U) |
-        (static_cast<std::uint16_t>(g & 0xfcU) << 3U) |
-        (static_cast<std::uint16_t>(b) >> 3U));
-}
-
-[[nodiscard]] inline std::uint16_t yuv_to_rgb565(
-    const std::uint8_t y,
-    const std::uint8_t u,
-    const std::uint8_t v) noexcept
-{
-    const auto c = static_cast<std::int32_t>(y) - 16;
-    const auto d = static_cast<std::int32_t>(u) - 128;
-    const auto e = static_cast<std::int32_t>(v) - 128;
-    const auto r = clamp_u8((298 * c + 409 * e + 128) >> 8);
-    const auto g = clamp_u8((298 * c - 100 * d - 208 * e + 128) >> 8);
-    const auto b = clamp_u8((298 * c + 516 * d + 128) >> 8);
-    return rgb565(r, g, b);
-}
-
-[[nodiscard]] inline Result<std::size_t> yuv422_to_rgb565(
-    const std::span<const std::uint8_t> yuv,
-    const std::span<std::uint16_t> rgb) noexcept
-{
-    if ((yuv.size() % 4U) != 0U) {
-        return fail(ESP_ERR_INVALID_ARG);
+struct Rgb565 {
+    [[nodiscard]] static std::uint16_t pack(
+        const std::uint8_t r,
+        const std::uint8_t g,
+        const std::uint8_t b) noexcept
+    {
+        return static_cast<std::uint16_t>(
+            (static_cast<std::uint16_t>(r & 0xf8U) << 8U) |
+            (static_cast<std::uint16_t>(g & 0xfcU) << 3U) |
+            (static_cast<std::uint16_t>(b) >> 3U));
     }
 
-    const auto pixels = yuv.size() / 2U;
-    if (rgb.size() < pixels) {
-        return fail(ESP_ERR_NO_MEM);
+    [[nodiscard]] static std::uint16_t from_yuv(
+        const std::uint8_t y,
+        const std::uint8_t u,
+        const std::uint8_t v) noexcept
+    {
+        const auto c = static_cast<std::int32_t>(y) - 16;
+        const auto d = static_cast<std::int32_t>(u) - 128;
+        const auto e = static_cast<std::int32_t>(v) - 128;
+        const auto r = clamp_u8((298 * c + 409 * e + 128) >> 8);
+        const auto g = clamp_u8((298 * c - 100 * d - 208 * e + 128) >> 8);
+        const auto b = clamp_u8((298 * c + 516 * d + 128) >> 8);
+        return pack(r, g, b);
     }
 
-    for (std::size_t in = 0, out = 0; in < yuv.size(); in += 4U, out += 2U) {
-        const auto y0 = yuv[in];
-        const auto u = yuv[in + 1U];
-        const auto y1 = yuv[in + 2U];
-        const auto v = yuv[in + 3U];
-        rgb[out] = yuv_to_rgb565(y0, u, v);
-        rgb[out + 1U] = yuv_to_rgb565(y1, u, v);
+    [[nodiscard]] static Result<std::size_t> from_yuv422(
+        const std::span<const std::uint8_t> yuv,
+        const std::span<std::uint16_t> rgb) noexcept
+    {
+        if ((yuv.size() % 4U) != 0U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        const auto pixels = yuv.size() / 2U;
+        if (rgb.size() < pixels) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+
+        for (std::size_t in = 0, out = 0; in < yuv.size(); in += 4U, out += 2U) {
+            const auto y0 = yuv[in];
+            const auto u = yuv[in + 1U];
+            const auto y1 = yuv[in + 2U];
+            const auto v = yuv[in + 3U];
+            rgb[out] = from_yuv(y0, u, v);
+            rgb[out + 1U] = from_yuv(y1, u, v);
+        }
+        return pixels;
     }
-    return pixels;
-}
+};
 
 struct ComplexF32 {
     float re{};
@@ -197,7 +199,7 @@ struct ComplexF32 {
     }
 };
 
-[[nodiscard]] constexpr bool is_power_of_two(const std::size_t value) noexcept
+[[nodiscard]] constexpr bool is_pow2(const std::size_t value) noexcept
 {
     return value != 0U && (value & (value - 1U)) == 0U;
 }
@@ -224,7 +226,7 @@ inline void bit_reverse(const std::span<ComplexF32> data) noexcept
     const std::span<ComplexF32> data,
     const bool inverse = false) noexcept
 {
-    if (!is_power_of_two(data.size())) {
+    if (!is_pow2(data.size())) {
         return Status{fail(ESP_ERR_INVALID_ARG)};
     }
 

@@ -3,11 +3,16 @@
 #include <cstdint>
 
 #include "arc/fence.hpp"
+#include "arc/soc/target.hpp"
+
+#if ARC_TARGET_ARCH_XTENSA
 #include "xtensa/config/core-isa.h"
 #include "xtensa/xtruntime.h"
+#endif
 
 namespace arc {
 
+#if ARC_TARGET_ARCH_XTENSA
 template <unsigned Level = XCHAL_EXCM_LEVEL>
 struct Mask {
     static_assert(Level <= 15U, "interrupt level must be within Xtensa range");
@@ -85,5 +90,16 @@ private:
 
 using Critical = Mask<XCHAL_EXCM_LEVEL>;
 using Silence = Mask<15U>;
+#else
+template <unsigned Level = 0U>
+struct Mask {
+    static_assert(
+        soc::never_v<Level>,
+        "arc::Mask is Xtensa-specific; ESP32-S31/RISC-V interrupt masking is not implemented yet");
+};
+
+using Critical = Mask<0U>;
+using Silence = Mask<15U>;
+#endif
 
 }  // namespace arc

@@ -19,4 +19,8 @@ else
 end
 
 source "$IDF_PATH/export.fish"
-set -gx IDF_TARGET "esp32s3"
+set -l arc_target "esp32s3"
+if set -q ARC_TARGET; and test -n "$ARC_TARGET"
+    set arc_target (string lower -- "$ARC_TARGET")
+end
+set -gx IDF_TARGET "$arc_target"

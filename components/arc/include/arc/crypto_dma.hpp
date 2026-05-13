@@ -60,7 +60,7 @@ struct CryptoDma {
 };
 
 template <std::size_t In, std::size_t Out, typename Policy = CryptoDmaStubPolicy>
-[[nodiscard]] Status crypto_dma_submit(
+[[nodiscard]] Status crypto_submit(
     DmaChain<In>& input,
     DmaChain<Out>& output,
     const std::size_t bytes,

@@ -114,7 +114,7 @@ struct OpticalFlow {
 };
 
 struct VisualServo {
-    [[nodiscard]] static FocTarget<float> target_from_flow(
+    [[nodiscard]] static FocTarget<float> flow_target(
         const MotionVector flow,
         const float gain,
         const float bus) noexcept

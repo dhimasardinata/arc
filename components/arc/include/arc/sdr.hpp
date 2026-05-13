@@ -130,13 +130,13 @@ struct Tx {
         if (!PulseSynth::valid(config) || words.empty()) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
-        return status(Policy::lcd_cam_start(config, words));
+        return status(Policy::cam_start(config, words));
     }
 
     [[nodiscard]] static Status stop() noexcept
     {
-        if constexpr (requires { Policy::lcd_cam_stop(); }) {
-            return status(Policy::lcd_cam_stop());
+        if constexpr (requires { Policy::cam_stop(); }) {
+            return status(Policy::cam_stop());
         } else {
             return ok();
         }

@@ -66,7 +66,7 @@ struct Hypervisor {
                 .base = partition.code.data(),
                 .bytes = partition.code.size_bytes(),
                 .owner = World::untrusted,
-                .trusted = PmsAccess::read_write_execute,
+                .trusted = PmsAccess::rwx,
                 .untrusted = PmsAccess::read_execute,
             },
             {

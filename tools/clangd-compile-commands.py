@@ -72,7 +72,9 @@ def project_dirs() -> list[Path]:
     projects = [ROOT]
     if examples.is_dir():
         projects.extend(
-            path for path in sorted(examples.iterdir()) if path.is_dir() and (path / "CMakeLists.txt").is_file()
+            cmake.parent
+            for cmake in sorted(examples.rglob("CMakeLists.txt"))
+            if cmake.parent.name != "main" and (cmake.parent / "main" / "CMakeLists.txt").is_file()
         )
     return projects
 
@@ -88,8 +90,25 @@ def default_database_for_project(project: Path) -> Path | None:
     return max(candidates, key=lambda path: (path / "compile_commands.json").stat().st_mtime) / "compile_commands.json"
 
 
+def database_directories_exist(database: Path) -> bool:
+    try:
+        entries = read_database(database)
+    except ValueError:
+        return True
+
+    for entry in entries:
+        directory = entry.get("directory")
+        if isinstance(directory, str) and directory and not Path(directory).is_dir():
+            return False
+    return True
+
+
 def default_databases() -> list[Path]:
-    return [database for project in project_dirs() if (database := default_database_for_project(project)) is not None]
+    return [
+        database
+        for project in project_dirs()
+        if (database := default_database_for_project(project)) is not None and database_directories_exist(database)
+    ]
 
 
 def database_from_arg(path: Path) -> Path:
@@ -1139,6 +1158,10 @@ def arc_header_commands(
                 continue
             attempted.add(key)
 
+            arc_include = ARC_INCLUDE_DIR.resolve()
+            if arc_include not in dirs and arc_include not in extras:
+                extras = (*extras, arc_include)
+
             selected = command_for_file(entry, header, extras)
             break
 
@@ -1181,7 +1204,7 @@ def main() -> int:
         "inputs",
         nargs="*",
         type=Path,
-        help="Project directories or compile_commands.json files. Defaults to root and examples/* builds.",
+        help="Project directories or compile_commands.json files. Defaults to root and nested example builds.",
     )
     parser.add_argument(
         "-o",

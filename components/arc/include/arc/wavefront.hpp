@@ -25,7 +25,7 @@ struct Transducer {
 struct WavefrontConfig {
     std::uint32_t sample_hz{192'000U};
     std::uint32_t carrier_hz{40'000U};
-    float sound_mm_s{343'000.0F};
+    float sound_mmps{343'000.0F};
     std::int16_t amplitude{12'000};
 };
 
@@ -44,7 +44,7 @@ struct Wavefront {
         const WavePoint3 target,
         const WavefrontConfig config = {}) noexcept
     {
-        if (config.sample_hz == 0U || config.carrier_hz == 0U || config.sound_mm_s <= 0.0F) {
+        if (config.sample_hz == 0U || config.carrier_hz == 0U || config.sound_mmps <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -55,7 +55,7 @@ struct Wavefront {
             const auto dy = target.y_mm - array[i].pos.y_mm;
             const auto dz = target.z_mm - array[i].pos.z_mm;
             const auto distance = std::sqrt((dx * dx) + (dy * dy) + (dz * dz));
-            const auto cycles = (distance * static_cast<float>(config.carrier_hz)) / config.sound_mm_s;
+            const auto cycles = (distance * static_cast<float>(config.carrier_hz)) / config.sound_mmps;
             plan.phase_rad[i] = -two_pi * (cycles - std::floor(cycles));
             plan.gain[i] = array[i].gain;
         }

@@ -24,7 +24,7 @@ struct PufStats {
 };
 
 struct Puf {
-    [[nodiscard]] static Result<std::size_t> sample_sram_decay(
+    [[nodiscard]] static Result<std::size_t> sample_sram(
         const std::span<const std::byte> sram,
         const std::span<std::uint8_t> raw) noexcept
     {
@@ -38,7 +38,7 @@ struct Puf {
     }
 
     template <typename Adc>
-    [[nodiscard]] static Result<std::size_t> sample_adc_noise(
+    [[nodiscard]] static Result<std::size_t> sample_adc(
         const std::span<std::uint16_t> out,
         typename dsp::Biquad<std::int32_t>::State& filter,
         const typename dsp::Biquad<std::int32_t>::Coeffs coeffs = {.b0 = 1}) noexcept
@@ -98,7 +98,7 @@ struct Puf {
 #endif
 
     template <typename Hash>
-    [[nodiscard]] static Result<std::array<std::uint8_t, 32>> derive_key_with(
+    [[nodiscard]] static Result<std::array<std::uint8_t, 32>> derive_with(
         const std::span<const std::uint8_t> stable) noexcept
     {
         if (stable.empty()) {

@@ -20,7 +20,7 @@ struct MotionStep {
 template <std::size_t Axes>
 struct MotionSegment {
     std::array<std::int32_t, Axes> delta{};
-    std::uint32_t ticks_per_step{1U};
+    std::uint32_t ticks_step{1U};
 };
 
 template <std::size_t Axes>
@@ -56,7 +56,7 @@ struct MotionPlan {
                     mask |= std::uint32_t{1U} << axis;
                 }
             }
-            out[step] = MotionStep<Axes>{.mask = mask, .ticks = segment.ticks_per_step};
+            out[step] = MotionStep<Axes>{.mask = mask, .ticks = segment.ticks_step};
         }
         return out.first(major);
     }

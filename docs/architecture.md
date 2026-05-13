@@ -34,7 +34,7 @@ ML and DSP spans that feed `arc::simd` kernels should come from `arc::simdbuf`
 or equivalent 16-byte-aligned storage when performance matters. Vision kernels
 keep integer-safe defaults unless silicon data says otherwise; for example,
 `arc::vision::StarTracker::isqrt` should be compared against an S3-targeted
-`sqrt` lane in `examples/bench` before replacing the integer path.
+`sqrt` lane in `examples/esp32s3/bench` before replacing the integer path.
 
 ## Silicon-Facing Policy
 

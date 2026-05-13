@@ -84,7 +84,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::cnc::Kinematics` and `arc::cnc::GCode` turn CoreXY, delta, and five-axis toolpaths into caller-owned `MotionPlan` buffers from zero-allocation G-code frames.
 - `arc::dsp::Matrix` and `arc::dsp::Kalman` add fixed-size matrix math and diagonal-measurement Kalman correction for sensor fusion without allocation.
 - `arc::dsp::DspAccel`, `duty_svpwm`, `PllObserver`, `SlidingModeObserver`, and `arc::SCurve` extend the motor-control plane for accelerated kernels and smoother trajectories.
-- `arc::simd::float32x4_t`, `int8x16_t`, `uint8x16_t`, `dot_s8`, `yuv422_to_rgb565`, and `fft_radix2` expose explicit S3-focused math kernels that should not rely on auto-vectorization alone.
+- `arc::simd::float32x4_t`, `int8x16_t`, `uint8x16_t`, `dot_s8`, `arc::simd::Rgb565::from_yuv422`, and `fft_radix2` expose explicit S3-focused math kernels that should not rely on auto-vectorization alone.
 - `arc::ml::Tensor`, `Dense`, `QuantDenseS8`, `Conv2dS8`, `DepthwiseConv2dS8`, `MaxPool2d`, `mapped_weights`, and `Core1Inference` provide a zero-allocation inference surface for fixed-shape models stored in flash/PSRAM spans.
 - `arc::BareCore<Program>` defines the true-AMP Core 1 boot contract for board policies that hold APP CPU outside FreeRTOS and jump directly into a static control loop.
 - `arc::power::Intermittent` stores dying-gasp CPU, Tight-loop stack, and RCU state bytes in RTC no-init storage so a board policy can resurrect after brownout.
@@ -280,7 +280,7 @@ Arc benchmark policy is strict:
 - Host benchmarks compare Arc primitives/codecs against local standard-library baselines only where both sides are compiled in the same binary.
 - `tools/ensure-frameworks.sh` creates local ignored framework checkouts beside `esp-idf/`, including `arduino-esp32/`.
 - `tools/framework-compare.sh` reports local raw ESP-IDF and Arduino-ESP32 versions, runs or explicitly skips the Arc host benchmark depending on the caller, and compiles real host-buildable Arduino `Print.cpp` plus ESP-IDF mbedTLS paths for same-binary write/frame/base64 measurements with explicit `arc`, `idf`, and `arduino` surface tags.
-- `examples/bench` is the real ESP32-S3 benchmark firmware. It flashes to hardware, reports grouped target cycle-counter measurements with an explicit `surface` column (`arc`, `idf`, `arduino`, or `std`), includes critical usage mixes for telemetry, control ticks, and protocol bundles, compares Arc against raw ESP-IDF silicon APIs in the same firmware image, covers internal temp/NVS/OTA plus self-test TWAI loopback in one run, and can add Arduino-ESP32 core write/base64 baselines when `arduino-esp32/` or `ARC_ARDUINO_PATH` is present during configure.
+- `examples/esp32s3/bench` is the real ESP32-S3 benchmark firmware. It flashes to hardware, reports grouped target cycle-counter measurements with an explicit `surface` column (`arc`, `idf`, `arduino`, or `std`), includes critical usage mixes for telemetry, control ticks, and protocol bundles, compares Arc against raw ESP-IDF silicon APIs in the same firmware image, covers internal temp/NVS/OTA plus self-test TWAI loopback in one run, and can add Arduino-ESP32 core write/base64 baselines when `arduino-esp32/` or `ARC_ARDUINO_PATH` is present during configure.
 - Raw ESP-IDF benchmarks must live as pinned ESP-IDF examples or components and report firmware size, build config, target, and measured hardware path.
 - Arduino or PlatformIO benchmarks must pin the core/platform version and board package in CI before any number is published.
 - No README number should compare against Arduino, ESPHome, PlatformIO, or raw ESP-IDF unless that exact competitor source is checked in or installed by CI and run in the same workflow.
@@ -306,7 +306,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is an opt-in libFuzzer harness for HT
 | Network and radio | `arc/net.hpp`, `arc/csi.hpp`, `arc/ftm.hpp`, `arc/sdr.hpp`, `arc/acoustic_slam.hpp`, `arc/hyper_matrix.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/fabric.hpp`, `arc/rdma.hpp`, `arc/thread.hpp`, `arc/ble_mesh.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp`, `arc/netrpc.hpp`, `arc/swarm.hpp`, `arc/ethernet.hpp`, `arc/w5500.hpp` | `arc::net::Radio`, `arc::net::Csi`, `arc::net::CsiRx`, `arc::net::EspWifiCsiPolicy`, `arc::net::Ftm`, `arc::net::EspWifiFtmPolicy`, `arc::sdr::Tx`, `arc::swarm::AcousticSlam`, `arc::swarm::HyperMatrix`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Fabric`, `arc::net::Rdma`, `arc::net::Thread`, `arc::ble::Mesh`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::HttpServer`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap`, `arc::net::NetRpc`, `arc::net::SwarmSchedule`, `arc::net::DistributedRcu`, `arc::net::DeadReckoning`, `arc::net::EthernetRing`, `arc::net::W5500Raw` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream`, `arc::net::Rtp`, `arc::net::Mjpeg` |
 | Binary records and optimizer hints | `arc/pack.hpp`, `arc/perfetto.hpp`, `arc/trace_live.hpp`, `arc/assume.hpp` | `arc::pack::Schema`, `arc::pack::StructOf`, `arc::pack::Reflect`, `arc::pack::Endian`, `arc::PerfettoWriter`, `arc::trace::LiveStream`, `arc::assume` |
-| Control, ML, and vision | `arc/dsp.hpp`, `arc/wavefront.hpp`, `arc/simd.hpp`, `arc/ml.hpp`, `arc/snn.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/nav.hpp`, `arc/foc.hpp`, `arc/maglev.hpp`, `arc/digital_twin.hpp`, `arc/motion.hpp`, `arc/cnc.hpp`, `arc/hls.hpp`, `arc/isp.hpp`, `arc/vision.hpp`, `arc/vslam.hpp`, `arc/star_tracker.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::dsp::Beamform`, `arc::dsp::Aec`, `arc::dsp::Wavefront`, `arc::simd::float32x4_t`, `arc::simd::int8x16_t`, `arc::simd::dot_s8`, `arc::simd::yuv422_to_rgb565`, `arc::simd::fft_radix2`, `arc::ml::Tensor`, `arc::ml::Dense`, `arc::ml::QuantDenseS8`, `arc::ml::Snn`, `arc::ml::Conv2dS8`, `arc::ml::DepthwiseConv2dS8`, `arc::ml::MaxPool2d`, `arc::ml::mapped_weights`, `arc::ml::Core1Inference`, `arc::dsp::Matrix`, `arc::dsp::Kalman`, `arc::nav::Eskf`, `arc::nav::Quaternion`, `arc::Foc`, `arc::DualFoc`, `arc::FocEncoderFusion`, `arc::MagLev`, `arc::hil::DigitalTwin`, `arc::MotionPlan`, `arc::SCurve`, `arc::cnc::Kinematics`, `arc::cnc::GCode`, `arc::hls::KernelSpec`, `arc::hls::StaticLoop`, `arc::isp::Debayer`, `arc::isp::AecAwb`, `arc::vision::Sobel`, `arc::vision::OpticalFlow`, `arc::vision::VSlam`, `arc::vision::VisualServo`, `arc::vision::StarTracker`, `arc::SwarmSoa`, `arc::Hil` |
+| Control, ML, and vision | `arc/dsp.hpp`, `arc/wavefront.hpp`, `arc/simd.hpp`, `arc/ml.hpp`, `arc/snn.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/nav.hpp`, `arc/foc.hpp`, `arc/maglev.hpp`, `arc/digital_twin.hpp`, `arc/motion.hpp`, `arc/cnc.hpp`, `arc/hls.hpp`, `arc/isp.hpp`, `arc/vision.hpp`, `arc/vslam.hpp`, `arc/star_tracker.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::dsp::Beamform`, `arc::dsp::Aec`, `arc::dsp::Wavefront`, `arc::simd::float32x4_t`, `arc::simd::int8x16_t`, `arc::simd::dot_s8`, `arc::simd::Rgb565::from_yuv422`, `arc::simd::fft_radix2`, `arc::ml::Tensor`, `arc::ml::Dense`, `arc::ml::QuantDenseS8`, `arc::ml::Snn`, `arc::ml::Conv2dS8`, `arc::ml::DepthwiseConv2dS8`, `arc::ml::MaxPool2d`, `arc::ml::mapped_weights`, `arc::ml::Core1Inference`, `arc::dsp::Matrix`, `arc::dsp::Kalman`, `arc::nav::Eskf`, `arc::nav::Quaternion`, `arc::Foc`, `arc::DualFoc`, `arc::FocEncoderFusion`, `arc::MagLev`, `arc::hil::DigitalTwin`, `arc::MotionPlan`, `arc::SCurve`, `arc::cnc::Kinematics`, `arc::cnc::GCode`, `arc::hls::KernelSpec`, `arc::hls::StaticLoop`, `arc::isp::Debayer`, `arc::isp::AecAwb`, `arc::vision::Sobel`, `arc::vision::OpticalFlow`, `arc::vision::VSlam`, `arc::vision::VisualServo`, `arc::vision::StarTracker`, `arc::SwarmSoa`, `arc::Hil` |
 | USB and low-power logic | `arc/usb.hpp`, `arc/usb_device.hpp`, `arc/usb_host.hpp`, `arc/ulp.hpp`, `arc/ulp_asm.hpp`, `arc/ulp_cxx.hpp`, `arc/ulp_ml.hpp` | `arc::Usb`, `arc::usb::Device`, `arc::usb::DeviceDescriptor`, `arc::usb::Cdc`, `arc::usb::Bulk`, `arc::usb::Uvc`, `arc::usb::Uac`, `arc::usb::Fifo`, `arc::usb::Host`, `arc::Ulp`, `arc::ulp::riscv::assemble`, `arc::ulp::Gpio`, `arc::ulp::Adc`, `arc::ulp::I2c`, `arc::ulp::SleepFsm`, `arc::ulp::ml::QuantDenseS8`, `arc::ulp::ml::SemanticWake`, `arc::ulp::ml::AudioSignatureWake` |
 | Security, VM, and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/puf.hpp`, `arc/cloak.hpp`, `arc/blackbox.hpp`, `arc/cert_bundle.hpp`, `arc/nvs_crypto.hpp`, `arc/secure_boot.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/kyber.hpp`, `arc/paillier.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp`, `arc/pms.hpp`, `arc/tee.hpp`, `arc/vm.hpp`, `arc/jit.hpp`, `arc/wasm_aot.hpp`, `arc/migrator.hpp`, `arc/hypervisor.hpp`, `arc/chaos.hpp`, `arc/flash_off.hpp`, `arc/crypto_dma.hpp`, `arc/interrupt_matrix.hpp`, `arc/provisioning.hpp`, `arc/pmr.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::crypto::Puf`, `arc::crypto::Cloak`, `arc::covert::BlackBox`, `arc::x509::Bundle`, `arc::NvsCrypto`, `arc::secure::SecureBoot`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::crypto::Kyber`, `arc::crypto::Paillier`, `arc::Xts`, `arc::Fuse`, `arc::Rng`, `arc::Pms`, `arc::WorldGuard`, `arc::TeePlan`, `arc::vm::BPF`, `arc::vm::BpfInsn`, `arc::vm::BpfSandbox`, `arc::vm::Jit`, `arc::vm::WasmAot`, `arc::vm::WasmSandbox`, `arc::swarm::Migrator`, `arc::vm::Hypervisor`, `arc::chaos::Monkey`, `arc::FlashOff`, `arc::CryptoDma`, `arc::InterruptMatrix`, `arc::Provisioning`, `arc::PmrCapsResource` |
 
@@ -619,7 +619,7 @@ Use this pattern in `main/CMakeLists.txt` or any example `main/CMakeLists.txt`:
 ```cmake
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/arc-deps.cmake)
 
-arc_requires(main_requires core gptimer)
+arc_requires(main_requires core timer)
 
 idf_component_register(
     SRCS "app_main.cpp"
@@ -655,7 +655,9 @@ Feature names map directly to hardware lanes:
 - `sha`
 - `sign`
 - `ledc`
+- `pwm` (`ledc` alias)
 - `gptimer`
+- `timer` (`gptimer` alias)
 - `hmac`
 - `hotpatch`
 - `hls`
@@ -674,6 +676,7 @@ Feature names map directly to hardware lanes:
 - `spi`
 - `sd`
 - `twai`
+- `can` (`twai` alias)
 - `cam`
 - `lcd`
 - `sdm`
@@ -920,7 +923,46 @@ The env loader works in this order:
 - existing global `IDF_PATH`
 - local `./esp-idf`
 
-It also exports `IDF_TARGET=esp32s3`, and every project CMake entry forces `esp32s3` again during configure. Arc is intentionally single-target.
+It also exports `IDF_TARGET` from `ARC_TARGET`, defaulting to `esp32s3`. Every project CMake entry routes through `cmake/arc-idf.cmake`, which keeps ESP32-S3 as the stable default and rejects unknown targets instead of silently falling back.
+
+## Experimental ESP32-S31 Support
+
+Arc has experimental ESP32-S31 scaffolding without changing the default ESP32-S3 build. The selector is:
+
+- `ARC_TARGET=esp32s3` by default; this still forces `IDF_TARGET=esp32s3`.
+- `ARC_TARGET=esp32s31` only configures when `ARC_EXPERIMENTAL_ESP32S31=ON` is also set.
+- Any unknown `ARC_TARGET` fails during configure.
+
+ESP32-S3 examples now live under `examples/esp32s3/`. Target-neutral examples live under `examples/portable/`. ESP32-S31 scaffolds live under `examples/esp32s31/` and are intentionally skipped by default CI until ESP-IDF exposes a usable `esp32s31` target.
+
+Example S31 configure flow:
+
+```bash
+export ARC_TARGET=esp32s31
+export ARC_EXPERIMENTAL_ESP32S31=ON
+. ./env.sh
+idf.py -C examples/esp32s31/ptp build
+```
+
+The current pinned local ESP-IDF checkout does not contain `esp32s31` target metadata, so S31 firmware builds remain blocked on preview SDK support. The scaffolds still define the intended Arc surface:
+
+- `examples/esp32s31/ptp`
+- `examples/esp32s31/ml`
+- `examples/esp32s31/amp`
+- `examples/esp32s31/cam`
+- `examples/esp32s31/control`
+
+Migration note: ESP32-S3 and ESP32-S31 share Arc's high-level programming model, including `arc::App`, `arc::Tight`, `arc::Cache`, `arc::DmaChain`, `arc::PtpClock`, ML helpers, and TEE planning types. They do not share low-level private register assumptions. ESP32-S3-only surfaces such as dedicated GPIO `arc::Drive`/`arc::Sense`, Xtensa interrupt masking, and TRAX are guarded so S31 code gets explicit compile-time diagnostics instead of fake S3 behavior.
+
+The public target API follows Arc's short naming policy:
+
+```cpp
+static_assert(arc::soc::s31);
+arc::soc::has<arc::soc::Cap::ptp>;
+arc::CoreMap<>::det;
+```
+
+See `docs/api-naming.md` for the API naming rule used by repo checks.
 
 ## First Build
 
@@ -1097,8 +1139,8 @@ Clean generated local state across root and examples:
 Compile-time ESP32-S3 capability map.
 
 - Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
-- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_serial_jtag`, `etm`, `simd`, `async_memcpy`, `ahb_gdma`, `dedicated_gpio`, `rtc_gpio`, `rtc_gpio_io`, `rtc_gpio_hold`, `rtc_gpio_wake`, `lcd_i80`, `lcdcam_dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, `ecdsa`, `flash_xts`, `ulp_fsm`, and `ulp_riscv`.
-- Exposes hardware counts such as `gpio_pins`, `rtc_gpio_pins`, `adc_units`, `ledc_channels`, `spi_peripherals`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
+- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_jtag`, `etm`, `simd`, `async_copy`, `ahb_dma`, `fast_gpio`, `rtc_gpio`, `rtc_io`, `rtc_hold`, `rtc_wake`, `lcd_i80`, `dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, `ecdsa`, `xts`, `ulp_fsm`, and `ulp_riscv`.
+- Exposes hardware counts such as `gpio_pins`, `rtc_pins`, `adc_units`, `ledc_channels`, `spi_ports`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
 - `etm` and `ecdsa` are deliberately represented even when the pinned ESP32-S3 `soc_caps.h` does not advertise those driver surfaces.
 - Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
 
@@ -1369,7 +1411,7 @@ Compile-time stack sizing helpers for Arc tasks.
 - `arc::TaskMem<StackBytes, RequiredBytes>` fails at compile time when `StackBytes` is smaller than `RequiredBytes`.
 - `arc::Plane`, `arc::App`, and `arc::Tight` publish `stack_required` so tests can assert the expected budget.
 
-Arc's component interface also enables GCC `-Werror=stack-usage=2048` and `-Werror=frame-larger-than=1024` for C++ consumers. That catches large individual frames and unbounded stack use at compile time; explicit `stack_bytes` catches whole-task budgets that include known callee and runtime reserve.
+Arc's component interface enables GCC `-Werror=stack-usage=2048` and `-Werror=frame-larger-than=1024` for C++ consumers by default. Set `ARC_ENFORCE_STACK_LIMITS=OFF` only for deliberate interop with components that cannot meet Arc's stack policy. The C++ interface also defaults consumers to `gnu++26` and `-mtext-section-literals`; set `ARC_ENFORCE_CONSUMER_CXX26=OFF` or `ARC_ENFORCE_CONSUMER_TEXT_LITERALS=OFF` only when a downstream component owns that compiler policy.
 
 ### `arc::Link<Event, Control, Capacity>`
 
@@ -1520,7 +1562,7 @@ Compile-time MCPWM complementary pair wrapper.
 - `hi()`, `lo()`, and `off()` force safe states onto the pair without deleting the hardware path.
 - optional trailing fault parameters bind one GPIO fault to the MCPWM brake path in hardware.
 - `recover()` asks the operator to leave a one-shot brake state after the external fault clears.
-- `frequency()`, `duty_permille()`, `rise_delay_ticks()`, and `fall_delay_ticks()` keep the declared compile-time defaults available to board code.
+- `frequency()`, `duty_permille()`, `rise_ticks()`, and `fall_ticks()` keep the declared compile-time defaults available to board code.
 
 Use this when the output is no longer “just PWM” and you need a half-bridge style pair with explicit dead-time and a CPU-independent shutdown path.
 
@@ -1835,7 +1877,7 @@ Explicit cache coherency helpers for DMA and external-memory paths.
 - `to_device(data, bytes)` writes dirty cache lines back before hardware reads a buffer.
 - `from_device(data, bytes)` invalidates only whole cache-line-aligned buffers after hardware writes a buffer.
 - `discard(data, bytes)` writes back and invalidates only whole cache-line-aligned buffers when ownership moves away from the CPU.
-- `from_device_unaligned(...)` and `discard_unaligned(...)` remain available but deprecated; they are explicit escape hatches for code that accepts shared-line invalidation risk.
+- `from_raw(...)` and `discard_raw(...)` remain available but deprecated; they are explicit escape hatches for code that accepts shared-line invalidation risk.
 - The unaligned escape hatches are unsafe around actively mutated neighbors on the same cache line; use cache-line-aligned buffers or the `_strict` path for live DMA ownership.
 - `line(ptr)` returns the cache line size for one address, or zero when the address is not cacheable.
 - span overloads work directly with `arc::CapsBuf<T>::view()`.
@@ -2106,7 +2148,7 @@ Zero-allocation PI discipliner for peer clock synchronization.
 - `TimeSyncHwSample` carries the same four timestamps in hardware tick domains plus power-of-two tick-to-microsecond shifts.
 - `discipline(sample, config)` computes NTP-style offset/delay and applies bounded proportional/integral correction.
 - `discipline_hw(sample, config)` converts hardware timestamp samples before applying the same PI discipliner.
-- `local_to_remote(us)` and `remote_to_local(us)` convert timestamps using the filtered offset.
+- `to_remote(us)` and `to_local(us)` convert timestamps using the filtered offset.
 
 Use this over ESP-NOW or UDP when multiple S3 nodes need a shared microsecond-scale time base without heap state or a background task.
 
@@ -2207,7 +2249,7 @@ Mounted filesystem helpers for Core 0 storage paths.
 - `spiffs(base, label, max_files, format)` mounts one SPIFFS partition.
 - `spiffs_info(...)`, `spiffs_gc(...)`, `spiffs_check(...)`, and `spiffs_off(...)` cover common maintenance.
 - `fat(base, label, max_files, format, alloc)` mounts FAT-on-flash through wear levelling.
-- `fat_ro(...)`, `fat_info(...)`, `fat_format(...)`, `fat_off()`, and `fat_ro_off(...)` keep FAT control explicit.
+- `fat_ro(...)`, `fat_info(...)`, `fat_format(...)`, `fat_off()`, and `ro_off(...)` keep FAT control explicit.
 
 Use this to create a mounted VFS path before using `arc::File`.
 
@@ -2523,7 +2565,7 @@ Static CPU-owned square-wave generator with explicit timing-source policy.
 
 - The default `ClockSource::systimer` path is wall-clock correct under Dynamic Frequency Scaling.
 - `ClockSource::cycle_counter` is rejected at compile time when `CONFIG_PM_ENABLE` is set.
-- `ClockSource::locked_cycle_counter` keeps the old cycle-counted hot path for code that holds an `arc::CpuLock` or otherwise guarantees a fixed CPU clock.
+- `ClockSource::locked_cycles` keeps the old cycle-counted hot path for code that holds an `arc::CpuLock` or otherwise guarantees a fixed CPU clock.
 - The cycle path keeps its compile-time constants in registers behind an optimizer barrier instead of forcing volatile stack spills.
 
 Use `arc_requires(... time)` when using the default systimer source.
@@ -2541,10 +2583,10 @@ If you keep a separate release profile in parallel, use `build-release/` deliber
 
 ## ESP-NOW Example
 
-Arc ships a standalone raw-radio demo at `examples/espnow`.
+Arc ships a standalone raw-radio demo at `examples/esp32s3/espnow`.
 
 ```bash
-cd examples/espnow
+cd examples/esp32s3/espnow
 . ./env.sh
 idf.py menuconfig
 idf.py build
@@ -2555,7 +2597,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/espnow
+cd examples/esp32s3/espnow
 source ./env.fish
 idf.py menuconfig
 idf.py build
@@ -2573,10 +2615,10 @@ This keeps the same Arc program shape as UDP, but replaces IP transport with raw
 
 ## Count Example
 
-Arc ships a standalone pulse-counter demo at `examples/count`.
+Arc ships a standalone pulse-counter demo at `examples/esp32s3/count`.
 
 ```bash
-cd examples/count
+cd examples/esp32s3/count
 . ./env.sh
 idf.py menuconfig
 idf.py build
@@ -2587,7 +2629,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/count
+cd examples/esp32s3/count
 source ./env.fish
 idf.py menuconfig
 idf.py build
@@ -2604,10 +2646,10 @@ Add a jumper from the configured output pin to the configured input pin and the 
 
 ## Trace Example
 
-Arc ships a standalone RMT loopback capture demo at `examples/trace`.
+Arc ships a standalone RMT loopback capture demo at `examples/esp32s3/trace`.
 
 ```bash
-cd examples/trace
+cd examples/esp32s3/trace
 . ./env.sh
 idf.py menuconfig
 idf.py build
@@ -2618,7 +2660,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/trace
+cd examples/esp32s3/trace
 source ./env.fish
 idf.py menuconfig
 idf.py build
@@ -2635,10 +2677,10 @@ Add a jumper from the configured output pin to the configured input pin and the 
 
 ## OTA Example
 
-Arc also ships a standalone OTA-slot inspection demo at `examples/ota`.
+Arc also ships a standalone OTA-slot inspection demo at `examples/esp32s3/ota`.
 
 ```bash
-cd examples/ota
+cd examples/esp32s3/ota
 . ./env.sh
 idf.py build
 idf.py size
@@ -2648,7 +2690,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/ota
+cd examples/esp32s3/ota
 source ./env.fish
 idf.py build
 idf.py size
@@ -2663,10 +2705,10 @@ The example shows:
 
 ## Timer Example
 
-Arc also ships a standalone hardware-timer demo at `examples/timer`.
+Arc also ships a standalone hardware-timer demo at `examples/esp32s3/timer`.
 
 ```bash
-cd examples/timer
+cd examples/esp32s3/timer
 . ./env.sh
 idf.py menuconfig
 idf.py build
@@ -2677,7 +2719,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/timer
+cd examples/esp32s3/timer
 source ./env.fish
 idf.py menuconfig
 idf.py build
@@ -2694,10 +2736,10 @@ The LED edge is driven by a GPTimer alarm ISR instead of a busy loop, while a ti
 
 ## CAN Example
 
-Arc also ships a standalone TWAI/CAN self-test demo at `examples/can`.
+Arc also ships a standalone TWAI/CAN self-test demo at `examples/esp32s3/can`.
 
 ```bash
-cd examples/can
+cd examples/esp32s3/can
 . ./env.sh
 idf.py build
 idf.py size
@@ -2707,7 +2749,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/can
+cd examples/esp32s3/can
 source ./env.fish
 idf.py build
 idf.py size
@@ -2725,10 +2767,10 @@ It uses self-test loopback so the example can run without an external CAN transc
 
 ## Copy Example
 
-Arc also ships a standalone DMA memcpy demo at `examples/copy`.
+Arc also ships a standalone DMA memcpy demo at `examples/esp32s3/copy`.
 
 ```bash
-cd examples/copy
+cd examples/esp32s3/copy
 . ./env.sh
 idf.py build
 idf.py size
@@ -2738,7 +2780,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/copy
+cd examples/esp32s3/copy
 source ./env.fish
 idf.py build
 idf.py size
@@ -2755,10 +2797,10 @@ The CPU submits a 4096-byte transfer, computes the source checksum while DMA own
 
 ## DVP Example
 
-Arc also ships a standalone LCD_CAM DVP input skeleton at `examples/dvp`.
+Arc also ships a standalone LCD_CAM DVP input skeleton at `examples/esp32s3/dvp`.
 
 ```bash
-cd examples/dvp
+cd examples/esp32s3/dvp
 . ./env.sh
 idf.py build
 idf.py size
@@ -2768,7 +2810,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/dvp
+cd examples/esp32s3/dvp
 source ./env.fish
 idf.py build
 idf.py size
@@ -2785,10 +2827,10 @@ It does not call `grab()` automatically because the external camera sensor must 
 
 ## I80 Example
 
-Arc also ships a standalone LCD_CAM Intel 8080 demo at `examples/i80`.
+Arc also ships a standalone LCD_CAM Intel 8080 demo at `examples/esp32s3/i80`.
 
 ```bash
-cd examples/i80
+cd examples/esp32s3/i80
 . ./env.sh
 idf.py build
 idf.py size
@@ -2798,7 +2840,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/i80
+cd examples/esp32s3/i80
 source ./env.fish
 idf.py build
 idf.py size
@@ -2817,10 +2859,10 @@ Use this when a display or parallel peripheral should stream through LCD_CAM/DMA
 
 ## Probe Example
 
-Arc also ships a standalone cycle-counter demo at `examples/probe`.
+Arc also ships a standalone cycle-counter demo at `examples/esp32s3/probe`.
 
 ```bash
-cd examples/probe
+cd examples/esp32s3/probe
 . ./env.sh
 idf.py build
 idf.py size
@@ -2830,7 +2872,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/probe
+cd examples/esp32s3/probe
 source ./env.fish
 idf.py build
 idf.py size
@@ -2848,10 +2890,10 @@ Use this to measure the real cycle cost of Arc hot-path calls on your board.
 
 ## Sigma Example
 
-Arc also ships a standalone Sigma-Delta Modulator demo at `examples/sigma`.
+Arc also ships a standalone Sigma-Delta Modulator demo at `examples/esp32s3/sigma`.
 
 ```bash
-cd examples/sigma
+cd examples/esp32s3/sigma
 . ./env.sh
 idf.py build
 idf.py size
@@ -2861,7 +2903,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/sigma
+cd examples/esp32s3/sigma
 source ./env.fish
 idf.py build
 idf.py size
@@ -2878,10 +2920,10 @@ Use this when the output should be generated by the SDM peripheral instead of a 
 
 ## Sleep Example
 
-Arc also ships a standalone deep-sleep demo at `examples/sleep`.
+Arc also ships a standalone deep-sleep demo at `examples/esp32s3/sleep`.
 
 ```bash
-cd examples/sleep
+cd examples/esp32s3/sleep
 . ./env.sh
 idf.py build
 idf.py size
@@ -2891,7 +2933,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/sleep
+cd examples/esp32s3/sleep
 source ./env.fish
 idf.py build
 idf.py size
@@ -2909,10 +2951,10 @@ Use this when the firmware should spend most of its life asleep instead of burni
 
 ## Temp Example
 
-Arc also ships a standalone internal temperature sensor demo at `examples/temp`.
+Arc also ships a standalone internal temperature sensor demo at `examples/esp32s3/temp`.
 
 ```bash
-cd examples/temp
+cd examples/esp32s3/temp
 . ./env.sh
 idf.py build
 idf.py size
@@ -2922,7 +2964,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/temp
+cd examples/esp32s3/temp
 source ./env.fish
 idf.py build
 idf.py size
@@ -2939,10 +2981,10 @@ Use this when firmware needs thermal awareness while the S3 is being driven hard
 
 ## UDP Example
 
-Arc ships a standalone network demo at `examples/udp`.
+Arc ships a standalone network demo at `examples/esp32s3/udp`.
 
 ```bash
-cd examples/udp
+cd examples/esp32s3/udp
 . ./env.sh
 idf.py menuconfig
 idf.py build flash monitor
@@ -2951,15 +2993,15 @@ idf.py build flash monitor
 For fish:
 
 ```fish
-cd examples/udp
+cd examples/esp32s3/udp
 source ./env.fish
 idf.py menuconfig
 idf.py build flash monitor
 ```
 
-The example is tuned to the same `N16R8` target and uses its own `examples/udp/partitions_16mb.csv`.
+The example is tuned to the same `N16R8` target and uses its own `examples/esp32s3/udp/partitions_16mb.csv`.
 
-The example writes the program directly in `examples/udp/main/app_main.cpp`.
+The example writes the program directly in `examples/esp32s3/udp/main/app_main.cpp`.
 
 - `Link = arc::Link<Edge, Control, 256>`
 - `Core1 = arc::Plane<Pulse, ... , Link>`
@@ -2969,10 +3011,10 @@ This is the intended style for larger apps: the app composes framework utilities
 
 ## Space Example
 
-Arc also ships a standalone capacity demo at `examples/space`.
+Arc also ships a standalone capacity demo at `examples/esp32s3/space`.
 
 ```bash
-cd examples/space
+cd examples/esp32s3/space
 . ./env.sh
 idf.py build
 idf.py size
@@ -2984,7 +3026,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/space
+cd examples/esp32s3/space
 source ./env.fish
 idf.py build
 idf.py size
@@ -3000,10 +3042,10 @@ The example shows two things:
 
 ## PWM Example
 
-Arc also ships a standalone hardware-PWM demo at `examples/pwm`.
+Arc also ships a standalone hardware-PWM demo at `examples/esp32s3/pwm`.
 
 ```bash
-cd examples/pwm
+cd examples/esp32s3/pwm
 . ./env.sh
 idf.py build
 idf.py size
@@ -3013,7 +3055,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/pwm
+cd examples/esp32s3/pwm
 source ./env.fish
 idf.py build
 idf.py size
@@ -3028,10 +3070,10 @@ The example shows:
 
 ## Pulse Example
 
-Arc also ships a standalone MCPWM waveform-plus-capture demo at `examples/pulse`.
+Arc also ships a standalone MCPWM waveform-plus-capture demo at `examples/esp32s3/pulse`.
 
 ```bash
-cd examples/pulse
+cd examples/esp32s3/pulse
 . ./env.sh
 idf.py build
 idf.py size
@@ -3041,7 +3083,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/pulse
+cd examples/esp32s3/pulse
 source ./env.fish
 idf.py build
 idf.py size
@@ -3056,10 +3098,10 @@ The example shows:
 
 ## Scope Example
 
-Arc also ships a standalone ADC-DMA demo at `examples/scope`.
+Arc also ships a standalone ADC-DMA demo at `examples/esp32s3/scope`.
 
 ```bash
-cd examples/scope
+cd examples/esp32s3/scope
 . ./env.sh
 idf.py build
 idf.py size
@@ -3069,7 +3111,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/scope
+cd examples/esp32s3/scope
 source ./env.fish
 idf.py build
 idf.py size
@@ -3084,10 +3126,10 @@ The example shows:
 
 ## SPI Example
 
-Arc also ships a standalone SPI loopback demo at `examples/spi`.
+Arc also ships a standalone SPI loopback demo at `examples/esp32s3/spi`.
 
 ```bash
-cd examples/spi
+cd examples/esp32s3/spi
 . ./env.sh
 idf.py build
 idf.py size
@@ -3097,7 +3139,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/spi
+cd examples/esp32s3/spi
 source ./env.fish
 idf.py build
 idf.py size
@@ -3113,10 +3155,10 @@ The example shows:
 
 ## I2S Example
 
-Arc also ships a standalone I2S duplex demo at `examples/i2s`.
+Arc also ships a standalone I2S duplex demo at `examples/esp32s3/i2s`.
 
 ```bash
-cd examples/i2s
+cd examples/esp32s3/i2s
 . ./env.sh
 idf.py build
 idf.py size
@@ -3126,7 +3168,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/i2s
+cd examples/esp32s3/i2s
 source ./env.fish
 idf.py build
 idf.py size
@@ -3142,10 +3184,10 @@ The example shows:
 
 ## DSP Example
 
-Arc also ships a standalone compute-plane demo at `examples/dsp`.
+Arc also ships a standalone compute-plane demo at `examples/esp32s3/dsp`.
 
 ```bash
-cd examples/dsp
+cd examples/esp32s3/dsp
 . ./env.sh
 idf.py build
 idf.py size
@@ -3155,7 +3197,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/dsp
+cd examples/esp32s3/dsp
 source ./env.fish
 idf.py build
 idf.py size
@@ -3170,10 +3212,10 @@ The example shows:
 
 ## Bridge Example
 
-Arc also ships a standalone complementary-MCPWM demo at `examples/bridge`.
+Arc also ships a standalone complementary-MCPWM demo at `examples/esp32s3/bridge`.
 
 ```bash
-cd examples/bridge
+cd examples/esp32s3/bridge
 . ./env.sh
 idf.py build
 idf.py size
@@ -3183,7 +3225,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/bridge
+cd examples/esp32s3/bridge
 source ./env.fish
 idf.py build
 idf.py size
@@ -3198,10 +3240,10 @@ The example shows:
 
 ## Store Example
 
-Arc also ships a standalone typed-NVS demo at `examples/store`.
+Arc also ships a standalone typed-NVS demo at `examples/esp32s3/store`.
 
 ```bash
-cd examples/store
+cd examples/esp32s3/store
 . ./env.sh
 idf.py build
 idf.py size
@@ -3213,7 +3255,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 For fish:
 
 ```fish
-cd examples/store
+cd examples/esp32s3/store
 source ./env.fish
 idf.py build
 idf.py size
@@ -3234,7 +3276,7 @@ The example shows:
 
 Arc now ships a build workflow at `.github/workflows/build.yml`.
 
-It builds the root baseline and every directory under `examples/*`, then writes each app binary size into the GitHub Actions step summary so size regressions are visible on every push or PR.
+It builds the root baseline, target-neutral examples, and ESP32-S3 examples, then writes each app binary size into the GitHub Actions step summary so size regressions are visible on every push or PR. Experimental ESP32-S31 examples are discovered but skipped by default because they require `ARC_TARGET=esp32s31`, `ARC_EXPERIMENTAL_ESP32S31=ON`, and preview ESP-IDF target support.
 
 When a change is intentionally documentation-only and the maintainer asks to skip local build/check, CI remains the validation source for the pushed branch.
 
@@ -3248,7 +3290,7 @@ The workflow also caches:
 
 GitHub-hosted runners are still ephemeral, so host packages installed by `apt` do not persist across jobs. Arc now only installs host packages if they are actually missing on the runner.
 
-Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared `esp32s3` lock in `cmake/arc-idf.cmake`.
+Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared target selector in `cmake/arc-idf.cmake`.
 
 CI validates clangd coverage with `go run tools/clangd-compile-commands.go --validate-arc-headers -o compile_commands.json`. The Go entrypoint is a thin launcher so local Go installs with partial standard libraries still reach the Python compatibility engine. The Python path caches compiler probes, component header ownership, and missing-include lookups; `--changed-arc-headers [BASE]` limits inferred/validated public headers to changed Arc headers when a PR wants an incremental pass.
 
@@ -3256,9 +3298,9 @@ Editor diagnostics use the same database. VS Code and Zed project settings keep 
 
 CI also executes `./tools/host-tests.sh` before the ESP-IDF build. The host binary now builds through `tests/host/CMakeLists.txt` and Ninja in `build/host`, so local reruns reuse object files instead of recompiling every source from scratch. It exercises SPSC single/batch transfer, MPSC under real producer contention, Fanin round-robin and batch drain behavior, wire codecs, stream helpers, SeqReg snapshots, and DSP/FIR math without flashing hardware.
 
-CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports grouped host-runner throughput with explicit `surface` tags for Arc and standard-library rows. It covers Arc SPSC batch/single lanes, MPSC/DenseMPSC, Fanin batch/single drains, SeqReg, stream helpers, DSP, codecs, practical telemetry/control/protocol usage mixes, and standard-library baselines where a fair local baseline exists. The output includes compiler and host context so runner changes are visible next to timing changes. It is not marketed as an ESP32-S3 cycle benchmark or as an Arduino/raw-IDF shootout; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start. `tools/framework-compare.sh` adds host-buildable framework measurements after that step without duplicating the Arc host benchmark in CI, while `examples/bench` is the on-device leg for real ESP32-S3 compare runs.
+CI then executes `./tools/host-bench.sh`. The benchmark binary repeats correctness checks inside the timed paths and reports grouped host-runner throughput with explicit `surface` tags for Arc and standard-library rows. It covers Arc SPSC batch/single lanes, MPSC/DenseMPSC, Fanin batch/single drains, SeqReg, stream helpers, DSP, codecs, practical telemetry/control/protocol usage mixes, and standard-library baselines where a fair local baseline exists. The output includes compiler and host context so runner changes are visible next to timing changes. It is not marketed as an ESP32-S3 cycle benchmark or as an Arduino/raw-IDF shootout; it is a regression signal for algorithmic shape, accidental allocation, and gross host-side slowdowns before firmware builds start. `tools/framework-compare.sh` adds host-buildable framework measurements after that step without duplicating the Arc host benchmark in CI, while `examples/esp32s3/bench` is the on-device leg for real ESP32-S3 compare runs.
 
-For hardware numbers, build and flash `examples/bench` on an ESP32-S3. That firmware uses the target cycle counter, groups lanes by area, tags each result with its implementation surface, compares Arc against raw ESP-IDF silicon APIs in the same image, folds internal temp/NVS/OTA plus self-test TWAI loopback into the same run, optionally adds Arduino-ESP32 core paths when the component checkout is available, and still intentionally excludes wired peripheral benchmarks unless a board fixture defines the external devices and pins.
+For hardware numbers, build and flash `examples/esp32s3/bench` on an ESP32-S3. That firmware uses the target cycle counter, groups lanes by area, tags each result with its implementation surface, compares Arc against raw ESP-IDF silicon APIs in the same image, folds internal temp/NVS/OTA plus self-test TWAI loopback into the same run, optionally adds Arduino-ESP32 core paths when the component checkout is available, and still intentionally excludes wired peripheral benchmarks unless a board fixture defines the external devices and pins.
 
 ## Notes
 
@@ -3330,5 +3372,5 @@ For hardware numbers, build and flash `examples/bench` on an ESP32-S3. That firm
 - `arc::usb_device` describes class-facing descriptor pieces and FIFO bridges; USB class-stack policy stays outside Arc.
 - `arc::ulp_cxx` is for tiny low-power policy loops, while full ULP binary load/run ownership stays in `arc::Ulp`.
 - `arc::dsp` is intentionally small: it is there to feed the compute plane, not to hide the math under a giant framework.
-- UDP over Wi-Fi is a good first network demo, but it belongs under `examples/udp`, not in the root baseline.
+- UDP over Wi-Fi is a good first network demo, but it belongs under `examples/esp32s3/udp`, not in the root baseline.
 - `app_main()` should remain the one C boundary; wrapping it further does not buy speed or clarity.

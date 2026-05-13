@@ -58,12 +58,12 @@ struct Bridge {
         return DutyPermille;
     }
 
-    [[nodiscard]] static constexpr std::uint32_t rise_delay_ticks() noexcept
+    [[nodiscard]] static constexpr std::uint32_t rise_ticks() noexcept
     {
         return RiseDelayTicks;
     }
 
-    [[nodiscard]] static constexpr std::uint32_t fall_delay_ticks() noexcept
+    [[nodiscard]] static constexpr std::uint32_t fall_ticks() noexcept
     {
         return FallDelayTicks;
     }

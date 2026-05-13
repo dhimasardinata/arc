@@ -28,7 +28,7 @@ enum class ClaimKind : std::uint32_t {
     return (seed ^ value) * 1'099'511'628'211ULL;
 }
 
-[[nodiscard]] consteval std::uint64_t claim_proof_mix(
+[[nodiscard]] consteval std::uint64_t proof_mix(
     const std::uint64_t seed,
     const std::uint64_t value) noexcept
 {
@@ -50,7 +50,7 @@ template <auto... Values>
 [[nodiscard]] consteval std::uint64_t claim_proof() noexcept
 {
     std::uint64_t out = 7'649'843'219'613'412'809ULL;
-    ((out = claim_proof_mix(out, static_cast<std::uint64_t>(Values))), ...);
+    ((out = proof_mix(out, static_cast<std::uint64_t>(Values))), ...);
     return out == 0ULL ? 1ULL : out;
 }
 

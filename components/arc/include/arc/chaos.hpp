@@ -25,8 +25,8 @@ struct Event {
 
 struct Config {
     std::uint32_t seed{0xA5A5'1234U};
-    std::uint32_t i2c_stall_us{250U};
-    std::uint32_t tight_overrun_cycles{1U};
+    std::uint32_t stall_us{250U};
+    std::uint32_t overrun_cycles{1U};
 };
 
 struct State {
@@ -49,7 +49,7 @@ struct Monkey {
         return state.rng;
     }
 
-    [[nodiscard]] static bool drop_espnow_33(State& state) noexcept
+    [[nodiscard]] static bool drop_espnow(State& state) noexcept
     {
         const auto packet = ++state.packets;
         return (packet % 3U) == 0U;
@@ -74,11 +74,11 @@ struct Monkey {
                     random % sram.size(),
                     static_cast<std::uint8_t>(1U << (random & 7U))));
             case Fault::i2c_stall:
-                return status(Policy::stall_i2c(config.i2c_stall_us));
+                return status(Policy::stall_i2c(config.stall_us));
             case Fault::espnow_drop:
-                return status(Policy::drop_espnow(drop_espnow_33(state)));
+                return status(Policy::drop_espnow(drop_espnow(state)));
             case Fault::tight_overrun:
-                return status(Policy::tight_overrun(config.tight_overrun_cycles));
+                return status(Policy::tight_overrun(config.overrun_cycles));
             default:
                 return Status{fail(ESP_ERR_INVALID_ARG)};
         }

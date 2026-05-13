@@ -44,7 +44,7 @@ enum class Color : std::uint8_t {
 }
 
 struct Debayer {
-    [[nodiscard]] static Result<std::size_t> rgb565(
+    [[nodiscard]] static Result<std::size_t> to_rgb565(
         const std::span<const std::uint8_t> raw,
         const std::size_t width,
         const std::size_t height,
@@ -89,7 +89,7 @@ struct Debayer {
                     }
                 }
 
-                out[(y * width) + x] = simd::rgb565(
+                out[(y * width) + x] = simd::Rgb565::pack(
                     static_cast<std::uint8_t>(nr == 0U ? 0U : r / nr),
                     static_cast<std::uint8_t>(ng == 0U ? 0U : g / ng),
                     static_cast<std::uint8_t>(nb == 0U ? 0U : b / nb));

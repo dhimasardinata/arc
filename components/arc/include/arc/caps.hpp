@@ -37,7 +37,7 @@ namespace detail {
 // Cache maintenance works in whole lines, so cache/DMA-facing buffers get
 // hidden physical padding while keeping their public span size unchanged.
 template <std::uint32_t Caps>
-inline constexpr bool cache_sensitive_caps =
+inline constexpr bool cache_caps =
     (Caps &
      (MALLOC_CAP_DMA |
       MALLOC_CAP_CACHE_ALIGNED |
@@ -45,7 +45,7 @@ inline constexpr bool cache_sensitive_caps =
       MALLOC_CAP_DMA_DESC_AHB |
       MALLOC_CAP_DMA_DESC_AXI)) != 0U;
 
-[[nodiscard]] constexpr bool can_round_up(
+[[nodiscard]] constexpr bool can_round(
     const std::size_t value,
     const std::size_t align) noexcept
 {
@@ -64,7 +64,7 @@ template <std::uint32_t Caps>
     const std::size_t bytes,
     const std::size_t align) noexcept
 {
-    if constexpr (cache_sensitive_caps<Caps>) {
+    if constexpr (cache_caps<Caps>) {
         return round_up(bytes, align);
     } else {
         static_cast<void>(align);
@@ -200,8 +200,8 @@ struct CapsAlloc {
         constexpr auto actual_align = Align > min_align ? Align : min_align;
 
         const auto bytes = count * sizeof(T);
-        if constexpr (detail::cache_sensitive_caps<Caps>) {
-            if (!detail::can_round_up(bytes, actual_align)) {
+        if constexpr (detail::cache_caps<Caps>) {
+            if (!detail::can_round(bytes, actual_align)) {
                 std::abort();
             }
         }
@@ -293,8 +293,8 @@ template <typename T, std::uint32_t Caps, std::size_t Align = alignof(T)>
     constexpr auto actual_align = Align > min_align ? Align : min_align;
 
     const auto bytes = count * sizeof(T);
-    if constexpr (detail::cache_sensitive_caps<Caps>) {
-        if (!detail::can_round_up(bytes, actual_align)) {
+    if constexpr (detail::cache_caps<Caps>) {
+        if (!detail::can_round(bytes, actual_align)) {
             return {};
         }
     }

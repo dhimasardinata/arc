@@ -9,7 +9,7 @@
 
 namespace arc::rtos {
 
-[[nodiscard]] constexpr std::uint32_t ticks_per_second() noexcept
+[[nodiscard]] constexpr std::uint32_t tick_hz() noexcept
 {
     return static_cast<std::uint32_t>(configTICK_RATE_HZ);
 }
@@ -45,7 +45,7 @@ template <typename Rep, typename Period>
 
     constexpr auto tick_max = static_cast<std::uint64_t>(portMAX_DELAY);
     const auto ticks =
-        ((static_cast<std::uint64_t>(timeout_ms) * ticks_per_second()) + 999ULL) / 1000ULL;
+        ((static_cast<std::uint64_t>(timeout_ms) * tick_hz()) + 999ULL) / 1000ULL;
     if (ticks > tick_max) {
         return portMAX_DELAY;
     }

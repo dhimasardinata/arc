@@ -90,7 +90,7 @@ struct VSlam {
         return out.first(found);
     }
 
-    [[nodiscard]] static Result<EssentialEstimate> essential_from_flow(
+    [[nodiscard]] static Result<EssentialEstimate> from_flow(
         const std::span<const Corner> previous,
         const std::span<const Corner> current,
         const std::size_t tracks,

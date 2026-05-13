@@ -501,7 +501,7 @@ struct Spi {
 
         const auto err = spi_device_get_trans_result(state.dev, trans, wait_ticks);
         if (err == ESP_OK && trans != nullptr) {
-            static_cast<void>(mark_ticket_done(*trans));
+            static_cast<void>(mark_done(*trans));
         }
         return err;
     }
@@ -510,14 +510,14 @@ struct Spi {
         Move& ticket,
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
-        return finish_impl(ticket, wait_ticks);
+        return finish_wait(ticket, wait_ticks);
     }
 
     [[nodiscard]] static esp_err_t finish(
         StrictMove& ticket,
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
-        return finish_impl(ticket, wait_ticks);
+        return finish_wait(ticket, wait_ticks);
     }
 
     [[nodiscard]] static esp_err_t queue_coherent(
@@ -527,17 +527,17 @@ struct Spi {
         const std::size_t bytes,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
-        return queue_coherent_impl(ticket, tx, rx, bytes, wait);
+        return queue_cache(ticket, tx, rx, bytes, wait);
     }
 
-    [[nodiscard]] static esp_err_t queue_coherent_strict(
+    [[nodiscard]] static esp_err_t queue_aligned(
         StrictMove& ticket,
         const void* const tx,
         void* const rx,
         const std::size_t bytes,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
-        return queue_coherent_impl(ticket, tx, rx, bytes, wait);
+        return queue_cache(ticket, tx, rx, bytes, wait);
     }
 
     template <typename T, std::size_t Extent>
@@ -552,12 +552,12 @@ struct Spi {
 
     template <typename T, std::size_t Extent>
         requires SpiBytes<T>
-    [[nodiscard]] static esp_err_t queue_coherent_strict(
+    [[nodiscard]] static esp_err_t queue_aligned(
         StrictMove& ticket,
         const std::span<T, Extent> tx,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
-        return queue_coherent_strict(ticket, tx.data(), nullptr, tx.size_bytes(), wait);
+        return queue_aligned(ticket, tx.data(), nullptr, tx.size_bytes(), wait);
     }
 
     template <typename Tx, std::size_t TxExtent, typename Rx, std::size_t RxExtent>
@@ -577,7 +577,7 @@ struct Spi {
 
     template <typename Tx, std::size_t TxExtent, typename Rx, std::size_t RxExtent>
         requires(SpiBytes<Tx> && SpiBytes<Rx> && !std::is_const_v<Rx>)
-    [[nodiscard]] static esp_err_t queue_coherent_strict(
+    [[nodiscard]] static esp_err_t queue_aligned(
         StrictMove& ticket,
         const std::span<Tx, TxExtent> tx,
         const std::span<Rx, RxExtent> rx,
@@ -587,21 +587,21 @@ struct Spi {
             return ESP_ERR_INVALID_ARG;
         }
 
-        return queue_coherent_strict(ticket, tx.data(), rx.data(), tx.size_bytes(), wait);
+        return queue_aligned(ticket, tx.data(), rx.data(), tx.size_bytes(), wait);
     }
 
     [[nodiscard]] static esp_err_t finish_coherent(
         Move& ticket,
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
-        return finish_coherent_impl(ticket, wait_ticks);
+        return finish_cache(ticket, wait_ticks);
     }
 
     [[nodiscard]] static esp_err_t finish_coherent(
         StrictMove& ticket,
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
-        return finish_coherent_impl(ticket, wait_ticks);
+        return finish_cache(ticket, wait_ticks);
     }
 
     [[nodiscard]] static constexpr int cs() noexcept
@@ -675,7 +675,7 @@ private:
         return &ticket_cookie;
     }
 
-    [[nodiscard]] static bool mark_ticket_done(spi_transaction_t* const trans) noexcept
+    [[nodiscard]] static bool mark_done(spi_transaction_t* const trans) noexcept
     {
         if (trans == nullptr || trans->user != ticket_marker()) {
             return false;
@@ -717,7 +717,7 @@ private:
     }
 
     template <bool Strict>
-    [[nodiscard]] static esp_err_t finish_impl(
+    [[nodiscard]] static esp_err_t finish_wait(
         Ticket<Strict>& ticket,
         const TickType_t wait_ticks) noexcept
     {
@@ -738,7 +738,7 @@ private:
             if (err != ESP_OK) {
                 return err;
             }
-            if (!mark_ticket_done(done)) {
+            if (!mark_done(done)) {
                 return ESP_ERR_INVALID_STATE;
             }
 
@@ -754,7 +754,7 @@ private:
     }
 
     template <bool Strict>
-    [[nodiscard]] static esp_err_t queue_coherent_impl(
+    [[nodiscard]] static esp_err_t queue_cache(
         Ticket<Strict>& ticket,
         const void* const tx,
         void* const rx,
@@ -768,7 +768,7 @@ private:
         if (tx != nullptr) {
             const auto source = [&]() noexcept -> esp_err_t {
                 if constexpr (Strict) {
-                    return Cache::to_device_strict(const_cast<void*>(tx), bytes);
+                    return Cache::to_aligned(const_cast<void*>(tx), bytes);
                 } else {
                     return Cache::to_device(const_cast<void*>(tx), bytes);
                 }
@@ -781,7 +781,7 @@ private:
         if (rx != nullptr) {
             const auto target = [&]() noexcept -> esp_err_t {
                 if constexpr (Strict) {
-                    return Cache::discard_strict(rx, bytes);
+                    return Cache::discard_aligned(rx, bytes);
                 } else {
                     return Cache::discard(rx, bytes);
                 }
@@ -795,17 +795,17 @@ private:
     }
 
     template <bool Strict>
-    [[nodiscard]] static esp_err_t finish_coherent_impl(
+    [[nodiscard]] static esp_err_t finish_cache(
         Ticket<Strict>& ticket,
         const TickType_t wait_ticks) noexcept
     {
-        const auto err = finish_impl(ticket, wait_ticks);
+        const auto err = finish_wait(ticket, wait_ticks);
         if (err != ESP_OK || ticket.rx == nullptr || ticket.rx_bytes == 0U) {
             return err;
         }
 
         if constexpr (Strict) {
-            return Cache::from_device_strict(ticket.rx, ticket.rx_bytes);
+            return Cache::from_aligned(ticket.rx, ticket.rx_bytes);
         } else {
             return Cache::from_device(ticket.rx, ticket.rx_bytes);
         }

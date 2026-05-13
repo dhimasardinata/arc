@@ -124,7 +124,7 @@ struct Fs {
         return err;
     }
 
-    [[nodiscard]] static esp_err_t fat_ro_off(
+    [[nodiscard]] static esp_err_t ro_off(
         const char* const base = "/fat",
         const char* const label = "storage") noexcept
     {

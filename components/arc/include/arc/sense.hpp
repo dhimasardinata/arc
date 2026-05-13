@@ -2,6 +2,9 @@
 
 #include <cstdint>
 
+#include "arc/soc/target.hpp"
+
+#if ARC_TARGET_IS_ESP32S3
 #include "esp_attr.h"
 #include "esp_check.h"
 #include "esp_private/gpio.h"
@@ -9,11 +12,13 @@
 #include "hal/dedic_gpio_caps.h"
 #include "hal/dedic_gpio_cpu_ll.h"
 #include "hal/dedic_gpio_periph.h"
+#endif
 
 #include "arc/task.hpp"
 
 namespace arc {
 
+#if ARC_TARGET_IS_ESP32S3
 template <int Pin, std::uint32_t Chan, Core Bind = Core::core1>
 struct Sense {
     static_assert(Bind != Core::any, "dedicated GPIO must be bound to a specific core");
@@ -55,5 +60,16 @@ struct Sense {
 
 template <int Pin, std::uint32_t Chan, Core Bind = Core::core1>
 using Din = Sense<Pin, Chan, Bind>;
+#else
+template <int Pin, std::uint32_t Chan, Core Bind = Core::core1>
+struct Sense {
+    static_assert(
+        soc::never_v<Pin>,
+        "arc::Sense uses ESP32-S3 dedicated GPIO registers and is not implemented for ESP32-S31");
+};
+
+template <int Pin, std::uint32_t Chan, Core Bind = Core::core1>
+using Din = Sense<Pin, Chan, Bind>;
+#endif
 
 }  // namespace arc

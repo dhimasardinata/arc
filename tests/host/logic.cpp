@@ -143,7 +143,7 @@ static_assert(sizeof(arc::AnyIn) == 3U * sizeof(void*));
 static_assert(sizeof(arc::AnyI2c) == 4U * sizeof(void*));
 static_assert(sizeof(arc::AnySpi) == 4U * sizeof(void*));
 static_assert(sizeof(arc::AnyUart) == 6U * sizeof(void*));
-static_assert(arc::rtos::ticks_per_second() == 1000U);
+static_assert(arc::rtos::tick_hz() == 1000U);
 static_assert(arc::rtos::milliseconds(std::chrono::microseconds{1500}) == 2U);
 static_assert(arc::rtos::milliseconds(std::chrono::milliseconds{-1}) == 0U);
 static_assert(arc::rtos::ticks_ms(2U) == 2U);
@@ -241,7 +241,7 @@ arc::IpcCore ipc_core{};
 bool ipc_called{};
 std::size_t cert_bundle_bytes{};
 std::string_view nvs_crypto_partition{};
-std::uint8_t secure_boot_revoked{};
+std::uint8_t boot_revoked{};
 std::size_t distributed_fetch_bytes{};
 std::uintptr_t distributed_remap_line{};
 std::uint8_t distributed_resume_core{};
@@ -997,7 +997,7 @@ void test_mqtt()
         "arc/topic",
         std::span(payload),
         7U,
-        arc::net::MqttQos::at_least_once,
+        arc::net::MqttQos::at_least,
         false,
         true);
     expect(publish.has_value(), "MQTT publish encodes");
@@ -1006,7 +1006,7 @@ void test_mqtt()
     expect(packet.has_value(), "MQTT publish parses");
     expect(packet->type == arc::net::MqttType::publish, "MQTT publish type");
     expect(packet->retain(), "MQTT publish retain");
-    expect(packet->qos() == arc::net::MqttQos::at_least_once, "MQTT publish qos");
+    expect(packet->qos() == arc::net::MqttQos::at_least, "MQTT publish qos");
 
     const auto view = arc::net::Mqtt::view(*packet);
     expect(view.has_value(), "MQTT publish view");
@@ -1017,8 +1017,8 @@ void test_mqtt()
     expect(std::memcmp(view->payload.data(), payload.data(), payload.size()) == 0, "MQTT publish payload");
 
     const std::array subscriptions{
-        arc::net::MqttSubscription{.filter = "arc/+/status", .qos = arc::net::MqttQos::at_least_once},
-        arc::net::MqttSubscription{.filter = "arc/#", .qos = arc::net::MqttQos::at_most_once},
+        arc::net::MqttSubscription{.filter = "arc/+/status", .qos = arc::net::MqttQos::at_least},
+        arc::net::MqttSubscription{.filter = "arc/#", .qos = arc::net::MqttQos::at_most},
     };
     const auto subscribe = arc::net::Mqtt::subscribe(buffer, 9U, std::span(subscriptions));
     expect(subscribe.has_value(), "MQTT subscribe encodes");
@@ -1553,7 +1553,7 @@ void test_foc_motion_tdma()
     std::array<arc::MotionStep<3>, 8> steps{};
     const auto plan = arc::MotionPlan<3>::line(
         std::span(steps),
-        {.delta = {4, 2, 1}, .ticks_per_step = 10U});
+        {.delta = {4, 2, 1}, .ticks_step = 10U});
     expect(plan.has_value() && plan->size() == 4U, "Motion line size");
     expect(steps[0].mask == 0x1U && steps[1].mask == 0x3U && steps[3].mask == 0x7U, "Motion Bresenham masks");
 
@@ -1629,13 +1629,13 @@ void test_simd_ml_pipeline()
     const std::array<std::int8_t, 16> lhs{1, 2, 3, 4, 5, 6, 7, 8, -1, -2, -3, -4, -5, -6, -7, -8};
     const std::array<std::int8_t, 16> rhs{1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1};
     expect(arc::simd::dot_s8(std::span(lhs), std::span(rhs)) == 72, "SIMD int8 dot");
-    expect(arc::simd::pie::ee_mac_s8(0, arc::simd::load_s8x16(lhs.data()), arc::simd::load_s8x16(rhs.data())) == 72,
+    expect(arc::simd::pie::mac_s8(0, arc::simd::load_s8x16(lhs.data()), arc::simd::load_s8x16(rhs.data())) == 72,
            "PIE int8 MAC wrapper");
     expect(std::string_view{arc::simd::pie::MacS8x16::instruction} == "ee.mac.s8", "PIE int8 wrapper name");
 
     const std::array<std::uint8_t, 4> white_yuv{235, 128, 235, 128};
     std::array<std::uint16_t, 2> rgb{};
-    const auto pixels = arc::simd::yuv422_to_rgb565(std::span(white_yuv), std::span(rgb));
+    const auto pixels = arc::simd::Rgb565::from_yuv422(std::span(white_yuv), std::span(rgb));
     expect(pixels.has_value() && *pixels == 2U && rgb[0] == 0xffffU && rgb[1] == 0xffffU, "YUV422 RGB565 conversion");
 
     std::array<arc::simd::ComplexF32, 4> spectrum{
@@ -2017,7 +2017,7 @@ void test_matrix_kalman_storage_swarm()
 
     arc::dsp::Kalman<float, 1, 1> reckon{};
     reckon.x(0, 0) = 2.0F;
-    const auto predicted = arc::net::DeadReckoning::predict_if_stale(
+    const auto predicted = arc::net::DeadReckoning::predict_stale(
         reckon,
         1'400,
         1'120,
@@ -2185,39 +2185,39 @@ void test_timesync()
     arc::TimeSync sync{};
     const auto first = sync.discipline(
         arc::TimeSyncSample{
-            .local_send_us = 1'000,
-            .remote_recv_us = 1'120,
-            .remote_send_us = 1'140,
-            .local_recv_us = 1'040,
+            .local_tx = 1'000,
+            .remote_rx = 1'120,
+            .remote_tx = 1'140,
+            .local_rx = 1'040,
         },
-        arc::TimeSyncConfig{.kp_shift = 0, .ki_shift = 8, .max_step_us = 1'000, .max_integral_us = 1'000});
-    expect(first.raw_offset_us == 110, "TimeSync raw offset");
-    expect(first.filtered_offset_us == 110, "TimeSync correction");
-    expect(first.delay_us == 20, "TimeSync delay");
-    expect(sync.local_to_remote(1'000) == 1'110, "TimeSync local to remote");
-    expect(sync.remote_to_local(1'110) == 1'000, "TimeSync remote to local");
+        arc::TimeSyncConfig{.kp_shift = 0, .ki_shift = 8, .step_max = 1'000, .integral_max = 1'000});
+    expect(first.raw_offset == 110, "TimeSync raw offset");
+    expect(first.filt_offset == 110, "TimeSync correction");
+    expect(first.delay == 20, "TimeSync delay");
+    expect(sync.to_remote(1'000) == 1'110, "TimeSync local to remote");
+    expect(sync.to_local(1'110) == 1'000, "TimeSync remote to local");
 
     const auto second = sync.discipline(
         arc::TimeSyncSample{
-            .local_send_us = 2'000,
-            .remote_recv_us = 2'120,
-            .remote_send_us = 2'120,
-            .local_recv_us = 2'000,
+            .local_tx = 2'000,
+            .remote_rx = 2'120,
+            .remote_tx = 2'120,
+            .local_rx = 2'000,
         },
-        arc::TimeSyncConfig{.kp_shift = 1, .ki_shift = 8, .max_step_us = 5, .max_integral_us = 1'000});
-    expect(second.correction_us == 5, "TimeSync correction clamp");
-    expect(second.filtered_offset_us == 115, "TimeSync filtered offset");
+        arc::TimeSyncConfig{.kp_shift = 1, .ki_shift = 8, .step_max = 5, .integral_max = 1'000});
+    expect(second.correction == 5, "TimeSync correction clamp");
+    expect(second.filt_offset == 115, "TimeSync filtered offset");
 
     const auto hw = sync.discipline_hw(
         {
-            .local_send_hw = 4000,
-            .remote_recv_hw = 8000,
-            .remote_send_hw = 8400,
-            .local_recv_hw = 4800,
-            .local_hw_to_us_shift = 2,
-            .remote_hw_to_us_shift = 3,
+            .local_tx = 4000,
+            .remote_rx = 8000,
+            .remote_tx = 8400,
+            .local_rx = 4800,
+            .local_shift = 2,
+            .remote_shift = 3,
         },
-        arc::TimeSyncConfig{.kp_shift = 1, .ki_shift = 4, .max_step_us = 1000, .max_integral_us = 1000});
+        arc::TimeSyncConfig{.kp_shift = 1, .ki_shift = 4, .step_max = 1000, .integral_max = 1000});
     expect(hw.samples == 3U, "TimeSync hardware timestamp sample count");
 
     arc::PtpClock ptp{};
@@ -2228,10 +2228,10 @@ void test_timesync()
             .egress_ns = 1'000'140,
             .receive_ns = 1'000'040,
         },
-        arc::PtpConfig{.kp_shift = 0, .ki_shift = 8, .max_step_ns = 1'000, .max_integral_ns = 1'000});
-    expect(ptp_stats.raw_offset_ns == 110, "PTP raw offset");
-    expect(ptp_stats.filtered_offset_ns == 110, "PTP filtered offset");
-    expect(ptp.local_to_grandmaster(1'000'000) == 1'000'110, "PTP local to grandmaster");
+        arc::PtpConfig{.kp_shift = 0, .ki_shift = 8, .step_max = 1'000, .integral_max = 1'000});
+    expect(ptp_stats.raw_offset == 110, "PTP raw offset");
+    expect(ptp_stats.filt_offset == 110, "PTP filtered offset");
+    expect(ptp.to_master(1'000'000) == 1'000'110, "PTP local to grandmaster");
 }
 
 void test_pack()
@@ -2309,7 +2309,7 @@ void test_static_silicon_facades()
     std::array<std::uint8_t, 16> out_bytes{};
     input.bind(0, in_bytes);
     output.bind(0, out_bytes, true);
-    expect((arc::crypto_dma_submit<1, 1, MockCryptoDmaPolicy>(
+    expect((arc::crypto_submit<1, 1, MockCryptoDmaPolicy>(
                 input,
                 output,
                 in_bytes.size(),
@@ -2763,7 +2763,7 @@ void test_pru_isp_vision()
         28U,
     };
     std::array<std::uint16_t, 16> rgb{};
-    const auto debayered = arc::isp::Debayer::rgb565(std::span(raw), 4U, 4U, std::span(rgb), arc::isp::Bayer::rggb);
+    const auto debayered = arc::isp::Debayer::to_rgb565(std::span(raw), 4U, 4U, std::span(rgb), arc::isp::Bayer::rggb);
     expect(debayered.has_value() && *debayered == rgb.size(), "ISP debayer RGB565");
     const auto stats = arc::isp::AecAwb::measure_rgb565(std::span(rgb));
     const auto tuning = arc::isp::AecAwb::tune(stats);
@@ -2812,7 +2812,7 @@ void test_pru_isp_vision()
     };
     const auto flow = arc::vision::OpticalFlow::lucas_kanade(std::span(gray), std::span(shifted), 4U, 4U);
     expect(flow.has_value(), "Vision optical flow");
-    const auto target = arc::vision::VisualServo::target_from_flow({.dx_q8 = 256, .confidence = 1U}, 0.25F, 12.0F);
+    const auto target = arc::vision::VisualServo::flow_target({.dx_q8 = 256, .confidence = 1U}, 0.25F, 12.0F);
     expect(target.q == -0.25F && target.bus == 12.0F, "Vision flow to FOC target");
 }
 
@@ -3072,13 +3072,13 @@ void test_goal_wave_surfaces()
     expect(arc::sdr::bind_dma(rf_dma, std::span<std::uint16_t>{rf_words}).has_value() && rf_dma.head()->buffer == rf_words.data(),
            "SDR DMA bind");
     struct SdrPolicy {
-        static esp_err_t lcd_cam_start(const arc::sdr::TxConfig& config, const std::span<const std::uint16_t> words) noexcept
+        static esp_err_t cam_start(const arc::sdr::TxConfig& config, const std::span<const std::uint16_t> words) noexcept
         {
             sdr_words = config.gpio == 4U ? words.size() : 0U;
             return ESP_OK;
         }
 
-        static esp_err_t lcd_cam_stop() noexcept
+        static esp_err_t cam_stop() noexcept
         {
             return ESP_OK;
         }
@@ -3098,7 +3098,7 @@ void test_goal_wave_surfaces()
     std::array<arc::simd::ComplexF32, 8> fft_scratch{};
     fft_ref[1].re = 1.0F;
     fft_delayed[2].re = 1.0F;
-    const auto phat = arc::swarm::AcousticSlam::gcc_phat_tdoa(fft_ref, fft_delayed, fft_scratch, 3U, 1'000.0F);
+    const auto phat = arc::swarm::AcousticSlam::gcc_tdoa(fft_ref, fft_delayed, fft_scratch, 3U, 1'000.0F);
     expect(phat.has_value(), "Acoustic SIMD FFT GCC-PHAT");
 
     const std::array<arc::swarm::AcousticAnchor, 4> anchors{
@@ -3208,9 +3208,9 @@ void test_goal_wave_surfaces()
     expect(arc::chaos::Monkey::inject<ChaosPolicy>(chaos, arc::chaos::Fault::bit_flip, {}, sram).has_value() &&
                chaos_flips == 1U,
            "Chaos SRAM bit flip");
-    expect(!arc::chaos::Monkey::drop_espnow_33(chaos) &&
-               !arc::chaos::Monkey::drop_espnow_33(chaos) &&
-               arc::chaos::Monkey::drop_espnow_33(chaos),
+    expect(!arc::chaos::Monkey::drop_espnow(chaos) &&
+               !arc::chaos::Monkey::drop_espnow(chaos) &&
+               arc::chaos::Monkey::drop_espnow(chaos),
            "Chaos exact ESP-NOW 33 percent drop cadence");
     arc::chaos::Monkey::record<ChaosDump>({.fault = arc::chaos::Fault::tight_overrun, .payload = 1U, .aux = 2U});
     expect(ChaosDump::size() == 1U && ChaosDump::event(0).payload == static_cast<std::uint32_t>(arc::chaos::Fault::tight_overrun),
@@ -3263,7 +3263,7 @@ void test_resilient_edge_goal_surfaces()
 
     const std::array entropy_sram{std::byte{0xA5}, std::byte{0x3C}, std::byte{0x5A}};
     std::array<std::uint8_t, 4> raw_entropy{};
-    expect(arc::crypto::Puf::sample_sram_decay(entropy_sram, raw_entropy).has_value() &&
+    expect(arc::crypto::Puf::sample_sram(entropy_sram, raw_entropy).has_value() &&
                raw_entropy[0] == 0xA5U && raw_entropy[2] == 0x5AU,
            "PUF SRAM decay sample");
     const std::array<std::uint8_t, 1> raw_pairs{0b0001'1011U};
@@ -3281,7 +3281,7 @@ void test_resilient_edge_goal_surfaces()
     };
     arc::dsp::Biquad<std::int32_t>::State puf_filter{};
     std::array<std::uint16_t, 3> adc_noise{};
-    expect(arc::crypto::Puf::sample_adc_noise<PufAdc>(adc_noise, puf_filter).has_value() &&
+    expect(arc::crypto::Puf::sample_adc<PufAdc>(adc_noise, puf_filter).has_value() &&
                adc_noise[0] != 0U && adc_noise[2] > adc_noise[0],
            "PUF ADC noise filter");
     struct PufHash {
@@ -3293,7 +3293,7 @@ void test_resilient_edge_goal_surfaces()
             return key;
         }
     };
-    const auto puf_key = arc::crypto::Puf::derive_key_with<PufHash>(stable_bits);
+    const auto puf_key = arc::crypto::Puf::derive_with<PufHash>(stable_bits);
     expect(puf_key.has_value() && (*puf_key)[0] == stable_bits.size() && (*puf_key)[31] == stable_bits[0],
            "PUF key derivation hook");
 
@@ -3491,7 +3491,7 @@ void test_current_goal_surfaces()
     const arc::HilScript<2> hil_script{.actions = {
                                            arc::HilAction{
                                                .role = arc::HilRole::physical_chaos,
-                                               .fault = arc::HilFault::i2c_short_to_ground,
+                                               .fault = arc::HilFault::i2c_short,
                                                .at_tick = 10U,
                                                .duration_ticks = 5U,
                                            },
@@ -3636,7 +3636,7 @@ void test_current_goal_surfaces()
             return ESP_OK;
         }
 
-        static arc::Result<arc::trace::LiveChunk> trace_half_full(const std::size_t watermark) noexcept
+        static arc::Result<arc::trace::LiveChunk> trace_half(const std::size_t watermark) noexcept
         {
             return arc::trace::LiveChunk{.bytes = std::span<const std::uint8_t>{live_trace_buffer}.first(watermark), .bank = 1U};
         }
@@ -3658,7 +3658,7 @@ void test_current_goal_surfaces()
     live_trace_swaps = 0U;
     live_trace_sink_bytes = 0U;
     expect(arc::trace::LiveStream::arm<TraceLivePolicy>({.bank_bytes = 64U, .watermark_bytes = 32U}).has_value() &&
-               arc::trace::LiveStream::drain_half_full_isr<TraceLivePolicy>(
+               arc::trace::LiveStream::drain_isr<TraceLivePolicy>(
                    trace_sink,
                    {.bank_bytes = 64U, .watermark_bytes = 32U})
                    .has_value() &&
@@ -3739,7 +3739,7 @@ void test_current_goal_surfaces()
         arc::vision::Corner{.x = 12U, .y = 11U, .score = 12U},
         arc::vision::Corner{.x = 22U, .y = 13U, .score = 12U},
     };
-    const auto essential = arc::vision::VSlam::essential_from_flow(prev_corners, curr_corners, 2U, 100.0F);
+    const auto essential = arc::vision::VSlam::from_flow(prev_corners, curr_corners, 2U, 100.0F);
     arc::nav::Eskf<float>::State vision_state{};
     expect(fast.has_value() && !fast->empty() && essential.has_value() &&
                near(essential->essential(1, 2), -0.02F) &&
@@ -4201,7 +4201,7 @@ void test_current_goal_surfaces()
            "Ipc policy bridge calls opposite core hooks");
 
     struct CertPolicy {
-        static esp_err_t cert_bundle_attach(const arc::x509::CertBundle bundle) noexcept
+        static esp_err_t bundle_attach(const arc::x509::CertBundle bundle) noexcept
         {
             cert_bundle_bytes = bundle.der.size();
             return ESP_OK;
@@ -4224,18 +4224,18 @@ void test_current_goal_surfaces()
            "NVS crypto mounts encrypted partition policy");
 
     struct SecureBootPolicy {
-        static arc::Result<arc::secure::BootState> secure_boot_state() noexcept
+        static arc::Result<arc::secure::BootState> boot_state() noexcept
         {
             return arc::secure::BootState{.enabled = true, .digest_valid = true};
         }
 
-        static esp_err_t secure_boot_revoke(const std::uint8_t key) noexcept
+        static esp_err_t boot_revoke(const std::uint8_t key) noexcept
         {
-            secure_boot_revoked = key;
+            boot_revoked = key;
             return ESP_OK;
         }
 
-        static arc::Result<arc::secure::BootDigest> secure_boot_digest() noexcept
+        static arc::Result<arc::secure::BootDigest> boot_digest() noexcept
         {
             arc::secure::BootDigest digest{};
             digest.sha256[0] = 0xA5U;
@@ -4246,7 +4246,7 @@ void test_current_goal_surfaces()
     const auto boot_digest = arc::secure::SecureBoot::digest<SecureBootPolicy>();
     expect(boot_state.has_value() && boot_state->enabled && boot_state->digest_valid &&
                arc::secure::SecureBoot::revoke<SecureBootPolicy>(2U).has_value() &&
-               secure_boot_revoked == 2U && boot_digest.has_value() && boot_digest->sha256[0] == 0xA5U,
+               boot_revoked == 2U && boot_digest.has_value() && boot_digest->sha256[0] == 0xA5U,
            "SecureBoot exposes state revoke and digest hooks");
 }
 
@@ -4285,8 +4285,8 @@ void test_hive_goal_surfaces()
                hypermatrix_node == 8U && hypermatrix_bytes > sizeof(arc::swarm::HyperMatrixHeader),
            "HyperMatrix publishes shared 6D tensor state through RDMA frame");
 
-    const auto corexy = arc::cnc::Kinematics::corexy(10.0F, 5.0F, {.steps_per_mm = 80.0F, .ticks_per_step = 2U});
-    const auto delta = arc::cnc::Kinematics::delta({0.0F, 0.0F, 10.0F}, {.arm_mm = 120.0F, .radius_mm = 30.0F, .steps_per_mm = 10.0F});
+    const auto corexy = arc::cnc::Kinematics::corexy(10.0F, 5.0F, {.steps_mm = 80.0F, .ticks_step = 2U});
+    const auto delta = arc::cnc::Kinematics::delta({0.0F, 0.0F, 10.0F}, {.arm_mm = 120.0F, .radius_mm = 30.0F, .steps_mm = 10.0F});
     const auto five = arc::cnc::Kinematics::five_axis(
         {1.0F, 2.0F, 3.0F, 4.0F, 5.0F},
         {10.0F, 10.0F, 10.0F, 10.0F, 2.0F});
@@ -4296,7 +4296,7 @@ void test_hive_goal_surfaces()
     const auto planned = block.has_value()
         ? arc::cnc::GCode::plan_linear<2>(*block, {0.0F, 0.0F}, 10.0F, cnc_steps)
         : arc::Result<std::span<const arc::MotionStep<2>>>{arc::fail(ESP_ERR_INVALID_STATE)};
-    expect(corexy.delta[0] == 1200 && corexy.delta[1] == 400 && corexy.ticks_per_step == 2U &&
+    expect(corexy.delta[0] == 1200 && corexy.delta[1] == 400 && corexy.ticks_step == 2U &&
                delta.has_value() && delta->delta[0] > 0 &&
                five.delta[0] == 10 && five.delta[4] == 10 &&
                block.has_value() && block->command == arc::cnc::Command::linear &&

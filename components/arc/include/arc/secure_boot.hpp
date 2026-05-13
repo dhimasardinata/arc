@@ -21,7 +21,7 @@ struct SecureBoot {
     template <typename Policy>
     [[nodiscard]] static Result<BootState> state() noexcept
     {
-        return Policy::secure_boot_state();
+        return Policy::boot_state();
     }
 
     template <typename Policy>
@@ -30,13 +30,13 @@ struct SecureBoot {
         if (key_index >= 3U) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
-        return status(Policy::secure_boot_revoke(key_index));
+        return status(Policy::boot_revoke(key_index));
     }
 
     template <typename Policy>
     [[nodiscard]] static Result<BootDigest> digest() noexcept
     {
-        return Policy::secure_boot_digest();
+        return Policy::boot_digest();
     }
 };
 

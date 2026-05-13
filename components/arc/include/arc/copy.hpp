@@ -132,13 +132,13 @@ struct Copy {
         return finish_coherent(ticket);
     }
 
-    static esp_err_t copy_coherent_strict(
+    static esp_err_t copy_strict(
         void* const dst,
         const void* const src,
         const std::size_t bytes) noexcept
     {
         StrictTicket ticket{};
-        const auto ret = send_coherent_strict(ticket, dst, src, bytes);
+        const auto ret = send_strict(ticket, dst, src, bytes);
         if (ret != ESP_OK) {
             return ret;
         }
@@ -158,13 +158,13 @@ struct Copy {
 
     template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
-    static esp_err_t copy_coherent_strict(std::span<Dst, DstExtent> dst, std::span<Src, SrcExtent> src) noexcept
+    static esp_err_t copy_strict(std::span<Dst, DstExtent> dst, std::span<Src, SrcExtent> src) noexcept
     {
         if (dst.size() < src.size()) {
             return ESP_ERR_INVALID_ARG;
         }
 
-        return copy_coherent_strict(dst.data(), src.data(), src.size_bytes());
+        return copy_strict(dst.data(), src.data(), src.size_bytes());
     }
 
     static esp_err_t send_coherent(
@@ -173,16 +173,16 @@ struct Copy {
         const void* const src,
         const std::size_t bytes) noexcept
     {
-        return send_coherent_impl(ticket, dst, src, bytes);
+        return send_cache(ticket, dst, src, bytes);
     }
 
-    static esp_err_t send_coherent_strict(
+    static esp_err_t send_strict(
         StrictTicket& ticket,
         void* const dst,
         const void* const src,
         const std::size_t bytes) noexcept
     {
-        return send_coherent_impl(ticket, dst, src, bytes);
+        return send_cache(ticket, dst, src, bytes);
     }
 
     template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
@@ -201,7 +201,7 @@ struct Copy {
 
     template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
-    static esp_err_t send_coherent_strict(
+    static esp_err_t send_strict(
         StrictTicket& ticket,
         std::span<Dst, DstExtent> dst,
         std::span<Src, SrcExtent> src) noexcept
@@ -210,7 +210,7 @@ struct Copy {
             return ESP_ERR_INVALID_ARG;
         }
 
-        return send_coherent_strict(ticket, dst.data(), src.data(), src.size_bytes());
+        return send_strict(ticket, dst.data(), src.data(), src.size_bytes());
     }
 
     [[nodiscard]] static bool ready(const Ticket& ticket) noexcept
@@ -225,12 +225,12 @@ struct Copy {
 
     static esp_err_t finish_coherent(const Ticket& ticket) noexcept
     {
-        return finish_coherent_impl(ticket);
+        return finish_impl(ticket);
     }
 
     static esp_err_t finish_coherent(const StrictTicket& ticket) noexcept
     {
-        return finish_coherent_impl(ticket);
+        return finish_impl(ticket);
     }
 
     [[nodiscard]] static std::uint32_t sent() noexcept
@@ -398,7 +398,7 @@ private:
     }
 
     template <bool Strict>
-    static esp_err_t send_coherent_impl(
+    static esp_err_t send_cache(
         CopyTicket<Strict>& ticket,
         void* const dst,
         const void* const src,
@@ -410,7 +410,7 @@ private:
 
         const auto source = [&]() noexcept -> esp_err_t {
             if constexpr (Strict) {
-                return Cache::to_device_strict(const_cast<void*>(src), bytes);
+                return Cache::to_aligned(const_cast<void*>(src), bytes);
             } else {
                 return Cache::to_device(const_cast<void*>(src), bytes);
             }
@@ -421,7 +421,7 @@ private:
 
         const auto target = [&]() noexcept -> esp_err_t {
             if constexpr (Strict) {
-                return Cache::discard_strict(dst, bytes);
+                return Cache::discard_aligned(dst, bytes);
             } else {
                 return Cache::discard(dst, bytes);
             }
@@ -444,7 +444,7 @@ private:
     }
 
     template <bool Strict>
-    static esp_err_t finish_coherent_impl(const CopyTicket<Strict>& ticket) noexcept
+    static esp_err_t finish_impl(const CopyTicket<Strict>& ticket) noexcept
     {
         if (ticket.dst == nullptr || ticket.bytes == 0U) {
             return ESP_ERR_INVALID_ARG;
@@ -453,7 +453,7 @@ private:
         wait(ticket.target);
 
         if constexpr (Strict) {
-            return Cache::from_device_strict(ticket.dst, ticket.bytes);
+            return Cache::from_aligned(ticket.dst, ticket.bytes);
         } else {
             return Cache::from_device(ticket.dst, ticket.bytes);
         }

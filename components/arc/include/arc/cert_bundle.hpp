@@ -20,7 +20,7 @@ struct Bundle {
         if (bundle.der.empty() || bundle.certificates == 0U) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
-        return status(Policy::cert_bundle_attach(bundle));
+        return status(Policy::bundle_attach(bundle));
     }
 };
 

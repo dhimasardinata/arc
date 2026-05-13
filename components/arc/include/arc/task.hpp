@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "arc/soc/target.hpp"
 #include "arc/stack.hpp"
 
 namespace arc {
@@ -17,6 +18,26 @@ enum class Core : BaseType_t {
     core0 = 0,
     core1 = 1,
     any = tskNO_AFFINITY,
+};
+
+enum class CoreRole : std::uint8_t {
+    ctrl,
+    det,
+};
+
+template <typename Target = soc::Target>
+struct CoreMap {
+    static constexpr bool dual = Target::cores > 1U;
+    static constexpr Core ctrl = Core::core0;
+    static constexpr Core det = dual ? Core::core1 : Core::core0;
+    static constexpr bool simd = Target::simd;
+    static constexpr bool riscv = Target::Arch::csr;
+    static constexpr bool exp = Target::experimental;
+
+    [[nodiscard]] static consteval Core core(const CoreRole role) noexcept
+    {
+        return role == CoreRole::det ? det : ctrl;
+    }
 };
 
 [[nodiscard]] consteval std::size_t words(const std::size_t bytes) noexcept

@@ -15,7 +15,7 @@ enum class PmsAccess : std::uint32_t {
     execute = 4U,
     read_write = read | write,
     read_execute = read | execute,
-    read_write_execute = read | write | execute,
+    rwx = read | write | execute,
 };
 
 struct PmsRegion {

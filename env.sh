@@ -23,4 +23,6 @@ else
 fi
 
 . "${IDF_PATH}/export.sh"
-export IDF_TARGET="esp32s3"
+arc_target="${ARC_TARGET:-esp32s3}"
+arc_target="${arc_target,,}"
+export IDF_TARGET="${arc_target}"

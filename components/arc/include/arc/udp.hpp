@@ -313,7 +313,7 @@ private:
         ESP_ERROR_CHECK(err);
     }
 
-    static void raise_if_ip_ready() noexcept
+    static void raise_ready() noexcept
     {
         if (state.sta == nullptr) {
             return;
@@ -403,7 +403,7 @@ private:
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi));
         ESP_ERROR_CHECK(Radio::start(WIFI_MODE_STA, WIFI_PS_NONE));
         connect();
-        raise_if_ip_ready();
+        raise_ready();
 
         while (running() && (xEventGroupGetBits(ev) & wifi_up) == 0U) {
             sleep(1);

@@ -55,39 +55,39 @@ struct Cache {
         return sync(data, bytes, dir_c2m | unaligned);
     }
 
-    static esp_err_t to_device_strict(void* const data, const std::size_t bytes) noexcept
+    static esp_err_t to_aligned(void* const data, const std::size_t bytes) noexcept
     {
         return strict(data, bytes, dir_c2m);
     }
 
     static esp_err_t from_device(void* const data, const std::size_t bytes) noexcept
     {
-        return from_device_strict(data, bytes);
+        return from_aligned(data, bytes);
     }
 
-    static esp_err_t from_device_strict(void* const data, const std::size_t bytes) noexcept
+    static esp_err_t from_aligned(void* const data, const std::size_t bytes) noexcept
     {
         return strict(data, bytes, dir_m2c);
     }
 
-    [[deprecated("unaligned device invalidation can discard unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and from_device_strict")]]
-    static esp_err_t from_device_unaligned(void* const data, const std::size_t bytes) noexcept
+    [[deprecated("unaligned device invalidation can discard unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and from_aligned")]]
+    static esp_err_t from_raw(void* const data, const std::size_t bytes) noexcept
     {
         return sync(data, bytes, dir_m2c | unaligned);
     }
 
     static esp_err_t discard(void* const data, const std::size_t bytes) noexcept
     {
-        return discard_strict(data, bytes);
+        return discard_aligned(data, bytes);
     }
 
-    static esp_err_t discard_strict(void* const data, const std::size_t bytes) noexcept
+    static esp_err_t discard_aligned(void* const data, const std::size_t bytes) noexcept
     {
         return strict(data, bytes, dir_c2m | invalidate);
     }
 
-    [[deprecated("unaligned discard can invalidate unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and discard_strict")]]
-    static esp_err_t discard_unaligned(void* const data, const std::size_t bytes) noexcept
+    [[deprecated("unaligned discard can invalidate unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and discard_aligned")]]
+    static esp_err_t discard_raw(void* const data, const std::size_t bytes) noexcept
     {
         return sync(data, bytes, dir_c2m | invalidate | unaligned);
     }
@@ -106,9 +106,9 @@ struct Cache {
 
     template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t to_device_strict(const std::span<T, Extent> data) noexcept
+    static esp_err_t to_aligned(const std::span<T, Extent> data) noexcept
     {
-        return to_device_strict(data.data(), data.size_bytes());
+        return to_aligned(data.data(), data.size_bytes());
     }
 
     template <typename T, std::size_t Extent>
@@ -120,17 +120,17 @@ struct Cache {
 
     template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t from_device_strict(const std::span<T, Extent> data) noexcept
+    static esp_err_t from_aligned(const std::span<T, Extent> data) noexcept
     {
-        return from_device_strict(data.data(), data.size_bytes());
+        return from_aligned(data.data(), data.size_bytes());
     }
 
     template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    [[deprecated("unaligned device invalidation can discard unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and from_device_strict")]]
-    static esp_err_t from_device_unaligned(const std::span<T, Extent> data) noexcept
+    [[deprecated("unaligned device invalidation can discard unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and from_aligned")]]
+    static esp_err_t from_raw(const std::span<T, Extent> data) noexcept
     {
-        return from_device_unaligned(data.data(), data.size_bytes());
+        return from_raw(data.data(), data.size_bytes());
     }
 
     template <typename T, std::size_t Extent>
@@ -142,17 +142,17 @@ struct Cache {
 
     template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    static esp_err_t discard_strict(const std::span<T, Extent> data) noexcept
+    static esp_err_t discard_aligned(const std::span<T, Extent> data) noexcept
     {
-        return discard_strict(data.data(), data.size_bytes());
+        return discard_aligned(data.data(), data.size_bytes());
     }
 
     template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    [[deprecated("unaligned discard can invalidate unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and discard_strict")]]
-    static esp_err_t discard_unaligned(const std::span<T, Extent> data) noexcept
+    [[deprecated("unaligned discard can invalidate unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and discard_aligned")]]
+    static esp_err_t discard_raw(const std::span<T, Extent> data) noexcept
     {
-        return discard_unaligned(data.data(), data.size_bytes());
+        return discard_raw(data.data(), data.size_bytes());
     }
 };
 

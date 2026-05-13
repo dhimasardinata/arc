@@ -18,7 +18,7 @@ concept AnyIoBytes = std::is_trivially_copyable_v<std::remove_cv_t<T>>;
 namespace detail {
 
 template <typename Fn>
-[[nodiscard]] inline Status any_status_call(Fn&& fn) noexcept
+[[nodiscard]] inline Status any_status(Fn&& fn) noexcept
 {
     using Ret = std::remove_cvref_t<decltype(fn())>;
     if constexpr (std::is_same_v<Ret, esp_err_t>) {
@@ -137,25 +137,25 @@ private:
     template <typename Pin>
     [[nodiscard]] static Status out_static(void*) noexcept
     {
-        return detail::any_status_call([]() { return Pin::out(); });
+        return detail::any_status([]() { return Pin::out(); });
     }
 
     template <typename Pin>
     [[nodiscard]] static Status hi_static(void*) noexcept
     {
-        return detail::any_status_call([]() { return Pin::hi(); });
+        return detail::any_status([]() { return Pin::hi(); });
     }
 
     template <typename Pin>
     [[nodiscard]] static Status lo_static(void*) noexcept
     {
-        return detail::any_status_call([]() { return Pin::lo(); });
+        return detail::any_status([]() { return Pin::lo(); });
     }
 
     template <typename Pin>
     [[nodiscard]] static Status toggle_static(void*) noexcept
     {
-        return detail::any_status_call([]() { return Pin::toggle(); });
+        return detail::any_status([]() { return Pin::toggle(); });
     }
 
     template <typename Pin>
@@ -167,25 +167,25 @@ private:
     template <typename Pin>
     [[nodiscard]] static Status out_object(void* const ctx) noexcept
     {
-        return detail::any_status_call([&]() { return static_cast<Pin*>(ctx)->out(); });
+        return detail::any_status([&]() { return static_cast<Pin*>(ctx)->out(); });
     }
 
     template <typename Pin>
     [[nodiscard]] static Status hi_object(void* const ctx) noexcept
     {
-        return detail::any_status_call([&]() { return static_cast<Pin*>(ctx)->hi(); });
+        return detail::any_status([&]() { return static_cast<Pin*>(ctx)->hi(); });
     }
 
     template <typename Pin>
     [[nodiscard]] static Status lo_object(void* const ctx) noexcept
     {
-        return detail::any_status_call([&]() { return static_cast<Pin*>(ctx)->lo(); });
+        return detail::any_status([&]() { return static_cast<Pin*>(ctx)->lo(); });
     }
 
     template <typename Pin>
     [[nodiscard]] static Status toggle_object(void* const ctx) noexcept
     {
-        return detail::any_status_call([&]() { return static_cast<Pin*>(ctx)->toggle(); });
+        return detail::any_status([&]() { return static_cast<Pin*>(ctx)->toggle(); });
     }
 
     template <typename Pin>
@@ -257,7 +257,7 @@ private:
     template <typename Pin>
     [[nodiscard]] static Status in_static(void*) noexcept
     {
-        return detail::any_status_call([]() { return Pin::in(); });
+        return detail::any_status([]() { return Pin::in(); });
     }
 
     template <typename Pin>
@@ -269,7 +269,7 @@ private:
     template <typename Pin>
     [[nodiscard]] static Status in_object(void* const ctx) noexcept
     {
-        return detail::any_status_call([&]() { return static_cast<Pin*>(ctx)->in(); });
+        return detail::any_status([&]() { return static_cast<Pin*>(ctx)->in(); });
     }
 
     template <typename Pin>

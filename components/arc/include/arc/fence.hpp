@@ -19,7 +19,7 @@ IRAM_ATTR [[gnu::always_inline]] inline void release_fence() noexcept
     __atomic_thread_fence(__ATOMIC_RELEASE);
 }
 
-IRAM_ATTR [[gnu::always_inline]] inline void acq_rel_fence() noexcept
+IRAM_ATTR [[gnu::always_inline]] inline void sync_fence() noexcept
 {
     __atomic_thread_fence(__ATOMIC_ACQ_REL);
 }

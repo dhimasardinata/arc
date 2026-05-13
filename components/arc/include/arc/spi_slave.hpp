@@ -258,7 +258,7 @@ struct SpiSlave {
         const std::size_t bytes,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
-        return xfer_coherent_impl<false>(tx, rx, bytes, wait);
+        return xfer_cache<false>(tx, rx, bytes, wait);
     }
 
     [[nodiscard]] static esp_err_t xfer_coherent_strict(
@@ -267,7 +267,7 @@ struct SpiSlave {
         const std::size_t bytes,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
-        return xfer_coherent_impl<true>(tx, rx, bytes, wait);
+        return xfer_cache<true>(tx, rx, bytes, wait);
     }
 
     [[nodiscard]] static esp_err_t queue(
@@ -313,17 +313,17 @@ struct SpiSlave {
         const std::size_t bytes,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
-        return queue_coherent_impl(ticket, tx, rx, bytes, wait);
+        return queue_cache(ticket, tx, rx, bytes, wait);
     }
 
-    [[nodiscard]] static esp_err_t queue_coherent_strict(
+    [[nodiscard]] static esp_err_t queue_aligned(
         StrictMove& ticket,
         const void* const tx,
         void* const rx,
         const std::size_t bytes,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
-        return queue_coherent_impl(ticket, tx, rx, bytes, wait);
+        return queue_cache(ticket, tx, rx, bytes, wait);
     }
 
     [[nodiscard]] static esp_err_t wait(
@@ -339,7 +339,7 @@ struct SpiSlave {
         const auto err = spi_slave_get_trans_result(Host, &done, wait_ticks);
         if (err == ESP_OK) {
             trans = done;
-            static_cast<void>(mark_ticket_done(done));
+            static_cast<void>(mark_done(done));
         }
         return err;
     }
@@ -348,28 +348,28 @@ struct SpiSlave {
         Move& ticket,
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
-        return finish_impl(ticket, wait_ticks);
+        return finish_wait(ticket, wait_ticks);
     }
 
     [[nodiscard]] static esp_err_t finish(
         StrictMove& ticket,
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
-        return finish_impl(ticket, wait_ticks);
+        return finish_wait(ticket, wait_ticks);
     }
 
     [[nodiscard]] static esp_err_t finish_coherent(
         Move& ticket,
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
-        return finish_coherent_impl(ticket, wait_ticks);
+        return finish_cache(ticket, wait_ticks);
     }
 
     [[nodiscard]] static esp_err_t finish_coherent(
         StrictMove& ticket,
         const TickType_t wait_ticks = portMAX_DELAY) noexcept
     {
-        return finish_coherent_impl(ticket, wait_ticks);
+        return finish_cache(ticket, wait_ticks);
     }
 
     [[nodiscard]] static constexpr spi_host_device_t host() noexcept
@@ -470,7 +470,7 @@ private:
         return &ticket_cookie;
     }
 
-    [[nodiscard]] static bool mark_ticket_done(Transaction* const trans) noexcept
+    [[nodiscard]] static bool mark_done(Transaction* const trans) noexcept
     {
         if (trans == nullptr || trans->user != ticket_marker()) {
             return false;
@@ -491,7 +491,7 @@ private:
         if (tx != nullptr) {
             const auto source = [&]() noexcept -> esp_err_t {
                 if constexpr (Strict) {
-                    return Cache::to_device_strict(const_cast<void*>(tx), bytes);
+                    return Cache::to_aligned(const_cast<void*>(tx), bytes);
                 } else {
                     return Cache::to_device(const_cast<void*>(tx), bytes);
                 }
@@ -504,7 +504,7 @@ private:
         if (rx != nullptr) {
             const auto target = [&]() noexcept -> esp_err_t {
                 if constexpr (Strict) {
-                    return Cache::discard_strict(rx, bytes);
+                    return Cache::discard_aligned(rx, bytes);
                 } else {
                     return Cache::discard(rx, bytes);
                 }
@@ -525,14 +525,14 @@ private:
         }
 
         if constexpr (Strict) {
-            return Cache::from_device_strict(rx, bytes);
+            return Cache::from_aligned(rx, bytes);
         } else {
             return Cache::from_device(rx, bytes);
         }
     }
 
     template <bool Strict>
-    [[nodiscard]] static esp_err_t xfer_coherent_impl(
+    [[nodiscard]] static esp_err_t xfer_cache(
         const void* const tx,
         void* const rx,
         const std::size_t bytes,
@@ -585,7 +585,7 @@ private:
     }
 
     template <bool Strict>
-    [[nodiscard]] static esp_err_t queue_coherent_impl(
+    [[nodiscard]] static esp_err_t queue_cache(
         Ticket<Strict>& ticket,
         const void* const tx,
         void* const rx,
@@ -605,7 +605,7 @@ private:
     }
 
     template <bool Strict>
-    [[nodiscard]] static esp_err_t finish_impl(
+    [[nodiscard]] static esp_err_t finish_wait(
         Ticket<Strict>& ticket,
         const TickType_t wait_ticks) noexcept
     {
@@ -626,7 +626,7 @@ private:
             if (err != ESP_OK) {
                 return err;
             }
-            if (!mark_ticket_done(done)) {
+            if (!mark_done(done)) {
                 return ESP_ERR_INVALID_STATE;
             }
 
@@ -642,11 +642,11 @@ private:
     }
 
     template <bool Strict>
-    [[nodiscard]] static esp_err_t finish_coherent_impl(
+    [[nodiscard]] static esp_err_t finish_cache(
         Ticket<Strict>& ticket,
         const TickType_t wait_ticks) noexcept
     {
-        const auto err = finish_impl(ticket, wait_ticks);
+        const auto err = finish_wait(ticket, wait_ticks);
         if (err != ESP_OK) {
             return err;
         }

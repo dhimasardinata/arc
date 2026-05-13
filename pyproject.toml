@@ -8,7 +8,7 @@ extend-exclude = [
     "build",
     "dump",
     "esp-idf",
-    "examples/*/build",
+    "examples/**/build",
 ]
 
 [tool.ruff.format]

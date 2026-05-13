@@ -15,8 +15,8 @@ template <typename Pin,
           ClockSource Source = ClockSource::systimer>
 struct Wave {
     static_assert(
-        Source != ClockSource::cycle_counter || !clock_dfs_possible(),
-        "arc::Wave cycle-counter timing is not DFS-safe when CONFIG_PM_ENABLE is set; use the default systimer source or hold arc::CpuLock and request ClockSource::locked_cycle_counter");
+        Source != ClockSource::cycle_counter || !dfs_possible(),
+        "arc::Wave cycle-counter timing is not DFS-safe when CONFIG_PM_ENABLE is set; use the default systimer source or hold arc::CpuLock and request ClockSource::locked_cycles");
 
     static void setup()
     {

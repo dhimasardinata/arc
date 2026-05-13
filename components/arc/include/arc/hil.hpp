@@ -24,15 +24,15 @@ struct Hil {
 };
 
 enum class HilRole : std::uint8_t {
-    device_under_test,
+    dut,
     physical_chaos,
     radio_jammer,
 };
 
 enum class HilFault : std::uint8_t {
-    i2c_short_to_ground,
-    spi_cs_drop,
-    can_priority_spam,
+    i2c_short,
+    cs_drop,
+    can_spam,
     espnow_jam,
 };
 

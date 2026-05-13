@@ -576,7 +576,7 @@ struct Beamform {
         const float sound_mps = 343.0F) noexcept
     {
         if (reference.size() != delayed.size() || scratch.size() < reference.size() ||
-            !simd::is_power_of_two(reference.size()) || max_lag == 0U ||
+            !simd::is_pow2(reference.size()) || max_lag == 0U ||
             sample_hz <= 0.0F || mic_spacing_m <= 0.0F || sound_mps <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
