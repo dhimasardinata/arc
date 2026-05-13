@@ -91,6 +91,10 @@ for file in "${project_cmakelists[@]}"; do
     fi
 done
 
+if ! grep -qE 'arc_target\(esp32s3\)' CMakeLists.txt; then
+    die "root firmware CMakeLists.txt must declare arc_target(esp32s3)"
+fi
+
 while IFS= read -r file; do
     if ! grep -qE 'arc_target\(esp32s3\)' "$file"; then
         die "$file must declare arc_target(esp32s3)"
