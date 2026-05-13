@@ -108,6 +108,13 @@ for file in "${project_cmakelists[@]}"; do
     fi
 done
 
+load_arc_projects buildable_dirs --buildable
+for dir in "${buildable_dirs[@]}"; do
+    if [[ ! -f "$dir/partitions_16mb.csv" ]]; then
+        die "$dir must carry partitions_16mb.csv because root sdkconfig.defaults selects that custom table"
+    fi
+done
+
 if ! grep -qE 'arc_target\(esp32s3\)' CMakeLists.txt; then
     die "root firmware CMakeLists.txt must declare arc_target(esp32s3)"
 fi
