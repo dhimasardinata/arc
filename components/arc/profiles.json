@@ -1,0 +1,67 @@
+{
+  "profiles": {
+    "core": {
+      "kind": "substrate",
+      "header": "arc/core.hpp",
+      "requires": []
+    },
+    "crypto": {
+      "kind": "domain",
+      "header": "arc/crypto.hpp",
+      "requires": [
+        "bootloader_support",
+        "esp-tls",
+        "esp_adc",
+        "esp_driver_dma",
+        "esp_partition",
+        "esp_security",
+        "mbedtls",
+        "nvs_flash",
+        "spi_flash"
+      ]
+    },
+    "math": {
+      "kind": "substrate",
+      "header": "arc/math.hpp",
+      "requires": []
+    },
+    "memory": {
+      "kind": "substrate",
+      "header": "arc/memory.hpp",
+      "requires": [
+        "esp_driver_dma"
+      ]
+    },
+    "net_codecs": {
+      "kind": "substrate",
+      "header": "arc/net_codecs.hpp",
+      "requires": []
+    },
+    "robotics": {
+      "kind": "domain",
+      "header": "arc/robotics.hpp",
+      "requires": [
+        "esp_adc",
+        "esp_driver_cam",
+        "esp_driver_dma",
+        "esp_driver_i2s",
+        "esp_driver_ledc",
+        "esp_driver_mcpwm",
+        "esp_driver_rmt",
+        "esp_event",
+        "esp_netif",
+        "esp_wifi",
+        "nvs_flash"
+      ]
+    },
+    "sandbox": {
+      "kind": "domain",
+      "header": "arc/sandbox.hpp",
+      "requires": [
+        "esp_system",
+        "hal",
+        "soc"
+      ]
+    }
+  }
+}

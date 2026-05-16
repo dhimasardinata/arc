@@ -26,6 +26,7 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("go run tools/arc-audit.go -root . -all", text)
         self.assertIn("./tools/arc-prove.sh", text)
         self.assertIn("./tools/safety-case-check.py", text)
+        self.assertIn("./tools/profile-manifest-check.py", text)
         self.assertIn("go run tools/clangd-compile-commands\\.go --validate-arc-headers", text)
         self.assertIn('workflow_step_before "name: Plan firmware builds" "name: Ensure host tools"', text)
         self.assertIn(

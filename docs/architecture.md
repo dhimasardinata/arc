@@ -43,7 +43,9 @@ Arc keeps the firmware substrate and the high-level application domains separabl
 small substrate profiles. `arc/crypto.hpp`, `arc/robotics.hpp`, and
 `arc/sandbox.hpp` collect the heavier domain surfaces so they can be exported and
 versioned as explicit profile packages instead of being treated as mandatory
-framework weight.
+framework weight. `components/arc/profiles.json` is the checked profile contract;
+the repo check rejects drift between that manifest, export roots, and CMake
+requirements.
 
 ## Silicon-Facing Policy
 

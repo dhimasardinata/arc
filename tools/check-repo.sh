@@ -69,6 +69,7 @@ fi
 
 ./tools/format.sh --check || die "format check failed; run ./tools/format.sh"
 ./tools/tool-tests.sh || die "tool tests failed"
+./tools/profile-manifest-check.py || die "profile manifest check failed"
 ./tools/arc-prove.sh || die "formal spec check failed"
 ./tools/safety-case-check.py || die "safety-case evidence check failed"
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"

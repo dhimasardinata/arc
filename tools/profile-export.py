@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import sys
@@ -11,54 +12,38 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INCLUDE_ROOT = ROOT / "components" / "arc" / "include"
+PROFILE_MANIFEST = ROOT / "components" / "arc" / "profiles.json"
 DEFAULT_OUT = ROOT / "dump" / "profiles"
 MARKER = ".arc-profile-export"
 MARKER_TEXT = "arc profile export\n"
-PROFILES = {
-    "core": "arc/core.hpp",
-    "crypto": "arc/crypto.hpp",
-    "math": "arc/math.hpp",
-    "memory": "arc/memory.hpp",
-    "net_codecs": "arc/net_codecs.hpp",
-    "robotics": "arc/robotics.hpp",
-    "sandbox": "arc/sandbox.hpp",
-}
-PROFILE_REQUIRES = {
-    "core": (),
-    "crypto": (
-        "bootloader_support",
-        "esp-tls",
-        "esp_adc",
-        "esp_driver_dma",
-        "esp_partition",
-        "esp_security",
-        "mbedtls",
-        "nvs_flash",
-        "spi_flash",
-    ),
-    "math": (),
-    "memory": ("esp_driver_dma",),
-    "net_codecs": (),
-    "robotics": (
-        "esp_adc",
-        "esp_driver_cam",
-        "esp_driver_dma",
-        "esp_driver_i2s",
-        "esp_driver_ledc",
-        "esp_driver_mcpwm",
-        "esp_driver_rmt",
-        "esp_event",
-        "esp_netif",
-        "esp_wifi",
-        "nvs_flash",
-    ),
-    "sandbox": (
-        "esp_system",
-        "hal",
-        "soc",
-    ),
-}
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s+"(arc/[^"]+)"')
+
+
+def load_profile_manifest() -> tuple[dict[str, str], dict[str, tuple[str, ...]]]:
+    data = json.loads(PROFILE_MANIFEST.read_text(encoding="utf-8"))
+    raw_profiles = data.get("profiles")
+    if not isinstance(raw_profiles, dict) or not raw_profiles:
+        raise ValueError("profile manifest must define at least one profile")
+
+    profiles: dict[str, str] = {}
+    requires: dict[str, tuple[str, ...]] = {}
+    for name, spec in sorted(raw_profiles.items()):
+        if not isinstance(name, str) or not name:
+            raise ValueError("profile names must be non-empty strings")
+        if not isinstance(spec, dict):
+            raise ValueError(f"profile {name} must be an object")
+        header = spec.get("header")
+        deps = spec.get("requires", [])
+        if not isinstance(header, str) or not header.startswith("arc/") or not header.endswith(".hpp"):
+            raise ValueError(f"profile {name} has invalid header")
+        if not isinstance(deps, list) or any(not isinstance(dep, str) or not dep for dep in deps):
+            raise ValueError(f"profile {name} has invalid requires list")
+        profiles[name] = header
+        requires[name] = tuple(deps)
+    return profiles, requires
+
+
+PROFILES, PROFILE_REQUIRES = load_profile_manifest()
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
