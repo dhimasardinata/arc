@@ -42,7 +42,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Core 0 is for framework work: boot, storage, drivers, network, logs.
 - Core 1 is for the realtime plane: statically allocated, pinned, and kept close to the silicon.
 - User programs live in `main/app_main.cpp`.
-- `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, and `arc/math.hpp` are profile entry points for subset builds; `arc.hpp` remains the compatibility umbrella and only exposes SDK-backed feature headers whose ESP-IDF components are actually in the build graph.
+- `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/math.hpp`, `arc/crypto.hpp`, `arc/robotics.hpp`, and `arc/sandbox.hpp` are profile entry points for subset builds; `arc.hpp` remains the compatibility umbrella and only exposes SDK-backed feature headers whose ESP-IDF components are actually in the build graph.
 - `cmake/arc-deps.cmake` maps Arc feature names to ESP-IDF components so each app can stay explicit without writing a long `REQUIRES` list by hand.
 - `arc::Soc` exposes the ESP32-S3 capability map from `soc_caps.h` as compile-time constants and hard-fails on non-S3 targets.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
@@ -456,7 +456,7 @@ Arc no longer needs to drag every hardware driver into every app.
 - `components/arc` now exports only the shared core headers and dependencies.
 - `arc.hpp` only pulls feature headers when the matching ESP-IDF headers are visible through the current target's `REQUIRES`.
 - `cmake/arc-deps.cmake` gives a terse way to declare only the Arc features a target actually uses.
-- `tools/profile-export.py` can materialize a profile header closure such as `core`, `memory`, `net_codecs`, or `math` into `dump/profiles/<profile>` with a header-only ESP-IDF component stub.
+- `tools/profile-export.py` can materialize a profile header closure such as `core`, `memory`, `net_codecs`, `math`, `crypto`, `robotics`, or `sandbox` into `dump/profiles/<profile>` with a header-only ESP-IDF component stub and the profile's ESP-IDF `REQUIRES`.
 
 Use this pattern in `main/CMakeLists.txt` or any example `main/CMakeLists.txt`:
 
@@ -479,7 +479,7 @@ Export a standalone profile package when another project only needs one Arc subs
 
 Feature names map directly to hardware lanes:
 
-Profile aliases for `math`, `memory`, and `net_codecs` are listed here too so CMake declarations can match the profile headers directly.
+Profile aliases for `math`, `memory`, `net_codecs`, `crypto`, `robotics`, and `sandbox` are listed here too so CMake declarations can match the profile headers directly.
 
 - `acoustic_slam`
 - `gpio`
@@ -495,6 +495,7 @@ Profile aliases for `math`, `memory`, and `net_codecs` are listed here too so CM
 - `cloak`
 - `covert`
 - `copy`
+- `crypto`
 - `csi`
 - `digital_twin`
 - `distributed_mmu`
@@ -553,7 +554,9 @@ Profile aliases for `math`, `memory`, and `net_codecs` are listed here too so CM
 - `puf`
 - `rdma`
 - `rng`
+- `robotics`
 - `rtc`
+- `sandbox`
 - `sdr`
 - `sdio_slave`
 - `secure_boot`

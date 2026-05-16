@@ -48,9 +48,30 @@ class ProfileExportTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((out / "include" / "arc" / "memory.hpp").is_file())
             self.assertTrue((out / "include" / "arc" / "copy.hpp").is_file())
-            self.assertTrue((out / "CMakeLists.txt").is_file())
+            cmake = (out / "CMakeLists.txt").read_text(encoding="utf-8")
+            self.assertIn("esp_driver_dma", cmake)
         finally:
             shutil.rmtree(out, ignore_errors=True)
+
+    def test_domain_exports_have_profile_roots_and_requires(self) -> None:
+        cases = {
+            "crypto": ("crypto.hpp", "kyber.hpp", "mbedtls"),
+            "robotics": ("robotics.hpp", "acoustic_slam.hpp", "esp_driver_i2s"),
+            "sandbox": ("sandbox.hpp", "wasm_aot.hpp", "esp_system"),
+        }
+
+        for profile, (root, included, dependency) in cases.items():
+            out = self.make_out()
+            try:
+                result = self.run_export(profile, out)
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue((out / "include" / "arc" / root).is_file(), profile)
+                self.assertTrue((out / "include" / "arc" / included).is_file(), profile)
+                self.assertIn(dependency, (out / "CMakeLists.txt").read_text(encoding="utf-8"), profile)
+                self.assertIn(f"arc/{root}", (out / "PROFILE.txt").read_text(encoding="utf-8"), profile)
+            finally:
+                shutil.rmtree(out, ignore_errors=True)
 
     def test_output_must_stay_in_repo(self) -> None:
         result = self.run_export("core", Path(tempfile.gettempdir()) / "arc-profile-out")

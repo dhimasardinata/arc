@@ -14,9 +14,47 @@ INCLUDE_ROOT = ROOT / "components" / "arc" / "include"
 DEFAULT_OUT = ROOT / "dump" / "profiles"
 PROFILES = {
     "core": "arc/core.hpp",
+    "crypto": "arc/crypto.hpp",
     "math": "arc/math.hpp",
     "memory": "arc/memory.hpp",
     "net_codecs": "arc/net_codecs.hpp",
+    "robotics": "arc/robotics.hpp",
+    "sandbox": "arc/sandbox.hpp",
+}
+PROFILE_REQUIRES = {
+    "core": (),
+    "crypto": (
+        "bootloader_support",
+        "esp-tls",
+        "esp_adc",
+        "esp_driver_dma",
+        "esp_partition",
+        "esp_security",
+        "mbedtls",
+        "nvs_flash",
+        "spi_flash",
+    ),
+    "math": (),
+    "memory": ("esp_driver_dma",),
+    "net_codecs": (),
+    "robotics": (
+        "esp_adc",
+        "esp_driver_cam",
+        "esp_driver_dma",
+        "esp_driver_i2s",
+        "esp_driver_ledc",
+        "esp_driver_mcpwm",
+        "esp_driver_rmt",
+        "esp_event",
+        "esp_netif",
+        "esp_wifi",
+        "nvs_flash",
+    ),
+    "sandbox": (
+        "esp_system",
+        "hal",
+        "soc",
+    ),
 }
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s+"(arc/[^"]+)"')
 
@@ -82,11 +120,14 @@ def copy_headers(headers: list[str], out: Path) -> None:
         shutil.copy2(src, dst)
 
 
-def write_cmake(out: Path) -> None:
-    (out / "CMakeLists.txt").write_text(
-        'idf_component_register(INCLUDE_DIRS "include")\n',
-        encoding="utf-8",
-    )
+def write_cmake(profile: str, out: Path) -> None:
+    requires = PROFILE_REQUIRES[profile]
+    if not requires:
+        text = 'idf_component_register(INCLUDE_DIRS "include")\n'
+    else:
+        deps = "\n".join(f"        {dep}" for dep in requires)
+        text = f'idf_component_register(\n    INCLUDE_DIRS "include"\n    REQUIRES\n{deps}\n)\n'
+    (out / "CMakeLists.txt").write_text(text, encoding="utf-8")
 
 
 def write_manifest(profile: str, headers: list[str], out: Path) -> None:
@@ -99,20 +140,29 @@ def write_manifest(profile: str, headers: list[str], out: Path) -> None:
 
 def write_readme(profile: str, out: Path) -> None:
     header = PROFILES[profile]
-    (out / "README.md").write_text(
-        "\n".join(
+    requires = PROFILE_REQUIRES[profile]
+    lines = [
+        f"# Arc {profile} Profile",
+        "",
+        f"This is a header-only export rooted at `{header}`.",
+        "Copy it as an ESP-IDF component and include the profile header directly.",
+        "",
+        "```cpp",
+        f'#include "{header}"',
+        "```",
+        "",
+    ]
+    if requires:
+        lines.extend(
             [
-                f"# Arc {profile} Profile",
+                "The generated component declares these ESP-IDF requirements:",
                 "",
-                f"This is a header-only export rooted at `{header}`.",
-                "Copy it as an ESP-IDF component and include the profile header directly.",
-                "",
-                "```cpp",
-                f'#include "{header}"',
-                "```",
+                ", ".join(f"`{dep}`" for dep in requires),
                 "",
             ]
-        ),
+        )
+    (out / "README.md").write_text(
+        "\n".join(lines),
         encoding="utf-8",
     )
 
@@ -122,7 +172,7 @@ def export_profile(profile: str, out: Path) -> int:
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
     copy_headers(headers, out)
-    write_cmake(out)
+    write_cmake(profile, out)
     write_manifest(profile, headers, out)
     write_readme(profile, out)
     print(f"exported {profile} profile with {len(headers)} headers into {out.relative_to(ROOT)}")

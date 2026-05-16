@@ -36,6 +36,15 @@ keep integer-safe defaults unless silicon data says otherwise; for example,
 `arc::vision::StarTracker::isqrt` should be compared against an S3-targeted
 `sqrt` lane in `examples/esp32s3/bench` before replacing the integer path.
 
+## Profile Boundaries
+
+Arc keeps the firmware substrate and the high-level application domains separable.
+`arc/core.hpp`, `arc/memory.hpp`, `arc/math.hpp`, and `arc/net_codecs.hpp` are the
+small substrate profiles. `arc/crypto.hpp`, `arc/robotics.hpp`, and
+`arc/sandbox.hpp` collect the heavier domain surfaces so they can be exported and
+versioned as explicit profile packages instead of being treated as mandatory
+framework weight.
+
 ## Silicon-Facing Policy
 
 Arc public headers expose static, caller-owned algorithms and policy hooks. Board
