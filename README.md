@@ -93,7 +93,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::PruOut`, `PruIn`, `PruTiming`, and `PruCursor` describe PRU-style LCD_CAM/I2S DMA waveform output and parallel capture rings for protocols the ESP32-S3 does not expose as a named peripheral.
 - `arc::sdr::PulseSynth` and `Tx` turn caller-owned audio or bit spans into 1-bit LCD_CAM pulse streams for AM/FM/OOK software-defined radio experiments.
 - `arc::dsp::Wavefront` computes 3D acoustic focus phases and synthesizes 16+ channel ultrasonic frames for `arc::I2sTdm` output.
-- `arc::CryptoDma` describes hardware-to-hardware AES/GCM/SHA descriptor jobs so board policies can wire GDMA lanes without payload copies.
+- `arc::CryptoDma` describes hardware-to-hardware AES/GCM/SHA descriptor jobs so board policies can wire GDMA lanes without payload copies, with optional scoped leases for completion ownership.
 - `arc::MmuSpan<T>` maps flash/PSRAM-backed regions into typed read-only spans for lookup tables, samples, and model weights.
 - `arc::Task<void>` provides heapless coroutine state machines when the coroutine frame is allocated from an explicit `arc::TaskArena`.
 - `arc::fsm::Automaton` synthesizes typed transition tables and rejects unreachable or non-terminal dead-end states at compile time.

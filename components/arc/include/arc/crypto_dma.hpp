@@ -40,8 +40,86 @@ struct CryptoDmaStubPolicy {
     }
 };
 
+template <typename Policy>
+class CryptoDmaLease {
+public:
+    constexpr CryptoDmaLease() noexcept = default;
+
+    explicit constexpr CryptoDmaLease(const bool active) noexcept
+        : active_(active)
+    {
+    }
+
+    CryptoDmaLease(const CryptoDmaLease&) = delete;
+    CryptoDmaLease& operator=(const CryptoDmaLease&) = delete;
+
+    constexpr CryptoDmaLease(CryptoDmaLease&& other) noexcept
+        : active_(other.active_)
+    {
+        other.active_ = false;
+    }
+
+    CryptoDmaLease& operator=(CryptoDmaLease&& other) noexcept
+    {
+        if (this != &other) {
+            static_cast<void>(finish());
+            active_ = other.active_;
+            other.active_ = false;
+        }
+        return *this;
+    }
+
+    ~CryptoDmaLease()
+    {
+        static_cast<void>(finish());
+    }
+
+    [[nodiscard]] constexpr bool active() const noexcept
+    {
+        return active_;
+    }
+
+    [[nodiscard]] Status finish() noexcept
+    {
+        if (!active_) {
+            return ok();
+        }
+        wait();
+        active_ = false;
+        return ok();
+    }
+
+    [[nodiscard]] bool wait_for(const std::uint32_t spin_budget) noexcept
+    {
+        if (!active_) {
+            return true;
+        }
+        auto spins = std::uint32_t{};
+        while (!Policy::done()) {
+            if (spin_budget != 0U && spins++ >= spin_budget) {
+                return false;
+            }
+            __asm__ __volatile__("nop");
+        }
+        active_ = false;
+        return true;
+    }
+
+private:
+    static void wait() noexcept
+    {
+        while (!Policy::done()) {
+            __asm__ __volatile__("nop");
+        }
+    }
+
+    bool active_{};
+};
+
 template <typename Policy = CryptoDmaStubPolicy>
 struct CryptoDma {
+    using Lease = CryptoDmaLease<Policy>;
+
     [[nodiscard]] static Status submit(const CryptoDmaJob& job) noexcept
     {
         if (job.input == nullptr || job.bytes == 0U) {
@@ -51,6 +129,15 @@ struct CryptoDma {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         return status(Policy::submit(job));
+    }
+
+    [[nodiscard]] static Result<Lease> lease(const CryptoDmaJob& job) noexcept
+    {
+        auto ready = submit(job);
+        if (!ready) {
+            return fail(ready.error());
+        }
+        return Lease{true};
     }
 
     [[nodiscard]] static bool done() noexcept

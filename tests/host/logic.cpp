@@ -366,6 +366,21 @@ struct MockCryptoDmaPolicy {
     }
 };
 
+struct PendingCryptoDmaPolicy {
+    static inline bool complete{};
+
+    [[nodiscard]] static esp_err_t submit(const arc::CryptoDmaJob&) noexcept
+    {
+        complete = false;
+        return ESP_OK;
+    }
+
+    [[nodiscard]] static bool done() noexcept
+    {
+        return complete;
+    }
+};
+
 struct MockMmuPolicy {
     static inline std::array<std::uint32_t, 4> flash{0x10U, 0x20U, 0x30U, 0x40U};
     static inline bool unmapped{};
@@ -3326,6 +3341,12 @@ void test_static_silicon_facades()
     std::array<std::uint8_t, 16> out_bytes{};
     input.bind(0, in_bytes);
     output.bind(0, out_bytes, true);
+    const auto crypto_job = arc::CryptoDmaJob{
+        .input = input.head(),
+        .output = output.head(),
+        .bytes = in_bytes.size(),
+        .mode = arc::CryptoDmaMode::gcm_encrypt,
+    };
     expect((arc::crypto_submit<1, 1, MockCryptoDmaPolicy>(
                 input,
                 output,
@@ -3334,6 +3355,15 @@ void test_static_silicon_facades()
                 .has_value()),
            "CryptoDma submit");
     expect(crypto_dma_bytes == in_bytes.size() && arc::CryptoDma<MockCryptoDmaPolicy>::done(), "CryptoDma policy");
+    auto crypto_lease = arc::CryptoDma<MockCryptoDmaPolicy>::lease(crypto_job);
+    expect(crypto_lease.has_value() && crypto_lease->active(), "CryptoDma lease submit");
+    expect(crypto_lease->finish().has_value() && !crypto_lease->active(), "CryptoDma lease finish");
+    expect(crypto_lease->finish().has_value(), "CryptoDma lease finish is idempotent");
+    auto pending_crypto = arc::CryptoDma<PendingCryptoDmaPolicy>::lease(crypto_job);
+    expect(pending_crypto.has_value(), "CryptoDma pending lease submit");
+    expect(!pending_crypto->wait_for(2U) && pending_crypto->active(), "CryptoDma bounded wait reports unfinished job");
+    PendingCryptoDmaPolicy::complete = true;
+    expect(pending_crypto->wait_for(2U) && !pending_crypto->active(), "CryptoDma bounded wait observes completion");
 
     auto mapped = arc::MmuSpan<std::uint32_t>::map<MockMmuPolicy>(
         {.source = 0U, .offset = 0U, .bytes = 3U * sizeof(std::uint32_t), .memory = 0U});
