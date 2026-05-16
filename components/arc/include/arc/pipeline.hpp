@@ -118,7 +118,10 @@ template <std::size_t Rows>
 
     for (std::size_t row = 0; row < window.height; ++row) {
         const auto offset = ((window.y + row) * window.stride_bytes) + window.x_bytes;
-        chain.bind(row, frame.subspan(offset, window.width_bytes), row + 1U == window.height && !circular);
+        const auto ready = chain.try_bind(row, frame.subspan(offset, window.width_bytes), row + 1U == window.height && !circular);
+        if (!ready) {
+            return ready;
+        }
     }
 
     for (std::size_t row = window.height; row < Rows; ++row) {

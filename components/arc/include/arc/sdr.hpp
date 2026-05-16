@@ -110,11 +110,10 @@ template <std::size_t Descriptors>
         return Status{fail(ESP_ERR_INVALID_ARG)};
     }
 
-    auto bytes = std::span<std::uint8_t>{
-        reinterpret_cast<std::uint8_t*>(words.data()),
-        words.size_bytes(),
-    };
-    chain.bind(0U, bytes, !circular);
+    const auto ready = chain.try_bind(0U, words, !circular);
+    if (!ready) {
+        return ready;
+    }
     if (circular) {
         chain.link_circular();
     }

@@ -3680,6 +3680,13 @@ void test_pipeline_usb_ulp()
     std::array<std::uint8_t, 8> display_bytes{};
     camera.bind(0, std::span(camera_bytes).first(4));
     camera.bind(1, std::span(camera_bytes).subspan(4), true);
+    expect(!camera.try_bind(2, std::span(camera_bytes).first(1)), "DmaChain checked bind rejects index");
+    expect(!camera.try_bind(0, std::span<std::uint8_t>{}), "DmaChain checked bind rejects empty span");
+    std::array<std::uint16_t, 2> typed_dma{};
+    arc::DmaChain<1> typed_chain{};
+    expect(typed_chain.try_bind(0, std::span(typed_dma)).has_value() &&
+               typed_chain.head()->length == typed_dma.size() * sizeof(std::uint16_t),
+           "DmaChain checked bind accepts typed spans");
     display.bind(0, std::span(display_bytes).first(4));
     display.bind(1, std::span(display_bytes).subspan(4), true);
 

@@ -47,8 +47,6 @@ struct PruOut {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 
-        auto* const bytes = reinterpret_cast<std::uint8_t*>(states.data());
-        const auto raw = std::span<std::uint8_t>{bytes, states.size_bytes()};
         auto offset_words = std::size_t{};
         for (std::size_t i = 0; i < Descriptors; ++i) {
             if (offset_words >= states.size()) {
@@ -57,8 +55,13 @@ struct PruOut {
             }
 
             const auto take_words = words_per_desc < states.size() - offset_words ? words_per_desc : states.size() - offset_words;
-            const auto offset_bytes = offset_words * sizeof(std::uint16_t);
-            chain.bind(i, raw.subspan(offset_bytes, take_words * sizeof(std::uint16_t)), i + 1U == Descriptors && !circular);
+            const auto ready = chain.try_bind(
+                i,
+                states.subspan(offset_words, take_words),
+                i + 1U == Descriptors && !circular);
+            if (!ready) {
+                return ready;
+            }
             offset_words += take_words;
         }
 
@@ -102,8 +105,6 @@ struct PruIn {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 
-        auto* const bytes = reinterpret_cast<std::uint8_t*>(capture.data());
-        const auto raw = std::span<std::uint8_t>{bytes, capture.size_bytes()};
         auto offset_samples = std::size_t{};
         for (std::size_t i = 0; i < Descriptors; ++i) {
             if (offset_samples >= capture.size()) {
@@ -112,8 +113,13 @@ struct PruIn {
             }
 
             const auto take_samples = samples_per_desc < capture.size() - offset_samples ? samples_per_desc : capture.size() - offset_samples;
-            const auto offset_bytes = offset_samples * sizeof(T);
-            chain.bind(i, raw.subspan(offset_bytes, take_samples * sizeof(T)), i + 1U == Descriptors && !circular);
+            const auto ready = chain.try_bind(
+                i,
+                capture.subspan(offset_samples, take_samples),
+                i + 1U == Descriptors && !circular);
+            if (!ready) {
+                return ready;
+            }
             offset_samples += take_samples;
         }
 
