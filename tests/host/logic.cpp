@@ -1081,6 +1081,74 @@ void test_checked_fanin()
 
 void test_mqtt()
 {
+    struct MqttMock {
+        std::size_t publishes{};
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> connect(
+            const std::span<std::uint8_t> out,
+            const arc::net::MqttConnect& cfg) noexcept
+        {
+            return arc::net::Mqtt::connect(out, cfg);
+        }
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> publish(
+            const std::span<std::uint8_t> out,
+            const arc::net::MqttPublish& cfg) noexcept
+        {
+            ++publishes;
+            return arc::net::Mqtt::publish(out, cfg);
+        }
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> subscribe(
+            const std::span<std::uint8_t> out,
+            const std::uint16_t packet,
+            const std::span<const arc::net::MqttSubscription> topics) noexcept
+        {
+            return arc::net::Mqtt::subscribe(out, packet, topics);
+        }
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> ping(
+            const std::span<std::uint8_t> out) noexcept
+        {
+            return arc::net::Mqtt::ping(out);
+        }
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> disconnect(
+            const std::span<std::uint8_t> out) noexcept
+        {
+            return arc::net::Mqtt::disconnect(out);
+        }
+
+        [[nodiscard]] arc::Result<arc::net::MqttPacket> parse(
+            const std::span<const std::uint8_t> frame) noexcept
+        {
+            return arc::net::Mqtt::parse(frame);
+        }
+
+        [[nodiscard]] arc::Result<arc::net::MqttPublishView> view(
+            const arc::net::MqttPacket& packet) noexcept
+        {
+            return arc::net::Mqtt::view(packet);
+        }
+
+        [[nodiscard]] arc::Result<arc::net::MqttConnAck> connack(
+            const arc::net::MqttPacket& packet) noexcept
+        {
+            return arc::net::Mqtt::connack(packet);
+        }
+
+        [[nodiscard]] arc::Result<arc::net::MqttSubAck> suback(
+            const arc::net::MqttPacket& packet) noexcept
+        {
+            return arc::net::Mqtt::suback(packet);
+        }
+
+        [[nodiscard]] bool match(const char* const filter, const char* const topic) noexcept
+        {
+            return arc::net::Mqtt::match(filter, topic);
+        }
+    };
+
     std::array<std::uint8_t, 256> buffer{};
 
     const auto connect = arc::net::Mqtt::connect(
@@ -1165,6 +1233,26 @@ void test_mqtt()
     expect(!session.awaiting_ping(), "MQTT session pingresp clears");
     expect(!session.expired(6000U), "MQTT session not expired");
     expect(session.expired(6060U), "MQTT session expired");
+
+    auto codec = arc::net::AnyMqtt::arc();
+    expect(static_cast<bool>(codec), "AnyMqtt arc codec binds");
+    const auto any_ping = codec.ping(buffer);
+    expect(any_ping.has_value() && any_ping->size() == 2U, "AnyMqtt arc ping");
+    MqttMock mock{};
+    static_assert(arc::net::MqttAdapter<MqttMock>);
+    auto erased = arc::net::AnyMqtt::bind(mock);
+    const auto any_publish = erased.publish(
+        buffer,
+        arc::net::MqttPublish{
+            .topic = "arc/any",
+            .data = payload.data(),
+            .bytes = payload.size(),
+        });
+    expect(any_publish.has_value() && mock.publishes == 1U, "AnyMqtt bound publish forwards");
+    const auto any_packet = erased.parse(*any_publish);
+    expect(any_packet.has_value() && erased.view(*any_packet).has_value(), "AnyMqtt bound parse and view");
+    arc::net::AnyMqtt empty{};
+    expect(!empty.ping(buffer) && !static_cast<bool>(empty), "AnyMqtt empty rejects");
 
     expect(arc::net::Mqtt::match("arc/+/status", "arc/node/status"), "MQTT single wildcard");
     expect(arc::net::Mqtt::match("arc/#", "arc/node/status"), "MQTT multi wildcard");

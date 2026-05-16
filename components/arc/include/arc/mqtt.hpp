@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -588,6 +589,331 @@ private:
             return fail(ESP_ERR_INVALID_ARG);
         }
         return in.subspan(pos + 2U, bytes);
+    }
+};
+
+template <typename Codec>
+concept MqttAdapter = requires(
+    Codec& codec,
+    std::span<std::uint8_t> out,
+    std::span<const std::uint8_t> frame,
+    const MqttConnect& connect_cfg,
+    const MqttPublish& publish_cfg,
+    std::uint16_t packet,
+    std::span<const MqttSubscription> topics,
+    const MqttPacket& parsed,
+    const char* filter,
+    const char* topic) {
+    { codec.connect(out, connect_cfg) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.publish(out, publish_cfg) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.subscribe(out, packet, topics) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.ping(out) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.disconnect(out) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.parse(frame) } -> std::same_as<Result<MqttPacket>>;
+    { codec.view(parsed) } -> std::same_as<Result<MqttPublishView>>;
+    { codec.connack(parsed) } -> std::same_as<Result<MqttConnAck>>;
+    { codec.suback(parsed) } -> std::same_as<Result<MqttSubAck>>;
+    { codec.match(filter, topic) } -> std::same_as<bool>;
+};
+
+struct AnyMqtt {
+    using FrameFn = Result<std::span<const std::uint8_t>> (*)(void*, std::span<std::uint8_t>) noexcept;
+    using ConnectFn = Result<std::span<const std::uint8_t>> (*)(
+        void*,
+        std::span<std::uint8_t>,
+        const MqttConnect&) noexcept;
+    using PublishFn = Result<std::span<const std::uint8_t>> (*)(
+        void*,
+        std::span<std::uint8_t>,
+        const MqttPublish&) noexcept;
+    using SubscribeFn = Result<std::span<const std::uint8_t>> (*)(
+        void*,
+        std::span<std::uint8_t>,
+        std::uint16_t,
+        std::span<const MqttSubscription>) noexcept;
+    using ParseFn = Result<MqttPacket> (*)(void*, std::span<const std::uint8_t>) noexcept;
+    using ViewFn = Result<MqttPublishView> (*)(void*, const MqttPacket&) noexcept;
+    using ConnAckFn = Result<MqttConnAck> (*)(void*, const MqttPacket&) noexcept;
+    using SubAckFn = Result<MqttSubAck> (*)(void*, const MqttPacket&) noexcept;
+    using MatchFn = bool (*)(void*, const char*, const char*) noexcept;
+
+    void* ctx{};
+    ConnectFn connect_fn{};
+    PublishFn publish_fn{};
+    SubscribeFn subscribe_fn{};
+    FrameFn ping_fn{};
+    FrameFn disconnect_fn{};
+    ParseFn parse_fn{};
+    ViewFn view_fn{};
+    ConnAckFn connack_fn{};
+    SubAckFn suback_fn{};
+    MatchFn match_fn{};
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept
+    {
+        return connect_fn != nullptr &&
+            publish_fn != nullptr &&
+            subscribe_fn != nullptr &&
+            ping_fn != nullptr &&
+            disconnect_fn != nullptr &&
+            parse_fn != nullptr &&
+            view_fn != nullptr &&
+            connack_fn != nullptr &&
+            suback_fn != nullptr &&
+            match_fn != nullptr;
+    }
+
+    [[nodiscard]] static constexpr AnyMqtt arc() noexcept
+    {
+        return {
+            .ctx = nullptr,
+            .connect_fn = &arc_connect,
+            .publish_fn = &arc_publish,
+            .subscribe_fn = &arc_subscribe,
+            .ping_fn = &arc_ping,
+            .disconnect_fn = &arc_disconnect,
+            .parse_fn = &arc_parse,
+            .view_fn = &arc_view,
+            .connack_fn = &arc_connack,
+            .suback_fn = &arc_suback,
+            .match_fn = &arc_match,
+        };
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static constexpr AnyMqtt bind(Codec& codec) noexcept
+    {
+        return {
+            .ctx = &codec,
+            .connect_fn = &connect_object<Codec>,
+            .publish_fn = &publish_object<Codec>,
+            .subscribe_fn = &subscribe_object<Codec>,
+            .ping_fn = &ping_object<Codec>,
+            .disconnect_fn = &disconnect_object<Codec>,
+            .parse_fn = &parse_object<Codec>,
+            .view_fn = &view_object<Codec>,
+            .connack_fn = &connack_object<Codec>,
+            .suback_fn = &suback_object<Codec>,
+            .match_fn = &match_object<Codec>,
+        };
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> connect(
+        std::span<std::uint8_t> out,
+        const MqttConnect& cfg) noexcept
+    {
+        return connect_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : connect_fn(ctx, out, cfg);
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> publish(
+        std::span<std::uint8_t> out,
+        const MqttPublish& cfg) noexcept
+    {
+        return publish_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : publish_fn(ctx, out, cfg);
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> subscribe(
+        std::span<std::uint8_t> out,
+        const std::uint16_t packet,
+        const std::span<const MqttSubscription> topics) noexcept
+    {
+        return subscribe_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : subscribe_fn(ctx, out, packet, topics);
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> ping(std::span<std::uint8_t> out) noexcept
+    {
+        return ping_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : ping_fn(ctx, out);
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> disconnect(std::span<std::uint8_t> out) noexcept
+    {
+        return disconnect_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : disconnect_fn(ctx, out);
+    }
+
+    [[nodiscard]] Result<MqttPacket> parse(const std::span<const std::uint8_t> frame) noexcept
+    {
+        return parse_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : parse_fn(ctx, frame);
+    }
+
+    [[nodiscard]] Result<MqttPublishView> view(const MqttPacket& packet) noexcept
+    {
+        return view_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : view_fn(ctx, packet);
+    }
+
+    [[nodiscard]] Result<MqttConnAck> connack(const MqttPacket& packet) noexcept
+    {
+        return connack_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : connack_fn(ctx, packet);
+    }
+
+    [[nodiscard]] Result<MqttSubAck> suback(const MqttPacket& packet) noexcept
+    {
+        return suback_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : suback_fn(ctx, packet);
+    }
+
+    [[nodiscard]] bool match(const char* const filter, const char* const topic) noexcept
+    {
+        return match_fn != nullptr && match_fn(ctx, filter, topic);
+    }
+
+private:
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_connect(
+        void*,
+        const std::span<std::uint8_t> out,
+        const MqttConnect& cfg) noexcept
+    {
+        return Mqtt::connect(out, cfg);
+    }
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_publish(
+        void*,
+        const std::span<std::uint8_t> out,
+        const MqttPublish& cfg) noexcept
+    {
+        return Mqtt::publish(out, cfg);
+    }
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_subscribe(
+        void*,
+        const std::span<std::uint8_t> out,
+        const std::uint16_t packet,
+        const std::span<const MqttSubscription> topics) noexcept
+    {
+        return Mqtt::subscribe(out, packet, topics);
+    }
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_ping(
+        void*,
+        const std::span<std::uint8_t> out) noexcept
+    {
+        return Mqtt::ping(out);
+    }
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_disconnect(
+        void*,
+        const std::span<std::uint8_t> out) noexcept
+    {
+        return Mqtt::disconnect(out);
+    }
+
+    [[nodiscard]] static Result<MqttPacket> arc_parse(
+        void*,
+        const std::span<const std::uint8_t> frame) noexcept
+    {
+        return Mqtt::parse(frame);
+    }
+
+    [[nodiscard]] static Result<MqttPublishView> arc_view(
+        void*,
+        const MqttPacket& packet) noexcept
+    {
+        return Mqtt::view(packet);
+    }
+
+    [[nodiscard]] static Result<MqttConnAck> arc_connack(
+        void*,
+        const MqttPacket& packet) noexcept
+    {
+        return Mqtt::connack(packet);
+    }
+
+    [[nodiscard]] static Result<MqttSubAck> arc_suback(
+        void*,
+        const MqttPacket& packet) noexcept
+    {
+        return Mqtt::suback(packet);
+    }
+
+    [[nodiscard]] static bool arc_match(
+        void*,
+        const char* const filter,
+        const char* const topic) noexcept
+    {
+        return Mqtt::match(filter, topic);
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> connect_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out,
+        const MqttConnect& cfg) noexcept
+    {
+        return static_cast<Codec*>(ctx)->connect(out, cfg);
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> publish_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out,
+        const MqttPublish& cfg) noexcept
+    {
+        return static_cast<Codec*>(ctx)->publish(out, cfg);
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> subscribe_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out,
+        const std::uint16_t packet,
+        const std::span<const MqttSubscription> topics) noexcept
+    {
+        return static_cast<Codec*>(ctx)->subscribe(out, packet, topics);
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> ping_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out) noexcept
+    {
+        return static_cast<Codec*>(ctx)->ping(out);
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> disconnect_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out) noexcept
+    {
+        return static_cast<Codec*>(ctx)->disconnect(out);
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static Result<MqttPacket> parse_object(
+        void* const ctx,
+        const std::span<const std::uint8_t> frame) noexcept
+    {
+        return static_cast<Codec*>(ctx)->parse(frame);
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static Result<MqttPublishView> view_object(
+        void* const ctx,
+        const MqttPacket& packet) noexcept
+    {
+        return static_cast<Codec*>(ctx)->view(packet);
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static Result<MqttConnAck> connack_object(
+        void* const ctx,
+        const MqttPacket& packet) noexcept
+    {
+        return static_cast<Codec*>(ctx)->connack(packet);
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static Result<MqttSubAck> suback_object(
+        void* const ctx,
+        const MqttPacket& packet) noexcept
+    {
+        return static_cast<Codec*>(ctx)->suback(packet);
+    }
+
+    template <MqttAdapter Codec>
+    [[nodiscard]] static bool match_object(
+        void* const ctx,
+        const char* const filter,
+        const char* const topic) noexcept
+    {
+        return static_cast<Codec*>(ctx)->match(filter, topic);
     }
 };
 

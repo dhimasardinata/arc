@@ -2345,6 +2345,7 @@ Thin MQTT 3.1.1 wire codec for caller-owned buffers.
 - `connect(...)`, `publish(...)`, `subscribe(...)`, `ping(...)`, and `disconnect(...)` encode packets directly into a caller-provided byte span.
 - `parse(...)` splits one MQTT frame out of a receive buffer without hiding the consumed byte count.
 - `view(packet)`, `connack(packet)`, and `suback(packet)` decode the common packet bodies without heap allocation.
+- `AnyMqtt::arc()` and `AnyMqtt::bind(codec)` expose a small runtime codec adapter so application code can depend on one no-heap MQTT ABI instead of templating every caller on Arc's static codec type.
 - `MqttSession` tracks CONNECT/CONNACK state, rolling non-zero packet IDs, keepalive PINGREQ/PINGRESP timing, and broker timeout checks without owning the socket or allocating memory.
 - `match(filter, topic)` applies MQTT wildcard rules so subscription routing can stay local and explicit.
 
