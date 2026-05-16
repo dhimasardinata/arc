@@ -1730,6 +1730,7 @@ Compile-time async DMA memcpy wrapper.
 - `send_coherent(ticket, dst, src, bytes)` flushes the source cache, discards destination cache lines, queues the DMA copy, and stores the exact completion target in `ticket`.
 - `finish_coherent(ticket)` waits for that exact transfer and invalidates the destination cache before CPU reads it.
 - `lease_coherent(dst, src, bytes)` returns a move-only scoped lease that finishes the coherent transfer on explicit `finish()` or scope exit.
+- `lease_coherent(std::move(dst), std::move(src))` moves `arc::CapsBuf` storage into the lease so an async DMA copy cannot outlive those buffers.
 - `send_coherent(...)`, `lease_coherent(...)`, and `copy_coherent(...)` accept `arc::CapsBuf<T>` pairs, copying only logical bytes while cache maintenance covers the padded physical storage.
 - `ready(ticket)` reports whether that exact transfer has completed.
 - `copy_coherent(dst, src, bytes)` is the blocking one-call form built on the non-blocking ticket path.

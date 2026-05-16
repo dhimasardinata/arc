@@ -4406,6 +4406,27 @@ void test_current_goal_surfaces()
                esp_cache_last_msync_bytes == copy_dst_dma.storage_bytes(),
            "Copy coherent CapsBuf syncs padded storage");
 
+    auto owned_src_dma = arc::dmabuf<std::uint8_t>(65U);
+    auto owned_dst_dma = arc::dmabuf<std::uint8_t>(65U);
+    expect(static_cast<bool>(owned_src_dma) && static_cast<bool>(owned_dst_dma),
+           "Copy owned lease buffers allocate");
+    owned_src_dma[0] = 55U;
+    owned_src_dma[64] = 77U;
+    auto owned_lease = arc::Copy<>::lease_coherent(std::move(owned_dst_dma), std::move(owned_src_dma));
+    expect(owned_lease.has_value() &&
+               owned_lease->active() &&
+               !static_cast<bool>(owned_src_dma) &&
+               !static_cast<bool>(owned_dst_dma),
+           "Copy owned lease moves buffers");
+    expect(owned_lease->finish().has_value() &&
+               !owned_lease->active() &&
+               owned_lease->dst()[0] == 55U &&
+               owned_lease->dst()[64] == 77U,
+           "Copy owned lease finishes before reads");
+    auto returned_dst = owned_lease->take_dst();
+    expect(returned_dst.has_value() && (*returned_dst)[0] == 55U && (*returned_dst)[64] == 77U,
+           "Copy owned lease returns destination");
+
     struct CloakPolicy {
         static std::uint32_t rng() noexcept
         {

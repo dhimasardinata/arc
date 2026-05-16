@@ -31,6 +31,7 @@ remain outside Arc.
 | Queue and fan-in ownership can be narrowed at setup boundaries. | `arc::Spsc`, `arc::Mpsc`, `arc::Fanin`, and their `arc::Audit<...>` wrappers expose producer/consumer role endpoints with host coverage in `tests/host/logic.cpp`. |
 | DMA/cache handoff avoids unaligned invalidation by default. | `arc::Cache::from_device` and `discard` require whole cache lines; `from_raw` and `discard_raw` are unavailable unless `ARC_ENABLE_UNSAFE_CACHE_RAW=1` and `arc::unsafe_raw` are used deliberately. |
 | Async DMA copy completion can be bound to scope. | `arc::Copy::lease_coherent` returns move-only leases that finish the exact ticket on explicit `finish()` or destruction, with host coverage in `tests/host/logic.cpp`. |
+| Async DMA buffer lifetime can be structurally owned for Arc-allocated DMA slabs. | `arc::Copy::lease_coherent(std::move(dst), std::move(src))` moves `arc::CapsBuf` storage into the active lease, so the transfer owns both buffers until finish or destruction. |
 | Formal-model files have at least structural coverage in every repo policy run. | `tools/check-repo.sh` runs `tools/arc-prove.sh`, which validates required TLA+ modules and uses Apalache or TLC when available. |
 
 ## Required Local Evidence

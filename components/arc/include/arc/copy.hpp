@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <span>
 #include <type_traits>
+#include <utility>
 
 #include "esp_async_memcpy.h"
 #include "esp_attr.h"
@@ -120,6 +121,112 @@ struct Copy {
 
     using Lease = LeaseBase<false>;
     using StrictLease = LeaseBase<true>;
+
+    template <bool Strict, typename Dst, typename Src>
+    class OwnedLeaseBase {
+    public:
+        constexpr OwnedLeaseBase() noexcept = default;
+
+        constexpr OwnedLeaseBase(
+            CapsBuf<Dst>&& dst,
+            CapsBuf<Src>&& src,
+            const CopyTicket<Strict>& ticket) noexcept
+            : dst_(std::move(dst))
+            , src_(std::move(src))
+            , lease_(ticket)
+        {
+        }
+
+        OwnedLeaseBase(const OwnedLeaseBase&) = delete;
+        OwnedLeaseBase& operator=(const OwnedLeaseBase&) = delete;
+
+        constexpr OwnedLeaseBase(OwnedLeaseBase&& other) noexcept
+            : dst_(std::move(other.dst_))
+            , src_(std::move(other.src_))
+            , lease_(std::move(other.lease_))
+        {
+        }
+
+        OwnedLeaseBase& operator=(OwnedLeaseBase&& other) noexcept
+        {
+            if (this != &other) {
+                static_cast<void>(finish());
+                dst_ = std::move(other.dst_);
+                src_ = std::move(other.src_);
+                lease_ = std::move(other.lease_);
+            }
+            return *this;
+        }
+
+        ~OwnedLeaseBase()
+        {
+            static_cast<void>(finish());
+        }
+
+        [[nodiscard]] constexpr bool active() const noexcept
+        {
+            return lease_.active();
+        }
+
+        [[nodiscard]] constexpr const CopyTicket<Strict>& ticket() const noexcept
+        {
+            return lease_.ticket();
+        }
+
+        [[nodiscard]] constexpr CapsBuf<Dst>& dst() noexcept
+        {
+            return dst_;
+        }
+
+        [[nodiscard]] constexpr const CapsBuf<Dst>& dst() const noexcept
+        {
+            return dst_;
+        }
+
+        [[nodiscard]] constexpr CapsBuf<Src>& src() noexcept
+        {
+            return src_;
+        }
+
+        [[nodiscard]] constexpr const CapsBuf<Src>& src() const noexcept
+        {
+            return src_;
+        }
+
+        [[nodiscard]] Status finish() noexcept
+        {
+            return lease_.finish();
+        }
+
+        [[nodiscard]] Result<CapsBuf<Dst>> take_dst() noexcept
+        {
+            const auto ready = finish();
+            if (!ready) {
+                return fail(ready.error());
+            }
+            return ok(std::move(dst_));
+        }
+
+        [[nodiscard]] Result<CapsBuf<Src>> take_src() noexcept
+        {
+            const auto ready = finish();
+            if (!ready) {
+                return fail(ready.error());
+            }
+            return ok(std::move(src_));
+        }
+
+    private:
+        CapsBuf<Dst> dst_{};
+        CapsBuf<Src> src_{};
+        LeaseBase<Strict> lease_{};
+    };
+
+    template <typename Dst, typename Src>
+    using OwnedLease = OwnedLeaseBase<false, Dst, Src>;
+
+    template <typename Dst, typename Src>
+    using StrictOwnedLease = OwnedLeaseBase<true, Dst, Src>;
 
     [[nodiscard]] static esp_err_t init() noexcept
     {
@@ -308,6 +415,20 @@ struct Copy {
         return Lease{ticket};
     }
 
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    [[nodiscard]] static Result<OwnedLease<Dst, Src>> lease_coherent(
+        CapsBuf<Dst>&& dst,
+        CapsBuf<Src>&& src) noexcept
+    {
+        Ticket ticket{};
+        const auto ret = send_coherent(ticket, dst, src);
+        if (ret != ESP_OK) {
+            return fail(ret);
+        }
+        return ok(OwnedLease<Dst, Src>{std::move(dst), std::move(src), ticket});
+    }
+
     template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
     [[nodiscard]] static Result<StrictLease> lease_strict(
@@ -331,6 +452,20 @@ struct Copy {
             return fail(ret);
         }
         return StrictLease{ticket};
+    }
+
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    [[nodiscard]] static Result<StrictOwnedLease<Dst, Src>> lease_strict(
+        CapsBuf<Dst>&& dst,
+        CapsBuf<Src>&& src) noexcept
+    {
+        StrictTicket ticket{};
+        const auto ret = send_strict(ticket, dst, src);
+        if (ret != ESP_OK) {
+            return fail(ret);
+        }
+        return ok(StrictOwnedLease<Dst, Src>{std::move(dst), std::move(src), ticket});
     }
 
     static esp_err_t send_coherent(
