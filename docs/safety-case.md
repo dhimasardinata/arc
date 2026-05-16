@@ -39,6 +39,7 @@ remain outside Arc.
 | SDIO slave DMA queue and finish can be bound to one coherent buffer lifetime. | `components/arc/include/arc/sdio_slave.hpp` implements `arc::SdioSlave::lease_coherent`, which queues only strict cache-line buffers and invalidates them on finish, with host coverage in `tests/host/logic.cpp`. |
 | Hardware crypto DMA completion can be bound to scope. | `components/arc/include/arc/crypto_dma.hpp` implements `arc::CryptoDma::lease`, with bounded-wait and explicit-finish host coverage in `tests/host/logic.cpp`. |
 | Formal-model files have at least structural coverage in every repo policy run. | `tools/check-repo.sh` runs `tools/arc-prove.sh`, which validates required TLA+ modules such as `specs/Spsc.tla`, `specs/Roles.tla`, and `specs/Consensus.tla`, checks the SPSC model head/tail names against `components/arc/include/arc/spsc.hpp`, and uses Apalache or TLC when available. |
+| Moved-from handle misuse has static-analysis coverage on the host compile surface. | `tools/check-repo.sh` runs `tools/use-after-move-check.sh`, which invokes `clang-tidy` with `bugprone-use-after-move` as an error when the tool is available; intentional moved-from state probes in `tests/host/logic.cpp` must carry narrow `NOLINT` annotations. |
 | Safety claims stay tied to live repo evidence and non-claims. | `tools/check-repo.sh` runs `tools/safety-case-check.py`, which verifies claim evidence paths, required evidence commands, non-claim coverage, and certification-overclaim wording. |
 
 ## Required Local Evidence

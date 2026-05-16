@@ -71,6 +71,7 @@ fi
 ./tools/tool-tests.sh || die "tool tests failed"
 ./tools/profile-manifest-check.py || die "profile manifest check failed"
 ./tools/arc-prove.sh || die "formal spec check failed"
+./tools/use-after-move-check.sh || die "use-after-move check failed"
 ./tools/safety-case-check.py || die "safety-case evidence check failed"
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"
 
@@ -235,6 +236,9 @@ fi
 if ! grep -qE '\./tools/arc-prove\.sh' tools/check-repo.sh; then
     die "repo check must run the formal spec structural/model gate"
 fi
+if ! grep -qE '\./tools/use-after-move-check\.sh' tools/check-repo.sh; then
+    die "repo check must run the use-after-move lint gate"
+fi
 if ! grep -qE '\./tools/safety-case-check\.py' tools/check-repo.sh; then
     die "repo check must run the safety-case evidence gate"
 fi
@@ -282,6 +286,7 @@ required_exec=(
     tools/clangd-compile-commands.py
     tools/format.sh
     tools/tool-tests.sh
+    tools/use-after-move-check.sh
     tools/install-git-hooks.sh
 )
 load_arc_projects example_dirs --examples

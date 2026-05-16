@@ -1039,6 +1039,7 @@ void test_fanin()
     expect(static_cast<bool>(lane1) && static_cast<bool>(lane2) && static_cast<bool>(sink),
            "Fanin role endpoints bind");
     auto moved_lane1 = std::move(lane1);
+    // NOLINTNEXTLINE(bugprone-use-after-move): verifies moved-from endpoint state is inert.
     expect(!static_cast<bool>(lane1) && static_cast<bool>(moved_lane1), "Fanin producer endpoint is move-only");
     expect(moved_lane1.try_push(40) && lane2.try_push(50), "Fanin producer endpoints push");
     expect(sink.try_pop(producer, value) && producer == 1U && value == 40, "Fanin consumer endpoint pop lane 1");
@@ -1104,6 +1105,7 @@ void test_rpc_lane()
     expect(reply.status == ESP_OK && reply.payload.applied == 43U, "RPC reply fields");
 
     auto moved_client = std::move(client);
+    // NOLINTNEXTLINE(bugprone-use-after-move): verifies moved-from endpoint state is inert.
     expect(!static_cast<bool>(client) && static_cast<bool>(moved_client), "RPC client endpoint is move-only");
     expect(moved_client.call(Op::set, Request{.value = 1U}, 8U), "RPC second client call");
     expect(server.recv(request), "RPC second server recv");
@@ -1152,6 +1154,7 @@ void test_checked_fanin()
     expect(static_cast<bool>(role_producer) && static_cast<bool>(role_consumer),
            "Audit Fanin role endpoints bind");
     auto moved_producer = std::move(role_producer);
+    // NOLINTNEXTLINE(bugprone-use-after-move): verifies moved-from endpoint state is inert.
     expect(!static_cast<bool>(role_producer) && static_cast<bool>(moved_producer),
            "Audit Fanin producer endpoint is move-only");
     expect(moved_producer.try_push(60), "Audit Fanin producer endpoint push");
@@ -4546,11 +4549,13 @@ void test_current_goal_surfaces()
     owned_src_dma[0] = 55U;
     owned_src_dma[64] = 77U;
     auto owned_lease = arc::Copy<>::lease_coherent(std::move(owned_dst_dma), std::move(owned_src_dma));
+    // NOLINTBEGIN(bugprone-use-after-move): verifies moved-from buffers are inert after lease transfer.
     expect(owned_lease.has_value() &&
                owned_lease->active() &&
                !static_cast<bool>(owned_src_dma) &&
                !static_cast<bool>(owned_dst_dma),
            "Copy owned lease moves buffers");
+    // NOLINTEND(bugprone-use-after-move)
     expect(owned_lease->finish().has_value() &&
                !owned_lease->active() &&
                owned_lease->dst()[0] == 55U &&
@@ -5511,6 +5516,7 @@ void test_refinit()
         expect(!static_cast<bool>(second), "TryGate rejects shut gate");
 
         auto moved = std::move(first);
+        // NOLINTNEXTLINE(bugprone-use-after-move): verifies moved-from gate state is inert.
         expect(!static_cast<bool>(first), "TryGate move clears source");
         expect(static_cast<bool>(moved), "TryGate move keeps destination");
         moved.reset();
@@ -5524,6 +5530,7 @@ void test_refinit()
         expect(static_cast<bool>(first), "TryMutexGate takes mutex");
 
         auto moved_mutex = std::move(first);
+        // NOLINTNEXTLINE(bugprone-use-after-move): verifies moved-from gate state is inert.
         expect(!static_cast<bool>(first), "TryMutexGate move clears source");
         expect(static_cast<bool>(moved_mutex), "TryMutexGate move keeps destination");
         moved_mutex.reset();
@@ -5550,6 +5557,7 @@ void test_refinit()
     auto txn = arc::InitTxn::begin(state);
     expect(static_cast<bool>(txn), "InitTxn move source active");
     auto moved = std::move(txn);
+    // NOLINTNEXTLINE(bugprone-use-after-move): verifies moved-from init state is inert.
     expect(!static_cast<bool>(txn), "InitTxn move clears source");
     expect(static_cast<bool>(moved), "InitTxn move keeps destination");
     expect(moved.fail(), "InitTxn explicit fail");
@@ -5572,6 +5580,7 @@ void test_refinit()
     auto ref_txn = arc::RefInitTxn::begin(state);
     expect(static_cast<bool>(ref_txn), "RefInitTxn move source active");
     auto moved_ref = std::move(ref_txn);
+    // NOLINTNEXTLINE(bugprone-use-after-move): verifies moved-from init state is inert.
     expect(!static_cast<bool>(ref_txn), "RefInitTxn move clears source");
     expect(static_cast<bool>(moved_ref), "RefInitTxn move keeps destination");
     expect(moved_ref.fail(), "RefInitTxn explicit fail");
@@ -5598,6 +5607,7 @@ void test_refinit()
         expect(arc::RefInit::refs(state) == 2U, "RefLease increments refs");
 
         auto moved = std::move(lease);
+        // NOLINTNEXTLINE(bugprone-use-after-move): verifies moved-from lease state is inert.
         expect(!static_cast<bool>(lease), "RefLease move clears source");
         expect(static_cast<bool>(moved), "RefLease move keeps destination");
     }
