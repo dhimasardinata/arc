@@ -1,59 +1,13 @@
 #pragma once
 
-// Lean umbrella: core Arc primitives plus feature headers whose backing SDK
-// headers are visible through the current component dependency graph.
+// Compatibility umbrella: profile headers plus feature headers whose backing
+// SDK headers are visible through the current component dependency graph.
 
-#include "arc/any.hpp"
-#include "arc/assume.hpp"
-#include "arc/audit.hpp"
-#include "arc/bare_core.hpp"
-#include "arc/bus.hpp"
-#include "arc/cache.hpp"
-#include "arc/cache_lock.hpp"
-#include "arc/caps.hpp"
-#include "arc/cfg.hpp"
-#include "arc/claim.hpp"
-#include "arc/clock.hpp"
-#include "arc/coap.hpp"
-#include "arc/concepts.hpp"
-#include "arc/coro.hpp"
-#include "arc/dsp.hpp"
-#include "arc/fanin.hpp"
-#include "arc/fence.hpp"
-#include "arc/fsm.hpp"
-#include "arc/init.hpp"
-#include "arc/log.hpp"
-#include "arc/matrix.hpp"
-#include "arc/mmu_span.hpp"
-#include "arc/mpsc.hpp"
-#include "arc/mqtt.hpp"
-#include "arc/pack.hpp"
-#include "arc/place.hpp"
-#include "arc/plane.hpp"
-#include "arc/postmortem.hpp"
-#include "arc/prefetch.hpp"
-#include "arc/probe.hpp"
-#include "arc/rcu.hpp"
-#include "arc/reg.hpp"
-#include "arc/result.hpp"
-#include "arc/rtos.hpp"
-#include "arc/sdk.hpp"
-#include "arc/seq.hpp"
-#include "arc/simd.hpp"
-#include "arc/soc/target.hpp"
-#include "arc/sketch.hpp"
+#include "arc/core.hpp"
+#include "arc/math.hpp"
+#include "arc/memory.hpp"
+#include "arc/net_codecs.hpp"
 #include "arc/soc.hpp"
-#include "arc/spsc.hpp"
-#include "arc/stack.hpp"
-#include "arc/stream.hpp"
-#include "arc/task.hpp"
-#include "arc/text.hpp"
-#include "arc/tight.hpp"
-#include "arc/topology.hpp"
-#include "arc/uri.hpp"
-#include "arc/watch.hpp"
-#include "arc/wave.hpp"
-#include "arc/ws.hpp"
 
 #if __has_include("host/ble_gap.h") && __has_include("nimble/nimble_port.h")
 #include "arc/ble.hpp"
@@ -109,10 +63,6 @@
 
 #if __has_include("driver/pulse_cnt.h")
 #include "arc/count.hpp"
-#endif
-
-#if __has_include("esp_async_memcpy.h")
-#include "arc/copy.hpp"
 #endif
 
 #if __has_include("esp_cam_ctlr.h") && __has_include("esp_cam_ctlr_dvp.h")

@@ -42,7 +42,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - Core 0 is for framework work: boot, storage, drivers, network, logs.
 - Core 1 is for the realtime plane: statically allocated, pinned, and kept close to the silicon.
 - User programs live in `main/app_main.cpp`.
-- `arc.hpp` is lean by default and only exposes feature headers whose backing ESP-IDF components are actually in the build graph.
+- `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, and `arc/math.hpp` are profile entry points for subset builds; `arc.hpp` remains the compatibility umbrella and only exposes SDK-backed feature headers whose ESP-IDF components are actually in the build graph.
 - `cmake/arc-deps.cmake` maps Arc feature names to ESP-IDF components so each app can stay explicit without writing a long `REQUIRES` list by hand.
 - `arc::Soc` exposes the ESP32-S3 capability map from `soc_caps.h` as compile-time constants and hard-fails on non-S3 targets.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
@@ -297,6 +297,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 
 | Area | Headers | Primary types |
 | --- | --- | --- |
+| Profile umbrellas | `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/math.hpp`, `arc.hpp` | Subset entry points for substrate, coherency/DMA, no-heap codecs, DSP/math, and the compatibility umbrella |
 | Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/hotpatch.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/pipeline.hpp`, `arc/mmu_span.hpp`, `arc/distributed_mmu.hpp`, `arc/place.hpp`, `arc/prefetch.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::HotPatch`, `arc::HotPatchImage`, `arc::HotPatchDetour`, `arc::DmaChain`, `arc::DmaEndpoint`, `arc::Pipeline`, `arc::Dma2dWindow`, `arc::bind_rows`, `arc::MmuSpan`, `arc::mmu::DistributedSpan`, `arc::mmu::DistributedPager`, `arc::Copy`, `arc::prefetch` |
@@ -471,6 +472,8 @@ idf_component_register(
 
 Feature names map directly to hardware lanes:
 
+Profile aliases for `math`, `memory`, and `net_codecs` are listed here too so CMake declarations can match the profile headers directly.
+
 - `acoustic_slam`
 - `gpio`
 - `adc`
@@ -493,6 +496,8 @@ Feature names map directly to hardware lanes:
 - `fabric`
 - `flexroute`
 - `fuse`
+- `math`
+- `memory`
 - `mcpwm`
 - `rmt`
 - `mpi`
@@ -530,6 +535,7 @@ Feature names map directly to hardware lanes:
 - `temp`
 - `store`
 - `net`
+- `net_codecs`
 - `ota`
 - `otg`
 - `paillier`
