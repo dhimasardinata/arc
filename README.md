@@ -1747,8 +1747,8 @@ Explicit cache coherency helpers for DMA and external-memory paths.
 - `to_device(data, bytes)` writes dirty cache lines back before hardware reads a buffer.
 - `from_device(data, bytes)` invalidates only whole cache-line-aligned buffers after hardware writes a buffer.
 - `discard(data, bytes)` writes back and invalidates only whole cache-line-aligned buffers when ownership moves away from the CPU.
-- `from_raw(...)` and `discard_raw(...)` remain available but deprecated; they are explicit escape hatches for code that accepts shared-line invalidation risk.
-- The unaligned escape hatches are unsafe around actively mutated neighbors on the same cache line; use cache-line-aligned buffers or the `_strict` path for live DMA ownership.
+- `from_raw(arc::unsafe_raw, ...)` and `discard_raw(arc::unsafe_raw, ...)` are not declared by default. Defining `ARC_ENABLE_UNSAFE_CACHE_RAW=1` makes those deprecated escape hatches available for code that explicitly accepts shared-line invalidation risk.
+- The unsafe raw escape hatches are unsafe around actively mutated neighbors on the same cache line; use cache-line-aligned buffers or the `_strict` path for live DMA ownership.
 - `line(ptr)` returns the cache line size for one address, or zero when the address is not cacheable.
 - `arc::CapsBuf<T>` overloads sync the padded physical allocation, while span overloads sync only the exact span byte count.
 

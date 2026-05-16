@@ -11,7 +11,17 @@
 #include "arc/caps.hpp"
 #include "arc/sdk.hpp"
 
+#ifndef ARC_ENABLE_UNSAFE_CACHE_RAW
+#define ARC_ENABLE_UNSAFE_CACHE_RAW 0
+#endif
+
 namespace arc {
+
+struct UnsafeCacheRaw {
+    explicit constexpr UnsafeCacheRaw() noexcept = default;
+};
+
+inline constexpr UnsafeCacheRaw unsafe_raw{};
 
 struct Cache {
     static constexpr int invalidate = static_cast<int>(ESP_CACHE_MSYNC_FLAG_INVALIDATE);
@@ -71,11 +81,16 @@ struct Cache {
         return strict(data, bytes, dir_m2c);
     }
 
-    [[deprecated("unaligned device invalidation can discard unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and from_aligned")]]
-    static esp_err_t from_raw(void* const data, const std::size_t bytes) noexcept
+#if ARC_ENABLE_UNSAFE_CACHE_RAW
+    [[deprecated("unsafe unaligned invalidation can discard unrelated dirty cache-line neighbors; prefer arc::dmabuf and from_aligned")]]
+    static esp_err_t from_raw(
+        UnsafeCacheRaw,
+        void* const data,
+        const std::size_t bytes) noexcept
     {
         return sync(data, bytes, dir_m2c | unaligned);
     }
+#endif
 
     static esp_err_t discard(void* const data, const std::size_t bytes) noexcept
     {
@@ -87,11 +102,16 @@ struct Cache {
         return strict(data, bytes, dir_c2m | invalidate);
     }
 
-    [[deprecated("unaligned discard can invalidate unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and discard_aligned")]]
-    static esp_err_t discard_raw(void* const data, const std::size_t bytes) noexcept
+#if ARC_ENABLE_UNSAFE_CACHE_RAW
+    [[deprecated("unsafe unaligned discard can invalidate unrelated dirty cache-line neighbors; prefer arc::dmabuf and discard_aligned")]]
+    static esp_err_t discard_raw(
+        UnsafeCacheRaw,
+        void* const data,
+        const std::size_t bytes) noexcept
     {
         return sync(data, bytes, dir_c2m | invalidate | unaligned);
     }
+#endif
 
     [[nodiscard]] static std::size_t line(const void* const data) noexcept
     {
@@ -154,13 +174,17 @@ struct Cache {
         return from_device(data);
     }
 
+#if ARC_ENABLE_UNSAFE_CACHE_RAW
     template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    [[deprecated("unaligned device invalidation can discard unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and from_aligned")]]
-    static esp_err_t from_raw(const std::span<T, Extent> data) noexcept
+    [[deprecated("unsafe unaligned invalidation can discard unrelated dirty cache-line neighbors; prefer arc::dmabuf and from_aligned")]]
+    static esp_err_t from_raw(
+        UnsafeCacheRaw token,
+        const std::span<T, Extent> data) noexcept
     {
-        return from_raw(data.data(), data.size_bytes());
+        return from_raw(token, data.data(), data.size_bytes());
     }
+#endif
 
     template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
@@ -190,13 +214,17 @@ struct Cache {
         return discard(data);
     }
 
+#if ARC_ENABLE_UNSAFE_CACHE_RAW
     template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
-    [[deprecated("unaligned discard can invalidate unrelated dirty data sharing a cache line; use arc::dmabuf/cachebuf and discard_aligned")]]
-    static esp_err_t discard_raw(const std::span<T, Extent> data) noexcept
+    [[deprecated("unsafe unaligned discard can invalidate unrelated dirty cache-line neighbors; prefer arc::dmabuf and discard_aligned")]]
+    static esp_err_t discard_raw(
+        UnsafeCacheRaw token,
+        const std::span<T, Extent> data) noexcept
     {
-        return discard_raw(data.data(), data.size_bytes());
+        return discard_raw(token, data.data(), data.size_bytes());
     }
+#endif
 };
 
 }  // namespace arc

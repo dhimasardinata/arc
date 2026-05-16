@@ -2046,6 +2046,7 @@ void test_caps()
     expect(arc::Cache::from_device(dma) == ESP_OK && esp_cache_last_msync_bytes == padded &&
                (esp_cache_last_msync_flags & arc::Cache::unaligned) == 0,
            "DMA cap buffer cache sync uses padded storage");
+    static_assert(ARC_ENABLE_UNSAFE_CACHE_RAW == 0);
 
     arc::PmrCapsResource<MALLOC_CAP_SPIRAM> psram{};
     std::pmr::vector<std::uint8_t> vec{&psram};
