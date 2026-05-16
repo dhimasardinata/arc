@@ -29,3 +29,21 @@ through board-owned RMT/GPIO wiring.
 - CAN/TWAI priority spam is recorded but does not starve the control loop.
 - ESP-NOW loss makes remote state stale, then `DeadReckoning` predicts until the
   next valid scheduled frame arrives.
+
+## Evidence Artifact
+
+The jig should emit one JSON object per line. Each required case must report
+`"status":"pass"`:
+
+```json
+{"case":"i2c_fault_recovery","status":"pass","node":"A"}
+{"case":"spi_fault_recovery","status":"pass","node":"A"}
+{"case":"can_priority_spam","status":"pass","node":"A"}
+{"case":"espnow_stale_recover","status":"pass","node":"A"}
+```
+
+Validate the captured artifact before attaching it to a release or safety review:
+
+```bash
+./tools/hil-evidence-check.py hil.jsonl
+```

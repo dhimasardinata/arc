@@ -289,6 +289,7 @@ required_exec=(
     tools/ci-build-plan.py
     tools/clangd-compile-commands.py
     tools/format.sh
+    tools/hil-evidence-check.py
     tools/topology-check.py
     tools/tool-tests.sh
     tools/use-after-move-check.sh

@@ -40,6 +40,7 @@ remain outside Arc.
 | Hardware crypto DMA completion can be bound to scope. | `components/arc/include/arc/crypto_dma.hpp` implements `arc::CryptoDma::lease`, with bounded-wait and explicit-finish host coverage in `tests/host/logic.cpp`. |
 | Formal-model files have at least structural coverage in every repo policy run. | `tools/check-repo.sh` runs `tools/arc-prove.sh`, which validates required TLA+ modules such as `specs/Spsc.tla`, `specs/Roles.tla`, and `specs/Consensus.tla`, checks the SPSC model head/tail names against `components/arc/include/arc/spsc.hpp`, and uses Apalache or TLC when available. |
 | Moved-from handle misuse has static-analysis coverage on the host compile surface. | `tools/check-repo.sh` runs `tools/use-after-move-check.sh`, which invokes `clang-tidy` with `bugprone-use-after-move` as an error when the tool is available; intentional moved-from state probes in `tests/host/logic.cpp` must carry narrow `NOLINT` annotations. |
+| HIL evidence has a machine-checkable artifact shape. | `docs/hil-test-jig.md` defines the required physical cases, and `tools/hil-evidence-check.py` validates captured JSONL artifacts before they are used as board evidence. |
 | Safety claims stay tied to live repo evidence and non-claims. | `tools/check-repo.sh` runs `tools/safety-case-check.py`, which verifies claim evidence paths, required evidence commands, non-claim coverage, and certification-overclaim wording. |
 
 ## Required Local Evidence

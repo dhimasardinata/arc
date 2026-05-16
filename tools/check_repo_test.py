@@ -59,6 +59,11 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("use-after-move lint gate", text)
         self.assertIn("tools/use-after-move-check.sh", text)
 
+    def test_repo_policy_keeps_hil_evidence_checker_executable(self) -> None:
+        text = (ROOT / "tools" / "check-repo.sh").read_text(encoding="utf-8")
+
+        self.assertIn("tools/hil-evidence-check.py", text)
+
     def test_repo_policy_runs_topology_gate(self) -> None:
         text = (ROOT / "tools" / "check-repo.sh").read_text(encoding="utf-8")
 
