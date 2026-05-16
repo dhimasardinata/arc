@@ -245,6 +245,7 @@ int cli_drive_right{};
 float cli_kp{};
 std::size_t sdio_queued_bytes{};
 std::uint32_t sdio_irq_bits{};
+std::uint32_t sdio_finish_timeout{};
 std::uint8_t usb_device_address{};
 std::uint8_t usb_configuration{};
 std::size_t usb_ep0_bytes{};
@@ -5221,8 +5222,9 @@ void test_current_goal_surfaces()
             return ESP_OK;
         }
 
-        static arc::Result<arc::SdioSlaveTransfer> sdio_finish(const std::uint32_t) noexcept
+        static arc::Result<arc::SdioSlaveTransfer> sdio_finish(const std::uint32_t timeout_ms) noexcept
         {
+            sdio_finish_timeout = timeout_ms;
             return arc::SdioSlaveTransfer{.address = 0x1000U, .bytes = sdio_queued_bytes};
         }
 
@@ -5232,7 +5234,9 @@ void test_current_goal_surfaces()
             return ESP_OK;
         }
     };
-    std::array<std::uint8_t, 32> sdio_buffer{};
+    std::array<std::uint8_t, 32> sdio_small{};
+    expect(!arc::SdioSlave::queue_coherent<SdioPolicy>(sdio_small), "SdioSlave rejects non-cache-line DMA buffer");
+    alignas(arc::cache_line) std::array<std::uint8_t, arc::cache_line> sdio_buffer{};
     expect(arc::SdioSlave::start<SdioPolicy>().has_value() &&
                arc::SdioSlave::queue_coherent<SdioPolicy>(sdio_buffer).has_value(),
            "SdioSlave queues coherent DMA");
@@ -5242,6 +5246,18 @@ void test_current_goal_surfaces()
             arc::SdioSlave::interrupt_host<SdioPolicy>(0x2U).has_value() &&
             sdio_done->bytes == sdio_buffer.size() && sdio_queued_bytes == sdio_buffer.size() && sdio_irq_bits == 0x2U,
         "SdioSlave finishes coherent DMA and host interrupt");
+    auto sdio_lease = arc::SdioSlave::lease_coherent<SdioPolicy>(sdio_buffer);
+    expect(sdio_lease.has_value() && sdio_lease->active(), "SdioSlave coherent lease queues");
+    const auto leased_done = sdio_lease->finish(10U);
+    expect(leased_done.has_value() && leased_done->bytes == sdio_buffer.size() && !sdio_lease->active(),
+           "SdioSlave coherent lease invalidates on finish");
+    auto sdio_default_lease = arc::SdioSlave::lease_coherent<SdioPolicy>(sdio_buffer);
+    expect(sdio_default_lease.has_value(), "SdioSlave coherent lease can use default finish timeout");
+    if (sdio_default_lease) {
+        const auto default_done = sdio_default_lease->finish();
+        expect(default_done.has_value() && sdio_finish_timeout == arc::sdio_wait_forever,
+               "SdioSlave coherent lease waits by default");
+    }
 
     struct UsbDevicePolicy {
         static esp_err_t ep0_write(const std::span<const std::uint8_t> bytes) noexcept

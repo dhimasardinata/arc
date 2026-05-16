@@ -3272,7 +3272,7 @@ For hardware numbers, build and flash `examples/esp32s3/bench` on an ESP32-S3. T
 - `arc::trace::LiveStream` owns half-full trace chunk handoff; exact TRAX interrupt wiring and USB/W5500 sink policy stay below it.
 - `arc::power::Governor` predicts control-loop slack; actual DFS limits, thermal policy, and PM lock names stay with board policy.
 - `arc::net::Thread` and `arc::ble::Mesh` validate mesh payload surfaces; radio provisioning, stack lifecycle, and credential storage stay with board policy.
-- `arc::SdioSlave` owns coherent queue/finish semantics; Linux host driver contracts and pin mux stay with board policy.
+- `arc::SdioSlave` owns coherent queue/finish semantics, and `lease_coherent(...)` ties queue, finish, and RX invalidation to one buffer lifetime; Linux host driver contracts and pin mux stay with board policy.
 - `arc::usb::Device` handles Chapter 9 descriptor/address/configuration flow; endpoint ISR/DWC2 register policy stays below the class descriptor layer.
 - `arc::optical::LiFi` produces Manchester optical symbols; analog comparator thresholds, optics, and eye-safety limits stay with board policy.
 - `arc::nav::Eskf`, `arc::ml::Snn`, and `arc::MagLev` are deterministic math/control surfaces, not sensor calibration or plant-identification tools.
