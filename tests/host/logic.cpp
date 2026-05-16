@@ -925,6 +925,9 @@ void test_mpsc_threads()
 void test_fanin()
 {
     arc::Fanin<int, 4, 3> fan;
+    using Fan = arc::Fanin<int, 4, 3>;
+    static_assert(!std::is_copy_constructible_v<Fan::Producer<0>>);
+    static_assert(!std::is_copy_constructible_v<Fan::Consumer>);
     expect(fan.producers() == 3U, "Fanin producer count");
     expect(fan.cap() == 3U, "Fanin lane capacity");
     expect(fan.bytes() == sizeof(fan), "Fanin bytes");
@@ -941,6 +944,17 @@ void test_fanin()
     expect(fan.try_pop(producer, value) && producer == 0U && value == 11, "Fanin round-robin resume");
     expect(!fan.try_pop(producer, value), "Fanin empty rejects");
 
+    auto lane1 = fan.producer<1>();
+    auto lane2 = fan.producer<2>();
+    auto sink = fan.consumer();
+    expect(static_cast<bool>(lane1) && static_cast<bool>(lane2) && static_cast<bool>(sink),
+           "Fanin role endpoints bind");
+    auto moved_lane1 = std::move(lane1);
+    expect(!static_cast<bool>(lane1) && static_cast<bool>(moved_lane1), "Fanin producer endpoint is move-only");
+    expect(moved_lane1.try_push(40) && lane2.try_push(50), "Fanin producer endpoints push");
+    expect(sink.try_pop(producer, value) && producer == 1U && value == 40, "Fanin consumer endpoint pop lane 1");
+    expect(sink.try_pop(producer, value) && producer == 2U && value == 50, "Fanin consumer endpoint pop lane 2");
+
     expect(fan.try_push<0>(1), "Fanin batch lane 0 first");
     expect(fan.try_push<0>(2), "Fanin batch lane 0 second");
     expect(fan.try_push<1>(10), "Fanin batch lane 1 first");
@@ -948,7 +962,7 @@ void test_fanin()
     expect(fan.try_push<2>(21), "Fanin batch lane 2 second");
     std::array<int, 6> out{};
     expect(fan.pop(std::span(out)) == 5U, "Fanin batch pop count");
-    expect(out[0] == 10 && out[1] == 20 && out[2] == 21 && out[3] == 1 && out[4] == 2, "Fanin batch lane order");
+    expect(out[0] == 1 && out[1] == 2 && out[2] == 10 && out[3] == 20 && out[4] == 21, "Fanin batch lane order");
     expect(fan.empty(), "Fanin batch drains empty");
 
     const std::array lane{100, 101, 102, 103};

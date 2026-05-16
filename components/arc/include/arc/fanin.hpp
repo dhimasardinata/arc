@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <span>
 #include <type_traits>
+#include <utility>
 
 #include "esp_attr.h"
 
@@ -22,34 +23,193 @@ struct Fanin {
     static_assert(std::has_single_bit(Capacity), "fanin lane capacity must be a power of two");
     static_assert(std::is_trivially_copyable_v<T>, "fanin payload must be trivially copyable");
 
-    template <std::size_t Producer>
-    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_push(const T& value) noexcept
+    template <std::size_t Lane>
+    class Producer {
+        static_assert(Lane < Producers, "invalid fanin producer");
+
+    public:
+        constexpr Producer() noexcept = default;
+
+        explicit constexpr Producer(Fanin& fan) noexcept
+            : fan_(&fan)
+        {
+        }
+
+        Producer(const Producer&) = delete;
+        Producer& operator=(const Producer&) = delete;
+
+        constexpr Producer(Producer&& other) noexcept
+            : fan_(std::exchange(other.fan_, nullptr))
+        {
+        }
+
+        constexpr Producer& operator=(Producer&& other) noexcept
+        {
+            if (this != &other) {
+                fan_ = std::exchange(other.fan_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return fan_ != nullptr;
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_push(const T& value) noexcept
+        {
+            return fan_ != nullptr && fan_->template try_push<Lane>(value);
+        }
+
+        template <typename U, std::size_t Extent>
+            requires(std::is_same_v<std::remove_cv_t<U>, T>)
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(
+            const std::span<U, Extent> data) noexcept
+        {
+            return fan_ == nullptr ? 0U : fan_->template push<Lane>(data);
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t size() const noexcept
+        {
+            return fan_ == nullptr ? 0U : fan_->template size<Lane>();
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t space() const noexcept
+        {
+            return fan_ == nullptr ? 0U : fan_->template space<Lane>();
+        }
+
+        [[nodiscard]] static constexpr std::size_t index() noexcept
+        {
+            return Lane;
+        }
+
+        [[nodiscard]] static constexpr std::size_t cap() noexcept
+        {
+            return Fanin::cap();
+        }
+
+    private:
+        Fanin* fan_{};
+    };
+
+    class Consumer {
+    public:
+        constexpr Consumer() noexcept = default;
+
+        explicit constexpr Consumer(Fanin& fan) noexcept
+            : fan_(&fan)
+        {
+        }
+
+        Consumer(const Consumer&) = delete;
+        Consumer& operator=(const Consumer&) = delete;
+
+        constexpr Consumer(Consumer&& other) noexcept
+            : fan_(std::exchange(other.fan_, nullptr))
+        {
+        }
+
+        constexpr Consumer& operator=(Consumer&& other) noexcept
+        {
+            if (this != &other) {
+                fan_ = std::exchange(other.fan_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return fan_ != nullptr;
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(T& value) noexcept
+        {
+            return fan_ != nullptr && fan_->try_pop(value);
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(
+            std::size_t& producer,
+            T& value) noexcept
+        {
+            return fan_ != nullptr && fan_->try_pop(producer, value);
+        }
+
+        template <typename U, std::size_t Extent>
+            requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t pop(
+            const std::span<U, Extent> out) noexcept
+        {
+            return fan_ == nullptr ? 0U : fan_->pop(out);
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool empty() const noexcept
+        {
+            return fan_ == nullptr || fan_->empty();
+        }
+
+        template <typename Fn>
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t drain(
+            T& value,
+            Fn&& fn,
+            const std::size_t max = (Capacity - 1U) * Producers) noexcept
+        {
+            return fan_ == nullptr ? 0U : fan_->drain(value, std::forward<Fn>(fn), max);
+        }
+
+        [[nodiscard]] static constexpr std::size_t cap() noexcept
+        {
+            return Fanin::cap();
+        }
+
+        [[nodiscard]] static constexpr std::size_t producers() noexcept
+        {
+            return Fanin::producers();
+        }
+
+    private:
+        Fanin* fan_{};
+    };
+
+    template <std::size_t Lane>
+    [[nodiscard]] constexpr Producer<Lane> producer() noexcept
     {
-        static_assert(Producer < Producers, "invalid fanin producer");
-        return lanes_[Producer].try_push(value);
+        return Producer<Lane>{*this};
     }
 
-    template <std::size_t Producer, typename U, std::size_t Extent>
+    [[nodiscard]] constexpr Consumer consumer() noexcept
+    {
+        return Consumer{*this};
+    }
+
+    template <std::size_t Lane>
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_push(const T& value) noexcept
+    {
+        static_assert(Lane < Producers, "invalid fanin producer");
+        return lanes_[Lane].try_push(value);
+    }
+
+    template <std::size_t Lane, typename U, std::size_t Extent>
         requires(std::is_same_v<std::remove_cv_t<U>, T>)
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(
         const std::span<U, Extent> data) noexcept
     {
-        static_assert(Producer < Producers, "invalid fanin producer");
-        return lanes_[Producer].push(data);
+        static_assert(Lane < Producers, "invalid fanin producer");
+        return lanes_[Lane].push(data);
     }
 
-    template <std::size_t Producer>
+    template <std::size_t Lane>
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t size() const noexcept
     {
-        static_assert(Producer < Producers, "invalid fanin producer");
-        return lanes_[Producer].size();
+        static_assert(Lane < Producers, "invalid fanin producer");
+        return lanes_[Lane].size();
     }
 
-    template <std::size_t Producer>
+    template <std::size_t Lane>
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t space() const noexcept
     {
-        static_assert(Producer < Producers, "invalid fanin producer");
-        return lanes_[Producer].space();
+        static_assert(Lane < Producers, "invalid fanin producer");
+        return lanes_[Lane].space();
     }
 
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(T& value) noexcept

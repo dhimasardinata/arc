@@ -1325,6 +1325,7 @@ Static fan-in made from one SPSC lane per producer and one round-robin consumer.
 
 - `try_push<Producer>(event)` is wait-free for that producer lane.
 - `push<Producer>(span)` batches producer-side writes into one static lane.
+- `producer<Index>()` and `consumer()` return move-only role endpoints for setup code that should pass only one static producer lane or the fan-in drain side.
 - `try_pop(event)` drains any completed producer without waiting behind another producer's half-finished slot.
 - `try_pop(producer, event)` also reports which lane produced the event.
 - `pop(span)` batches consumer-side fan-in when producer identity is not needed per item.
