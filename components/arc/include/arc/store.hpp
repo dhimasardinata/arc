@@ -1,16 +1,77 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <type_traits>
 
 #include "nvs.h"
 #include "nvs_flash.h"
 
 #include "arc/init.hpp"
+#include "arc/result.hpp"
 
 namespace arc {
+
+template <std::size_t N>
+struct StoreText {
+    static_assert(N > 0U, "StoreText needs room for a NUL terminator");
+
+    std::array<char, N> bytes{};
+    std::size_t chars{};
+
+    [[nodiscard]] static consteval std::size_t cap() noexcept
+    {
+        return N - 1U;
+    }
+
+    [[nodiscard]] constexpr std::span<char, N> span() noexcept
+    {
+        return std::span<char, N>{bytes};
+    }
+
+    [[nodiscard]] constexpr std::span<const char, N> span() const noexcept
+    {
+        return std::span<const char, N>{bytes};
+    }
+
+    [[nodiscard]] constexpr std::string_view view() const noexcept
+    {
+        return std::string_view{bytes.data(), chars};
+    }
+
+    [[nodiscard]] constexpr const char* c_str() const noexcept
+    {
+        return bytes.data();
+    }
+
+    [[nodiscard]] constexpr std::size_t size() const noexcept
+    {
+        return chars;
+    }
+
+    [[nodiscard]] constexpr bool empty() const noexcept
+    {
+        return chars == 0U;
+    }
+
+    [[nodiscard]] constexpr esp_err_t set(const std::string_view value) noexcept
+    {
+        if (value.size() > cap()) {
+            return ESP_ERR_NVS_INVALID_LENGTH;
+        }
+
+        for (std::size_t i = 0U; i < value.size(); ++i) {
+            bytes[i] = value[i];
+        }
+
+        bytes[value.size()] = '\0';
+        chars = value.size();
+        return ESP_OK;
+    }
+};
 
 struct Store {
     static esp_err_t boot() noexcept
@@ -134,6 +195,30 @@ struct Store {
         return nvs_commit(handle.raw);
     }
 
+    template <std::size_t N>
+    [[nodiscard]] static esp_err_t save_text(
+        const char* ns,
+        const char* key,
+        const StoreText<N>& value) noexcept
+    {
+        return save_string(ns, key, value.c_str());
+    }
+
+    template <std::size_t N>
+    [[nodiscard]] static esp_err_t save_text(
+        const char* ns,
+        const char* key,
+        const std::string_view value) noexcept
+    {
+        StoreText<N> text{};
+        const auto err = text.set(value);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        return save_text(ns, key, text);
+    }
+
     [[nodiscard]] static esp_err_t string_size(
         const char* ns,
         const char* key,
@@ -180,8 +265,53 @@ struct Store {
         return ESP_OK;
     }
 
+    template <std::size_t N>
+    [[nodiscard]] static Result<StoreText<N>> load_text(
+        const char* ns,
+        const char* key,
+        const std::string_view fallback = {},
+        esp_err_t* err = nullptr) noexcept
+    {
+        StoreText<N> out{};
+        auto status = out.set(fallback);
+        if (status != ESP_OK) {
+            report(err, status);
+            return fail(status);
+        }
+
+        std::size_t bytes{};
+        status = string_size(ns, key, bytes);
+        if (status == ESP_ERR_NVS_NOT_FOUND) {
+            report(err, status);
+            return ok(out);
+        }
+        if (status != ESP_OK) {
+            report(err, status);
+            return fail(status);
+        }
+        if (bytes > out.bytes.size()) {
+            report(err, ESP_ERR_NVS_INVALID_LENGTH);
+            return fail(ESP_ERR_NVS_INVALID_LENGTH);
+        }
+
+        status = load_string(ns, key, out.span(), &out.chars);
+        report(err, status);
+        if (status != ESP_OK) {
+            return fail(status);
+        }
+
+        return ok(out);
+    }
+
 private:
     constinit static inline std::uint32_t init{};
+
+    static void report(esp_err_t* err, const esp_err_t status) noexcept
+    {
+        if (err != nullptr) {
+            *err = status;
+        }
+    }
 
     template <typename T>
     [[nodiscard]] static consteval bool blob() noexcept

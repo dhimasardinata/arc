@@ -1,6 +1,4 @@
-#include <array>
 #include <cstdint>
-#include <span>
 
 #include "arc.hpp"
 
@@ -55,12 +53,14 @@ inline void boot()
         static_cast<unsigned>(cfg.mark),
         static_cast<unsigned>(cfg.flags));
 
-    ESP_ERROR_CHECK(arc::Store::save_string(ns, name_key, "arc-n16r8"));
+    ESP_ERROR_CHECK(arc::Store::save_text<16>(ns, name_key, "arc-n16r8"));
 
-    std::array<char, 16> name{};
-    std::size_t chars{};
-    ESP_ERROR_CHECK(arc::Store::load_string(ns, name_key, std::span<char>{name}, &chars));
-    ESP_LOGI(tag, "name=%s chars=%u", name.data(), static_cast<unsigned>(chars));
+    esp_err_t name_load = ESP_OK;
+    auto name = arc::Store::load_text<16>(ns, name_key, "arc-default", &name_load);
+    if (!name) {
+        ESP_ERROR_CHECK(name.error());
+    }
+    ESP_LOGI(tag, "name=%s chars=%u", name->c_str(), static_cast<unsigned>(name->size()));
 
     arc::Space::flash(tag, "flash view");
     arc::Space::heap(tag, "heap view");

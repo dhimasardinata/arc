@@ -2118,6 +2118,9 @@ Typed NVS blob and string storage for Core 0 work.
 - `save(ns, key, value)` writes a trivially copyable value.
 - `load(ns, key, value)` reads the exact typed blob back.
 - `load_or(ns, key, fallback)` keeps user code short when missing data should fall back cleanly.
+- `arc::StoreText<N>` owns a fixed, NUL-terminated config string with a `std::string_view` reader.
+- `save_text<N>(ns, key, value)` writes text from a `StoreText<N>` or `std::string_view` without heap glue.
+- `load_text<N>(ns, key, fallback)` returns fixed text config, uses the fallback only when the key is missing, and rejects oversized persisted data.
 - `save_string(ns, key, value)` writes a NUL-terminated string.
 - `string_size(ns, key, bytes)` reports the fixed buffer size needed to read a string, including the terminator.
 - `load_string(ns, key, span, chars)` reads into caller-owned storage and reports characters excluding the terminator.
@@ -3188,7 +3191,7 @@ The example shows:
 - `arc::Store::boot()` as the one-time baseline init for NVS
 - `arc::Store::load_or(...)` for a typed control word
 - `arc::Store::save(...)` after mutation
-- `arc::Store::save_string(...)` and `load_string(...)` for fixed-buffer text config
+- `arc::Store::save_text<N>(...)` and `load_text<N>(...)` for fixed-buffer text config
 - `arc::Space::flash(...)` and `arc::Space::heap(...)` so persistence and capacity stay visible together
 
 ## CI

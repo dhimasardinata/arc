@@ -106,6 +106,7 @@
 #include "arc/simd.hpp"
 #include "arc/sdio_slave.hpp"
 #include "arc/snn.hpp"
+#include "arc/store.hpp"
 #include "arc/secure_boot.hpp"
 #include "arc/star_tracker.hpp"
 #include "arc/swarm.hpp"
@@ -3628,6 +3629,49 @@ void test_file()
     expect(std::remove(path) == 0, "File cleanup");
 }
 
+void test_store()
+{
+    expect(nvs_flash_erase() == ESP_OK, "Store host reset");
+    expect(arc::Store::boot() == ESP_OK, "Store boot");
+
+    struct Control {
+        std::uint16_t pace;
+        std::uint8_t mark;
+        std::uint8_t flags;
+    };
+    static_assert(std::is_trivially_copyable_v<Control>);
+
+    constexpr Control fallback{.pace = 2000U, .mark = 0x31U, .flags = 0x01U};
+    constexpr Control stored{.pace = 1000U, .mark = 0x42U, .flags = 0x03U};
+
+    esp_err_t status = ESP_OK;
+    auto cfg = arc::Store::load_or("cfg", "control", fallback, &status);
+    expect(status == ESP_ERR_NVS_NOT_FOUND && cfg.pace == fallback.pace, "Store load_or falls back on missing blob");
+    expect(arc::Store::save("cfg", "control", stored) == ESP_OK, "Store saves typed blob");
+    cfg = arc::Store::load_or("cfg", "control", fallback, &status);
+    expect(status == ESP_OK && cfg.mark == stored.mark && cfg.flags == stored.flags, "Store loads typed blob");
+
+    arc::StoreText<16> text{};
+    expect(text.set("fallback") == ESP_OK && text.view() == "fallback" && text.c_str()[8] == '\0',
+           "StoreText owns NUL-terminated fallback");
+    expect(text.set("this-name-is-too-long") == ESP_ERR_NVS_INVALID_LENGTH && text.view() == "fallback",
+           "StoreText rejects oversized text without mutation");
+
+    expect(arc::Store::save_text<16>("cfg", "name", "router.local") == ESP_OK, "Store saves string_view text");
+    auto loaded = arc::Store::load_text<16>("cfg", "name", "fallback", &status);
+    expect(loaded.has_value() && status == ESP_OK && loaded->view() == "router.local" &&
+               std::strcmp(loaded->c_str(), "router.local") == 0,
+           "Store loads fixed text config");
+
+    auto missing = arc::Store::load_text<16>("cfg", "missing", "fallback", &status);
+    expect(missing.has_value() && status == ESP_ERR_NVS_NOT_FOUND && missing->view() == "fallback",
+           "Store load_text keeps fallback for missing key");
+    expect(!arc::Store::load_text<4>("cfg", "name", "ok", &status) && status == ESP_ERR_NVS_INVALID_LENGTH,
+           "Store load_text rejects oversized persisted value");
+    expect(arc::Store::save_text<4>("cfg", "tiny", "too long") == ESP_ERR_NVS_INVALID_LENGTH,
+           "Store save_text rejects oversized source");
+}
+
 void test_stream()
 {
     struct Mock {
@@ -5678,6 +5722,7 @@ int main()
     test_seqreg();
     test_claim();
     test_file();
+    test_store();
     test_stream();
     test_pipeline_usb_ulp();
     test_pru_isp_vision();
