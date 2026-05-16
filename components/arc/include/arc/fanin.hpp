@@ -18,14 +18,29 @@ namespace arc {
 
 template <typename T, std::size_t Capacity, std::size_t Producers>
 struct Fanin {
-    static_assert(Producers > 0U, "fanin needs at least one producer");
-    static_assert(Capacity > 1U, "fanin lane capacity must be greater than one");
-    static_assert(std::has_single_bit(Capacity), "fanin lane capacity must be a power of two");
-    static_assert(std::is_trivially_copyable_v<T>, "fanin payload must be trivially copyable");
+    static_assert(
+        Producers > 0U,
+        "[ARC ERROR] arc::Fanin needs at least one producer. "
+        "Action: set the Producers template argument to the number of static lanes you will wire.");
+    static_assert(
+        Capacity > 1U,
+        "[ARC ERROR] arc::Fanin lane capacity must be greater than one. "
+        "Action: choose a power-of-two lane capacity such as 2, 4, 8, or 16.");
+    static_assert(
+        std::has_single_bit(Capacity),
+        "[ARC ERROR] arc::Fanin lane capacity must be a power of two. "
+        "Action: choose 2, 4, 8, 16, and remember usable capacity per lane is Capacity - 1.");
+    static_assert(
+        std::is_trivially_copyable_v<T>,
+        "[ARC ERROR] arc::Fanin payload must be trivially copyable. "
+        "Action: use flat structs, integers, enums, or std::array; keep strings, vectors, owning pointers, and virtual objects outside the queue payload.");
 
     template <std::size_t Lane>
     class Producer {
-        static_assert(Lane < Producers, "invalid fanin producer");
+        static_assert(
+            Lane < Producers,
+            "[ARC ERROR] arc::Fanin producer index is outside the configured producer count. "
+            "Action: request producer<Index>() with Index less than Producers.");
 
     public:
         constexpr Producer() noexcept = default;
@@ -185,7 +200,10 @@ struct Fanin {
     template <std::size_t Lane>
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_push(const T& value) noexcept
     {
-        static_assert(Lane < Producers, "invalid fanin producer");
+        static_assert(
+            Lane < Producers,
+            "[ARC ERROR] arc::Fanin producer index is outside the configured producer count. "
+            "Action: push to a lane index less than Producers.");
         return lanes_[Lane].try_push(value);
     }
 
@@ -194,21 +212,30 @@ struct Fanin {
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(
         const std::span<U, Extent> data) noexcept
     {
-        static_assert(Lane < Producers, "invalid fanin producer");
+        static_assert(
+            Lane < Producers,
+            "[ARC ERROR] arc::Fanin producer index is outside the configured producer count. "
+            "Action: push to a lane index less than Producers.");
         return lanes_[Lane].push(data);
     }
 
     template <std::size_t Lane>
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t size() const noexcept
     {
-        static_assert(Lane < Producers, "invalid fanin producer");
+        static_assert(
+            Lane < Producers,
+            "[ARC ERROR] arc::Fanin producer index is outside the configured producer count. "
+            "Action: inspect a lane index less than Producers.");
         return lanes_[Lane].size();
     }
 
     template <std::size_t Lane>
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t space() const noexcept
     {
-        static_assert(Lane < Producers, "invalid fanin producer");
+        static_assert(
+            Lane < Producers,
+            "[ARC ERROR] arc::Fanin producer index is outside the configured producer count. "
+            "Action: inspect a lane index less than Producers.");
         return lanes_[Lane].space();
     }
 
@@ -328,7 +355,10 @@ struct Audit<Fanin<T, Capacity, Producers>> {
 
     template <std::size_t Index>
     class Producer {
-        static_assert(Index < Producers, "invalid fanin producer");
+        static_assert(
+            Index < Producers,
+            "[ARC ERROR] arc::Audit<Fanin> producer index is outside the configured producer count. "
+            "Action: request producer<Index>() with Index less than Producers.");
 
     public:
         constexpr Producer() noexcept = default;
@@ -486,7 +516,10 @@ struct Audit<Fanin<T, Capacity, Producers>> {
     template <std::size_t Producer>
     [[nodiscard]] inline bool try_push(const T& value) noexcept
     {
-        static_assert(Producer < Producers, "invalid fanin producer");
+        static_assert(
+            Producer < Producers,
+            "[ARC ERROR] arc::Audit<Fanin> producer index is outside the configured producer count. "
+            "Action: push to a lane index less than Producers.");
         producers_[Producer].assert_single("arc::Audit<Fanin> lane must stay single-producer");
         return fan_.template try_push<Producer>(value);
     }
@@ -495,7 +528,10 @@ struct Audit<Fanin<T, Capacity, Producers>> {
         requires(std::is_same_v<std::remove_cv_t<U>, T>)
     [[nodiscard]] inline std::size_t push(const std::span<U, Extent> data) noexcept
     {
-        static_assert(Producer < Producers, "invalid fanin producer");
+        static_assert(
+            Producer < Producers,
+            "[ARC ERROR] arc::Audit<Fanin> producer index is outside the configured producer count. "
+            "Action: push to a lane index less than Producers.");
         producers_[Producer].assert_single("arc::Audit<Fanin> lane must stay single-producer");
         return fan_.template push<Producer>(data);
     }

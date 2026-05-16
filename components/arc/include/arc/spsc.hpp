@@ -20,9 +20,18 @@ namespace arc {
 
 template <typename T, std::size_t Capacity>
 struct Spsc {
-    static_assert(Capacity > 1, "SPSC capacity must be greater than one");
-    static_assert(std::has_single_bit(Capacity), "SPSC capacity must be a power of two");
-    static_assert(std::is_trivially_copyable_v<T>, "SPSC payload must be trivially copyable");
+    static_assert(
+        Capacity > 1,
+        "[ARC ERROR] arc::Spsc capacity must be greater than one. "
+        "Action: choose a power-of-two capacity such as 2, 4, 8, or 16; one slot is reserved to distinguish full from empty.");
+    static_assert(
+        std::has_single_bit(Capacity),
+        "[ARC ERROR] arc::Spsc capacity must be a power of two. "
+        "Action: choose 2, 4, 8, 16, and remember usable capacity is Capacity - 1.");
+    static_assert(
+        std::is_trivially_copyable_v<T>,
+        "[ARC ERROR] arc::Spsc payload must be trivially copyable. "
+        "Action: use flat structs, integers, enums, or std::array; keep strings, vectors, owning pointers, and virtual objects outside the queue payload.");
 
     class Producer {
     public:

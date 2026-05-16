@@ -70,6 +70,22 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("topology source gate", text)
         self.assertIn("tools/topology-check.py", text)
 
+    def test_queue_static_asserts_include_actionable_arc_errors(self) -> None:
+        text = "\n".join(
+            [
+                (ROOT / "components" / "arc" / "include" / "arc" / "spsc.hpp").read_text(encoding="utf-8"),
+                (ROOT / "components" / "arc" / "include" / "arc" / "mpsc.hpp").read_text(encoding="utf-8"),
+                (ROOT / "components" / "arc" / "include" / "arc" / "fanin.hpp").read_text(encoding="utf-8"),
+                (ROOT / "components" / "arc" / "include" / "arc" / "rpc.hpp").read_text(encoding="utf-8"),
+            ]
+        )
+
+        self.assertIn("[ARC ERROR] arc::Spsc payload must be trivially copyable", text)
+        self.assertIn("[ARC ERROR] arc::Mpsc payload must be trivially copyable", text)
+        self.assertIn("[ARC ERROR] arc::Fanin payload must be trivially copyable", text)
+        self.assertIn("[ARC ERROR] arc::RpcLane request payload must be trivially copyable", text)
+        self.assertIn("Action:", text)
+
     def test_tool_tests_runner_parallelizes_test_files(self) -> None:
         text = (ROOT / "tools" / "tool-tests.sh").read_text(encoding="utf-8")
 

@@ -24,12 +24,30 @@ inline constexpr std::size_t dense_mpsc_align =
 
 template <typename T, std::size_t Capacity, std::size_t CellAlign>
 struct MpscImpl {
-    static_assert(Capacity > 1, "MPSC capacity must be greater than one");
-    static_assert(std::has_single_bit(Capacity), "MPSC capacity must be a power of two");
-    static_assert(Capacity <= (std::size_t{1} << 31U), "MPSC capacity is too large");
-    static_assert(std::is_trivially_copyable_v<T>, "MPSC payload must be trivially copyable");
-    static_assert(CellAlign >= alignof(std::uint32_t), "MPSC cell alignment must fit the sequence word");
-    static_assert((CellAlign & (CellAlign - 1U)) == 0U, "MPSC cell alignment must be a power of two");
+    static_assert(
+        Capacity > 1,
+        "[ARC ERROR] arc::Mpsc capacity must be greater than one. "
+        "Action: choose a power-of-two capacity such as 2, 4, 8, or 16.");
+    static_assert(
+        std::has_single_bit(Capacity),
+        "[ARC ERROR] arc::Mpsc capacity must be a power of two. "
+        "Action: choose 2, 4, 8, 16, or another power-of-two queue depth.");
+    static_assert(
+        Capacity <= (std::size_t{1} << 31U),
+        "[ARC ERROR] arc::Mpsc capacity is too large for the sequence arithmetic. "
+        "Action: reduce the queue depth below 2^31.");
+    static_assert(
+        std::is_trivially_copyable_v<T>,
+        "[ARC ERROR] arc::Mpsc payload must be trivially copyable. "
+        "Action: use flat structs, integers, enums, or std::array; keep strings, vectors, owning pointers, and virtual objects outside the queue payload.");
+    static_assert(
+        CellAlign >= alignof(std::uint32_t),
+        "[ARC ERROR] arc::Mpsc cell alignment must fit the sequence word. "
+        "Action: use the default arc::Mpsc or keep custom cell alignment at least alignof(std::uint32_t).");
+    static_assert(
+        (CellAlign & (CellAlign - 1U)) == 0U,
+        "[ARC ERROR] arc::Mpsc cell alignment must be a power of two. "
+        "Action: choose a natural power-of-two alignment such as 4, 8, 16, 32, or arc::cache_line.");
 
     class Producer {
     public:

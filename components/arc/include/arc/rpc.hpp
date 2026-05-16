@@ -35,9 +35,18 @@ struct RpcLane {
     using Request = RpcRequest<Op, RequestPayload>;
     using Reply = RpcReply<ReplyPayload>;
 
-    static_assert(std::is_integral_v<Op> || std::is_enum_v<Op>, "RPC opcode must be integral or enum");
-    static_assert(std::is_trivially_copyable_v<RequestPayload>, "RPC request payload must be trivially copyable");
-    static_assert(std::is_trivially_copyable_v<ReplyPayload>, "RPC reply payload must be trivially copyable");
+    static_assert(
+        std::is_integral_v<Op> || std::is_enum_v<Op>,
+        "[ARC ERROR] arc::RpcLane opcode must be an integral or enum type. "
+        "Action: use a small enum class or integer opcode that can cross the queue boundary by value.");
+    static_assert(
+        std::is_trivially_copyable_v<RequestPayload>,
+        "[ARC ERROR] arc::RpcLane request payload must be trivially copyable. "
+        "Action: use a flat request struct with integers, enums, floats, or std::array; keep owning objects outside the RPC lane.");
+    static_assert(
+        std::is_trivially_copyable_v<ReplyPayload>,
+        "[ARC ERROR] arc::RpcLane reply payload must be trivially copyable. "
+        "Action: use a flat reply struct with integers, enums, floats, or std::array; keep owning objects outside the RPC lane.");
 
     class Client {
     public:
