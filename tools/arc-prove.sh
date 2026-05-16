@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SPEC_DIR="${ARC_SPEC_DIR:-$ROOT/specs}"
 
-required=(Spsc Consensus)
+required=(Spsc Consensus Roles)
 
 for module in "${required[@]}"; do
     spec="$SPEC_DIR/$module.tla"

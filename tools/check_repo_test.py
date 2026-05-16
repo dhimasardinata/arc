@@ -37,6 +37,11 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("Restore firmware build cache", text)
         self.assertIn("\\./tools/ci-build-plan\\.py --buildable", text)
 
+    def test_formal_gate_requires_role_model(self) -> None:
+        text = (ROOT / "tools" / "arc-prove.sh").read_text(encoding="utf-8")
+
+        self.assertIn("Roles", text)
+
     def test_tool_tests_runner_parallelizes_test_files(self) -> None:
         text = (ROOT / "tools" / "tool-tests.sh").read_text(encoding="utf-8")
 
