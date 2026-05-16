@@ -4050,6 +4050,14 @@ void test_current_goal_surfaces()
     expect(!arc::Copy<>::wait_yield<CopyYield>(pending_copy, 1U, 2U) && copy_yields == 2U,
            "Copy wait_yield calls policy instead of hard spinning forever");
 
+    alignas(arc::cache_line) std::array<std::uint8_t, arc::cache_line> copy_src{};
+    alignas(arc::cache_line) std::array<std::uint8_t, arc::cache_line> copy_dst{};
+    copy_src[0] = 42U;
+    auto copy_lease = arc::Copy<>::lease_coherent(std::span(copy_dst), std::span(copy_src));
+    expect(copy_lease.has_value() && copy_lease->active(), "Copy coherent lease queues");
+    expect(copy_lease->finish().has_value() && !copy_lease->active(), "Copy coherent lease finishes");
+    expect(copy_lease->finish().has_value() && copy_dst[0] == 42U, "Copy coherent lease finish is idempotent");
+
     struct CloakPolicy {
         static std::uint32_t rng() noexcept
         {

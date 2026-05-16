@@ -55,6 +55,71 @@ struct Copy {
     using Ticket = CopyTicket<false>;
     using StrictTicket = CopyTicket<true>;
 
+    template <bool Strict>
+    class LeaseBase {
+    public:
+        constexpr LeaseBase() noexcept = default;
+
+        explicit constexpr LeaseBase(const CopyTicket<Strict>& ticket) noexcept
+            : ticket_(ticket)
+            , active_(true)
+        {
+        }
+
+        LeaseBase(const LeaseBase&) = delete;
+        LeaseBase& operator=(const LeaseBase&) = delete;
+
+        constexpr LeaseBase(LeaseBase&& other) noexcept
+            : ticket_(other.ticket_)
+            , active_(other.active_)
+        {
+            other.active_ = false;
+        }
+
+        LeaseBase& operator=(LeaseBase&& other) noexcept
+        {
+            if (this != &other) {
+                static_cast<void>(finish());
+                ticket_ = other.ticket_;
+                active_ = other.active_;
+                other.active_ = false;
+            }
+            return *this;
+        }
+
+        ~LeaseBase()
+        {
+            static_cast<void>(finish());
+        }
+
+        [[nodiscard]] constexpr bool active() const noexcept
+        {
+            return active_;
+        }
+
+        [[nodiscard]] constexpr const CopyTicket<Strict>& ticket() const noexcept
+        {
+            return ticket_;
+        }
+
+        [[nodiscard]] Status finish() noexcept
+        {
+            if (!active_) {
+                return ok();
+            }
+            const auto err = finish_impl(ticket_);
+            active_ = false;
+            return status(err);
+        }
+
+    private:
+        CopyTicket<Strict> ticket_{};
+        bool active_{};
+    };
+
+    using Lease = LeaseBase<false>;
+    using StrictLease = LeaseBase<true>;
+
     [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
@@ -145,6 +210,32 @@ struct Copy {
         return finish_coherent(ticket);
     }
 
+    [[nodiscard]] static Result<Lease> lease_coherent(
+        void* const dst,
+        const void* const src,
+        const std::size_t bytes) noexcept
+    {
+        Ticket ticket{};
+        const auto ret = send_coherent(ticket, dst, src, bytes);
+        if (ret != ESP_OK) {
+            return fail(ret);
+        }
+        return Lease{ticket};
+    }
+
+    [[nodiscard]] static Result<StrictLease> lease_strict(
+        void* const dst,
+        const void* const src,
+        const std::size_t bytes) noexcept
+    {
+        StrictTicket ticket{};
+        const auto ret = send_strict(ticket, dst, src, bytes);
+        if (ret != ESP_OK) {
+            return fail(ret);
+        }
+        return StrictLease{ticket};
+    }
+
     template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
     static esp_err_t copy_coherent(std::span<Dst, DstExtent> dst, std::span<Src, SrcExtent> src) noexcept
@@ -165,6 +256,32 @@ struct Copy {
         }
 
         return copy_strict(dst.data(), src.data(), src.size_bytes());
+    }
+
+    template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
+        requires CopySpan<Dst, Src>
+    [[nodiscard]] static Result<Lease> lease_coherent(
+        std::span<Dst, DstExtent> dst,
+        std::span<Src, SrcExtent> src) noexcept
+    {
+        if (dst.size() < src.size()) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        return lease_coherent(dst.data(), src.data(), src.size_bytes());
+    }
+
+    template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
+        requires CopySpan<Dst, Src>
+    [[nodiscard]] static Result<StrictLease> lease_strict(
+        std::span<Dst, DstExtent> dst,
+        std::span<Src, SrcExtent> src) noexcept
+    {
+        if (dst.size() < src.size()) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        return lease_strict(dst.data(), src.data(), src.size_bytes());
     }
 
     static esp_err_t send_coherent(
