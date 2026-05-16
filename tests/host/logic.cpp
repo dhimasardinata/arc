@@ -2362,6 +2362,13 @@ void test_caps()
     expect(arc::Cache::from_device(dma) == ESP_OK && esp_cache_last_msync_bytes == padded &&
                (esp_cache_last_msync_flags & arc::Cache::unaligned) == 0,
            "DMA cap buffer cache sync uses padded storage");
+    auto cache_lines = arc::Cache::lines(dma.storage());
+    expect(cache_lines.has_value() && cache_lines->bytes == padded, "Cache line token accepts padded storage");
+    expect(arc::Cache::discard(*cache_lines) == ESP_OK && esp_cache_last_msync_bytes == padded &&
+               (esp_cache_last_msync_flags & arc::Cache::unaligned) == 0,
+           "Cache line token keeps strict discard aligned");
+    expect(!arc::Cache::lines(dma.data() + 1U, arc::cache_line), "Cache line token rejects unaligned data");
+    expect(!arc::Cache::lines(dma.data(), dma.bytes()), "Cache line token rejects partial cache line");
     static_assert(ARC_ENABLE_UNSAFE_CACHE_RAW == 0);
 
     arc::PmrCapsResource<MALLOC_CAP_SPIRAM> psram{};

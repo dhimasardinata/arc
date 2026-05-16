@@ -9,6 +9,7 @@
 #include "esp_err.h"
 
 #include "arc/caps.hpp"
+#include "arc/result.hpp"
 #include "arc/sdk.hpp"
 
 #ifndef ARC_ENABLE_UNSAFE_CACHE_RAW
@@ -22,6 +23,11 @@ struct UnsafeCacheRaw {
 };
 
 inline constexpr UnsafeCacheRaw unsafe_raw{};
+
+struct CacheLines {
+    void* data{};
+    std::size_t bytes{};
+};
 
 struct Cache {
     static constexpr int invalidate = static_cast<int>(ESP_CACHE_MSYNC_FLAG_INVALIDATE);
@@ -38,6 +44,21 @@ struct Cache {
     [[nodiscard]] static bool whole_lines(const std::size_t bytes) noexcept
     {
         return (bytes & (cache_line - 1U)) == 0U;
+    }
+
+    [[nodiscard]] static Result<CacheLines> lines(void* const data, const std::size_t bytes) noexcept
+    {
+        if (data == nullptr || bytes == 0U || !aligned(data) || !whole_lines(bytes)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return CacheLines{.data = data, .bytes = bytes};
+    }
+
+    template <typename T, std::size_t Extent>
+        requires(!std::is_const_v<T> && std::is_trivially_copyable_v<T>)
+    [[nodiscard]] static Result<CacheLines> lines(const std::span<T, Extent> data) noexcept
+    {
+        return lines(data.data(), data.size_bytes());
     }
 
     static esp_err_t sync(void* const data, const std::size_t bytes, const int flags) noexcept
@@ -71,6 +92,16 @@ struct Cache {
         return strict(data, bytes, dir_c2m);
     }
 
+    static esp_err_t to_device(const CacheLines region) noexcept
+    {
+        return to_aligned(region.data, region.bytes);
+    }
+
+    static esp_err_t to_aligned(const CacheLines region) noexcept
+    {
+        return to_device(region);
+    }
+
     static esp_err_t from_device(void* const data, const std::size_t bytes) noexcept
     {
         return from_aligned(data, bytes);
@@ -79,6 +110,16 @@ struct Cache {
     static esp_err_t from_aligned(void* const data, const std::size_t bytes) noexcept
     {
         return strict(data, bytes, dir_m2c);
+    }
+
+    static esp_err_t from_device(const CacheLines region) noexcept
+    {
+        return from_aligned(region.data, region.bytes);
+    }
+
+    static esp_err_t from_aligned(const CacheLines region) noexcept
+    {
+        return from_device(region);
     }
 
 #if ARC_ENABLE_UNSAFE_CACHE_RAW
@@ -100,6 +141,16 @@ struct Cache {
     static esp_err_t discard_aligned(void* const data, const std::size_t bytes) noexcept
     {
         return strict(data, bytes, dir_c2m | invalidate);
+    }
+
+    static esp_err_t discard(const CacheLines region) noexcept
+    {
+        return discard_aligned(region.data, region.bytes);
+    }
+
+    static esp_err_t discard_aligned(const CacheLines region) noexcept
+    {
+        return discard(region);
     }
 
 #if ARC_ENABLE_UNSAFE_CACHE_RAW
