@@ -11,11 +11,36 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ArcGenTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        if env_bin := os.environ.get("ARC_GEN_TEST_BIN"):
+            cls._bin_dir = None
+            cls.arc_gen = Path(env_bin)
+            return
+
+        cls._bin_dir = tempfile.TemporaryDirectory()
+        cls.arc_gen = Path(cls._bin_dir.name) / "arc-gen"
+        result = subprocess.run(
+            ["go", "build", "-o", str(cls.arc_gen), "tools/arc-gen.go"],
+            cwd=ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls._bin_dir is not None:
+            cls._bin_dir.cleanup()
+
     def run_arc_gen(self, root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
-            ["go", "run", "tools/arc-gen.go", "-root", str(root), *args],
+            [str(self.arc_gen), "-root", str(root), *args],
             cwd=ROOT,
             env=env,
             check=False,

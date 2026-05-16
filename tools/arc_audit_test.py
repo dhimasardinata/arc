@@ -11,11 +11,36 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ArcAuditTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        if env_bin := os.environ.get("ARC_AUDIT_TEST_BIN"):
+            cls._bin_dir = None
+            cls.arc_audit = Path(env_bin)
+            return
+
+        cls._bin_dir = tempfile.TemporaryDirectory()
+        cls.arc_audit = Path(cls._bin_dir.name) / "arc-audit"
+        result = subprocess.run(
+            ["go", "build", "-o", str(cls.arc_audit), "tools/arc-audit.go"],
+            cwd=ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls._bin_dir is not None:
+            cls._bin_dir.cleanup()
+
     def run_arc_audit(self, root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return subprocess.run(
-            ["go", "run", "tools/arc-audit.go", "-root", str(root), *args],
+            [str(self.arc_audit), "-root", str(root), *args],
             cwd=ROOT,
             env=env,
             check=False,

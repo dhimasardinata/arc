@@ -27,6 +27,15 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("go run tools/clangd-compile-commands\\.go --validate-arc-headers", text)
         self.assertIn('workflow_step_before "name: Host benchmarks" "name: Build all"', text)
 
+    def test_tool_tests_runner_parallelizes_test_files(self) -> None:
+        text = (ROOT / "tools" / "tool-tests.sh").read_text(encoding="utf-8")
+
+        self.assertIn("ARC_TOOL_TEST_JOBS", text)
+        self.assertIn("ARC_AUDIT_TEST_BIN", text)
+        self.assertIn("ARC_GEN_TEST_BIN", text)
+        self.assertIn("find tools -maxdepth 1 -type f -name '*_test.py'", text)
+        self.assertIn('PYTHONDONTWRITEBYTECODE=1 python3 "$test"', text)
+
 
 if __name__ == "__main__":
     unittest.main()
