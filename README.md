@@ -88,7 +88,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::ml::Tensor`, `Dense`, `QuantDenseS8`, `Conv2dS8`, `DepthwiseConv2dS8`, `MaxPool2d`, `mapped_weights`, and `Core1Inference` provide a zero-allocation inference surface for fixed-shape models stored in flash/PSRAM spans.
 - `arc::BareCore<Program>` defines the true-AMP Core 1 boot contract for board policies that hold APP CPU outside FreeRTOS and jump directly into a static control loop.
 - `arc::power::Intermittent` stores dying-gasp CPU, Tight-loop stack, and RCU state bytes in RTC no-init storage so a board policy can resurrect after brownout.
-- `arc::DmaChain<N>` builds static scatter-gather descriptor rings for CPU-free waveform, display, and camera pipelines; `try_bind(...)` rejects invalid descriptor indexes, empty spans, and descriptor lengths that cannot fit the hardware field.
+- `arc::DmaChain<N>` builds static scatter-gather descriptor rings for CPU-free waveform, display, and camera pipelines; `try_bind(...)` rejects invalid descriptor indexes, empty spans, and descriptor lengths that cannot fit the hardware field, while `arc::OwnedDmaChain<T, N>` keeps DMA-capable buffers owned beside the descriptors.
 - `arc::Pipeline`, `DmaEndpoint`, `Dma2dWindow`, and `bind_rows(...)` compose descriptor rings and 2D frame windows without making DMA topology implicit.
 - `arc::PruOut`, `PruIn`, `PruTiming`, and `PruCursor` describe PRU-style LCD_CAM/I2S DMA waveform output and parallel capture rings for protocols the ESP32-S3 does not expose as a named peripheral.
 - `arc::sdr::PulseSynth` and `Tx` turn caller-owned audio or bit spans into 1-bit LCD_CAM pulse streams for AM/FM/OOK software-defined radio experiments.
@@ -2083,6 +2083,7 @@ Standard containers can use the same placement rules through one-word allocators
 - `arc::SimdAlloc<T>`
 
 Do not let a capability-allocated `std::vector` reallocate while DMA or a peripheral owns its `.data()` pointer. Reserve capacity before handoff, or prefer `arc::CapsBuf` / `std::array` for active hardware buffers.
+Use `arc::OwnedDmaChain<T, N>` when a descriptor ring should own its DMA-capable buffers for the whole ring lifetime instead of binding descriptors to caller-owned spans.
 
 ### Placement aliases
 

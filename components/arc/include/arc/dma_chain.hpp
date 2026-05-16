@@ -6,7 +6,9 @@
 #include <limits>
 #include <span>
 #include <type_traits>
+#include <utility>
 
+#include "arc/caps.hpp"
 #include "arc/result.hpp"
 
 namespace arc {
@@ -124,6 +126,84 @@ struct DmaChain {
     }
 
     std::array<DmaDesc, N> desc{};
+};
+
+template <typename T, std::size_t N>
+class OwnedDmaChain {
+public:
+    static_assert(N > 0U, "owned DMA chain must contain at least one descriptor");
+    static_assert(std::is_trivially_copyable_v<T>, "owned DMA chain buffers require trivial elements");
+
+    constexpr OwnedDmaChain() noexcept = default;
+
+    OwnedDmaChain(const OwnedDmaChain&) = delete;
+    OwnedDmaChain& operator=(const OwnedDmaChain&) = delete;
+    OwnedDmaChain(OwnedDmaChain&&) = delete;
+    OwnedDmaChain& operator=(OwnedDmaChain&&) = delete;
+
+    [[nodiscard]] Status alloc(
+        const std::size_t items,
+        const bool circular = false) noexcept
+    {
+        if (items == 0U || items > std::numeric_limits<std::size_t>::max() / sizeof(T)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        std::array<CapsBuf<T>, N> next{};
+        for (auto& buffer : next) {
+            buffer = dmabuf<T>(items);
+            if (!buffer) {
+                return fail(ESP_ERR_NO_MEM);
+            }
+        }
+
+        buffers_ = std::move(next);
+        chain_.link_linear();
+        for (std::size_t i = 0; i < N; ++i) {
+            const auto ready = chain_.try_bind(i, buffers_[i].view(), i + 1U == N && !circular);
+            if (!ready) {
+                return ready;
+            }
+        }
+        if (circular) {
+            chain_.link_circular();
+        }
+        return ok();
+    }
+
+    [[nodiscard]] constexpr DmaChain<N>& chain() noexcept
+    {
+        return chain_;
+    }
+
+    [[nodiscard]] constexpr const DmaChain<N>& chain() const noexcept
+    {
+        return chain_;
+    }
+
+    [[nodiscard]] constexpr DmaDesc* head() noexcept
+    {
+        return chain_.head();
+    }
+
+    [[nodiscard]] constexpr const DmaDesc* head() const noexcept
+    {
+        return chain_.head();
+    }
+
+    [[nodiscard]] constexpr CapsBuf<T>& buf(const std::size_t index) noexcept
+    {
+        return buffers_[index];
+    }
+
+    [[nodiscard]] constexpr const CapsBuf<T>& buf(const std::size_t index) const noexcept
+    {
+        return buffers_[index];
+    }
+
+private:
+    DmaChain<N> chain_{};
+    std::array<CapsBuf<T>, N> buffers_{};
 };
 
 }  // namespace arc

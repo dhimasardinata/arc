@@ -3694,6 +3694,13 @@ void test_pipeline_usb_ulp()
     expect(typed_chain.try_bind(0, std::span(typed_dma)).has_value() &&
                typed_chain.head()->length == typed_dma.size() * sizeof(std::uint16_t),
            "DmaChain checked bind accepts typed spans");
+    arc::OwnedDmaChain<std::uint8_t, 2> owned_dma{};
+    static_assert(!std::is_move_constructible_v<decltype(owned_dma)>);
+    expect(owned_dma.alloc(4U, true).has_value(), "OwnedDmaChain allocates descriptor buffers");
+    expect(owned_dma.head()->buffer == owned_dma.buf(0).data() &&
+               owned_dma.head()->length == owned_dma.buf(0).bytes() &&
+               owned_dma.chain().tail()->next == owned_dma.head(),
+           "OwnedDmaChain binds owned circular buffers");
     display.bind(0, std::span(display_bytes).first(4));
     display.bind(1, std::span(display_bytes).subspan(4), true);
 
