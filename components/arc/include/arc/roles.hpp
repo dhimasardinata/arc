@@ -39,6 +39,18 @@ public:
         return lane_.split();
     }
 
+    [[nodiscard]] constexpr auto client() noexcept
+        requires requires(Lane& lane) { lane.client(); }
+    {
+        return lane_.client();
+    }
+
+    [[nodiscard]] constexpr auto server() noexcept
+        requires requires(Lane& lane) { lane.server(); }
+    {
+        return lane_.server();
+    }
+
     [[nodiscard]] static constexpr std::size_t cap() noexcept
         requires requires { Lane::cap(); }
     {

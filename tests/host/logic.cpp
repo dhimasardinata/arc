@@ -753,6 +753,18 @@ concept HasRootPop = requires(T& roles, int& out) { roles.try_pop(out); };
 template <typename T>
 concept HasRootFaninPush = requires(T& roles, int in) { roles.template try_push<0>(in); };
 
+template <typename T, typename Op, typename Payload>
+concept HasRootRpcCall = requires(T& roles, Op op, Payload payload) { roles.call(op, payload, 1U); };
+
+template <typename T, typename Request>
+concept HasRootRpcRecv = requires(T& roles, Request& request) { roles.recv(request); };
+
+template <typename T, typename Reply>
+concept HasRootRpcPoll = requires(T& roles, Reply& reply) { roles.poll(reply); };
+
+template <typename T, typename Reply>
+concept HasRootRpcPollMatch = requires(T& roles, Reply& reply) { roles.poll_match(1U, reply); };
+
 void test_spsc()
 {
     arc::Spsc<int, 4> queue;
@@ -1068,8 +1080,13 @@ void test_rpc_lane()
 
     arc::RpcLane<Op, Request, Reply, 4> rpc;
     using Rpc = decltype(rpc);
+    using RoleRpc = arc::Roles<arc::RpcLane<Op, Request, Reply, 4>>;
     static_assert(!std::is_copy_constructible_v<Rpc::Client>);
     static_assert(!std::is_copy_constructible_v<Rpc::Server>);
+    static_assert(!HasRootRpcCall<RoleRpc, Op, Request>);
+    static_assert(!HasRootRpcRecv<RoleRpc, Rpc::Request>);
+    static_assert(!HasRootRpcPoll<RoleRpc, Rpc::Reply>);
+    static_assert(!HasRootRpcPollMatch<RoleRpc, Rpc::Reply>);
 
     auto client = rpc.client();
     auto server = rpc.server();
@@ -1092,6 +1109,15 @@ void test_rpc_lane()
     expect(server.reply(9U, ESP_OK, Reply{.applied = 9U}), "RPC out-of-order reply");
     expect(!moved_client.poll_match(8U, reply), "RPC client defers unmatched reply");
     expect(moved_client.poll_deferred(reply) && reply.serial == 9U, "RPC client deferred reply preserved");
+
+    RoleRpc role_only;
+    auto role_client = role_only.client();
+    auto role_server = role_only.server();
+    expect(role_client.call(Op::set, Request{.value = 55U}, 10U), "Roles RPC client endpoint call");
+    expect(role_server.recv(request), "Roles RPC server endpoint recv");
+    expect(request.serial == 10U && request.payload.value == 55U, "Roles RPC request fields");
+    expect(role_server.reply(request.serial, ESP_OK, Reply{.applied = 56U}), "Roles RPC server endpoint reply");
+    expect(role_client.poll_match(10U, reply) && reply.payload.applied == 56U, "Roles RPC client endpoint reply");
 }
 
 void test_checked_fanin()
