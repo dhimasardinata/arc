@@ -796,6 +796,12 @@ concept HasRootRpcPoll = requires(T& roles, Reply& reply) { roles.poll(reply); }
 template <typename T, typename Reply>
 concept HasRootRpcPollMatch = requires(T& roles, Reply& reply) { roles.poll_match(1U, reply); };
 
+template <typename T>
+concept HasDmaView = requires(T& buffer) { buffer.view(); };
+
+template <typename T>
+concept HasDmaIndex = requires(T& buffer) { buffer[0]; };
+
 struct FlowPacket {
     std::uint32_t seq{};
 };
@@ -2492,6 +2498,31 @@ void test_caps()
     expect(!arc::Cache::lines(dma.data() + 1U, arc::cache_line), "Cache line token rejects unaligned data");
     expect(!arc::Cache::lines(dma.data(), dma.bytes()), "Cache line token rejects partial cache line");
     static_assert(ARC_ENABLE_UNSAFE_CACHE_RAW == 0);
+
+    using CpuDma = arc::DmaBuf<std::uint8_t>;
+    using DevDma = arc::DmaBuf<std::uint8_t, arc::CacheState::device>;
+    static_assert(CpuDma::state == arc::CacheState::cpu);
+    static_assert(DevDma::state == arc::CacheState::device);
+    static_assert(HasDmaView<CpuDma>);
+    static_assert(HasDmaIndex<CpuDma>);
+    static_assert(!HasDmaView<DevDma>);
+    static_assert(!HasDmaIndex<DevDma>);
+
+    CpuDma typed{std::move(dma)};
+    typed[0] = 7U;
+    auto device = std::move(typed).to_device();
+    expect(device.has_value() && device->addr() != nullptr && device->bytes() == 65U,
+           "DmaBuf flush moves CPU buffer to device state");
+    auto back = std::move(*device).from_device();
+    expect(back.has_value() && (*back)[0] == 7U, "DmaBuf invalidate restores CPU access");
+    auto raw = std::move(*back).take();
+    expect(raw.size() == 65U && raw[0] == 7U, "DmaBuf returns raw CapsBuf only in CPU state");
+
+    CpuDma rx{arc::dmabuf<std::uint8_t>(65U)};
+    auto rx_device = std::move(rx).discard();
+    expect(rx_device.has_value(), "DmaBuf discard prepares device-write ownership");
+    auto rx_cpu = std::move(*rx_device).from_device();
+    expect(rx_cpu.has_value(), "DmaBuf device-write ownership returns to CPU");
 
     arc::PmrCapsResource<MALLOC_CAP_SPIRAM> psram{};
     std::pmr::vector<std::uint8_t> vec{&psram};

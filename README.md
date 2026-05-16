@@ -1777,6 +1777,9 @@ Explicit cache coherency helpers for DMA and external-memory paths.
 - The unsafe raw escape hatches are unsafe around actively mutated neighbors on the same cache line; use cache-line-aligned buffers or the `_strict` path for live DMA ownership.
 - `line(ptr)` returns the cache line size for one address, or zero when the address is not cacheable.
 - `arc::CapsBuf<T>` overloads sync the padded physical allocation, while span overloads sync only the exact span byte count.
+- `arc::DmaBuf<T, arc::CacheState::cpu>` wraps an `arc::CapsBuf<T>` with CPU-owned cache state; `to_device()` or `discard()` consumes it and returns `arc::DmaBuf<T, arc::CacheState::device>` through `arc::Result`.
+- Device-state `arc::DmaBuf` keeps address/size metadata available for hardware handoff but removes CPU `view()`, `data()`, and `operator[]` access until `from_device()` succeeds.
+- `take()` returns the raw `arc::CapsBuf<T>` only after ownership is back in the CPU state.
 
 Use this when you are about to hand a buffer to DMA, SPI, I2S, ADC, RMT, or async copy and you want ownership to be explicit instead of implied.
 
