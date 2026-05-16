@@ -26,6 +26,67 @@ concept ByteStream = requires(T& stream, const void* in, void* out, std::size_t 
     { stream.recv(out, bytes) } -> std::same_as<Result<std::size_t>>;
 };
 
+struct AnyStream {
+    using SendFn = Status (*)(void*, const void*, std::size_t) noexcept;
+    using RecvFn = Result<std::size_t> (*)(void*, void*, std::size_t) noexcept;
+
+    void* ctx{};
+    SendFn send_fn{};
+    RecvFn recv_fn{};
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept
+    {
+        return send_fn != nullptr && recv_fn != nullptr;
+    }
+
+    template <ByteStream Io>
+    [[nodiscard]] static constexpr AnyStream bind(Io& io) noexcept
+    {
+        return AnyStream{
+            .ctx = &io,
+            .send_fn = &send_object<Io>,
+            .recv_fn = &recv_object<Io>,
+        };
+    }
+
+    [[nodiscard]] Status send_all(const void* const data, const std::size_t bytes) noexcept
+    {
+        if (send_fn == nullptr || ctx == nullptr || (data == nullptr && bytes != 0U)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return send_fn(ctx, data, bytes);
+    }
+
+    [[nodiscard]] Result<std::size_t> recv(void* const data, const std::size_t bytes) noexcept
+    {
+        if (recv_fn == nullptr || ctx == nullptr || (data == nullptr && bytes != 0U)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return recv_fn(ctx, data, bytes);
+    }
+
+private:
+    template <ByteStream Io>
+    [[nodiscard]] static Status send_object(
+        void* const ctx,
+        const void* const data,
+        const std::size_t bytes) noexcept
+    {
+        return static_cast<Io*>(ctx)->send_all(data, bytes);
+    }
+
+    template <ByteStream Io>
+    [[nodiscard]] static Result<std::size_t> recv_object(
+        void* const ctx,
+        void* const data,
+        const std::size_t bytes) noexcept
+    {
+        return static_cast<Io*>(ctx)->recv(data, bytes);
+    }
+};
+
+static_assert(ByteStream<AnyStream>);
+
 struct Stream {
     template <ByteStream Io>
     [[nodiscard]] static Status write(Io& io, const void* const data, const std::size_t bytes) noexcept

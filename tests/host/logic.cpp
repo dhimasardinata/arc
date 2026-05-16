@@ -3204,9 +3204,16 @@ void test_stream()
     };
 
     static_assert(arc::net::ByteStream<Mock>);
+    static_assert(arc::net::ByteStream<arc::net::AnyStream>);
 
     Mock io{};
     const std::array<std::uint8_t, 3> payload{1U, 2U, 3U};
+    auto erased = arc::net::AnyStream::bind(io);
+    expect(static_cast<bool>(erased), "AnyStream binds byte stream");
+    expect(arc::net::Stream::write(erased, std::span(payload)).has_value(), "AnyStream write forwards");
+    expect(io.tx_pos == 3U && io.tx[2] == 3U, "AnyStream write bytes");
+    io.tx_pos = 0U;
+
     expect(arc::net::Stream::write_frame16(io, std::span(payload)).has_value(), "Stream frame write");
     expect(io.tx_pos == 5U, "Stream frame bytes");
     expect(io.tx[0] == 0U && io.tx[1] == 3U && io.tx[4] == 3U, "Stream frame layout");
@@ -3221,9 +3228,12 @@ void test_stream()
     io.rx = {0U, 3U, 7U, 8U, 9U};
     io.rx_len = 5U;
     std::array<std::uint8_t, 4> out{};
-    const auto frame = arc::net::Stream::read_frame16(io, std::span(out));
+    const auto frame = arc::net::Stream::read_frame16(erased, std::span(out));
     expect(frame.has_value() && *frame == 3U, "Stream frame read");
     expect((out == std::array<std::uint8_t, 4>{7U, 8U, 9U, 0U}), "Stream frame payload");
+
+    arc::net::AnyStream empty{};
+    expect(!empty.send_all(payload.data(), payload.size()), "AnyStream unbound send rejects");
 
     io.rx = {0U, 5U, 1U, 2U, 3U, 4U, 5U};
     io.rx_pos = 0U;
