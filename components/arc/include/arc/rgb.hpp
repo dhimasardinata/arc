@@ -407,8 +407,12 @@ struct Rgb<RgbLines<DataPins...>,
             return {};
         }
 
-        void* const data = esp_lcd_rgb_alloc_draw_buffer(state.panel, count * sizeof(T), caps);
-        return {static_cast<T*>(data), data == nullptr ? 0U : count};
+        const auto bytes = count * sizeof(T);
+        void* const data = esp_lcd_rgb_alloc_draw_buffer(state.panel, bytes, caps);
+        if (data == nullptr) {
+            return {};
+        }
+        return CapsBuf<T>(static_cast<T*>(data), count, bytes);
     }
 
     [[nodiscard]] static std::uint32_t draws() noexcept

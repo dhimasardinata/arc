@@ -223,8 +223,12 @@ struct Dvp<DvpLines<DataPins...>,
             return {};
         }
 
-        void* const data = esp_cam_ctlr_alloc_buffer(state.cam, count * sizeof(T), caps);
-        return {static_cast<T*>(data), data == nullptr ? 0U : count};
+        const auto bytes = count * sizeof(T);
+        void* const data = esp_cam_ctlr_alloc_buffer(state.cam, bytes, caps);
+        if (data == nullptr) {
+            return {};
+        }
+        return CapsBuf<T>(static_cast<T*>(data), count, bytes);
     }
 
     template <typename T>

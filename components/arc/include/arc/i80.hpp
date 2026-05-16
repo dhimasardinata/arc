@@ -287,8 +287,12 @@ struct I80 {
             return {};
         }
 
-        void* const data = esp_lcd_i80_alloc_draw_buffer(state.io, count * sizeof(T), caps);
-        return {static_cast<T*>(data), data == nullptr ? 0U : count};
+        const auto bytes = count * sizeof(T);
+        void* const data = esp_lcd_i80_alloc_draw_buffer(state.io, bytes, caps);
+        if (data == nullptr) {
+            return {};
+        }
+        return CapsBuf<T>(static_cast<T*>(data), count, bytes);
     }
 
     [[nodiscard]] static std::uint32_t sent() noexcept
