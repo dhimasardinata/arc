@@ -288,7 +288,7 @@ Arc benchmark policy is strict:
 
 Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/), [Arduino-ESP32 documentation](https://docs.espressif.com/projects/arduino-esp32/), [Arduino as an ESP-IDF component](https://docs.espressif.com/projects/arduino-esp32/en/latest/esp-idf_component.html), [PlatformIO ESP-IDF framework docs](https://docs.platformio.org/en/latest/frameworks/espidf.html), and [ESPHome ESP32 platform docs](https://esphome.io/components/esp32.html).
 
-Arc project docs: `docs/architecture.md` explains the Core 0/Core 1 substrate choices, and `docs/hil-test-jig.md` describes the three-node physical fault test shape.
+Arc project docs: `docs/architecture.md` explains the Core 0/Core 1 substrate choices, `docs/safety-case.md` maps safety claims to evidence and non-claims, and `docs/hil-test-jig.md` describes the three-node physical fault test shape.
 
 Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target and opt-in libFuzzer harness for HTTP, URI, MQTT, WebSocket, and CoAP parsers. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/arc-audit.go -all` scans every local `loop`/`step` realtime entry call graph, and `tools/arc-prove.sh` validates TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
 
