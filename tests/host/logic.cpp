@@ -168,6 +168,23 @@ static_assert(arc::claim_proof<1, 2, 3>() != arc::claim_proof<1, 2, 4>());
 static_assert(arc::Result<int>{2}.and_then([](int value) { return arc::Result<int>{value + 1}; }).value() == 3);
 static_assert(arc::status_code(arc::ok()) == ESP_OK);
 
+[[nodiscard]] arc::Result<int> result_value(const bool pass) noexcept
+{
+    return pass ? arc::ok(41) : arc::Result<int>{arc::fail(ESP_ERR_INVALID_ARG)};
+}
+
+[[nodiscard]] arc::Status result_status(const bool pass) noexcept
+{
+    return pass ? arc::ok() : arc::Status{arc::fail(ESP_ERR_INVALID_STATE)};
+}
+
+[[nodiscard]] arc::Result<int> result_flow(const bool value_ok, const bool status_ok) noexcept
+{
+    ARC_TRY(value, result_value(value_ok));
+    ARC_CHECK(result_status(status_ok));
+    return arc::ok(value + 1);
+}
+
 [[nodiscard]] bool near(const float lhs, const float rhs, const float epsilon = 0.0001F) noexcept
 {
     return std::fabs(lhs - rhs) <= epsilon;
@@ -189,6 +206,17 @@ void expect(const bool condition, const char* const message)
         std::fprintf(stderr, "host test failed: %s\n", message);
         std::exit(1);
     }
+}
+
+void test_result()
+{
+    const auto ok = result_flow(true, true);
+    const auto value_err = result_flow(false, true);
+    const auto status_err = result_flow(true, false);
+
+    expect(ok.has_value() && *ok == 42, "Result ARC_TRY unwraps value");
+    expect(!value_err.has_value() && value_err.error() == ESP_ERR_INVALID_ARG, "Result ARC_TRY propagates error");
+    expect(!status_err.has_value() && status_err.error() == ESP_ERR_INVALID_STATE, "Result ARC_CHECK propagates error");
 }
 
 std::size_t pms_policy_regions{};
@@ -5681,6 +5709,7 @@ void test_refinit()
 
 int main()
 {
+    test_result();
     test_any_io();
     test_spsc();
     test_checked_spsc();

@@ -1032,6 +1032,8 @@ Opt-in C++23/26 runtime error surface based on `std::expected`.
 - `arc::fail(err)` creates the error side.
 - `arc::status(err)` converts an `esp_err_t` into `arc::Status`.
 - `arc::status_code(status)` converts `arc::Status` back to `esp_err_t` after monadic `.and_then(...)` chains.
+- `ARC_TRY(name, expr)` unwraps a recoverable value expression or returns the same `esp_err_t` from the current function.
+- `ARC_CHECK(expr)` propagates a recoverable status/error expression when the value is not needed.
 
 Use this for runtime operations that can fail without invalidating the board topology. Hardware boot/configuration errors still intentionally use fail-fast ESP-IDF checks.
 
