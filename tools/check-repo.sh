@@ -213,8 +213,8 @@ if ! grep -qE 'ARC_TARGET:-esp32s3|arc_target.*esp32s3' env.sh env.fish; then
     die "env loaders no longer default IDF_TARGET to esp32s3"
 fi
 
-if ! grep -qE '\./tools/arc-projects\.py --buildable' .github/workflows/build.yml; then
-    die "build workflow must discover build projects through tools/arc-projects.py"
+if ! grep -qE '\./tools/ci-build-plan\.py --buildable' .github/workflows/build.yml; then
+    die "build workflow must plan changed firmware projects through tools/ci-build-plan.py"
 fi
 
 if grep -qE 'find examples -mindepth .*CMakeLists\.txt' .github/workflows/build.yml; then
@@ -232,8 +232,10 @@ fi
 if ! grep -qE '\./tools/host-bench\.sh' .github/workflows/build.yml; then
     die "build workflow must run host benchmarks before firmware builds"
 fi
-workflow_step_before "name: Host benchmarks" "name: Build all" \
+workflow_step_before "name: Host benchmarks" "name: Build firmware" \
     "build workflow must run host benchmarks before firmware builds"
+workflow_step_before "name: Plan firmware builds" "name: Build firmware" \
+    "build workflow must plan changed firmware projects before firmware builds"
 
 if grep -nE 'uses:[[:space:]]+actions/[^@[:space:]]+@v[0-9]+([[:space:]#]|$)' .github/workflows/*.yml; then
     die "GitHub Actions must be pinned to full commit SHA refs, not mutable version tags"
@@ -257,6 +259,7 @@ required_exec=(
     tools/dump-source.py
     tools/arc-pack-bridge.py
     tools/arc-projects.py
+    tools/ci-build-plan.py
     tools/clangd-compile-commands.py
     tools/format.sh
     tools/tool-tests.sh

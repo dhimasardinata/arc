@@ -138,7 +138,34 @@ jobs:
           ./tools/host-bench.sh
           ARC_SKIP_HOST_BENCH=1 ARC_IDF_PATH="$HOME/esp-idf" ./tools/framework-compare.sh
 
-      - name: Build all
+      - name: Plan firmware builds
+        id: firmware-plan
+        shell: bash
+        env:
+          ARC_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          base_args=()
+          if [[ -n "${ARC_BASE_SHA:-}" && ! "$ARC_BASE_SHA" =~ ^0+$ ]]; then
+            if git fetch --no-tags --depth=1 origin "$ARC_BASE_SHA"; then
+              base_args+=(--base "$ARC_BASE_SHA")
+            else
+              echo "base $ARC_BASE_SHA unavailable; building all firmware projects"
+            fi
+          fi
+          ./tools/ci-build-plan.py --buildable "${base_args[@]}" | tee .arc-build-projects
+          count="$(grep -c . .arc-build-projects || true)"
+          {
+            echo "count=$count"
+            echo "projects<<EOF"
+            cat .arc-build-projects
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          if ((count == 0)); then
+            echo "No firmware projects selected for this change set." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Build firmware
+        if: steps.firmware-plan.outputs.count != '0'
         shell: bash
         run: |
           export ARC_IDF_PATH="$HOME/esp-idf"
@@ -168,7 +195,7 @@ jobs:
               ! -name 'ota_data_initial.bin' \
               -printf '%f\n' | head -n 1
           }
-          project_output="$(./tools/arc-projects.py --buildable)"
+          project_output="$(cat .arc-build-projects)"
           project_dirs=()
           if [[ -n "$project_output" ]]; then
             mapfile -t project_dirs <<< "$project_output"
@@ -199,6 +226,7 @@ jobs:
           ccache --show-stats || true
 
       - name: Validate clangd database
+        if: steps.firmware-plan.outputs.count != '0'
         shell: bash
         env:
           ARC_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -206,11 +234,20 @@ jobs:
           extra_args=()
           if [[ -n "${ARC_BASE_SHA:-}" && ! "$ARC_BASE_SHA" =~ ^0+$ ]]; then
             git fetch --no-tags --depth=1 origin "$ARC_BASE_SHA" || true
-            extra_args+=(--changed-arc-headers "$ARC_BASE_SHA")
+            changed="$(git diff --name-only "$ARC_BASE_SHA" HEAD -- || true)"
+            if grep -qE '^(components/|cmake/|\.clangd|\.zed/|tools/clangd-compile-commands)' <<< "$changed"; then
+              if grep -qE '^components/arc/include/.*\.(h|hh|hpp|hxx)$' <<< "$changed"; then
+                extra_args+=(--changed-arc-headers "$ARC_BASE_SHA")
+              fi
+            else
+              echo "No clangd-relevant public header or dependency changes; skipping header validation."
+              exit 0
+            fi
           fi
           go run tools/clangd-compile-commands.go --validate-arc-headers -o compile_commands.json "${extra_args[@]}"
 
       - name: Upload binaries
+        if: steps.firmware-plan.outputs.count != '0'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: arc-binaries
