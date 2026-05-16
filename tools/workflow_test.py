@@ -15,6 +15,19 @@ def line_of(text: str, needle: str) -> int:
 
 
 class WorkflowTest(unittest.TestCase):
+    def test_changed_project_plan_runs_before_expensive_setup(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        plan = line_of(workflow, "name: Plan firmware builds")
+        host_tools = line_of(workflow, "name: Ensure host tools")
+        idf_cache = line_of(workflow, "name: Restore ESP-IDF and tools cache")
+
+        self.assertGreater(plan, 0)
+        self.assertGreater(host_tools, 0)
+        self.assertGreater(idf_cache, 0)
+        self.assertLess(plan, host_tools)
+        self.assertLess(plan, idf_cache)
+
     def test_host_benchmarks_run_before_firmware_builds(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
 
@@ -25,15 +38,18 @@ class WorkflowTest(unittest.TestCase):
         self.assertGreater(build_firmware, 0)
         self.assertLess(host_benchmarks, build_firmware)
 
-    def test_realtime_audit_is_strict_before_firmware_builds(self) -> None:
+    def test_repo_sanity_carries_strict_audit_before_firmware_builds(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+        check_repo = (ROOT / "tools" / "check-repo.sh").read_text(encoding="utf-8")
 
-        audit = line_of(workflow, "go run tools/arc-audit.go -root . -all")
+        sanity = line_of(workflow, "name: Repo sanity")
         build_firmware = line_of(workflow, "name: Build firmware")
 
-        self.assertGreater(audit, 0)
+        self.assertIn("go run tools/arc-audit.go -root . -all", check_repo)
+        self.assertGreater(sanity, 0)
         self.assertGreater(build_firmware, 0)
-        self.assertLess(audit, build_firmware)
+        self.assertLess(sanity, build_firmware)
+        self.assertNotIn("name: Host realtime audit", workflow)
 
     def test_changed_project_plan_gates_firmware_builds(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
@@ -47,6 +63,22 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("./tools/ci-build-plan.py --buildable", workflow)
         self.assertIn("cat .arc-build-projects", workflow)
         self.assertIn("steps.firmware-plan.outputs.count != '0'", workflow)
+
+    def test_firmware_build_cache_is_selected_project_scoped(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        restore_cache = line_of(workflow, "name: Restore firmware build cache")
+        build_firmware = line_of(workflow, "name: Build firmware")
+        save_cache = line_of(workflow, "name: Save firmware build cache")
+
+        self.assertGreater(restore_cache, 0)
+        self.assertGreater(build_firmware, 0)
+        self.assertGreater(save_cache, 0)
+        self.assertLess(restore_cache, build_firmware)
+        self.assertLess(build_firmware, save_cache)
+        self.assertIn(".arc-build-cache", workflow)
+        self.assertIn("ARC_BUILD_CACHE_MAX_PROJECTS", workflow)
+        self.assertIn("cache_ready", workflow)
 
     def test_header_validation_uses_go_helper_with_public_header_gate(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")

@@ -25,8 +25,14 @@ class CheckRepoToolTest(unittest.TestCase):
 
         self.assertIn("go run tools/arc-audit.go -root . -all", text)
         self.assertIn("go run tools/clangd-compile-commands\\.go --validate-arc-headers", text)
+        self.assertIn('workflow_step_before "name: Plan firmware builds" "name: Ensure host tools"', text)
+        self.assertIn(
+            'workflow_step_before "name: Plan firmware builds" "name: Restore ESP-IDF and tools cache"',
+            text,
+        )
         self.assertIn('workflow_step_before "name: Host benchmarks" "name: Build firmware"', text)
         self.assertIn('workflow_step_before "name: Plan firmware builds" "name: Build firmware"', text)
+        self.assertIn("Restore firmware build cache", text)
         self.assertIn("\\./tools/ci-build-plan\\.py --buildable", text)
 
     def test_tool_tests_runner_parallelizes_test_files(self) -> None:

@@ -225,17 +225,26 @@ if ! grep -qE '\./tools/host-tests\.sh' .github/workflows/build.yml; then
     die "build workflow must run host tests before firmware builds"
 fi
 
-if ! grep -qE 'go run tools/arc-audit\.go -root \. -all' .github/workflows/build.yml; then
-    die "build workflow must run the strict all-entry realtime audit"
+if ! grep -qE 'go run tools/arc-audit\.go -root \. -all' tools/check-repo.sh; then
+    die "repo check must run the strict all-entry realtime audit"
 fi
 
 if ! grep -qE '\./tools/host-bench\.sh' .github/workflows/build.yml; then
     die "build workflow must run host benchmarks before firmware builds"
 fi
+workflow_step_before "name: Plan firmware builds" "name: Ensure host tools" \
+    "build workflow must plan changed firmware projects before host tool setup"
+workflow_step_before "name: Plan firmware builds" "name: Restore ESP-IDF and tools cache" \
+    "build workflow must plan changed firmware projects before ESP-IDF cache work"
 workflow_step_before "name: Host benchmarks" "name: Build firmware" \
     "build workflow must run host benchmarks before firmware builds"
 workflow_step_before "name: Plan firmware builds" "name: Build firmware" \
     "build workflow must plan changed firmware projects before firmware builds"
+for cache_guard in 'name: Restore firmware build cache' 'name: Save firmware build cache' '\.arc-build-cache' 'cache_ready'; do
+    if ! grep -qE "$cache_guard" .github/workflows/build.yml; then
+        die "build workflow must cache selected firmware build directories for incremental CI"
+    fi
+done
 
 if grep -nE 'uses:[[:space:]]+actions/[^@[:space:]]+@v[0-9]+([[:space:]#]|$)' .github/workflows/*.yml; then
     die "GitHub Actions must be pinned to full commit SHA refs, not mutable version tags"
