@@ -1731,7 +1731,7 @@ Explicit cache coherency helpers for DMA and external-memory paths.
 - `from_raw(...)` and `discard_raw(...)` remain available but deprecated; they are explicit escape hatches for code that accepts shared-line invalidation risk.
 - The unaligned escape hatches are unsafe around actively mutated neighbors on the same cache line; use cache-line-aligned buffers or the `_strict` path for live DMA ownership.
 - `line(ptr)` returns the cache line size for one address, or zero when the address is not cacheable.
-- span overloads work directly with `arc::CapsBuf<T>::view()`.
+- `arc::CapsBuf<T>` overloads sync the padded physical allocation, while span overloads sync only the exact span byte count.
 
 Use this when you are about to hand a buffer to DMA, SPI, I2S, ADC, RMT, or async copy and you want ownership to be explicit instead of implied.
 
@@ -2046,7 +2046,7 @@ Typed heap slabs for memory placement that should stay obvious in user code.
 - `arc::ahbbuf<T>(n)` allocates an AHB DMA descriptor slab
 - `arc::axibuf<T>(n)` allocates an AXI DMA descriptor slab
 
-Each returns `arc::CapsBuf<T>` with `data()`, `size()`, `bytes()`, and `view()`.
+Each returns `arc::CapsBuf<T>` with `data()`, `size()`, `bytes()`, and `view()` for the logical payload. Cache/DMA-capable slabs also track their padded physical allocation through `storage_bytes()` and `storage()`, so cache maintenance can cover whole lines without exposing padding as payload.
 
 Standard containers can use the same placement rules through one-word allocators:
 

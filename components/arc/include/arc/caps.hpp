@@ -79,9 +79,13 @@ class CapsBuf {
 public:
     constexpr CapsBuf() noexcept = default;
 
-    constexpr CapsBuf(T* const data, const std::size_t size) noexcept
+    constexpr CapsBuf(
+        T* const data,
+        const std::size_t size,
+        const std::size_t storage_bytes) noexcept
         : data_(data)
         , size_(size)
+        , storage_bytes_(storage_bytes)
     {
     }
 
@@ -91,9 +95,11 @@ public:
     constexpr CapsBuf(CapsBuf&& other) noexcept
         : data_(other.data_)
         , size_(other.size_)
+        , storage_bytes_(other.storage_bytes_)
     {
         other.data_ = nullptr;
         other.size_ = 0U;
+        other.storage_bytes_ = 0U;
     }
 
     constexpr CapsBuf& operator=(CapsBuf&& other) noexcept
@@ -102,8 +108,10 @@ public:
             reset();
             data_ = other.data_;
             size_ = other.size_;
+            storage_bytes_ = other.storage_bytes_;
             other.data_ = nullptr;
             other.size_ = 0U;
+            other.storage_bytes_ = 0U;
         }
         return *this;
     }
@@ -138,6 +146,11 @@ public:
         return size_ * sizeof(T);
     }
 
+    [[nodiscard]] constexpr std::size_t storage_bytes() const noexcept
+    {
+        return storage_bytes_;
+    }
+
     [[nodiscard]] constexpr T& operator[](const std::size_t index) noexcept
     {
         return data_[index];
@@ -158,18 +171,30 @@ public:
         return {data_, size_};
     }
 
+    [[nodiscard]] constexpr std::span<std::byte> storage() noexcept
+    {
+        return {reinterpret_cast<std::byte*>(data_), storage_bytes_};
+    }
+
+    [[nodiscard]] constexpr std::span<const std::byte> storage() const noexcept
+    {
+        return {reinterpret_cast<const std::byte*>(data_), storage_bytes_};
+    }
+
     constexpr void reset() noexcept
     {
         if (data_ != nullptr) {
             heap_caps_free(data_);
-            data_ = nullptr;
-            size_ = 0U;
         }
+        data_ = nullptr;
+        size_ = 0U;
+        storage_bytes_ = 0U;
     }
 
 private:
     T* data_{nullptr};
     std::size_t size_{0U};
+    std::size_t storage_bytes_{0U};
 };
 
 template <typename T, std::uint32_t Caps, std::size_t Align = alignof(T)>
@@ -305,7 +330,7 @@ template <typename T, std::uint32_t Caps, std::size_t Align = alignof(T)>
         return {};
     }
 
-    return CapsBuf<T>(static_cast<T*>(storage), count);
+    return CapsBuf<T>(static_cast<T*>(storage), count, alloc_bytes);
 }
 
 template <typename T, std::size_t Align = alignof(T)>

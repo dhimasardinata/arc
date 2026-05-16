@@ -8,6 +8,7 @@
 #include "esp_cache.h"
 #include "esp_err.h"
 
+#include "arc/caps.hpp"
 #include "arc/sdk.hpp"
 
 namespace arc {
@@ -111,6 +112,20 @@ struct Cache {
         return to_aligned(data.data(), data.size_bytes());
     }
 
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    static esp_err_t to_device(const CapsBuf<T>& data) noexcept
+    {
+        return to_aligned(const_cast<T*>(data.data()), data.storage_bytes());
+    }
+
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    static esp_err_t to_aligned(const CapsBuf<T>& data) noexcept
+    {
+        return to_device(data);
+    }
+
     template <typename T, std::size_t Extent>
         requires std::is_trivially_copyable_v<T>
     static esp_err_t from_device(const std::span<T, Extent> data) noexcept
@@ -123,6 +138,20 @@ struct Cache {
     static esp_err_t from_aligned(const std::span<T, Extent> data) noexcept
     {
         return from_aligned(data.data(), data.size_bytes());
+    }
+
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    static esp_err_t from_device(CapsBuf<T>& data) noexcept
+    {
+        return from_aligned(data.data(), data.storage_bytes());
+    }
+
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    static esp_err_t from_aligned(CapsBuf<T>& data) noexcept
+    {
+        return from_device(data);
     }
 
     template <typename T, std::size_t Extent>
@@ -145,6 +174,20 @@ struct Cache {
     static esp_err_t discard_aligned(const std::span<T, Extent> data) noexcept
     {
         return discard_aligned(data.data(), data.size_bytes());
+    }
+
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    static esp_err_t discard(CapsBuf<T>& data) noexcept
+    {
+        return discard_aligned(data.data(), data.storage_bytes());
+    }
+
+    template <typename T>
+        requires std::is_trivially_copyable_v<T>
+    static esp_err_t discard_aligned(CapsBuf<T>& data) noexcept
+    {
+        return discard(data);
     }
 
     template <typename T, std::size_t Extent>

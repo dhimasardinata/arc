@@ -1942,6 +1942,11 @@ void test_caps()
     expect((reinterpret_cast<std::uintptr_t>(dma.data()) & (arc::cache_line - 1U)) == 0U,
            "DMA cap buffer preserves cache-line alignment");
     expect(heap_caps_last_calloc_bytes == padded, "DMA cap buffer allocates whole cache lines");
+    expect(dma.storage_bytes() == padded && dma.storage().size() == padded,
+           "DMA cap buffer exposes padded storage");
+    expect(arc::Cache::from_device(dma) == ESP_OK && esp_cache_last_msync_bytes == padded &&
+               (esp_cache_last_msync_flags & arc::Cache::unaligned) == 0,
+           "DMA cap buffer cache sync uses padded storage");
 
     arc::PmrCapsResource<MALLOC_CAP_SPIRAM> psram{};
     std::pmr::vector<std::uint8_t> vec{&psram};
