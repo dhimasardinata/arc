@@ -73,11 +73,44 @@ class ProfileExportTest(unittest.TestCase):
             finally:
                 shutil.rmtree(out, ignore_errors=True)
 
-    def test_output_must_stay_in_repo(self) -> None:
-        result = self.run_export("core", Path(tempfile.gettempdir()) / "arc-profile-out")
+    def test_external_output_is_allowed_when_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "arc-profile-out"
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("must stay inside this repository", result.stderr)
+            result = self.run_export("core", out)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((out / "include" / "arc" / "core.hpp").is_file())
+            self.assertTrue((out / ".arc-profile-export").is_file())
+
+    def test_output_refuses_nonempty_unmarked_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "existing"
+            out.mkdir()
+            keep = out / "keep.txt"
+            keep.write_text("not an Arc export\n", encoding="utf-8")
+
+            result = self.run_export("core", out)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("empty or a previous Arc profile export", result.stderr)
+            self.assertTrue(keep.is_file())
+
+    def test_export_can_refresh_marked_output(self) -> None:
+        out = self.make_out()
+        try:
+            first = self.run_export("core", out)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            stale = out / "stale.txt"
+            stale.write_text("old generated file\n", encoding="utf-8")
+
+            second = self.run_export("core", out)
+
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertFalse(stale.exists())
+            self.assertTrue((out / "include" / "arc" / "core.hpp").is_file())
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
 
 
 if __name__ == "__main__":

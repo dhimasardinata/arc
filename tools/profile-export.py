@@ -12,6 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 INCLUDE_ROOT = ROOT / "components" / "arc" / "include"
 DEFAULT_OUT = ROOT / "dump" / "profiles"
+MARKER = ".arc-profile-export"
+MARKER_TEXT = "arc profile export\n"
 PROFILES = {
     "core": "arc/core.hpp",
     "crypto": "arc/crypto.hpp",
@@ -73,9 +75,59 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def safe_output(path: Path) -> Path:
     out = path.expanduser().resolve()
-    if out == ROOT or ROOT not in out.parents:
-        raise ValueError("profile export output must stay inside this repository")
+    if out == ROOT:
+        raise ValueError("profile export output must not be the repository root")
+    if out.parent == out:
+        raise ValueError("profile export output must not be the filesystem root")
     return out
+
+
+def display_out(out: Path) -> str:
+    try:
+        return str(out.relative_to(ROOT))
+    except ValueError:
+        return str(out)
+
+
+def is_empty(path: Path) -> bool:
+    return path.is_dir() and next(path.iterdir(), None) is None
+
+
+def is_marked_export(out: Path) -> bool:
+    marker = out / MARKER
+    if not marker.is_file():
+        return False
+    try:
+        return marker.read_text(encoding="utf-8") == MARKER_TEXT
+    except OSError:
+        return False
+
+
+def is_legacy_export(profile: str, out: Path) -> bool:
+    manifest = out / "PROFILE.txt"
+    cmake = out / "CMakeLists.txt"
+    root = out / "include" / PROFILES[profile]
+    if not manifest.is_file() or not cmake.is_file() or not root.is_file():
+        return False
+    try:
+        first = manifest.read_text(encoding="utf-8").splitlines()[0]
+    except (IndexError, OSError):
+        return False
+    return first == f"profile\t{profile}"
+
+
+def prepare_output(profile: str, out: Path) -> None:
+    if out.exists() and not out.is_dir():
+        raise ValueError("profile export output must be a directory")
+
+    if out.is_dir() and not is_empty(out):
+        if is_marked_export(out) or is_legacy_export(profile, out):
+            shutil.rmtree(out)
+        else:
+            raise ValueError("profile export output must be empty or a previous Arc profile export")
+
+    out.mkdir(parents=True, exist_ok=True)
+    (out / MARKER).write_text(MARKER_TEXT, encoding="utf-8")
 
 
 def include_path(rel: str) -> Path:
@@ -169,13 +221,12 @@ def write_readme(profile: str, out: Path) -> None:
 
 def export_profile(profile: str, out: Path) -> int:
     headers = closure(PROFILES[profile])
-    shutil.rmtree(out, ignore_errors=True)
-    out.mkdir(parents=True, exist_ok=True)
+    prepare_output(profile, out)
     copy_headers(headers, out)
     write_cmake(profile, out)
     write_manifest(profile, headers, out)
     write_readme(profile, out)
-    print(f"exported {profile} profile with {len(headers)} headers into {out.relative_to(ROOT)}")
+    print(f"exported {profile} profile with {len(headers)} headers into {display_out(out)}")
     return 0
 
 
