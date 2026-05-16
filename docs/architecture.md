@@ -45,7 +45,8 @@ small substrate profiles. `arc/crypto.hpp`, `arc/robotics.hpp`, and
 versioned as explicit profile packages instead of being treated as mandatory
 framework weight. `components/arc/profiles.json` is the checked profile contract;
 the repo check rejects drift between that manifest, export roots, and CMake
-requirements.
+requirements, and it prevents small substrate profiles from importing domain
+profile roots.
 
 ## Silicon-Facing Policy
 

@@ -61,6 +61,17 @@ endif()
 
         self.assertTrue(any("requires drift" in problem for problem in problems))
 
+    def test_substrate_profiles_cannot_include_domain_roots(self) -> None:
+        profiles = profile_manifest_check.load_profiles()
+        profiles["core"] = {
+            **profiles["core"],
+            "header": profiles["crypto"]["header"],
+        }
+
+        problems = profile_manifest_check.validate_profiles(profiles)
+
+        self.assertTrue(any("substrate profile core includes domain profile header" in problem for problem in problems))
+
 
 if __name__ == "__main__":
     unittest.main()

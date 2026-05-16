@@ -42,7 +42,7 @@ def include_deps(rel: str) -> list[str]:
     ]
 
 
-def validate_closure(root_header: str) -> None:
+def closure(root_header: str) -> set[str]:
     seen: set[str] = set()
 
     def visit(rel: str) -> None:
@@ -53,6 +53,7 @@ def validate_closure(root_header: str) -> None:
             visit(dep)
 
     visit(root_header)
+    return seen
 
 
 def cmake_requires(text: str) -> dict[str, tuple[str, ...]]:
@@ -75,6 +76,11 @@ def cmake_requires(text: str) -> dict[str, tuple[str, ...]]:
 def validate_profiles(profiles: dict[str, dict[str, Any]]) -> list[str]:
     problems: list[str] = []
     cmake = cmake_requires(CMAKE_DEPS.read_text(encoding="utf-8"))
+    domain_roots = {
+        spec.get("header")
+        for spec in profiles.values()
+        if isinstance(spec, dict) and spec.get("kind") == "domain" and isinstance(spec.get("header"), str)
+    }
     for name, spec in sorted(profiles.items()):
         if not isinstance(name, str) or not PROFILE_RE.fullmatch(name):
             problems.append(f"invalid profile name: {name!r}")
@@ -93,9 +99,16 @@ def validate_profiles(profiles: dict[str, dict[str, Any]]) -> list[str]:
             problems.append(f"profile {name} header does not exist: {header}")
         else:
             try:
-                validate_closure(header)
+                headers = closure(header)
             except FileNotFoundError as exc:
                 problems.append(str(exc))
+            else:
+                if kind == "substrate":
+                    leaked = sorted(headers & domain_roots)
+                    if leaked:
+                        problems.append(
+                            f"substrate profile {name} includes domain profile header(s): {', '.join(leaked)}"
+                        )
         if not isinstance(requires, list) or any(not isinstance(dep, str) or not dep for dep in requires):
             problems.append(f"profile {name} has invalid requires list")
             continue
