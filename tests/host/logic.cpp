@@ -1813,6 +1813,36 @@ void test_http_server()
     expect(encoded.has_value(), "HTTP response encodes");
     expect(std::memcmp(encoded->data(), "HTTP/1.1 200 OK\r\n", 17U) == 0, "HTTP response status");
 
+    const std::array<arc::net::JsonField, 6> json_fields{{
+        {.name = "mode", .value = arc::net::Json::str("safe\"loop\n")},
+        {.name = "enabled", .value = arc::net::Json::boolean(true)},
+        {.name = "count", .value = arc::net::Json::u64(3U)},
+        {.name = "delta", .value = arc::net::Json::i64(-2)},
+        {.name = "samples", .value = arc::net::Json::raw("[1,2]")},
+        {.name = "missing", .value = arc::net::Json::nil()},
+    }};
+    std::array<char, 256> json_response{};
+    const auto json = arc::net::HttpServer::json_response(
+        std::span(json_response),
+        200,
+        "OK",
+        std::span(json_fields));
+    expect(json.has_value(), "HTTP JSON response encodes");
+    expect(std::strstr(json_response.data(), "Content-Type: application/json\r\n") != nullptr, "HTTP JSON content type");
+    expect(std::strstr(json_response.data(), "\"mode\":\"safe\\\"loop\\n\"") != nullptr, "HTTP JSON escaped string");
+    expect(std::strstr(json_response.data(), "\"enabled\":true") != nullptr, "HTTP JSON bool");
+    expect(std::strstr(json_response.data(), "\"delta\":-2") != nullptr, "HTTP JSON signed value");
+    expect(std::strstr(json_response.data(), "\"samples\":[1,2]") != nullptr, "HTTP JSON raw value");
+    expect(std::strstr(json_response.data(), "\"missing\":null") != nullptr, "HTTP JSON null value");
+
+    std::array<char, 64> json_body{};
+    const auto body_only = arc::net::HttpServer::json_body(std::span(json_body), std::span(json_fields).first(2U));
+    expect(body_only.has_value(), "HTTP JSON body encodes");
+    expect(std::memcmp(body_only->data(), "{\"mode\":\"safe\\\"loop\\n\",\"enabled\":true}", body_only->size()) == 0, "HTTP JSON body text");
+
+    const std::array<arc::net::JsonField, 1> bad_json{{{.name = "bad", .value = arc::net::Json::raw("")}}};
+    expect(!arc::net::HttpServer::json_body(std::span(json_body), std::span(bad_json)), "HTTP JSON raw empty rejects");
+
     std::array<arc::net::HttpHeaderView, 1> too_few{};
     expect(
         !arc::net::HttpServer::parse(std::span<const char>{raw, sizeof(raw) - 1U}, std::span(too_few)),
@@ -1836,6 +1866,9 @@ void test_http_server()
             "OK",
             std::span<const char>{body, sizeof(body) - 1U}),
         "HTTP response buffer cap rejects");
+    expect(
+        !arc::net::HttpServer::json_response(std::span(small_response), 200, "OK", std::span(json_fields)),
+        "HTTP JSON response buffer cap rejects");
 }
 
 void test_caps()

@@ -192,7 +192,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::Tls` gives direct ESP-TLS client sessions for secure caller-buffer transports such as MQTTS without taking over reconnect or protocol policy.
 - `arc::net::Pbuf` gives RAII ownership and direct payload spans for lwIP pbufs when a path needs packet-buffer ownership without extra copies.
 - `arc::net::Http` gives RAII ownership for ESP-IDF HTTP/HTTPS client sessions, with explicit HTTPS factories that preserve secure URL enforcement across later URL resets.
-- `arc::net::HttpServer` parses HTTP/1.x requests, trims fixed header views, emits small text responses, and routes compile-time method/path tags without allocation.
+- `arc::net::HttpServer` parses HTTP/1.x requests, trims fixed header views, emits small text/JSON responses, and routes compile-time method/path tags without allocation.
 - `arc::pack::Schema`, `arc::pack::StructOf`, and `arc::pack::Reflect<T>` pack fixed binary telemetry/config records with compile-time field sizing, caller-owned buffers, and byteswap-based endian conversion.
 - `arc::net::NetRpc` maps explicit struct codecs onto radio/transport payloads for zero-allocation distributed commands.
 - `arc::net::Tdma` calculates deterministic ESP-NOW transmit windows from a synchronized microsecond clock.
@@ -1966,7 +1966,7 @@ Fixed-buffer text writer for Core 0 formatting paths that must stay explicit abo
 - `json(text)` appends JSON string content with quotes, backslashes, tabs, newlines, carriage returns, and control bytes escaped.
 - `span()`, `view()`, and `done()` expose the written prefix without adding a terminator or allocating.
 
-`arc::TraceEventWriter` and `arc::net::HttpServer::text_response(...)` use this helper internally, so response and trace formatting share one no-heap overflow policy instead of duplicating local append cursors.
+`arc::TraceEventWriter`, `arc::net::HttpServer::text_response(...)`, and `json_response(...)` use this helper internally, so response and trace formatting share one no-heap overflow policy instead of duplicating local append cursors.
 
 ### `arc::TraceEventWriter`
 
@@ -2310,6 +2310,8 @@ Zero-allocation HTTP/1.x request parser and compile-time route matcher for small
 - `HttpRoute<HttpMethod::get, "/metrics">` creates a compile-time method/path tag with a stable route ID.
 - `HttpRouter<Routes...>::dispatch(req, fn)` calls `fn(route_tag)` for the first matching route.
 - `text_response(out, 200, "OK", body)` emits a compact close-delimited text response into caller-owned storage.
+- `JsonField{"ok", Json::boolean(true)}` declares one fixed JSON object field with string, raw, boolean, signed, unsigned, or null values.
+- `json_body(out, fields)` emits only the object body, and `json_response(out, 200, "OK", fields)` emits an `application/json` response with the correct content length.
 
 Use this behind `arc::net::Tcp`, `arc::net::Tls`, or a custom socket accept loop when a device needs a local REST or Prometheus-style surface without importing a task-owning web framework.
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -35,6 +36,58 @@ struct HttpRequestView {
     std::span<const char> version{};
     std::span<HttpHeaderView> headers{};
     std::span<const char> body{};
+};
+
+enum class JsonKind : std::uint8_t {
+    null,
+    boolean,
+    u64,
+    i64,
+    str,
+    raw,
+};
+
+struct Json {
+    JsonKind kind{JsonKind::null};
+    std::string_view text{};
+    std::uint64_t u{};
+    std::int64_t i{};
+    bool flag{};
+
+    [[nodiscard]] static constexpr Json nil() noexcept
+    {
+        return {};
+    }
+
+    [[nodiscard]] static constexpr Json boolean(const bool value) noexcept
+    {
+        return {.kind = JsonKind::boolean, .flag = value};
+    }
+
+    [[nodiscard]] static constexpr Json u64(const std::uint64_t value) noexcept
+    {
+        return {.kind = JsonKind::u64, .u = value};
+    }
+
+    [[nodiscard]] static constexpr Json i64(const std::int64_t value) noexcept
+    {
+        return {.kind = JsonKind::i64, .i = value};
+    }
+
+    [[nodiscard]] static constexpr Json str(const std::string_view value) noexcept
+    {
+        return {.kind = JsonKind::str, .text = value};
+    }
+
+    [[nodiscard]] static constexpr Json raw(const std::string_view value) noexcept
+    {
+        return {.kind = JsonKind::raw, .text = value};
+    }
+};
+
+struct JsonField {
+    std::string_view name{};
+    Json value{};
 };
 
 template <std::size_t N>
@@ -222,7 +275,81 @@ struct HttpServer {
         std::span<const char> body,
         const char* content_type = "text/plain") noexcept
     {
-        if (reason == nullptr || content_type == nullptr || status < 100 || status > 999) {
+        return emit_response(out, status, reason, body, content_type);
+    }
+
+    [[nodiscard]] static Result<std::span<const char>> json_body(
+        const std::span<char> out,
+        const std::span<const JsonField> fields) noexcept
+    {
+        if (!valid_fields(fields)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        Text text{out};
+        if (!append_json(text, fields)) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        return text.span();
+    }
+
+    [[nodiscard]] static Result<std::span<const char>> json_response(
+        const std::span<char> out,
+        const int status,
+        const char* const reason,
+        const std::span<const JsonField> fields) noexcept
+    {
+        if (!valid_response(status, reason, "application/json")) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        auto body = json_body(out, fields);
+        if (!body) {
+            return fail(body.error());
+        }
+
+        std::array<char, 160> header{};
+        auto head = emit_header(std::span(header), status, reason, "application/json", body->size());
+        if (!head) {
+            return fail(head.error());
+        }
+        const auto total = head->size() + body->size();
+        if (out.size() < total) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        std::memmove(out.data() + head->size(), out.data(), body->size());
+        std::memcpy(out.data(), head->data(), head->size());
+        return out.first(total);
+    }
+
+private:
+    static constexpr std::size_t npos = static_cast<std::size_t>(-1);
+
+    [[nodiscard]] static Result<std::span<const char>> emit_response(
+        const std::span<char> out,
+        const int status,
+        const char* const reason,
+        const std::span<const char> body,
+        const char* const content_type) noexcept
+    {
+        auto head = emit_header(out, status, reason, content_type, body.size());
+        if (!head) {
+            return fail(head.error());
+        }
+        Text text{out.subspan(head->size())};
+        if (!text.append(body)) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        return out.first(head->size() + text.size());
+    }
+
+    [[nodiscard]] static Result<std::span<const char>> emit_header(
+        const std::span<char> out,
+        const int status,
+        const char* const reason,
+        const char* const content_type,
+        const std::size_t body_size) noexcept
+    {
+        if (!valid_response(status, reason, content_type)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -230,15 +357,74 @@ struct HttpServer {
         if (!text.append("HTTP/1.1 ") || !text.u32(static_cast<std::uint32_t>(status)) ||
             !text.push(' ') || !text.append(reason) || !text.append("\r\nContent-Type: ") ||
             !text.append(content_type) || !text.append("\r\nContent-Length: ") ||
-            !text.usize(body.size()) || !text.append("\r\nConnection: close\r\n\r\n") ||
-            !text.append(body)) {
+            !text.usize(body_size) || !text.append("\r\nConnection: close\r\n\r\n")) {
             return fail(ESP_ERR_NO_MEM);
         }
         return text.span();
     }
 
-private:
-    static constexpr std::size_t npos = static_cast<std::size_t>(-1);
+    [[nodiscard]] static constexpr bool valid_response(
+        const int status,
+        const char* const reason,
+        const char* const content_type) noexcept
+    {
+        return reason != nullptr && content_type != nullptr && status >= 100 && status <= 999;
+    }
+
+    [[nodiscard]] static bool valid_text(const std::string_view value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
+    }
+
+    [[nodiscard]] static bool valid_fields(const std::span<const JsonField> fields) noexcept
+    {
+        if (!fields.empty() && fields.data() == nullptr) {
+            return false;
+        }
+        for (const auto& field : fields) {
+            if (!valid_text(field.name) || !valid_text(field.value.text)) {
+                return false;
+            }
+            if (field.value.kind == JsonKind::raw && field.value.text.empty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] static bool append_json(Text& text, const std::span<const JsonField> fields) noexcept
+    {
+        if (!text.push('{')) {
+            return false;
+        }
+        for (std::size_t i = 0U; i < fields.size(); ++i) {
+            const auto& field = fields[i];
+            if ((i != 0U && !text.push(',')) || !text.push('"') || !text.json(field.name) ||
+                !text.append("\":") || !append_json(text, field.value)) {
+                return false;
+            }
+        }
+        return text.push('}');
+    }
+
+    [[nodiscard]] static bool append_json(Text& text, const Json value) noexcept
+    {
+        switch (value.kind) {
+            case JsonKind::null:
+                return text.append("null");
+            case JsonKind::boolean:
+                return text.append(value.flag ? "true" : "false");
+            case JsonKind::u64:
+                return text.u64(value.u);
+            case JsonKind::i64:
+                return text.i64(value.i);
+            case JsonKind::str:
+                return text.push('"') && text.json(value.text) && text.push('"');
+            case JsonKind::raw:
+                return text.append(value.text);
+        }
+        return false;
+    }
 
     [[nodiscard]] static constexpr std::span<const char> trim(std::span<const char> value) noexcept
     {

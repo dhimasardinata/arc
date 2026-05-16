@@ -178,6 +178,9 @@ struct Text {
 
     [[nodiscard]] bool json(const std::string_view value) noexcept
     {
+        if (!value.empty() && value.data() == nullptr) {
+            return false;
+        }
         const auto start = pos_;
         const auto fail = [&]() noexcept {
             pos_ = start;
