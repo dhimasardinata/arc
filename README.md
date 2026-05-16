@@ -290,7 +290,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 
 Arc project docs: `docs/architecture.md` explains the Core 0/Core 1 substrate choices, `docs/safety-case.md` maps safety claims to evidence and non-claims, and `docs/hil-test-jig.md` describes the three-node physical fault test shape. `tools/safety-case-check.py` keeps the safety evidence map source-backed and prevents accidental certification overclaims in docs.
 
-Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target and opt-in libFuzzer harness for HTTP, URI, MQTT, WebSocket, and CoAP parsers. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/arc-audit.go -all` scans every local `loop`/`step` realtime entry call graph, `tools/use-after-move-check.sh` runs `clang-tidy`'s moved-from-use lint when available, and `tools/arc-prove.sh` validates the SPSC, role-exposure, and consensus TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
+Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target and opt-in libFuzzer harness for HTTP, URI, MQTT, WebSocket, and CoAP parsers. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/arc-audit.go -all` scans every local `loop`/`step` realtime entry call graph, `tools/topology-check.py` scans literal `arc::Pins<...>` packs for duplicate/out-of-range GPIOs, `tools/use-after-move-check.sh` runs `clang-tidy`'s moved-from-use lint when available, and `tools/arc-prove.sh` validates the SPSC, role-exposure, and consensus TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
 
 <details>
 <summary>Quick API Map</summary>
@@ -673,6 +673,7 @@ static_assert(arc::Topology<Board>);
 ```
 
 `arc::Pins` ignores negative sentinel pins like `-1`, so optional CS/MISO-style values can still be represented without false collisions.
+Run `./tools/topology-check.py path/to/board.hpp` to get a host-side report for literal `arc::Pins<...>` packs before waiting on template diagnostics.
 
 Peripheral wrappers also claim physical silicon at `init()` time. Two different `arc::Uart`, `arc::I2cBus`, `arc::I2cSlave`, `arc::I2c`, `arc::SpiBus`, `arc::SpiSlave`, or CS-backed `arc::Spi` template aliases cannot silently own the same hardware with different type parameters; the later claim returns `ESP_ERR_INVALID_STATE`.
 I2C and UART wrappers also reject pre-existing raw ESP-IDF drivers by default, because Arc cannot prove their pin, buffer, or framing policy. Set the trailing `AdoptExisting` template parameter only when deliberate raw-driver interop is part of the board contract.

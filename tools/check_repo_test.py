@@ -25,6 +25,7 @@ class CheckRepoToolTest(unittest.TestCase):
 
         self.assertIn("go run tools/arc-audit.go -root . -all", text)
         self.assertIn("./tools/arc-prove.sh", text)
+        self.assertIn("./tools/topology-check.py --quiet", text)
         self.assertIn("./tools/use-after-move-check.sh", text)
         self.assertIn("./tools/safety-case-check.py", text)
         self.assertIn("./tools/profile-manifest-check.py", text)
@@ -57,6 +58,12 @@ class CheckRepoToolTest(unittest.TestCase):
 
         self.assertIn("use-after-move lint gate", text)
         self.assertIn("tools/use-after-move-check.sh", text)
+
+    def test_repo_policy_runs_topology_gate(self) -> None:
+        text = (ROOT / "tools" / "check-repo.sh").read_text(encoding="utf-8")
+
+        self.assertIn("topology source gate", text)
+        self.assertIn("tools/topology-check.py", text)
 
     def test_tool_tests_runner_parallelizes_test_files(self) -> None:
         text = (ROOT / "tools" / "tool-tests.sh").read_text(encoding="utf-8")

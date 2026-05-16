@@ -70,6 +70,7 @@ fi
 ./tools/format.sh --check || die "format check failed; run ./tools/format.sh"
 ./tools/tool-tests.sh || die "tool tests failed"
 ./tools/profile-manifest-check.py || die "profile manifest check failed"
+./tools/topology-check.py --quiet || die "topology check failed"
 ./tools/arc-prove.sh || die "formal spec check failed"
 ./tools/use-after-move-check.sh || die "use-after-move check failed"
 ./tools/safety-case-check.py || die "safety-case evidence check failed"
@@ -236,6 +237,9 @@ fi
 if ! grep -qE '\./tools/arc-prove\.sh' tools/check-repo.sh; then
     die "repo check must run the formal spec structural/model gate"
 fi
+if ! grep -qE '\./tools/topology-check\.py --quiet' tools/check-repo.sh; then
+    die "repo check must run the topology source gate"
+fi
 if ! grep -qE '\./tools/use-after-move-check\.sh' tools/check-repo.sh; then
     die "repo check must run the use-after-move lint gate"
 fi
@@ -285,6 +289,7 @@ required_exec=(
     tools/ci-build-plan.py
     tools/clangd-compile-commands.py
     tools/format.sh
+    tools/topology-check.py
     tools/tool-tests.sh
     tools/use-after-move-check.sh
     tools/install-git-hooks.sh
