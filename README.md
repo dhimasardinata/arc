@@ -98,7 +98,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Task<void>` provides heapless coroutine state machines when the coroutine frame is allocated from an explicit `arc::TaskArena`.
 - `arc::fsm::Automaton` synthesizes typed transition tables and rejects unreachable or non-terminal dead-end states at compile time.
 - `arc::Cli` parses fixed command sets from `std::span<const char>` with `std::from_chars` and no mutable line buffer.
-- `arc::Text` builds decimal, hex, and JSON-escaped text into caller-owned buffers for responses and telemetry without formatting heap use.
+- `arc::Text` and `arc::format_to(...)` build decimal, hex, JSON-escaped, and common placeholder-formatted text into caller-owned buffers without formatting heap use.
 - `arc::CacheLock` is a policy facade for locking hot code/data regions into cache when a board needs cache-miss-free control loops.
 - `arc::HotPatch`, `HotPatchImage`, and `HotPatchDetour` load caller-provided PIE payload bytes into executable memory and install policy-encoded IRAM detours under `arc::Silence`.
 - `arc::RtcRing<T, Capacity>` gives the ULP RISC-V and Xtensa cores a trivially copyable SPSC lane in RTC-capable storage.
@@ -1992,6 +1992,7 @@ Fixed-buffer text writer for Core 0 formatting paths that must stay explicit abo
 - `hex(value, width)` appends lowercase hexadecimal with optional zero padding.
 - `json(text)` appends JSON string content with quotes, backslashes, tabs, newlines, carriage returns, and control bytes escaped.
 - `span()`, `view()`, and `done()` expose the written prefix without adding a terminator or allocating.
+- `format_to(out, "temp={} pc=0x{}", temp, arc::hex(pc, 8))` writes `{}` placeholders, escaped `{{` / `}}`, strings, chars, bools, integers, and explicit hex values into the same caller-owned buffer.
 
 `arc::TraceEventWriter`, `arc::net::HttpServer::text_response(...)`, and `json_response(...)` use this helper internally, so response and trace formatting share one no-heap overflow policy instead of duplicating local append cursors.
 

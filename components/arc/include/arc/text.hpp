@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -233,5 +234,157 @@ private:
     std::span<char> out_{};
     std::size_t pos_{};
 };
+
+struct Hex {
+    std::uint64_t value{};
+    std::uint8_t width{};
+};
+
+[[nodiscard]] constexpr Hex hex(const std::uint64_t value, const std::uint8_t width = 0U) noexcept
+{
+    return Hex{.value = value, .width = width};
+}
+
+namespace detail {
+
+template <typename T>
+concept TextArg = std::same_as<std::remove_cvref_t<T>, std::string_view> ||
+    std::same_as<std::remove_cvref_t<T>, Hex> ||
+    std::integral<std::remove_cvref_t<T>> || std::is_convertible_v<T, const char*>;
+
+[[nodiscard]] inline bool put_arg(Text& out, const std::string_view value) noexcept
+{
+    return out.append(value);
+}
+
+template <std::size_t N>
+[[nodiscard]] inline bool put_arg(Text& out, const char (&value)[N]) noexcept
+{
+    const auto bytes = N != 0U && value[N - 1U] == '\0' ? N - 1U : N;
+    return out.append(std::string_view{value, bytes});
+}
+
+[[nodiscard]] inline bool put_arg(Text& out, const char* const value) noexcept
+{
+    return out.append(value);
+}
+
+[[nodiscard]] inline bool put_arg(Text& out, const char value) noexcept
+{
+    return out.push(value);
+}
+
+[[nodiscard]] inline bool put_arg(Text& out, const bool value) noexcept
+{
+    return out.append(value ? "true" : "false");
+}
+
+[[nodiscard]] inline bool put_arg(Text& out, const Hex value) noexcept
+{
+    return out.hex(value.value, value.width);
+}
+
+template <std::integral T>
+    requires(!std::same_as<std::remove_cv_t<T>, bool> && !std::same_as<std::remove_cv_t<T>, char>)
+[[nodiscard]] inline bool put_arg(Text& out, const T value) noexcept
+{
+    if constexpr (std::is_signed_v<T>) {
+        return out.i64(static_cast<std::int64_t>(value));
+    } else {
+        return out.u64(static_cast<std::uint64_t>(value));
+    }
+}
+
+template <typename T>
+    requires(!TextArg<T>)
+[[nodiscard]] inline bool put_arg(Text&, const T&) noexcept
+{
+    static_assert(
+        TextArg<T>,
+        "arc::format_to argument must be string_view, char*, char array, char, bool, integral, or arc::hex(...)");
+    return false;
+}
+
+template <std::size_t Index = 0U>
+[[nodiscard]] inline bool put_at(Text&, const std::size_t) noexcept
+{
+    return false;
+}
+
+template <std::size_t Index = 0U, typename First, typename... Rest>
+[[nodiscard]] inline bool put_at(
+    Text& out,
+    const std::size_t target,
+    const First& first,
+    const Rest&... rest) noexcept
+{
+    if (target == Index) {
+        return put_arg(out, first);
+    }
+    if constexpr (sizeof...(Rest) == 0U) {
+        return false;
+    } else {
+        return put_at<Index + 1U>(out, target, rest...);
+    }
+}
+
+}  // namespace detail
+
+template <typename... Args>
+[[nodiscard]] inline Result<std::span<const char>> format_to(
+    const std::span<char> storage,
+    const std::string_view format,
+    const Args&... args) noexcept
+{
+    Text out{storage};
+    std::size_t arg{};
+    std::size_t i{};
+    while (i < format.size()) {
+        const auto ch = format[i];
+        if (ch == '{') {
+            if (i + 1U >= format.size()) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            const auto next = format[i + 1U];
+            if (next == '{') {
+                if (!out.push('{')) {
+                    return fail(ESP_ERR_NO_MEM);
+                }
+                i += 2U;
+                continue;
+            }
+            if (next != '}') {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            if (arg >= sizeof...(Args)) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            if (!detail::put_at(out, arg, args...)) {
+                return fail(ESP_ERR_NO_MEM);
+            }
+            ++arg;
+            i += 2U;
+            continue;
+        }
+        if (ch == '}') {
+            if (i + 1U >= format.size() || format[i + 1U] != '}') {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            if (!out.push('}')) {
+                return fail(ESP_ERR_NO_MEM);
+            }
+            i += 2U;
+            continue;
+        }
+        if (!out.push(ch)) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        ++i;
+    }
+    if (arg != sizeof...(Args)) {
+        return fail(ESP_ERR_INVALID_ARG);
+    }
+    return out.done();
+}
 
 }  // namespace arc

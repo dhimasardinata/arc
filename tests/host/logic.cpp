@@ -3182,6 +3182,23 @@ void test_text()
     std::array<char, 4> json_small{};
     arc::Text escaped{std::span(json_small)};
     expect(!escaped.json("ab\nc") && escaped.empty(), "Text failed json write rolls back");
+
+    std::array<char, 64> fmt{};
+    const auto formatted = arc::format_to(
+        std::span(fmt),
+        "temp={} mv={} ok={} pc=0x{} {{}}",
+        -12,
+        3300U,
+        true,
+        arc::hex(0x1afU, 4U));
+    expect(
+        formatted.has_value() && std::string_view{formatted->data(), formatted->size()} == "temp=-12 mv=3300 ok=true pc=0x01af {}",
+        "format_to writes common telemetry without heap formatting");
+    std::array<char, 4> small_fmt{};
+    expect(!arc::format_to(std::span(small_fmt), "{}", "too long"), "format_to rejects small buffer");
+    expect(!arc::format_to(std::span(fmt), "{} {}", 1), "format_to rejects missing arg");
+    expect(!arc::format_to(std::span(fmt), "{}", 1, 2), "format_to rejects extra arg");
+    expect(!arc::format_to(std::span(fmt), "{", 1), "format_to rejects malformed braces");
 }
 
 void test_trace_event()
