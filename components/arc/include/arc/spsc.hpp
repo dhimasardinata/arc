@@ -7,6 +7,7 @@
 #include <cstring>
 #include <span>
 #include <type_traits>
+#include <utility>
 
 #include "esp_attr.h"
 
@@ -22,6 +23,157 @@ struct Spsc {
     static_assert(Capacity > 1, "SPSC capacity must be greater than one");
     static_assert(std::has_single_bit(Capacity), "SPSC capacity must be a power of two");
     static_assert(std::is_trivially_copyable_v<T>, "SPSC payload must be trivially copyable");
+
+    class Producer {
+    public:
+        constexpr Producer() noexcept = default;
+
+        explicit constexpr Producer(Spsc& lane) noexcept
+            : lane_(&lane)
+        {
+        }
+
+        Producer(const Producer&) = delete;
+        Producer& operator=(const Producer&) = delete;
+
+        constexpr Producer(Producer&& other) noexcept
+            : lane_(std::exchange(other.lane_, nullptr))
+        {
+        }
+
+        constexpr Producer& operator=(Producer&& other) noexcept
+        {
+            if (this != &other) {
+                lane_ = std::exchange(other.lane_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return lane_ != nullptr;
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_push(const T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->try_push(value);
+        }
+
+        template <typename U, std::size_t Extent>
+            requires(std::is_same_v<std::remove_cv_t<U>, T>)
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(
+            const std::span<U, Extent> data) noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->push(data);
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t space() const noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->space();
+        }
+
+        [[nodiscard]] static constexpr std::size_t cap() noexcept
+        {
+            return Spsc::cap();
+        }
+
+    private:
+        Spsc* lane_{};
+    };
+
+    class Consumer {
+    public:
+        constexpr Consumer() noexcept = default;
+
+        explicit constexpr Consumer(Spsc& lane) noexcept
+            : lane_(&lane)
+        {
+        }
+
+        Consumer(const Consumer&) = delete;
+        Consumer& operator=(const Consumer&) = delete;
+
+        constexpr Consumer(Consumer&& other) noexcept
+            : lane_(std::exchange(other.lane_, nullptr))
+        {
+        }
+
+        constexpr Consumer& operator=(Consumer&& other) noexcept
+        {
+            if (this != &other) {
+                lane_ = std::exchange(other.lane_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return lane_ != nullptr;
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->try_pop(value);
+        }
+
+        template <typename U, std::size_t Extent>
+            requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t pop(
+            const std::span<U, Extent> out) noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->pop(out);
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool empty() const noexcept
+        {
+            return lane_ == nullptr || lane_->empty();
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t size() const noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->size();
+        }
+
+        template <typename Fn>
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t drain(
+            T& value,
+            Fn&& fn,
+            const std::size_t max = Capacity - 1U) noexcept(noexcept(fn(value)))
+        {
+            return lane_ == nullptr ? 0U : lane_->drain(value, std::forward<Fn>(fn), max);
+        }
+
+        [[nodiscard]] static constexpr std::size_t cap() noexcept
+        {
+            return Spsc::cap();
+        }
+
+    private:
+        Spsc* lane_{};
+    };
+
+    struct Endpoints {
+        Producer producer;
+        Consumer consumer;
+    };
+
+    [[nodiscard]] constexpr Producer producer() noexcept
+    {
+        return Producer{*this};
+    }
+
+    [[nodiscard]] constexpr Consumer consumer() noexcept
+    {
+        return Consumer{*this};
+    }
+
+    [[nodiscard]] constexpr Endpoints split() noexcept
+    {
+        return Endpoints{
+            .producer = Producer{*this},
+            .consumer = Consumer{*this},
+        };
+    }
 
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_push(const T& value) noexcept
     {

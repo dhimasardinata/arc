@@ -1282,6 +1282,7 @@ Bounded lock-free lane for one producer and one consumer.
 
 - `try_push(event)` is producer-only.
 - `try_pop(event)` is consumer-only.
+- `producer()`, `consumer()`, and `split()` return move-only role endpoints, so task setup can pass only the push or pop side instead of exposing the full lane API.
 - `push(span)` and `pop(span)` batch contiguous transfers, wrapping at most once, so burst handoff avoids per-element index publication.
 - `size()` and `space()` expose the current ring occupancy and producer room.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation.

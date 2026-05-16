@@ -13,6 +13,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -726,6 +727,9 @@ void expect_abort(Fn&& fn, const char* const message)
 void test_spsc()
 {
     arc::Spsc<int, 4> queue;
+    using SpscInt = arc::Spsc<int, 4>;
+    static_assert(!std::is_copy_constructible_v<SpscInt::Producer>);
+    static_assert(!std::is_copy_constructible_v<SpscInt::Consumer>);
     expect(queue.cap() == 3U, "SPSC usable capacity");
     expect(queue.bytes() == sizeof(queue), "SPSC bytes");
     expect(queue.empty(), "SPSC starts empty");
@@ -760,6 +764,19 @@ void test_spsc()
     expect(queue.pop(std::span(out).first(2U)) == 2U, "SPSC batch partial pop");
     expect(out[0] == 6 && out[1] == 7, "SPSC batch partial order");
     expect(queue.pop(std::span(out).first(2U)) == 1U && out[0] == 8, "SPSC batch remainder");
+
+    auto endpoints = queue.split();
+    expect(static_cast<bool>(endpoints.producer) && static_cast<bool>(endpoints.consumer),
+           "SPSC role endpoints split");
+    expect(endpoints.producer.try_push(10), "SPSC producer endpoint push");
+    expect(endpoints.consumer.try_pop(value) && value == 10, "SPSC consumer endpoint pop");
+    const std::array endpoint_values{11, 12, 13};
+    expect(endpoints.producer.push(std::span(endpoint_values)) == 3U, "SPSC producer endpoint batch push");
+    out = {};
+    expect(endpoints.consumer.pop(std::span(out)) == 3U && out[2] == 13, "SPSC consumer endpoint batch pop");
+    auto moved_producer = std::move(endpoints.producer);
+    expect(!static_cast<bool>(endpoints.producer) && static_cast<bool>(moved_producer),
+           "SPSC producer endpoint is move-only");
 }
 
 void test_checked_spsc()
