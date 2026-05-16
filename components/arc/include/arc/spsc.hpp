@@ -376,6 +376,158 @@ using Ring = Spsc<T, Capacity>;
 
 template <typename T, std::size_t Capacity>
 struct Audit<Spsc<T, Capacity>> {
+    using Lane = Spsc<T, Capacity>;
+    using Checked = Audit<Spsc<T, Capacity>>;
+
+    class Producer {
+    public:
+        constexpr Producer() noexcept = default;
+
+        explicit constexpr Producer(Checked& lane) noexcept
+            : lane_(&lane)
+        {
+        }
+
+        Producer(const Producer&) = delete;
+        Producer& operator=(const Producer&) = delete;
+
+        constexpr Producer(Producer&& other) noexcept
+            : lane_(std::exchange(other.lane_, nullptr))
+        {
+        }
+
+        constexpr Producer& operator=(Producer&& other) noexcept
+        {
+            if (this != &other) {
+                lane_ = std::exchange(other.lane_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return lane_ != nullptr;
+        }
+
+        [[nodiscard]] inline bool try_push(const T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->try_push(value);
+        }
+
+        template <typename U, std::size_t Extent>
+            requires(std::is_same_v<std::remove_cv_t<U>, T>)
+        [[nodiscard]] inline std::size_t push(const std::span<U, Extent> data) noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->push(data);
+        }
+
+        [[nodiscard]] inline std::size_t space() const noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->space();
+        }
+
+        [[nodiscard]] static constexpr std::size_t cap() noexcept
+        {
+            return Lane::cap();
+        }
+
+    private:
+        Checked* lane_{};
+    };
+
+    class Consumer {
+    public:
+        constexpr Consumer() noexcept = default;
+
+        explicit constexpr Consumer(Checked& lane) noexcept
+            : lane_(&lane)
+        {
+        }
+
+        Consumer(const Consumer&) = delete;
+        Consumer& operator=(const Consumer&) = delete;
+
+        constexpr Consumer(Consumer&& other) noexcept
+            : lane_(std::exchange(other.lane_, nullptr))
+        {
+        }
+
+        constexpr Consumer& operator=(Consumer&& other) noexcept
+        {
+            if (this != &other) {
+                lane_ = std::exchange(other.lane_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return lane_ != nullptr;
+        }
+
+        [[nodiscard]] inline bool try_pop(T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->try_pop(value);
+        }
+
+        template <typename U, std::size_t Extent>
+            requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
+        [[nodiscard]] inline std::size_t pop(const std::span<U, Extent> out) noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->pop(out);
+        }
+
+        [[nodiscard]] inline bool empty() const noexcept
+        {
+            return lane_ == nullptr || lane_->empty();
+        }
+
+        [[nodiscard]] inline std::size_t size() const noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->size();
+        }
+
+        template <typename Fn>
+        [[nodiscard]] inline std::size_t drain(
+            T& value,
+            Fn&& fn,
+            const std::size_t max = Capacity - 1U) noexcept(noexcept(fn(value)))
+        {
+            return lane_ == nullptr ? 0U : lane_->drain(value, std::forward<Fn>(fn), max);
+        }
+
+        [[nodiscard]] static constexpr std::size_t cap() noexcept
+        {
+            return Lane::cap();
+        }
+
+    private:
+        Checked* lane_{};
+    };
+
+    struct Endpoints {
+        Producer producer;
+        Consumer consumer;
+    };
+
+    [[nodiscard]] constexpr Producer producer() noexcept
+    {
+        return Producer{*this};
+    }
+
+    [[nodiscard]] constexpr Consumer consumer() noexcept
+    {
+        return Consumer{*this};
+    }
+
+    [[nodiscard]] constexpr Endpoints split() noexcept
+    {
+        return Endpoints{
+            .producer = Producer{*this},
+            .consumer = Consumer{*this},
+        };
+    }
+
     [[nodiscard]] inline bool try_push(const T& value) noexcept
     {
         producer_.assert_single("arc::Audit<Spsc> push must stay single-producer");

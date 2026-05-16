@@ -1298,7 +1298,7 @@ Bounded lock-free lane for one producer and one consumer.
 
 Use this when event history matters and the ownership contract is exactly one writer and one reader. `arc::Ring<T, Capacity>` is the compatibility alias for the same type.
 
-`arc::Audit<arc::Spsc<T, Capacity>>` keeps the same API but binds the first producer and consumer it sees and fires `configASSERT` if another task/thread touches that endpoint later.
+`arc::Audit<arc::Spsc<T, Capacity>>` keeps the same API, also exposes audited `producer()`, `consumer()`, and `split()` role endpoints, and binds the first producer and consumer it sees so `configASSERT` fires if another task/thread touches that endpoint later.
 
 ### `arc::Mpsc<T, Capacity>`
 
@@ -1317,7 +1317,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 
 Use this when several OS-side tasks with the same scheduling priority need to feed one telemetry or transport owner without a FreeRTOS queue. If producer preemption must never block completed work from another producer, use `arc::Fanin`.
 
-`arc::DenseMpsc<T, Capacity>` keeps the same queue semantics but drops cache-line isolation and packs each cell to the payload's natural alignment. Use it when internal RAM density matters more than worst-case false-sharing avoidance. `arc::Audit<arc::Mpsc<T, Capacity>>` adds a fail-fast single-consumer assertion on top of the cache-line-isolated lane, and `arc::Audit<arc::DenseMpsc<T, Capacity>>` combines both trade-offs.
+`arc::DenseMpsc<T, Capacity>` keeps the same queue semantics but drops cache-line isolation and packs each cell to the payload's natural alignment. Use it when internal RAM density matters more than worst-case false-sharing avoidance. `arc::Audit<arc::Mpsc<T, Capacity>>` adds audited `producer()`, `consumer()`, and `split()` role endpoints plus a fail-fast single-consumer assertion on top of the cache-line-isolated lane, and `arc::Audit<arc::DenseMpsc<T, Capacity>>` combines both trade-offs.
 
 ### `arc::Mux<T, Capacity>`
 
@@ -1341,7 +1341,7 @@ Static fan-in made from one SPSC lane per producer and one round-robin consumer.
 
 Use this when producer identity is static and tail latency matters more than one global FIFO order.
 
-`arc::Audit<arc::Fanin<T, Capacity, Producers>>` keeps the same API and asserts that each lane remains single-producer and the fan-in side stays single-consumer.
+`arc::Audit<arc::Fanin<T, Capacity, Producers>>` keeps the same API, also exposes audited `producer<Index>()` and `consumer()` role endpoints, and asserts that each lane remains single-producer and the fan-in side stays single-consumer.
 
 ### `arc::RpcLane<Op, RequestPayload, ReplyPayload, RequestCapacity, ReplyCapacity = RequestCapacity>`
 

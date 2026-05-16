@@ -324,6 +324,116 @@ using DenseMux = DenseMpsc<T, Capacity>;
 template <typename T, std::size_t Capacity, std::size_t CellAlign>
 struct Audit<detail::MpscImpl<T, Capacity, CellAlign>> {
     using Lane = detail::MpscImpl<T, Capacity, CellAlign>;
+    using Checked = Audit<detail::MpscImpl<T, Capacity, CellAlign>>;
+
+    class Producer {
+    public:
+        constexpr Producer() noexcept = default;
+
+        explicit constexpr Producer(Checked& lane) noexcept
+            : lane_(&lane)
+        {
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return lane_ != nullptr;
+        }
+
+        [[nodiscard]] inline bool try_push(const T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->try_push(value);
+        }
+
+        [[nodiscard]] static constexpr std::size_t cap() noexcept
+        {
+            return Lane::cap();
+        }
+
+    private:
+        Checked* lane_{};
+    };
+
+    class Consumer {
+    public:
+        constexpr Consumer() noexcept = default;
+
+        explicit constexpr Consumer(Checked& lane) noexcept
+            : lane_(&lane)
+        {
+        }
+
+        Consumer(const Consumer&) = delete;
+        Consumer& operator=(const Consumer&) = delete;
+
+        constexpr Consumer(Consumer&& other) noexcept
+            : lane_(std::exchange(other.lane_, nullptr))
+        {
+        }
+
+        constexpr Consumer& operator=(Consumer&& other) noexcept
+        {
+            if (this != &other) {
+                lane_ = std::exchange(other.lane_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return lane_ != nullptr;
+        }
+
+        [[nodiscard]] inline bool try_pop(T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->try_pop(value);
+        }
+
+        [[nodiscard]] inline bool empty() const noexcept
+        {
+            return lane_ == nullptr || lane_->empty();
+        }
+
+        template <typename Fn>
+        [[nodiscard]] inline std::size_t drain(
+            T& value,
+            Fn&& fn,
+            const std::size_t max = Capacity) noexcept(noexcept(fn(value)))
+        {
+            return lane_ == nullptr ? 0U : lane_->drain(value, std::forward<Fn>(fn), max);
+        }
+
+        [[nodiscard]] static constexpr std::size_t cap() noexcept
+        {
+            return Lane::cap();
+        }
+
+    private:
+        Checked* lane_{};
+    };
+
+    struct Endpoints {
+        Producer producer;
+        Consumer consumer;
+    };
+
+    [[nodiscard]] constexpr Producer producer() noexcept
+    {
+        return Producer{*this};
+    }
+
+    [[nodiscard]] constexpr Consumer consumer() noexcept
+    {
+        return Consumer{*this};
+    }
+
+    [[nodiscard]] constexpr Endpoints split() noexcept
+    {
+        return Endpoints{
+            .producer = Producer{*this},
+            .consumer = Consumer{*this},
+        };
+    }
 
     [[nodiscard]] inline bool try_push(const T& value) noexcept
     {

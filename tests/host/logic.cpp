@@ -786,11 +786,23 @@ void test_spsc()
 void test_checked_spsc()
 {
     arc::Audit<arc::Spsc<int, 4>> queue;
+    using CheckedSpsc = arc::Audit<arc::Spsc<int, 4>>;
+    static_assert(!std::is_copy_constructible_v<CheckedSpsc::Producer>);
+    static_assert(!std::is_copy_constructible_v<CheckedSpsc::Consumer>);
     expect(queue.cap() == 3U, "Audit SPSC usable capacity");
     expect(queue.try_push(1), "Audit SPSC push 1");
 
     int value{};
     expect(queue.try_pop(value) && value == 1, "Audit SPSC pop 1");
+
+    auto endpoints = queue.split();
+    expect(static_cast<bool>(endpoints.producer) && static_cast<bool>(endpoints.consumer),
+           "Audit SPSC role endpoints split");
+    expect(endpoints.producer.try_push(2), "Audit SPSC producer endpoint push");
+    expect(endpoints.consumer.try_pop(value) && value == 2, "Audit SPSC consumer endpoint pop");
+    auto moved_consumer = std::move(endpoints.consumer);
+    expect(!static_cast<bool>(endpoints.consumer) && static_cast<bool>(moved_consumer),
+           "Audit SPSC consumer endpoint is move-only");
 
     expect_abort(
         []() {
@@ -856,10 +868,24 @@ void test_compact_mpsc()
 void test_checked_mpsc()
 {
     arc::Audit<arc::Mpsc<int, 4>> queue;
+    using CheckedMpsc = arc::Audit<arc::Mpsc<int, 4>>;
+    static_assert(std::is_copy_constructible_v<CheckedMpsc::Producer>);
+    static_assert(!std::is_copy_constructible_v<CheckedMpsc::Consumer>);
     expect(queue.try_push(1), "Audit MPSC push 1");
 
     int value{};
     expect(queue.try_pop(value) && value == 1, "Audit MPSC pop 1");
+
+    auto endpoints = queue.split();
+    auto second_producer = endpoints.producer;
+    expect(static_cast<bool>(endpoints.producer) && static_cast<bool>(endpoints.consumer),
+           "Audit MPSC role endpoints split");
+    expect(endpoints.producer.try_push(2) && second_producer.try_push(3), "Audit MPSC producer endpoints push");
+    expect(endpoints.consumer.try_pop(value) && value == 2, "Audit MPSC consumer endpoint pop");
+    auto moved_consumer = std::move(endpoints.consumer);
+    expect(!static_cast<bool>(endpoints.consumer) && static_cast<bool>(moved_consumer),
+           "Audit MPSC consumer endpoint is move-only");
+    expect(moved_consumer.try_pop(value) && value == 3, "Audit MPSC moved consumer endpoint pop");
 
     expect_abort(
         []() {
@@ -1018,6 +1044,9 @@ void test_rpc_lane()
 void test_checked_fanin()
 {
     arc::Audit<arc::Fanin<int, 4, 2>> fan;
+    using CheckedFan = arc::Audit<arc::Fanin<int, 4, 2>>;
+    static_assert(!std::is_copy_constructible_v<CheckedFan::Producer<0>>);
+    static_assert(!std::is_copy_constructible_v<CheckedFan::Consumer>);
     expect(fan.producers() == 2U, "Audit Fanin producer count");
     expect(fan.try_push<0>(10), "Audit Fanin push lane 0");
     expect(fan.try_push<1>(20), "Audit Fanin push lane 1");
@@ -1036,6 +1065,18 @@ void test_checked_fanin()
     expect(fan.push<0>(std::span(lane)) == 3U, "Audit Fanin batch push");
     expect(fan.size<0>() == 3U && fan.space<0>() == 0U, "Audit Fanin lane size and space");
     expect(fan.pop(std::span(out).first(2U)) == 2U && out[0] == 50 && out[1] == 51, "Audit Fanin partial batch pop");
+
+    arc::Audit<arc::Fanin<int, 4, 2>> checked_roles;
+    auto role_producer = checked_roles.producer<1>();
+    auto role_consumer = checked_roles.consumer();
+    expect(static_cast<bool>(role_producer) && static_cast<bool>(role_consumer),
+           "Audit Fanin role endpoints bind");
+    auto moved_producer = std::move(role_producer);
+    expect(!static_cast<bool>(role_producer) && static_cast<bool>(moved_producer),
+           "Audit Fanin producer endpoint is move-only");
+    expect(moved_producer.try_push(60), "Audit Fanin producer endpoint push");
+    expect(role_consumer.try_pop(producer, value) && producer == 1U && value == 60,
+           "Audit Fanin consumer endpoint pop");
 }
 
 void test_mqtt()
