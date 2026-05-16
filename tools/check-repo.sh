@@ -70,6 +70,7 @@ fi
 ./tools/format.sh --check || die "format check failed; run ./tools/format.sh"
 ./tools/tool-tests.sh || die "tool tests failed"
 ./tools/arc-prove.sh || die "formal spec check failed"
+./tools/safety-case-check.py || die "safety-case evidence check failed"
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"
 
 while IFS= read -r file; do
@@ -232,6 +233,9 @@ fi
 
 if ! grep -qE '\./tools/arc-prove\.sh' tools/check-repo.sh; then
     die "repo check must run the formal spec structural/model gate"
+fi
+if ! grep -qE '\./tools/safety-case-check\.py' tools/check-repo.sh; then
+    die "repo check must run the safety-case evidence gate"
 fi
 
 if ! grep -qE '\./tools/host-bench\.sh' .github/workflows/build.yml; then

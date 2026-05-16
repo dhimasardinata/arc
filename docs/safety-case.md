@@ -30,10 +30,11 @@ remain outside Arc.
 | Realtime loop entry points are kept away from known blocking, heap, and logging calls. | `go run tools/arc-audit.go -root . -all` is run by `tools/check-repo.sh`. |
 | Queue and fan-in ownership can be narrowed at setup boundaries. | `arc::Spsc`, `arc::Mpsc`, `arc::Fanin`, and their `arc::Audit<...>` wrappers expose producer/consumer role endpoints with host coverage in `tests/host/logic.cpp`. |
 | Queue and fan-in direct mutation can be removed from the static type surface. | `arc::Roles<Lane>` owns a lane privately and exposes only producer/consumer endpoints, with compile-contract checks and host coverage in `tests/host/logic.cpp`. |
-| DMA/cache handoff avoids unaligned invalidation by default. | `arc::Cache::from_device` and `discard` require whole cache lines; `from_raw` and `discard_raw` are unavailable unless `ARC_ENABLE_UNSAFE_CACHE_RAW=1` and `arc::unsafe_raw` are used deliberately. |
+| DMA/cache handoff avoids unaligned invalidation by default. | `components/arc/include/arc/cache.hpp` makes `arc::Cache::from_device` and `discard` require whole cache lines; `from_raw` and `discard_raw` are unavailable unless `ARC_ENABLE_UNSAFE_CACHE_RAW=1` and `arc::unsafe_raw` are used deliberately. |
 | Async DMA copy completion can be bound to scope. | `arc::Copy::lease_coherent` returns move-only leases that finish the exact ticket on explicit `finish()` or destruction, with host coverage in `tests/host/logic.cpp`. |
-| Async DMA buffer lifetime can be structurally owned for Arc-allocated DMA slabs. | `arc::Copy::lease_coherent(std::move(dst), std::move(src))` moves `arc::CapsBuf` storage into the active lease, so the transfer owns both buffers until finish or destruction. |
+| Async DMA buffer lifetime can be structurally owned for Arc-allocated DMA slabs. | `components/arc/include/arc/copy.hpp` implements `arc::Copy::lease_coherent(std::move(dst), std::move(src))`, which moves `arc::CapsBuf` storage into the active lease so the transfer owns both buffers until finish or destruction. |
 | Formal-model files have at least structural coverage in every repo policy run. | `tools/check-repo.sh` runs `tools/arc-prove.sh`, which validates required TLA+ modules and uses Apalache or TLC when available. |
+| Safety claims stay tied to live repo evidence and non-claims. | `tools/check-repo.sh` runs `tools/safety-case-check.py`, which verifies claim evidence paths, required evidence commands, non-claim coverage, and certification-overclaim wording. |
 
 ## Required Local Evidence
 
