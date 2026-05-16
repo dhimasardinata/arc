@@ -169,7 +169,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Tight` runs a masked per-step loop with optional cycle-budget overrun telemetry for the rare path that needs tighter jitter than `arc::App`.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
-- `arc::Spsc` gives a bounded lock-free lane for one producer and one consumer; `arc::Roles<Lane>` owns a lane privately when you want producer/consumer endpoints to be the only compile-time API; `arc::Ring` remains the terse compatibility alias.
+- `arc::Flow<Source, Lane, Sink>` wires one static source/lane/sink blueprint with compile-time payload compatibility, while `arc::Spsc` gives a bounded lock-free lane for one producer and one consumer; `arc::Roles<Lane>` owns a lane privately when you want producer/consumer endpoints to be the only compile-time API; `arc::Ring` remains the terse compatibility alias.
 - `arc::Audit<Topology>` adds opt-in ownership assertions when you want topology misuse to fail fast instead of staying purely contractual.
 - `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer; `arc::Mux` is the terse topology alias.
 - `arc::DenseMpsc` keeps the same algorithm but packs cells tightly when RAM density matters more than cache-line isolation.
@@ -298,7 +298,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 | Area | Headers | Primary types |
 | --- | --- | --- |
 | Profile umbrellas | `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/math.hpp`, `arc.hpp` | Subset entry points for substrate, coherency/DMA, no-heap codecs, DSP/math, and the compatibility umbrella |
-| Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
+| Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/flow.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Flow`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp`, `arc/roles.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit`, `arc::Roles` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/hotpatch.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/pipeline.hpp`, `arc/mmu_span.hpp`, `arc/distributed_mmu.hpp`, `arc/place.hpp`, `arc/prefetch.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::HotPatch`, `arc::HotPatchImage`, `arc::HotPatchDetour`, `arc::DmaChain`, `arc::DmaEndpoint`, `arc::Pipeline`, `arc::Dma2dWindow`, `arc::bind_rows`, `arc::MmuSpan`, `arc::mmu::DistributedSpan`, `arc::mmu::DistributedPager`, `arc::Copy`, `arc::prefetch` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp`, `arc/rpc.hpp`, `arc/rtc_ring.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem`, `arc::RpcLane`, `arc::RtcRing` |
@@ -504,6 +504,7 @@ Profile aliases for `math`, `memory`, `net_codecs`, `crypto`, `robotics`, and `s
 - `etm`
 - `fabric`
 - `flexroute`
+- `flow`
 - `fuse`
 - `math`
 - `memory`
@@ -1295,6 +1296,20 @@ Shared state for asymmetric programs.
 Use it when Core 1 emits ordered events and Core 0 applies latest-wins control.
 
 `arc::Bus` remains available as a compatibility alias.
+
+### `arc::Flow<Source, Lane, Sink>`
+
+Static source/lane/sink blueprint for simple data paths.
+
+- `Source` declares `using value_type = ...` and `static bool read(value_type&) noexcept`.
+- `Lane` is a static queue with matching `value_type` and producer/consumer endpoints, for example `arc::Spsc<T, N>` or `arc::Mpsc<T, N>`.
+- `Sink` declares `static bool write(const value_type&) noexcept`.
+- `fill()` reads at most one source item and queues it, retaining one pending item if the lane is full.
+- `drain()` moves one queued item to the sink, retaining the popped item if the sink is temporarily full, while `drain(max)` drains a bounded batch.
+- `step()` performs one fill plus one drain and reports whether the lane queued, wrote, blocked, or still has pending data.
+- `blocked()` / `pending()` report retained source or sink-side data that must be polled again before the flow is idle.
+
+Use this when a data path should be declared as static types and checked at compile time, but task ownership, polling cadence, and hardware policy should stay explicit in application code.
 
 ### `arc::Spsc<T, Capacity>`
 

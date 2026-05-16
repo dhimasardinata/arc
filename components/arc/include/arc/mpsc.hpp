@@ -24,6 +24,8 @@ inline constexpr std::size_t dense_mpsc_align =
 
 template <typename T, std::size_t Capacity, std::size_t CellAlign>
 struct MpscImpl {
+    using value_type = T;
+
     static_assert(
         Capacity > 1,
         "[ARC ERROR] arc::Mpsc capacity must be greater than one. "
@@ -40,6 +42,10 @@ struct MpscImpl {
         std::is_trivially_copyable_v<T>,
         "[ARC ERROR] arc::Mpsc payload must be trivially copyable. "
         "Action: use flat structs, integers, enums, or std::array; keep strings, vectors, owning pointers, and virtual objects outside the queue payload.");
+    static_assert(
+        std::is_copy_assignable_v<T>,
+        "[ARC ERROR] arc::Mpsc payload must be copy assignable. "
+        "Action: keep queued payload fields mutable and flat, or pass stable handles outside the queue payload.");
     static_assert(
         CellAlign >= alignof(std::uint32_t),
         "[ARC ERROR] arc::Mpsc cell alignment must fit the sequence word. "
@@ -343,6 +349,7 @@ template <typename T, std::size_t Capacity, std::size_t CellAlign>
 struct Audit<detail::MpscImpl<T, Capacity, CellAlign>> {
     using Lane = detail::MpscImpl<T, Capacity, CellAlign>;
     using Checked = Audit<detail::MpscImpl<T, Capacity, CellAlign>>;
+    using value_type = T;
 
     class Producer {
     public:

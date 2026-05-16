@@ -41,6 +41,7 @@
 #include "arc/flash_log.hpp"
 #include "arc/flash_off.hpp"
 #include "arc/flexroute.hpp"
+#include "arc/flow.hpp"
 #include "arc/foc.hpp"
 #include "arc/fsm.hpp"
 #include "arc/hil.hpp"
@@ -794,6 +795,94 @@ concept HasRootRpcPoll = requires(T& roles, Reply& reply) { roles.poll(reply); }
 
 template <typename T, typename Reply>
 concept HasRootRpcPollMatch = requires(T& roles, Reply& reply) { roles.poll_match(1U, reply); };
+
+struct FlowPacket {
+    std::uint32_t seq{};
+};
+
+struct FlowSource {
+    using value_type = FlowPacket;
+
+    static inline std::uint32_t next{};
+    static inline std::uint32_t limit{};
+
+    [[nodiscard]] static bool read(value_type& out) noexcept
+    {
+        if (next >= limit) {
+            return false;
+        }
+
+        out.seq = ++next;
+        return true;
+    }
+};
+
+struct FlowSink {
+    static inline std::uint32_t sum{};
+    static inline std::uint32_t writes{};
+    static inline bool ready{true};
+
+    [[nodiscard]] static bool write(const FlowPacket& value) noexcept
+    {
+        if (!ready) {
+            return false;
+        }
+
+        sum += value.seq;
+        ++writes;
+        return true;
+    }
+};
+
+void test_flow()
+{
+    using Lane = arc::Spsc<FlowPacket, 4>;
+    static_assert(std::same_as<Lane::value_type, FlowPacket>);
+    static_assert(arc::FlowSource<FlowSource, FlowPacket>);
+    static_assert(arc::FlowLane<Lane, FlowPacket>);
+    static_assert(arc::FlowLane<arc::Mpsc<FlowPacket, 4>, FlowPacket>);
+    static_assert(arc::FlowLane<arc::CheckedSpsc<FlowPacket, 4>, FlowPacket>);
+    static_assert(arc::FlowLane<arc::CheckedMpsc<FlowPacket, 4>, FlowPacket>);
+    static_assert(arc::FlowSink<FlowSink, FlowPacket>);
+
+    FlowSource::next = 0U;
+    FlowSource::limit = 4U;
+    FlowSink::sum = 0U;
+    FlowSink::writes = 0U;
+    FlowSink::ready = true;
+
+    arc::Flow<FlowSource, Lane, FlowSink> flow{};
+    expect(flow.cap() == 3U, "Flow exposes lane capacity");
+    expect(flow.fill() && flow.fill() && flow.fill(), "Flow fills static lane");
+    expect(!flow.fill() && flow.pending() && FlowSource::next == 4U, "Flow holds pending value under backpressure");
+    expect(flow.drain() && FlowSink::sum == 1U, "Flow drains one item to sink");
+    expect(flow.fill() && !flow.pending(), "Flow queues pending value after room opens");
+    expect(flow.drain(8U) == 3U && FlowSink::sum == 10U && FlowSink::writes == 4U, "Flow drains remaining items");
+
+    FlowSource::next = 0U;
+    FlowSource::limit = 1U;
+    FlowSink::sum = 0U;
+    FlowSink::writes = 0U;
+    FlowSink::ready = true;
+    auto step = flow.step();
+    expect(step.queued && step.wrote && !step.pending && FlowSink::sum == 1U, "Flow step pumps source lane sink");
+
+    FlowSource::next = 0U;
+    FlowSource::limit = 2U;
+    FlowSink::sum = 0U;
+    FlowSink::writes = 0U;
+    FlowSink::ready = false;
+
+    arc::Flow<FlowSource, arc::CheckedSpsc<FlowPacket, 4>, FlowSink> checked{};
+    expect(checked.fill() && checked.fill(), "Flow fills checked lane");
+    expect(!checked.drain() && checked.blocked() && checked.pending() && FlowSink::writes == 0U,
+           "Flow retains sink-blocked value");
+    FlowSink::ready = true;
+    expect(checked.drain() && FlowSink::sum == 1U && FlowSink::writes == 1U && !checked.pending(),
+           "Flow writes retained value first");
+    expect(checked.drain() && FlowSink::sum == 3U && FlowSink::writes == 2U,
+           "Flow resumes lane after sink backpressure");
+}
 
 void test_spsc()
 {
@@ -5719,6 +5808,7 @@ void test_refinit()
 int main()
 {
     test_result();
+    test_flow();
     test_any_io();
     test_spsc();
     test_checked_spsc();

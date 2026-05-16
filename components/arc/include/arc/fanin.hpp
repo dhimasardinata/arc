@@ -18,6 +18,8 @@ namespace arc {
 
 template <typename T, std::size_t Capacity, std::size_t Producers>
 struct Fanin {
+    using value_type = T;
+
     static_assert(
         Producers > 0U,
         "[ARC ERROR] arc::Fanin needs at least one producer. "
@@ -34,6 +36,10 @@ struct Fanin {
         std::is_trivially_copyable_v<T>,
         "[ARC ERROR] arc::Fanin payload must be trivially copyable. "
         "Action: use flat structs, integers, enums, or std::array; keep strings, vectors, owning pointers, and virtual objects outside the queue payload.");
+    static_assert(
+        std::is_copy_assignable_v<T>,
+        "[ARC ERROR] arc::Fanin payload must be copy assignable. "
+        "Action: keep queued payload fields mutable and flat, or pass stable handles outside the queue payload.");
 
     template <std::size_t Lane>
     class Producer {
@@ -352,6 +358,7 @@ template <typename T, std::size_t Capacity, std::size_t Producers>
 struct Audit<Fanin<T, Capacity, Producers>> {
     using Lane = Fanin<T, Capacity, Producers>;
     using Checked = Audit<Fanin<T, Capacity, Producers>>;
+    using value_type = T;
 
     template <std::size_t Index>
     class Producer {

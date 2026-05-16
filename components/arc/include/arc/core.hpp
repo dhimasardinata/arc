@@ -15,6 +15,7 @@
 #include "arc/coro.hpp"
 #include "arc/fanin.hpp"
 #include "arc/fence.hpp"
+#include "arc/flow.hpp"
 #include "arc/fsm.hpp"
 #include "arc/init.hpp"
 #include "arc/log.hpp"

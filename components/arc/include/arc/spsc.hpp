@@ -20,6 +20,8 @@ namespace arc {
 
 template <typename T, std::size_t Capacity>
 struct Spsc {
+    using value_type = T;
+
     static_assert(
         Capacity > 1,
         "[ARC ERROR] arc::Spsc capacity must be greater than one. "
@@ -32,6 +34,10 @@ struct Spsc {
         std::is_trivially_copyable_v<T>,
         "[ARC ERROR] arc::Spsc payload must be trivially copyable. "
         "Action: use flat structs, integers, enums, or std::array; keep strings, vectors, owning pointers, and virtual objects outside the queue payload.");
+    static_assert(
+        std::is_copy_assignable_v<T>,
+        "[ARC ERROR] arc::Spsc payload must be copy assignable. "
+        "Action: keep queued payload fields mutable and flat, or pass stable handles outside the queue payload.");
 
     class Producer {
     public:
@@ -387,6 +393,7 @@ template <typename T, std::size_t Capacity>
 struct Audit<Spsc<T, Capacity>> {
     using Lane = Spsc<T, Capacity>;
     using Checked = Audit<Spsc<T, Capacity>>;
+    using value_type = T;
 
     class Producer {
     public:
