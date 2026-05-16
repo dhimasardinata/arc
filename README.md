@@ -190,7 +190,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::net::IpFamily` lets TCP calls and UDP policies stay dual-stack by default or force IPv4/IPv6 explicitly.
 - `arc::net::Tls` gives direct ESP-TLS client sessions for secure caller-buffer transports such as MQTTS without taking over reconnect or protocol policy.
 - `arc::net::Pbuf` gives RAII ownership and direct payload spans for lwIP pbufs when a path needs packet-buffer ownership without extra copies.
-- `arc::net::Http` gives RAII ownership for ESP-IDF HTTP/HTTPS client sessions, with explicit HTTPS factories when secure scheme enforcement matters.
+- `arc::net::Http` gives RAII ownership for ESP-IDF HTTP/HTTPS client sessions, with explicit HTTPS factories that preserve secure URL enforcement across later URL resets.
 - `arc::net::HttpServer` parses HTTP/1.x requests, trims fixed header views, emits small text responses, and routes compile-time method/path tags without allocation.
 - `arc::pack::Schema`, `arc::pack::StructOf`, and `arc::pack::Reflect<T>` pack fixed binary telemetry/config records with compile-time field sizing, caller-owned buffers, and byteswap-based endian conversion.
 - `arc::net::NetRpc` maps explicit struct codecs onto radio/transport payloads for zero-allocation distributed commands.
@@ -289,7 +289,7 @@ Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/
 
 Arc project docs: `docs/architecture.md` explains the Core 0/Core 1 substrate choices, and `docs/hil-test-jig.md` describes the three-node physical fault test shape.
 
-Host tooling: `tests/host/fuzz_codecs.cpp` is an opt-in libFuzzer harness for HTTP, MQTT, WebSocket, and CoAP parsers. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/arc-audit.go` scans realtime entry call graphs, and `tools/arc-prove.sh` validates TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
+Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target and opt-in libFuzzer harness for HTTP, URI, MQTT, WebSocket, and CoAP parsers. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/arc-audit.go -all` scans every local `loop`/`step` realtime entry call graph, and `tools/arc-prove.sh` validates TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
 
 <details>
 <summary>Quick API Map</summary>
@@ -303,7 +303,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is an opt-in libFuzzer harness for HT
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/flexroute.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/power_governor.hpp`, `arc/power_profiler.hpp`, `arc/timesync.hpp`, `arc/tdma.hpp`, `arc/covert.hpp`, `arc/lifi.hpp`, `arc/sdr.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::matrix::FlexRoute`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::EtmRoute`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::power::Governor`, `arc::power::Profiler`, `arc::TimeSync`, `arc::net::Tdma`, `arc::covert::Fsk`, `arc::covert::EmTx`, `arc::covert::SonicTx`, `arc::optical::LiFi`, `arc::sdr::PulseSynth`, `arc::sdr::Tx` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp`, `arc/sdio_slave.hpp`, `arc/pru.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp`, `arc::SdioSlave`, `arc::PruOut`, `arc::PruIn`, `arc::PruTiming`, `arc::PruCursor` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp`, `arc/flash_log.hpp`, `arc/secure_update.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space`, `arc::FlashLog`, `arc::SecureUpdate` |
-| Network and radio | `arc/net.hpp`, `arc/csi.hpp`, `arc/ftm.hpp`, `arc/sdr.hpp`, `arc/acoustic_slam.hpp`, `arc/hyper_matrix.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/fabric.hpp`, `arc/rdma.hpp`, `arc/thread.hpp`, `arc/ble_mesh.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp`, `arc/netrpc.hpp`, `arc/swarm.hpp`, `arc/ethernet.hpp`, `arc/w5500.hpp` | `arc::net::Radio`, `arc::net::Csi`, `arc::net::CsiRx`, `arc::net::EspWifiCsiPolicy`, `arc::net::Ftm`, `arc::net::EspWifiFtmPolicy`, `arc::sdr::Tx`, `arc::swarm::AcousticSlam`, `arc::swarm::HyperMatrix`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Fabric`, `arc::net::Rdma`, `arc::net::Thread`, `arc::ble::Mesh`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::HttpServer`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap`, `arc::net::NetRpc`, `arc::net::SwarmSchedule`, `arc::net::DistributedRcu`, `arc::net::DeadReckoning`, `arc::net::EthernetRing`, `arc::net::W5500Raw` |
+| Network and radio | `arc/net.hpp`, `arc/csi.hpp`, `arc/ftm.hpp`, `arc/sdr.hpp`, `arc/acoustic_slam.hpp`, `arc/hyper_matrix.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/fabric.hpp`, `arc/rdma.hpp`, `arc/thread.hpp`, `arc/ble_mesh.hpp`, `arc/uri.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp`, `arc/netrpc.hpp`, `arc/swarm.hpp`, `arc/ethernet.hpp`, `arc/w5500.hpp` | `arc::net::Radio`, `arc::net::Csi`, `arc::net::CsiRx`, `arc::net::EspWifiCsiPolicy`, `arc::net::Ftm`, `arc::net::EspWifiFtmPolicy`, `arc::sdr::Tx`, `arc::swarm::AcousticSlam`, `arc::swarm::HyperMatrix`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Fabric`, `arc::net::Rdma`, `arc::net::Thread`, `arc::ble::Mesh`, `arc::net::Uri`, `arc::net::UriView`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::HttpServer`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap`, `arc::net::NetRpc`, `arc::net::SwarmSchedule`, `arc::net::DistributedRcu`, `arc::net::DeadReckoning`, `arc::net::EthernetRing`, `arc::net::W5500Raw` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream`, `arc::net::Rtp`, `arc::net::Mjpeg` |
 | Binary records and optimizer hints | `arc/pack.hpp`, `arc/perfetto.hpp`, `arc/trace_live.hpp`, `arc/assume.hpp` | `arc::pack::Schema`, `arc::pack::StructOf`, `arc::pack::Reflect`, `arc::pack::Endian`, `arc::PerfettoWriter`, `arc::trace::LiveStream`, `arc::assume` |
 | Control, ML, and vision | `arc/dsp.hpp`, `arc/wavefront.hpp`, `arc/simd.hpp`, `arc/ml.hpp`, `arc/snn.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/nav.hpp`, `arc/foc.hpp`, `arc/maglev.hpp`, `arc/digital_twin.hpp`, `arc/motion.hpp`, `arc/cnc.hpp`, `arc/hls.hpp`, `arc/isp.hpp`, `arc/vision.hpp`, `arc/vslam.hpp`, `arc/star_tracker.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::dsp::Beamform`, `arc::dsp::Aec`, `arc::dsp::Wavefront`, `arc::simd::float32x4_t`, `arc::simd::int8x16_t`, `arc::simd::dot_s8`, `arc::simd::Rgb565::from_yuv422`, `arc::simd::fft_radix2`, `arc::ml::Tensor`, `arc::ml::Dense`, `arc::ml::QuantDenseS8`, `arc::ml::Snn`, `arc::ml::Conv2dS8`, `arc::ml::DepthwiseConv2dS8`, `arc::ml::MaxPool2d`, `arc::ml::mapped_weights`, `arc::ml::Core1Inference`, `arc::dsp::Matrix`, `arc::dsp::Kalman`, `arc::nav::Eskf`, `arc::nav::Quaternion`, `arc::Foc`, `arc::DualFoc`, `arc::FocEncoderFusion`, `arc::MagLev`, `arc::hil::DigitalTwin`, `arc::MotionPlan`, `arc::SCurve`, `arc::cnc::Kinematics`, `arc::cnc::GCode`, `arc::hls::KernelSpec`, `arc::hls::StaticLoop`, `arc::isp::Debayer`, `arc::isp::AecAwb`, `arc::vision::Sobel`, `arc::vision::OpticalFlow`, `arc::vision::VSlam`, `arc::vision::VisualServo`, `arc::vision::StarTracker`, `arc::SwarmSoa`, `arc::Hil` |
@@ -323,58 +323,9 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is an opt-in libFuzzer harness for HT
 ├── env.fish
 ├── env.sh
 ├── examples
-│   ├── bench
-│   │   └── README.md
-│   ├── bridge
-│   │   └── README.md
-│   ├── dsp
-│   │   └── README.md
-│   ├── copy
-│   │   └── README.md
-│   ├── can
-│   │   └── README.md
-│   ├── dvp
-│   │   └── README.md
-│   ├── i2s
-│   │   └── README.md
-│   ├── i2c
-│   │   └── README.md
-│   ├── i80
-│   │   └── README.md
-│   ├── scope
-│   │   └── README.md
-│   ├── spi
-│   │   └── README.md
-│   ├── space
-│   │   └── README.md
-│   ├── count
-│   │   └── README.md
-│   ├── trace
-│   │   └── README.md
-│   ├── ota
-│   │   └── README.md
-│   ├── pulse
-│   │   └── README.md
-│   ├── probe
-│   │   └── README.md
-│   ├── pwm
-│   │   └── README.md
-│   ├── sigma
-│   │   └── README.md
-│   ├── sleep
-│   │   └── README.md
-│   ├── timer
-│   │   └── README.md
-│   ├── uart
-│   │   └── README.md
-│   ├── espnow
-│   │   └── README.md
-│   ├── store
-│   │   └── README.md
-│   ├── temp
-│   │   └── README.md
-│   └── udp
-│       └── README.md
+│   ├── esp32s3/*          # stable ESP32-S3 firmware examples
+│   ├── esp32s31/*         # experimental ESP32-S31 firmware examples
+│   └── portable/*         # host-buildable/portable examples
 ├── README.md
 ├── partitions_16mb.csv
 ├── sdkconfig.defaults
@@ -386,118 +337,8 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is an opt-in libFuzzer harness for HT
 │   └── arc
 │       ├── CMakeLists.txt
 │       └── include
-│           ├── arc.hpp
-│           └── arc
-│               ├── acoustic_slam.hpp
-│               ├── adc.hpp
-│               ├── aes.hpp
-│               ├── audit.hpp
-│               ├── ble.hpp
-│               ├── bridge.hpp
-│               ├── bus.hpp
-│               ├── cache.hpp
-│               ├── can.hpp
-│               ├── burst.hpp
-│               ├── capture.hpp
-│               ├── caps.hpp
-│               ├── chaos.hpp
-│               ├── claim.hpp
-│               ├── cfg.hpp
-│               ├── clock.hpp
-│               ├── cloak.hpp
-│               ├── count.hpp
-│               ├── covert.hpp
-│               ├── copy.hpp
-│               ├── csi.hpp
-│               ├── dsp.hpp
-│               ├── drive.hpp
-│               ├── dvp.hpp
-│               ├── eap.hpp
-│               ├── detail
-│               │   ├── cold.hpp
-│               │   └── owner.hpp
-│               ├── fanin.hpp
-│               ├── fabric.hpp
-│               ├── fence.hpp
-│               ├── file.hpp
-│               ├── flexroute.hpp
-│               ├── fs.hpp
-│               ├── foc.hpp
-│               ├── fuse.hpp
-│               ├── gpio.hpp
-│               ├── hmac.hpp
-│               ├── hotpatch.hpp
-│               ├── hypervisor.hpp
-│               ├── http.hpp
-│               ├── coap.hpp
-│               ├── mqtt.hpp
-│               ├── espnow.hpp
-│               ├── i2c.hpp
-│               ├── i2c_slave.hpp
-│               ├── i80.hpp
-│               ├── i2s.hpp
-│               ├── intermittent.hpp
-│               ├── isp.hpp
-│               ├── kyber.hpp
-│               ├── maglev.hpp
-│               ├── ml.hpp
-│               ├── mpsc.hpp
-│               ├── mdns.hpp
-│               ├── nav.hpp
-│               ├── otg.hpp
-│               ├── paillier.hpp
-│               ├── plane.hpp
-│               ├── pipeline.hpp
-│               ├── ota.hpp
-│               ├── pru.hpp
-│               ├── probe.hpp
-│               ├── pulse.hpp
-│               ├── puf.hpp
-│               ├── pwm.hpp
-│               ├── reg.hpp
-│               ├── result.hpp
-│               ├── rtos.hpp
-│               ├── scope.hpp
-│               ├── sd.hpp
-│               ├── sdr.hpp
-│               ├── sense.hpp
-│               ├── sha.hpp
-│               ├── sign.hpp
-│               ├── simd.hpp
-│               ├── snn.hpp
-│               ├── sleep.hpp
-│               ├── sketch.hpp
-│               ├── sigma.hpp
-│               ├── spi.hpp
-│               ├── spi_slave.hpp
-│               ├── space.hpp
-│               ├── spsc.hpp
-│               ├── star_tracker.hpp
-│               ├── store.hpp
-│               ├── task.hpp
-│               ├── temp.hpp
-│               ├── time.hpp
-│               ├── touch.hpp
-│               ├── tcp.hpp
-│               ├── timer.hpp
-│               ├── topology.hpp
-│               ├── trace.hpp
-│               ├── trax.hpp
-│               ├── uart.hpp
-│               ├── udp.hpp
-│               ├── ulp.hpp
-│               ├── ulp_cxx.hpp
-│               ├── ulp_ml.hpp
-│               ├── usb.hpp
-│               ├── usb_device.hpp
-│               ├── usb_host.hpp
-│               ├── vision.hpp
-│               ├── vm.hpp
-│               ├── wavefront.hpp
-│               ├── wdt.hpp
-│               ├── ws.hpp
-│               ├── xts.hpp
-│               └── wave.hpp
+│           ├── arc.hpp             # lean umbrella
+│           └── arc/*.hpp           # feature headers
 └── main
     ├── app_main.cpp
     ├── CMakeLists.txt
@@ -635,6 +476,7 @@ Feature names map directly to hardware lanes:
 - `aes`
 - `ble`
 - `ble_mesh`
+- `blackbox`
 - `cert_bundle`
 - `chaos`
 - `cli`
@@ -643,8 +485,10 @@ Feature names map directly to hardware lanes:
 - `covert`
 - `copy`
 - `csi`
+- `digital_twin`
 - `distributed_mmu`
 - `eap`
+- `etm`
 - `fabric`
 - `flexroute`
 - `fuse`
@@ -671,7 +515,9 @@ Feature names map directly to hardware lanes:
 - `intermittent`
 - `hypervisor`
 - `ipc`
+- `jit`
 - `kyber`
+- `lifi`
 - `maglev`
 - `spi`
 - `sd`
@@ -687,9 +533,11 @@ Feature names map directly to hardware lanes:
 - `otg`
 - `paillier`
 - `pm`
+- `poll`
 - `power_governor`
 - `power_profiler`
 - `puf`
+- `rdma`
 - `rng`
 - `rtc`
 - `sdr`
@@ -700,6 +548,7 @@ Feature names map directly to hardware lanes:
 - `star_tracker`
 - `time`
 - `thread`
+- `touch`
 - `trace_live`
 - `trax`
 - `ftm`
@@ -707,6 +556,7 @@ Feature names map directly to hardware lanes:
 - `migrator`
 - `tcp`
 - `tls`
+- `uri`
 - `udp`
 - `uart`
 - `ulp`
@@ -2330,11 +2180,25 @@ Opt-in WPA2/WPA3 Enterprise bridge for the shared STA radio.
 
 Use `arc_requires(... eap)` only when an app really needs enterprise authentication; normal `net`, `udp`, and `espnow` builds do not pull in WPA supplicant headers.
 
+### `arc::net::Uri`
+
+Heapless URI splitter and percent codec for caller-owned network buffers.
+
+- `parse(text)` returns `arc::Result<arc::net::UriView>` whose spans point into the caller-owned input after checking URI shape, authority userinfo, raw host/literal form, path/query/fragment characters, port range, and percent escapes.
+- `endpoint(uri, default_port)` extracts the raw authority host span and a checked 16-bit port for TCP/TLS dial paths, rejecting percent-decoded control bytes or hidden host delimiters.
+- `copy_host(out, uri)` writes a safe percent-decoded, NUL-terminated host into caller-owned storage for ESP-IDF APIs that need C strings, including IPv6 zone escapes such as `%25wlan0`.
+- `path_query(out, uri)` writes a checked request target, defaulting an empty path to `/` and preserving an explicit empty query.
+- `next(query, offset)` iterates query keys and distinguishes missing values from explicit empty values.
+- `encode(out, text, space_plus)` and `decode(out, text, plus_space)` convert percent-escaped form/query text without allocating.
+
+Use this before `arc::net::Tcp`, `arc::net::Tls`, or `arc::net::Http` when a URL must be split once while storage, validation, and reconnect policy stay with the application.
+
 ### `arc::net::Tcp`
 
 Direct TCP client for Core 0 control and configuration paths.
 
 - `dial(host, port, timeout_ms)` opens one socket and returns `arc::Result<arc::net::Tcp>`.
+- `dial(uri, host_scratch, default_port, timeout_ms)` parses a URI endpoint into caller-owned host storage before opening the socket.
 - `send(...)` and `recv(...)` return byte counts without hiding partial transfers.
 - `recv(..., 0)` restores the POSIX-style blocking receive timeout without changing the send timeout.
 - `send_all(...)` loops until the caller-owned buffer is fully written or an error occurs.
@@ -2372,6 +2236,8 @@ Use this when a Core 0 network path needs explicit pbuf lifetime and direct pack
 Direct ESP-TLS client transport for Core 0 secure control and telemetry paths.
 
 - `dial(host, port, cfg)` opens a blocking TLS session with caller-provided `esp_tls_cfg_t`.
+- `dial(uri, host_scratch, cfg, default_port)` opens the same TLS session from a schemeless authority or `tls`, `https`, `wss`, and `mqtts` URI endpoint.
+- `dial_ca(uri, host_scratch, pem, default_port)` keeps the literal CA helper available for URI-based clients.
 - `send(...)` and `recv(...)` return byte counts without hiding partial transfers.
 - `send_all(...)` loops until the caller-owned buffer is fully written or an error occurs.
 - `avail()` exposes decrypted bytes already buffered by the TLS record layer.
@@ -3290,9 +3156,9 @@ The workflow also caches:
 
 GitHub-hosted runners are still ephemeral, so host packages installed by `apt` do not persist across jobs. Arc now only installs host packages if they are actually missing on the runner.
 
-Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, or if a project stops routing through the shared target selector in `cmake/arc-idf.cmake`.
+Before any build runs, CI also executes `./tools/check-repo.sh`. That check fails if generated `sdkconfig` files are tracked, if docs regress to `idf.py set-target ...`, if realtime `loop`/`step` call graphs reach forbidden blocking or heap APIs, or if a project stops routing through the shared target selector in `cmake/arc-idf.cmake`.
 
-CI validates clangd coverage with `go run tools/clangd-compile-commands.go --validate-arc-headers -o compile_commands.json`. The Go entrypoint is a thin launcher so local Go installs with partial standard libraries still reach the Python compatibility engine. The Python path caches compiler probes, component header ownership, and missing-include lookups; `--changed-arc-headers [BASE]` limits inferred/validated public headers to changed Arc headers when a PR wants an incremental pass.
+CI validates clangd coverage with `go run tools/clangd-compile-commands.go --validate-arc-headers -o compile_commands.json`. The Go entrypoint is a thin launcher so local Go installs with partial standard libraries still reach the Python compatibility engine. The Python path normalizes compile commands once, caches compiler probes, auto-selects validation batch size, and falls back to per-header diagnostics only when a batch fails. Use `./tools/clangd-compile-commands.py -o compile_commands.json` for a full local editor refresh, and add `--validate-arc-headers --changed-arc-headers HEAD` for the fast pre-commit clangd gate. Full `--validate-arc-headers` remains available when a broad include/dependency change needs a deliberate all-header pass.
 
 Editor diagnostics use the same database. VS Code and Zed project settings keep C/C++ routed through `clangd`, point it at the repo `compile_commands.json`, and only allow wildcard ESP-IDF query-driver paths so local user toolchain paths do not leak into source control.
 

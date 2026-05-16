@@ -14,6 +14,7 @@
 
 #include "arc/result.hpp"
 #include "arc/tcp.hpp"
+#include "arc/uri.hpp"
 
 namespace arc::net {
 
@@ -83,6 +84,41 @@ struct Tls {
         return Tls{handle};
     }
 
+    [[nodiscard]] static Result<Tls> dial(
+        const UriView& uri,
+        const std::span<char> host,
+        const esp_tls_cfg_t& cfg,
+        const std::uint16_t default_port = 443U) noexcept
+    {
+        if (!secure_scheme(uri)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        const auto endpoint = Uri::endpoint(uri, default_port);
+        if (!endpoint) {
+            return fail(endpoint.error());
+        }
+
+        const auto copied = Uri::copy_host(host, uri);
+        if (!copied) {
+            return fail(copied.error());
+        }
+        return dial(copied->data(), endpoint->port, cfg);
+    }
+
+    [[nodiscard]] static Result<Tls> dial(
+        const char* const uri,
+        const std::span<char> host,
+        const esp_tls_cfg_t& cfg,
+        const std::uint16_t default_port = 443U) noexcept
+    {
+        const auto parsed = Uri::parse(uri);
+        if (!parsed) {
+            return fail(parsed.error());
+        }
+        return dial(*parsed, host, cfg, default_port);
+    }
+
     template <std::size_t N>
     [[nodiscard]] static Result<Tls> dial_ca(
         const char* const host,
@@ -94,6 +130,34 @@ struct Tls {
         cfg.cacert_buf = reinterpret_cast<const unsigned char*>(cacert_pem);
         cfg.cacert_bytes = N;
         return dial(host, port, cfg);
+    }
+
+    template <std::size_t N>
+    [[nodiscard]] static Result<Tls> dial_ca(
+        const UriView& uri,
+        const std::span<char> host,
+        const char (&cacert_pem)[N],
+        const std::uint16_t default_port = 443U) noexcept
+    {
+        static_assert(N > 1U, "TLS CA PEM must not be empty");
+        esp_tls_cfg_t cfg{};
+        cfg.cacert_buf = reinterpret_cast<const unsigned char*>(cacert_pem);
+        cfg.cacert_bytes = N;
+        return dial(uri, host, cfg, default_port);
+    }
+
+    template <std::size_t N>
+    [[nodiscard]] static Result<Tls> dial_ca(
+        const char* const uri,
+        const std::span<char> host,
+        const char (&cacert_pem)[N],
+        const std::uint16_t default_port = 443U) noexcept
+    {
+        static_assert(N > 1U, "TLS CA PEM must not be empty");
+        esp_tls_cfg_t cfg{};
+        cfg.cacert_buf = reinterpret_cast<const unsigned char*>(cacert_pem);
+        cfg.cacert_bytes = N;
+        return dial(uri, host, cfg, default_port);
     }
 
     [[nodiscard]] Result<std::size_t> send(const void* const data, const std::size_t bytes) noexcept
@@ -218,6 +282,12 @@ struct Tls {
     }
 
 private:
+    [[nodiscard]] static bool secure_scheme(const UriView& uri) noexcept
+    {
+        return !uri.absolute() || Uri::scheme_is(uri, "tls") || Uri::scheme_is(uri, "https") ||
+            Uri::scheme_is(uri, "wss") || Uri::scheme_is(uri, "mqtts");
+    }
+
     [[nodiscard]] static esp_err_t io_error(const ssize_t err) noexcept
     {
         switch (err) {

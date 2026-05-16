@@ -13,6 +13,8 @@ compile_commands.json
 esp-idf/
 arduino-esp32/
 .cache/
+__pycache__/
+*.pyc
 .rustup/
 .codex
 dump/

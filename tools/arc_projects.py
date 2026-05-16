@@ -79,8 +79,8 @@ def projects(root: Path = ROOT, include_root: bool = True) -> list[ArcProject]:
     return found
 
 
-def selected_projects(args: argparse.Namespace) -> list[ArcProject]:
-    selected = projects(include_root=not args.examples)
+def selected_projects(args: argparse.Namespace, root: Path = ROOT) -> list[ArcProject]:
+    selected = projects(root=root, include_root=not args.examples)
     if args.buildable:
         selected = [project for project in selected if not project.experimental]
     if args.experimental:
@@ -90,17 +90,23 @@ def selected_projects(args: argparse.Namespace) -> list[ArcProject]:
     return selected
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="List Arc firmware projects.")
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=ROOT,
+        help="Repository root to scan.",
+    )
     parser.add_argument("--examples", action="store_true", help="List examples only, omitting the root firmware.")
     parser.add_argument("--buildable", action="store_true", help="Omit experimental projects skipped by default CI.")
     parser.add_argument("--experimental", action="store_true", help="List only experimental projects.")
     parser.add_argument("--target", choices=("esp32s3", "esp32s31", "portable", "unknown"), help="Filter by target.")
     parser.add_argument("--json", action="store_true", help="Emit project metadata as JSON.")
     parser.add_argument("-0", "--null", action="store_true", help="Separate path output with NUL bytes.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    found = selected_projects(args)
+    found = selected_projects(args, root=args.root)
     if args.json:
         print(
             json.dumps(

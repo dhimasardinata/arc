@@ -3,7 +3,6 @@
 #include <climits>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -12,6 +11,7 @@
 #include "esp_http_client.h"
 
 #include "arc/result.hpp"
+#include "arc/uri.hpp"
 
 namespace arc::net {
 
@@ -21,8 +21,9 @@ concept HttpBytes = std::is_trivially_copyable_v<std::remove_cv_t<T>>;
 struct Http {
     constexpr Http() noexcept = default;
 
-    explicit Http(esp_http_client_handle_t const handle) noexcept
+    explicit Http(esp_http_client_handle_t const handle, const bool secure_only = false) noexcept
         : handle_(handle)
+        , secure_only_(secure_only)
     {
     }
 
@@ -31,6 +32,7 @@ struct Http {
 
     Http(Http&& other) noexcept
         : handle_(std::exchange(other.handle_, nullptr))
+        , secure_only_(std::exchange(other.secure_only_, false))
     {
     }
 
@@ -40,6 +42,7 @@ struct Http {
             static_cast<void>(close());
             cleanup();
             handle_ = std::exchange(other.handle_, nullptr);
+            secure_only_ = std::exchange(other.secure_only_, false);
         }
         return *this;
     }
@@ -52,11 +55,7 @@ struct Http {
 
     [[nodiscard]] static Result<Http> make(const esp_http_client_config_t& config) noexcept
     {
-        auto* const handle = esp_http_client_init(&config);
-        if (handle == nullptr) {
-            return fail(ESP_ERR_NO_MEM);
-        }
-        return Http{handle};
+        return init(config, false);
     }
 
     [[nodiscard]] static Result<Http> https(const esp_http_client_config_t& config) noexcept
@@ -64,7 +63,7 @@ struct Http {
         if (!secure_url(config.url)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
-        return make(config);
+        return init(config, true);
     }
 
     [[nodiscard]] static Result<Http> https(
@@ -77,12 +76,15 @@ struct Http {
 
         auto config = base;
         config.url = url;
-        return make(config);
+        return init(config, true);
     }
 
     [[nodiscard]] esp_err_t url(const char* const value) noexcept
     {
         if (handle_ == nullptr || value == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        if (secure_only_ && !secure_url(value)) {
             return ESP_ERR_INVALID_ARG;
         }
         return esp_http_client_set_url(handle_, value);
@@ -232,10 +234,21 @@ struct Http {
     }
 
 private:
+    [[nodiscard]] static Result<Http> init(
+        const esp_http_client_config_t& config,
+        const bool secure_only) noexcept
+    {
+        auto* const handle = esp_http_client_init(&config);
+        if (handle == nullptr) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        return Http{handle, secure_only};
+    }
+
     [[nodiscard]] static bool secure_url(const char* const url) noexcept
     {
-        constexpr char scheme[] = "https://";
-        return url != nullptr && std::strncmp(url, scheme, sizeof(scheme) - 1U) == 0;
+        const auto uri = Uri::parse(url);
+        return uri.has_value() && Uri::scheme_is(*uri, "https") && Uri::endpoint(*uri, 443U).has_value();
     }
 
     void cleanup() noexcept
@@ -247,6 +260,7 @@ private:
     }
 
     esp_http_client_handle_t handle_{nullptr};
+    bool secure_only_{false};
 };
 
 }  // namespace arc::net

@@ -15,6 +15,7 @@
 
 #include "arc/ip.hpp"
 #include "arc/result.hpp"
+#include "arc/uri.hpp"
 
 namespace arc::net {
 
@@ -101,6 +102,39 @@ struct Tcp {
 
         freeaddrinfo(res);
         return fail(last);
+    }
+
+    [[nodiscard]] static Result<Tcp> dial(
+        const UriView& uri,
+        const std::span<char> host,
+        const std::uint16_t default_port,
+        const std::uint32_t timeout_ms = 1000U,
+        const IpFamily family = IpFamily::any) noexcept
+    {
+        const auto endpoint = Uri::endpoint(uri, default_port);
+        if (!endpoint) {
+            return fail(endpoint.error());
+        }
+
+        const auto copied = Uri::copy_host(host, uri);
+        if (!copied) {
+            return fail(copied.error());
+        }
+        return dial(copied->data(), endpoint->port, timeout_ms, family);
+    }
+
+    [[nodiscard]] static Result<Tcp> dial(
+        const char* const uri,
+        const std::span<char> host,
+        const std::uint16_t default_port,
+        const std::uint32_t timeout_ms = 1000U,
+        const IpFamily family = IpFamily::any) noexcept
+    {
+        const auto parsed = Uri::parse(uri);
+        if (!parsed) {
+            return fail(parsed.error());
+        }
+        return dial(*parsed, host, default_port, timeout_ms, family);
     }
 
     [[nodiscard]] static Result<Tcp> dial(

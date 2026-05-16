@@ -45,6 +45,7 @@
 #include "arc/hil.hpp"
 #include "arc/hotpatch.hpp"
 #include "arc/hypervisor.hpp"
+#include "arc/http.hpp"
 #include "arc/http_server.hpp"
 #include "arc/init.hpp"
 #include "arc/interrupt_matrix.hpp"
@@ -106,12 +107,15 @@
 #include "arc/tee.hpp"
 #include "arc/thread.hpp"
 #include "arc/timesync.hpp"
+#include "arc/tcp.hpp"
+#include "arc/tls.hpp"
 #include "arc/trace_event.hpp"
 #include "arc/trace_live.hpp"
 #include "arc/trace_stream.hpp"
 #include "arc/ulp.hpp"
 #include "arc/ulp_cxx.hpp"
 #include "arc/ulp_ml.hpp"
+#include "arc/uri.hpp"
 #include "arc/usb_device.hpp"
 #include "arc/usb_host.hpp"
 #include "arc/vm.hpp"
@@ -129,6 +133,8 @@ struct ReflectedTelemetry {
 };
 
 ARC_PACK_REFLECT(ReflectedTelemetry, &ReflectedTelemetry::seq, &ReflectedTelemetry::temp);
+
+extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size);
 
 namespace {
 
@@ -1224,6 +1230,511 @@ void test_coap()
     std::uint16_t overflow_number = 65530U;
     const auto overflow = arc::net::Coap::next(overflow_option, overflow_offset, overflow_number);
     expect(!overflow.has_value(), "CoAP option number overflow rejects");
+}
+
+void test_uri()
+{
+    constexpr char full[] =
+        "https://node:secret@[2001:db8::1]:8443/api/v1/sample%201?mode=fast&flag&empty=#frag";
+    const auto uri = arc::net::Uri::parse(std::span<const char>{full, sizeof(full) - 1U});
+    expect(uri.has_value(), "URI full parses");
+    expect(uri->absolute() && uri->has_authority(), "URI absolute authority");
+    expect(std::memcmp(uri->scheme.data(), "https", uri->scheme.size()) == 0, "URI scheme");
+    expect(std::memcmp(uri->userinfo.data(), "node:secret", uri->userinfo.size()) == 0, "URI userinfo");
+    expect(std::memcmp(uri->host.data(), "2001:db8::1", uri->host.size()) == 0, "URI bracket host");
+    expect(std::memcmp(uri->port.data(), "8443", uri->port.size()) == 0, "URI port");
+    expect(std::memcmp(uri->path.data(), "/api/v1/sample%201", uri->path.size()) == 0, "URI path");
+    expect(std::memcmp(uri->fragment.data(), "frag", uri->fragment.size()) == 0, "URI fragment");
+    expect(arc::net::Uri::scheme_is(*uri, "HTTPS"), "URI scheme compares case-insensitively");
+    expect(!arc::net::Uri::scheme_is(*uri, nullptr), "URI scheme null compare rejects");
+    expect(!arc::net::Uri::scheme_is(*uri, "http"), "URI scheme mismatch rejects");
+
+    const auto port = arc::net::Uri::port(*uri, 443U);
+    expect(port.has_value() && *port == 8443U, "URI port value");
+    const auto endpoint = arc::net::Uri::endpoint(*uri, 443U);
+    expect(endpoint.has_value() && endpoint->port == 8443U && endpoint->host.size() == uri->host.size(),
+           "URI endpoint explicit port");
+
+    std::array<char, 16> host{};
+    const auto host_text = arc::net::Uri::copy_host(std::span(host), *uri);
+    expect(host_text.has_value(), "URI host copies");
+    expect(host[host_text->size()] == '\0' &&
+               std::memcmp(host_text->data(), "2001:db8::1", host_text->size()) == 0,
+           "URI host copy is nul-terminated");
+
+    std::array<char, 80> target{};
+    const auto target_text = arc::net::Uri::path_query(std::span(target), *uri);
+    expect(target_text.has_value(), "URI path query writes");
+    expect(std::memcmp(target_text->data(), "/api/v1/sample%201?mode=fast&flag&empty=", target_text->size()) == 0,
+           "URI path query includes query");
+
+    std::size_t offset{};
+    const auto mode = arc::net::Uri::next(uri->query, offset);
+    expect(mode.has_value(), "URI query mode");
+    expect(
+        std::memcmp(mode->key.data(), "mode", mode->key.size()) == 0 &&
+            std::memcmp(mode->value.data(), "fast", mode->value.size()) == 0 && mode->has_value,
+        "URI query mode value");
+
+    const auto flag = arc::net::Uri::next(uri->query, offset);
+    expect(flag.has_value() && !flag->has_value && std::memcmp(flag->key.data(), "flag", flag->key.size()) == 0,
+           "URI query flag");
+
+    const auto empty = arc::net::Uri::next(uri->query, offset);
+    expect(empty.has_value() && empty->has_value && empty->value.empty(), "URI query empty value");
+
+    const auto done = arc::net::Uri::next(uri->query, offset);
+    expect(!done.has_value() && done.error() == ESP_ERR_NOT_FOUND, "URI query end");
+    offset = uri->query.size() + 1U;
+    const auto bad_offset = arc::net::Uri::next(uri->query, offset);
+    expect(!bad_offset.has_value() && bad_offset.error() == ESP_ERR_INVALID_ARG,
+           "URI query invalid offset rejects");
+
+    constexpr char sparse_q[] = "&&first=1&&second";
+    std::size_t sparse_offset{};
+    const auto sparse_first = arc::net::Uri::next(
+        std::span<const char>{sparse_q, sizeof(sparse_q) - 1U},
+        sparse_offset);
+    expect(sparse_first.has_value() && sparse_first->has_value &&
+               std::memcmp(sparse_first->key.data(), "first", sparse_first->key.size()) == 0,
+           "URI query skips leading empty separators");
+    const auto sparse_second = arc::net::Uri::next(
+        std::span<const char>{sparse_q, sizeof(sparse_q) - 1U},
+        sparse_offset);
+    expect(sparse_second.has_value() && !sparse_second->has_value &&
+               std::memcmp(sparse_second->key.data(), "second", sparse_second->key.size()) == 0,
+           "URI query skips repeated separators");
+
+    constexpr char rel[] = "/config?unit=ph";
+    const auto relative = arc::net::Uri::parse(std::span<const char>{rel, sizeof(rel) - 1U});
+    expect(relative.has_value() && !relative->absolute() && relative->path.size() == 7U, "URI relative parses");
+    expect(!arc::net::Uri::endpoint(*relative, 80U), "URI relative endpoint rejects");
+
+    const auto defaulted = arc::net::Uri::parse("HTTPS://node/api?x=1");
+    expect(defaulted.has_value(), "URI default endpoint parses");
+    const auto default_endpoint = arc::net::Uri::endpoint(*defaulted, 443U);
+    expect(default_endpoint.has_value() && default_endpoint->port == 443U, "URI endpoint default port");
+    expect(!arc::net::Uri::port(*defaulted), "URI missing port rejects without fallback");
+
+    const auto encoded_host = arc::net::Uri::parse("http://node%2D1.local/path");
+    expect(encoded_host.has_value() && std::memcmp(encoded_host->host.data(), "node%2D1.local", encoded_host->host.size()) == 0,
+           "URI percent-escaped reg-name host parses");
+    std::array<char, 16> decoded_host{};
+    const auto decoded_host_text = arc::net::Uri::copy_host(std::span(decoded_host), *encoded_host);
+    expect(decoded_host_text.has_value() &&
+               std::memcmp(decoded_host_text->data(), "node-1.local", decoded_host_text->size()) == 0 &&
+               decoded_host[decoded_host_text->size()] == '\0',
+           "URI host copy decodes percent escapes");
+
+    const auto userinfo = arc::net::Uri::parse("http://ops:pa%24%24@node.local/path");
+    expect(userinfo.has_value() &&
+               std::memcmp(userinfo->userinfo.data(), "ops:pa%24%24", userinfo->userinfo.size()) == 0,
+           "URI userinfo permits pct-encoded subdelims");
+
+    const auto empty_query = arc::net::Uri::parse("http://node/path?");
+    expect(empty_query.has_value() && empty_query->has_query && empty_query->query.empty(), "URI empty query flag");
+    std::array<char, 16> empty_target{};
+    const auto empty_target_text = arc::net::Uri::path_query(std::span(empty_target), *empty_query);
+    expect(empty_target_text.has_value() &&
+               std::memcmp(empty_target_text->data(), "/path?", empty_target_text->size()) == 0,
+           "URI path query preserves empty query");
+
+    const auto query_only = arc::net::Uri::parse("https://node?unit=ph");
+    expect(query_only.has_value() && query_only->path.empty() && query_only->has_query,
+           "URI authority with query and empty path parses");
+    std::array<char, 16> query_only_target{};
+    const auto query_only_text = arc::net::Uri::path_query(std::span(query_only_target), *query_only);
+    expect(query_only_text.has_value() &&
+               std::memcmp(query_only_text->data(), "/?unit=ph", query_only_text->size()) == 0,
+           "URI path query defaults empty authority path before query");
+
+    constexpr char manual_bad_path_text[] = "/bad path";
+    const arc::net::UriView manual_bad_path{
+        .path = std::span<const char>{manual_bad_path_text, sizeof(manual_bad_path_text) - 1U},
+    };
+    expect(!arc::net::Uri::path_query(std::span(target), manual_bad_path),
+           "URI path query rejects manually constructed path space");
+
+    constexpr char manual_split_path_text[] = "/bad?query";
+    const arc::net::UriView manual_split_path{
+        .path = std::span<const char>{manual_split_path_text, sizeof(manual_split_path_text) - 1U},
+    };
+    expect(!arc::net::Uri::path_query(std::span(target), manual_split_path),
+           "URI path query rejects manually constructed path delimiter");
+
+    constexpr char manual_bad_raw_path_text[] = "/bad[raw]";
+    const arc::net::UriView manual_bad_raw_path{
+        .path = std::span<const char>{manual_bad_raw_path_text, sizeof(manual_bad_raw_path_text) - 1U},
+    };
+    expect(!arc::net::Uri::path_query(std::span(target), manual_bad_raw_path),
+           "URI path query rejects manually constructed raw path char");
+
+    constexpr char manual_bad_query_path[] = "/path";
+    constexpr char manual_bad_query_text[] = "q=bad#frag";
+    const arc::net::UriView manual_bad_query{
+        .path = std::span<const char>{manual_bad_query_path, sizeof(manual_bad_query_path) - 1U},
+        .query = std::span<const char>{manual_bad_query_text, sizeof(manual_bad_query_text) - 1U},
+        .has_query = true,
+    };
+    expect(!arc::net::Uri::path_query(std::span(target), manual_bad_query),
+           "URI path query rejects manually constructed query fragment delimiter");
+
+    constexpr char manual_bad_escape_path[] = "/bad%escape";
+    const arc::net::UriView manual_bad_escape{
+        .path = std::span<const char>{manual_bad_escape_path, sizeof(manual_bad_escape_path) - 1U},
+    };
+    expect(!arc::net::Uri::path_query(std::span(target), manual_bad_escape),
+           "URI path query rejects manually constructed bad escape");
+
+    const auto future = arc::net::Uri::parse("http://[v1.arc-node]/path");
+    expect(future.has_value() && future->host.size() == 11U &&
+               std::memcmp(future->host.data(), "v1.arc-node", future->host.size()) == 0,
+           "URI IPvFuture literal parses");
+
+    const auto zone = arc::net::Uri::parse("http://[fe80::1%25wlan0]/path");
+    expect(zone.has_value(), "URI IPv6 zone literal parses");
+    const auto zone_endpoint = arc::net::Uri::endpoint(*zone, 80U);
+    expect(zone_endpoint.has_value() && zone_endpoint->port == 80U, "URI IPv6 zone endpoint parses");
+    std::array<char, 24> zone_host{};
+    const auto zone_host_text = arc::net::Uri::copy_host(std::span(zone_host), *zone);
+    expect(zone_host_text.has_value() &&
+               std::memcmp(zone_host_text->data(), "fe80::1%wlan0", zone_host_text->size()) == 0 &&
+               zone_host[zone_host_text->size()] == '\0',
+           "URI host copy decodes IPv6 zone escape");
+
+    const auto zone_alias = arc::net::Uri::parse("http://[fe80::1%25eth0%3A1]/path");
+    expect(zone_alias.has_value(), "URI IPv6 zone pct-encoded colon parses");
+    std::array<char, 24> zone_alias_host{};
+    const auto zone_alias_endpoint = arc::net::Uri::endpoint(*zone_alias, 80U);
+    const auto zone_alias_text = arc::net::Uri::copy_host(std::span(zone_alias_host), *zone_alias);
+    expect(zone_alias_endpoint.has_value() && zone_alias_text.has_value() &&
+               std::memcmp(zone_alias_text->data(), "fe80::1%eth0:1", zone_alias_text->size()) == 0 &&
+               zone_alias_host[zone_alias_text->size()] == '\0',
+           "URI host copy decodes IPv6 zone pct-encoded colon");
+
+    const auto zone_slash = arc::net::Uri::parse("http://[fe80::1%25eth0%2F1]/path");
+    expect(zone_slash.has_value() && !arc::net::Uri::endpoint(*zone_slash, 80U) &&
+               !arc::net::Uri::copy_host(std::span(zone_alias_host), *zone_slash),
+           "URI endpoint rejects IPv6 zone pct-encoded delimiter");
+
+    const auto mapped = arc::net::Uri::parse("http://[::ffff:192.0.2.1]/path");
+    expect(mapped.has_value(), "URI IPv4-mapped IPv6 literal parses");
+
+    std::array<char, 32> decoded{};
+    const auto text = arc::net::Uri::decode(std::span(decoded), "sample%201+ok", true);
+    expect(text.has_value(), "URI decode succeeds");
+    expect(std::memcmp(text->data(), "sample 1 ok", text->size()) == 0, "URI percent decode");
+
+    std::array<char, 32> encoded{};
+    const auto wire = arc::net::Uri::encode(std::span(encoded), "sample 1/ok?", true);
+    expect(wire.has_value(), "URI encode succeeds");
+    expect(std::memcmp(wire->data(), "sample+1%2Fok%3F", wire->size()) == 0, "URI percent encode");
+
+    std::array<char, 2> small{};
+    expect(!arc::net::Uri::decode(std::span(small), "abcd"), "URI decode capacity rejects");
+    expect(!arc::net::Uri::copy_host(std::span(small), *uri), "URI copy host capacity rejects");
+    expect(!arc::net::Uri::path_query(std::span(small), *uri), "URI path query capacity rejects");
+    std::array<char, 4> exact_host{};
+    expect(!arc::net::Uri::copy_host(std::span(exact_host), *defaulted),
+           "URI copy host reserves space for nul terminator");
+    expect(!arc::net::Uri::decode(std::span(decoded), "%xz"), "URI invalid escape rejects");
+    expect(!arc::net::Uri::encode(std::span(small), "abc"), "URI encode capacity rejects");
+    expect(!arc::net::Uri::parse("http://2001:db8::1/path"), "URI unbracketed IPv6 rejects");
+    expect(!arc::net::Uri::parse("http://[node]/path"), "URI bracketed reg-name rejects");
+    expect(!arc::net::Uri::parse("http://[node:bad]/path"), "URI invalid bracket literal rejects");
+    expect(!arc::net::Uri::parse("http://[2001:db8::zz]/path"), "URI invalid IPv6 literal chars reject");
+    expect(!arc::net::Uri::parse("http://[::::]/path"), "URI malformed IPv6 compression rejects");
+    expect(!arc::net::Uri::parse("http://[fe80::1%25]/path"), "URI empty IPv6 zone rejects");
+    expect(!arc::net::Uri::parse("http://[::ffff:999.0.2.1]/path"), "URI invalid IPv4 tail rejects");
+    expect(!arc::net::Uri::parse("http://[1:2:3:4:5:6::192.0.2.1]/path"),
+           "URI zero-width IPv6 compression with IPv4 tail rejects");
+    expect(!arc::net::Uri::parse("http://[1:2:3:4:5:6:7:192.0.2.1]/path"),
+           "URI oversized IPv6 with IPv4 tail rejects");
+    expect(!arc::net::Uri::parse("http://node:/path"), "URI empty port rejects");
+    const auto zero_port = arc::net::Uri::parse("http://node:0/path");
+    expect(zero_port.has_value() && !arc::net::Uri::endpoint(*zero_port),
+           "URI endpoint rejects explicit zero port");
+    expect(!arc::net::Uri::parse("http://no[de/path"), "URI raw open bracket rejects");
+    expect(!arc::net::Uri::parse("http://node]/path"), "URI raw close bracket rejects");
+    expect(!arc::net::Uri::parse("http://no\\de/path"), "URI backslash host rejects");
+    expect(!arc::net::Uri::parse("http://no|de/path"), "URI pipe host rejects");
+    expect(!arc::net::Uri::parse("http://<node>/path"), "URI angle host rejects");
+    expect(!arc::net::Uri::parse("http://node^bad/path"), "URI caret host rejects");
+    expect(!arc::net::Uri::parse("http://bad[user@node/path"), "URI raw bracket userinfo rejects");
+    expect(!arc::net::Uri::parse("http://bad\\user@node/path"), "URI raw backslash userinfo rejects");
+    expect(!arc::net::Uri::parse("http://bad|user@node/path"), "URI raw pipe userinfo rejects");
+    expect(!arc::net::Uri::parse("http://bad%00user@node/path"), "URI decoded nul userinfo rejects");
+    expect(!arc::net::Uri::parse("http://bad%2Fuser@node/path"), "URI decoded slash userinfo rejects");
+    expect(!arc::net::Uri::parse("http://bad%40user@node/path"), "URI decoded at userinfo rejects");
+    const auto nul_host = arc::net::Uri::parse("http://node%00.local/path");
+    expect(nul_host.has_value() && !arc::net::Uri::endpoint(*nul_host, 80U) &&
+               !arc::net::Uri::copy_host(std::span(decoded_host), *nul_host),
+           "URI endpoint host rejects decoded nul");
+    const auto control_host = arc::net::Uri::parse("http://node%0A.local/path");
+    expect(control_host.has_value() && !arc::net::Uri::endpoint(*control_host, 80U) &&
+               !arc::net::Uri::copy_host(std::span(decoded_host), *control_host),
+           "URI endpoint host rejects decoded control");
+    const auto slash_host = arc::net::Uri::parse("http://node%2Fadmin.local/path");
+    expect(slash_host.has_value() && !arc::net::Uri::endpoint(*slash_host, 80U) &&
+               !arc::net::Uri::copy_host(std::span(decoded_host), *slash_host),
+           "URI endpoint host rejects decoded delimiter");
+    const auto colon_host = arc::net::Uri::parse("http://node%3A443/path");
+    expect(colon_host.has_value() && !arc::net::Uri::endpoint(*colon_host, 80U) &&
+               !arc::net::Uri::copy_host(std::span(decoded_host), *colon_host),
+           "URI endpoint host rejects decoded colon in reg-name");
+    const auto percent_host = arc::net::Uri::parse("http://node%25.local/path");
+    expect(percent_host.has_value() && !arc::net::Uri::endpoint(*percent_host, 80U) &&
+               !arc::net::Uri::copy_host(std::span(decoded_host), *percent_host),
+           "URI endpoint host rejects decoded percent in reg-name");
+
+    constexpr char manual_authority[] = "node:443";
+    constexpr char manual_host[] = "node:443";
+    const arc::net::UriView manual_bad_host{
+        .authority = std::span<const char>{manual_authority, sizeof(manual_authority) - 1U},
+        .host = std::span<const char>{manual_host, sizeof(manual_host) - 1U},
+    };
+    expect(!arc::net::Uri::endpoint(manual_bad_host, 80U) &&
+               !arc::net::Uri::copy_host(std::span(decoded_host), manual_bad_host),
+           "URI endpoint helpers reject manually constructed host delimiter");
+
+    constexpr char manual_raw_authority[] = "node^bad";
+    constexpr char manual_raw_host[] = "node^bad";
+    const arc::net::UriView manual_raw_host_view{
+        .authority = std::span<const char>{manual_raw_authority, sizeof(manual_raw_authority) - 1U},
+        .host = std::span<const char>{manual_raw_host, sizeof(manual_raw_host) - 1U},
+    };
+    expect(!arc::net::Uri::endpoint(manual_raw_host_view, 80U) &&
+               !arc::net::Uri::copy_host(std::span(decoded_host), manual_raw_host_view),
+           "URI endpoint helpers reject manually constructed raw host char");
+
+    expect(!arc::net::Uri::parse("http://node:70000/path"), "URI port range rejects");
+    expect(!arc::net::Uri::parse("http://node:4295032831/path"), "URI wrapped port rejects");
+    expect(!arc::net::Uri::parse("http://node/a b"), "URI literal space rejects");
+    expect(!arc::net::Uri::parse("http://node/%xz"), "URI invalid path escape rejects");
+    expect(!arc::net::Uri::parse("http://node/?q=%"), "URI short query escape rejects");
+    expect(!arc::net::Uri::parse("http://node/#bad%q"), "URI invalid fragment escape rejects");
+    expect(!arc::net::Uri::parse("http://node/[bad]"), "URI raw path brackets reject");
+    expect(!arc::net::Uri::parse("http://node/\\bad"), "URI raw path backslash rejects");
+    expect(!arc::net::Uri::parse("http://node/?q=<bad>"), "URI raw query angle brackets reject");
+    expect(!arc::net::Uri::parse("http://node/#frag[bad]"), "URI raw fragment brackets reject");
+    constexpr char embedded_nul[] = {'h', 't', 't', 'p', ':', '/', '/', 'n', 'o', 'd', 'e', '\0', 'x'};
+    expect(!arc::net::Uri::parse(std::span<const char>{embedded_nul, sizeof(embedded_nul)}),
+           "URI embedded nul rejects");
+    expect(!arc::net::Uri::parse("1bad://node/path"), "URI invalid scheme rejects");
+}
+
+void test_http_client()
+{
+    expect(!arc::net::Http::https(nullptr), "HTTP HTTPS rejects null URL");
+    expect(!arc::net::Http::https("http://node/api"), "HTTP HTTPS rejects http URL");
+    expect(!arc::net::Http::https("/api"), "HTTP HTTPS rejects relative URL");
+    expect(!arc::net::Http::https("https:/node/api"), "HTTP HTTPS rejects missing authority");
+    expect(!arc::net::Http::https("https://node:0/api"), "HTTP HTTPS rejects zero port URL");
+    expect(!arc::net::Http::https("https://node/%xz"), "HTTP HTTPS rejects invalid escaped URL");
+    expect(!arc::net::Http::https("https://node%00.local/api"), "HTTP HTTPS rejects decoded nul host");
+    expect(!arc::net::Http::https("https://node%0A.local/api"), "HTTP HTTPS rejects decoded control host");
+    expect(!arc::net::Http::https("https://node%2Fadmin.local/api"),
+           "HTTP HTTPS rejects decoded delimiter host");
+    expect(!arc::net::Http::https("https://bad[user@node/api"), "HTTP HTTPS rejects invalid userinfo");
+    expect(!arc::net::Http::https("https://bad%00user@node/api"), "HTTP HTTPS rejects decoded userinfo control");
+    expect(!arc::net::Http::https("https://bad%2Fuser@node/api"),
+           "HTTP HTTPS rejects decoded userinfo delimiter");
+
+    auto client = arc::net::Http::https("HTTPS://node/api");
+    expect(client.has_value() && client->native() != nullptr, "HTTP HTTPS accepts uppercase scheme");
+    expect(client->method(HTTP_METHOD_POST) == ESP_OK, "HTTP method forwards");
+    expect(client->url("http://node/plain") == ESP_ERR_INVALID_ARG,
+           "HTTP HTTPS client rejects insecure URL reset");
+    expect(client->url("https://node%2Fadmin.local/next") == ESP_ERR_INVALID_ARG,
+           "HTTP HTTPS client rejects unsafe URL reset");
+    expect(client->url("https://node/next") == ESP_OK, "HTTP url forwards");
+    const std::array<std::uint8_t, 3> body{1U, 2U, 3U};
+    expect(client->body(std::span(body)) == ESP_OK, "HTTP body forwards");
+    expect(client->perform() == ESP_OK, "HTTP perform forwards");
+    expect(client->open() == ESP_OK, "HTTP open forwards");
+    expect(client->fetch().has_value(), "HTTP fetch forwards");
+    std::array<std::uint8_t, 4> scratch{};
+    expect(client->write(std::span(body)).has_value(), "HTTP write forwards");
+    expect(client->read(std::span(scratch)).has_value(), "HTTP read forwards");
+    expect(client->status().has_value() && *client->status() == 200, "HTTP status forwards");
+    expect(client->length().has_value(), "HTTP length forwards");
+    expect(client->close() == ESP_OK, "HTTP close forwards");
+
+    const esp_http_client_config_t config{.url = "https://[2001:db8::1]/status"};
+    auto ipv6 = arc::net::Http::https(config);
+    expect(ipv6.has_value() && ipv6->native() != nullptr, "HTTP HTTPS accepts bracket IPv6 URL");
+
+    auto moved = arc::net::Http::https("https://node/move");
+    expect(moved.has_value(), "HTTP HTTPS movable client builds");
+    auto moved_client = std::move(*moved);
+    expect(moved_client.url("http://node/plain") == ESP_ERR_INVALID_ARG,
+           "HTTP HTTPS move constructor preserves secure URL guard");
+    arc::net::Http assigned;
+    assigned = std::move(moved_client);
+    expect(assigned.url("http://node/plain") == ESP_ERR_INVALID_ARG,
+           "HTTP HTTPS move assignment preserves secure URL guard");
+
+    const esp_http_client_config_t clear_config{.url = "http://node/plain"};
+    auto clear = arc::net::Http::make(clear_config);
+    expect(clear.has_value() && clear->url("http://node/next") == ESP_OK,
+           "HTTP generic client keeps cleartext URL setter");
+}
+
+void test_uri_dial_helpers()
+{
+    std::array<char, 16> host{};
+    expect(!arc::net::Tcp::dial(nullptr, std::span(host), 80U), "TCP URI dial rejects null URI");
+    expect(!arc::net::Tcp::dial("/api", std::span(host), 80U), "TCP URI dial rejects relative URI");
+    expect(!arc::net::Tcp::dial("http://node:70000/path", std::span(host), 80U),
+           "TCP URI dial rejects invalid port");
+    expect(!arc::net::Tcp::dial("http://node%00.local/path", std::span(host), 80U),
+           "TCP URI dial rejects decoded nul host");
+    expect(!arc::net::Tcp::dial("http://node%0A.local/path", std::span(host), 80U),
+           "TCP URI dial rejects decoded control host");
+    expect(!arc::net::Tcp::dial("http://node%2Fadmin.local/path", std::span(host), 80U),
+           "TCP URI dial rejects decoded delimiter host");
+
+    std::array<char, 2> small{};
+    expect(!arc::net::Tcp::dial("http://node/path", std::span(small), 80U),
+           "TCP URI dial rejects small host buffer");
+
+    esp_tls_cfg_t cfg{};
+    expect(!arc::net::Tls::dial(nullptr, std::span(host), cfg), "TLS URI dial rejects null URI");
+    expect(!arc::net::Tls::dial("/api", std::span(host), cfg), "TLS URI dial rejects relative URI");
+    expect(!arc::net::Tls::dial("http://node/path", std::span(host), cfg), "TLS URI dial rejects HTTP scheme");
+    expect(!arc::net::Tls::dial("mqtt://node/path", std::span(host), cfg), "TLS URI dial rejects MQTT scheme");
+    expect(!arc::net::Tls::dial("https://node%00.local/path", std::span(host), cfg),
+           "TLS URI dial rejects decoded nul host");
+    expect(!arc::net::Tls::dial("https://node%0A.local/path", std::span(host), cfg),
+           "TLS URI dial rejects decoded control host");
+    expect(!arc::net::Tls::dial("https://node%2Fadmin.local/path", std::span(host), cfg),
+           "TLS URI dial rejects decoded delimiter host");
+    expect(!arc::net::Tls::dial("https://node/path", std::span(small), cfg),
+           "TLS URI dial rejects small host buffer");
+
+    auto schemeless_tls = arc::net::Tls::dial("//node/path", std::span(host), cfg);
+    expect(schemeless_tls.has_value() && schemeless_tls->native() != nullptr,
+           "TLS URI dial accepts schemeless authority");
+    auto wss_tls = arc::net::Tls::dial("wss://node/path", std::span(host), cfg);
+    expect(wss_tls.has_value() && wss_tls->native() != nullptr, "TLS URI dial accepts secure stream scheme");
+    auto mqtts_tls = arc::net::Tls::dial("mqtts://node/path", std::span(host), cfg);
+    expect(mqtts_tls.has_value() && mqtts_tls->native() != nullptr, "TLS URI dial accepts secure MQTT scheme");
+    auto raw_tls = arc::net::Tls::dial("tls://node/path", std::span(host), cfg);
+    expect(raw_tls.has_value() && raw_tls->native() != nullptr, "TLS URI dial accepts raw TLS scheme");
+    auto tls = arc::net::Tls::dial("https://node:8443/path", std::span(host), cfg);
+    expect(tls.has_value() && tls->native() != nullptr, "TLS URI dial succeeds through stub");
+    const std::array<std::uint8_t, 3> payload{1U, 2U, 3U};
+    expect(tls->send(std::span(payload)).has_value(), "TLS send forwards");
+    std::array<std::uint8_t, 4> scratch{};
+    expect(tls->recv(std::span(scratch)).has_value(), "TLS recv forwards");
+    expect(tls->avail().has_value(), "TLS avail forwards");
+    expect(tls->sockfd().has_value() && *tls->sockfd() == 7, "TLS sockfd forwards");
+
+    constexpr char pem[] = "-----BEGIN CERTIFICATE-----\narc\n-----END CERTIFICATE-----\n";
+    auto with_ca = arc::net::Tls::dial_ca("https://node/path", std::span(host), pem);
+    expect(with_ca.has_value() && with_ca->native() != nullptr, "TLS URI dial_ca succeeds through stub");
+}
+
+void test_codec_fuzzer_smoke()
+{
+    expect(LLVMFuzzerTestOneInput(nullptr, 0U) == 0, "codec fuzzer empty seed");
+
+    constexpr std::array<std::uint8_t, 52> http_seed{
+        'G',
+        'E',
+        'T',
+        ' ',
+        '/',
+        'm',
+        'e',
+        't',
+        'r',
+        'i',
+        'c',
+        's',
+        '?',
+        'u',
+        'n',
+        'i',
+        't',
+        '=',
+        'p',
+        'h',
+        ' ',
+        'H',
+        'T',
+        'T',
+        'P',
+        '/',
+        '1',
+        '.',
+        '1',
+        '\r',
+        '\n',
+        'H',
+        'o',
+        's',
+        't',
+        ':',
+        ' ',
+        'n',
+        'o',
+        'd',
+        'e',
+        '\r',
+        '\n',
+        '\r',
+        '\n',
+        'h',
+        't',
+        't',
+        'p',
+        ':',
+        '/',
+        '/',
+    };
+    expect(LLVMFuzzerTestOneInput(http_seed.data(), http_seed.size()) == 0, "codec fuzzer HTTP seed");
+
+    constexpr std::array<std::uint8_t, 33> uri_seed{
+        'h',
+        't',
+        't',
+        'p',
+        's',
+        ':',
+        '/',
+        '/',
+        'n',
+        'o',
+        'd',
+        'e',
+        ':',
+        '4',
+        '4',
+        '3',
+        '/',
+        'a',
+        '%',
+        '2',
+        '0',
+        'b',
+        '?',
+        'f',
+        'l',
+        'a',
+        'g',
+        '&',
+        'x',
+        '=',
+        '%',
+        '7',
+        'E',
+    };
+    expect(LLVMFuzzerTestOneInput(uri_seed.data(), uri_seed.size()) == 0, "codec fuzzer URI seed");
+
+    constexpr std::array<std::uint8_t, 12> binary_seed{0x10U, 0x0AU, 0x00U, 0x04U, 'M', 'Q',
+                                                       'T', 'T', 0xffU, 0x83U, 0x00U, 0x00U};
+    expect(LLVMFuzzerTestOneInput(binary_seed.data(), binary_seed.size()) == 0, "codec fuzzer binary seed");
 }
 
 void test_invalid_codecs()
@@ -4463,6 +4974,10 @@ int main()
     test_mqtt();
     test_ws();
     test_coap();
+    test_uri();
+    test_http_client();
+    test_uri_dial_helpers();
+    test_codec_fuzzer_smoke();
     test_invalid_codecs();
     test_http_server();
     test_caps();

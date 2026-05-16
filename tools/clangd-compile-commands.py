@@ -154,6 +154,163 @@ def read_database(path: Path) -> list[dict[str, Any]]:
     return commands
 
 
+def split_compile_command(command: str) -> list[str]:
+    if fast_whitespace_split_safe(command):
+        return [unescape_fast_arg(arg) for arg in command.split()]
+
+    args: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    started = False
+    index = 0
+
+    while index < len(command):
+        char = command[index]
+        if quote == "'":
+            if char == "'":
+                quote = None
+            else:
+                current.append(char)
+            started = True
+            index += 1
+            continue
+
+        if quote == '"':
+            if char == '"':
+                quote = None
+            elif char == "\\" and index + 1 < len(command) and command[index + 1] in {'"', "\\", "$", "`", "\n"}:
+                index += 1
+                if command[index] != "\n":
+                    current.append(command[index])
+            else:
+                current.append(char)
+            started = True
+            index += 1
+            continue
+
+        if char.isspace():
+            if started:
+                args.append("".join(current))
+                current.clear()
+                started = False
+            index += 1
+            continue
+
+        if char in {"'", '"'}:
+            quote = char
+            started = True
+            index += 1
+            continue
+
+        if char == "\\":
+            started = True
+            index += 1
+            if index >= len(command):
+                current.append("\\")
+            elif command[index] != "\n":
+                current.append(command[index])
+            index += 1
+            continue
+
+        current.append(char)
+        started = True
+        index += 1
+
+    if quote is not None:
+        raise ValueError("No closing quotation")
+    if started:
+        args.append("".join(current))
+    return args
+
+
+def fast_whitespace_split_safe(command: str) -> bool:
+    if "'" in command:
+        return False
+
+    index = command.find("\\")
+    while index >= 0:
+        next_index = index + 1
+        if next_index >= len(command) or command[next_index].isspace():
+            return False
+        index = command.find("\\", index + 2)
+
+    index = 0
+    while True:
+        start = command.find('"', index)
+        while start > 0 and command[start - 1] == "\\":
+            start = command.find('"', start + 1)
+        if start < 0:
+            return True
+
+        end = command.find('"', start + 1)
+        while end > 0 and command[end - 1] == "\\":
+            end = command.find('"', end + 1)
+        if end < 0:
+            return False
+        if any(char.isspace() for char in command[start + 1 : end]):
+            return False
+        index = end + 1
+
+
+def unescape_fast_arg(arg: str) -> str:
+    if "\\" not in arg and "'" not in arg and '"' not in arg:
+        return arg
+
+    value: list[str] = []
+    quote: str | None = None
+    index = 0
+    while index < len(arg):
+        char = arg[index]
+
+        if quote == "'":
+            if char == "'":
+                quote = None
+            else:
+                value.append(char)
+            index += 1
+            continue
+
+        if quote == '"':
+            if char == '"':
+                quote = None
+            elif char == "\\" and index + 1 < len(arg) and arg[index + 1] in {'"', "\\", "$", "`", "\n"}:
+                index += 1
+                if arg[index] != "\n":
+                    value.append(arg[index])
+            else:
+                value.append(char)
+            index += 1
+            continue
+
+        if char in {"'", '"'}:
+            quote = char
+        elif char == "\\" and index + 1 < len(arg):
+            index += 1
+            value.append(arg[index])
+        else:
+            value.append(char)
+        index += 1
+    return "".join(value)
+
+
+def normalized_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    arguments = entry.get("arguments")
+    if isinstance(arguments, list) and all(isinstance(arg, str) for arg in arguments):
+        return dict(entry)
+
+    command = entry.get("command")
+    if not isinstance(command, str) or not command:
+        return dict(entry)
+
+    clone = dict(entry)
+    try:
+        clone["arguments"] = split_compile_command(command)
+    except ValueError:
+        clone["arguments"] = shlex.split(command)
+    clone.pop("command", None)
+    return clone
+
+
 def merge(databases: list[Path]) -> list[dict[str, Any]]:
     commands: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -164,7 +321,7 @@ def merge(databases: list[Path]) -> list[dict[str, Any]]:
             if key in seen:
                 continue
             seen.add(key)
-            commands.append(entry)
+            commands.append(normalized_entry(entry))
 
     return commands
 
@@ -905,6 +1062,14 @@ def auto_validate_jobs(requested: int | None) -> int:
     return max(1, min(8, cpus // 2 if cpus > 2 else cpus))
 
 
+def auto_validate_batch_size(requested: int | None, headers: int) -> int:
+    if requested is not None and requested > 0:
+        return requested
+    if headers <= 8:
+        return 1
+    return 8
+
+
 def entry_args_for_file(
     entry: dict[str, Any],
     file: Path,
@@ -1110,12 +1275,65 @@ def validate_source_command(
     return summarize_stderr(proc.stderr, proc.returncode)
 
 
+def validation_key(entry: dict[str, Any]) -> tuple[Path, tuple[str, ...]]:
+    return (entry_directory(entry), tuple(entry_args_for_file(entry, Path("__arc_header_validation__.cpp"))))
+
+
+def validate_header_groups(
+    items: list[tuple[Path, dict[str, Any]]],
+    support_dirs: tuple[Path, ...],
+    timeout: float,
+    jobs: int | None,
+    batch_size: int,
+) -> list[str]:
+    groups: dict[tuple[Path, tuple[str, ...]], tuple[dict[str, Any], list[Path]]] = {}
+    for header, entry in items:
+        validated_entry = append_include_dirs(entry, support_dirs)
+        key = validation_key(validated_entry)
+        group = groups.get(key)
+        if group is None:
+            groups[key] = (validated_entry, [header])
+        else:
+            group[1].append(header)
+
+    failures: list[str] = []
+    batches: list[tuple[dict[str, Any], list[Path]]] = []
+    batch_size = max(1, batch_size)
+    for entry, headers in groups.values():
+        for index in range(0, len(headers), batch_size):
+            batches.append((entry, headers[index : index + batch_size]))
+
+    workers = min(auto_validate_jobs(jobs), max(1, len(batches)))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(validate_header_set, entry, headers, (), timeout): (entry, headers)
+            for entry, headers in batches
+        }
+        for future in concurrent.futures.as_completed(futures):
+            entry, headers = futures[future]
+            error = future.result()
+            if error is None:
+                continue
+            if len(headers) == 1:
+                failures.append(f"{display(headers[0])}: {error}")
+                continue
+
+            for header in headers:
+                header_error = validate_header_command(entry, header, (), timeout)
+                if header_error is not None:
+                    failures.append(f"{display(header)}: {header_error}")
+
+    failures.sort()
+    return failures
+
+
 def arc_header_commands(
     commands: list[dict[str, Any]],
     databases: list[Path],
     validate: bool = False,
     validate_timeout: float = 15.0,
     validate_jobs: int | None = None,
+    validate_batch_size: int | None = None,
     only_headers: set[Path] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     headers = arc_header_index()
@@ -1131,6 +1349,7 @@ def arc_header_commands(
     header_commands: list[dict[str, Any]] = []
     selected_headers: list[Path] = []
     failures: list[str] = []
+    rich_candidates = sorted(candidates, key=feature_rich_rank)
 
     for header in sorted(headers.values()):
         if only_headers is not None and header not in only_headers:
@@ -1139,8 +1358,7 @@ def arc_header_commands(
         selected: dict[str, Any] | None = None
         error: str | None = None
         attempted: set[tuple[str, tuple[str, ...]]] = set()
-        header_candidates = sorted(candidates, key=feature_rich_rank) if header.name == "arc.hpp" else candidates
-        for _, entry, dirs in header_candidates:
+        for _, entry, dirs in rich_candidates:
             extras = ()
             if not all(has_include(include, dirs, include_cache) for include in includes):
                 extras = missing_include_dirs(includes, dirs, components, include_cache, owner_cache, match_cache)
@@ -1175,20 +1393,15 @@ def arc_header_commands(
 
     if validate and header_commands:
         support_dirs = validation_support_dirs(databases, components)
-        workers = auto_validate_jobs(validate_jobs)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(
-                    validate_header_command, append_include_dirs(entry, support_dirs), header, (), validate_timeout
-                ): header
-                for header, entry in zip(selected_headers, header_commands, strict=True)
-            }
-            for future in concurrent.futures.as_completed(futures):
-                header = futures[future]
-                error = future.result()
-                if error is not None:
-                    failures.append(f"{display(header)}: {error}")
-        failures.sort()
+        failures.extend(
+            validate_header_groups(
+                list(zip(selected_headers, header_commands, strict=True)),
+                support_dirs,
+                validate_timeout,
+                validate_jobs,
+                auto_validate_batch_size(validate_batch_size, len(selected_headers)),
+            )
+        )
 
     return header_commands, failures
 
@@ -1231,6 +1444,15 @@ def main() -> int:
         type=int,
         default=int(os.environ.get("ARC_CLANGD_VALIDATE_JOBS", "0")),
         help="Parallel compiler jobs when --validate-arc-headers is used. Defaults to a conservative auto value.",
+    )
+    parser.add_argument(
+        "--validate-batch-size",
+        type=int,
+        default=int(os.environ.get("ARC_CLANGD_VALIDATE_BATCH_SIZE", "0")),
+        help=(
+            "Headers per validation compiler invocation. Defaults to auto: single-header batches for small changed sets, "
+            "bounded batches for broad validation."
+        ),
     )
     parser.add_argument(
         "--changed-arc-headers",
@@ -1277,6 +1499,7 @@ def main() -> int:
             validate=args.validate_arc_headers,
             validate_timeout=args.validate_timeout,
             validate_jobs=args.validate_jobs if args.validate_jobs > 0 else None,
+            validate_batch_size=args.validate_batch_size if args.validate_batch_size > 0 else None,
             only_headers=only_headers if only_headers else None,
         )
         commands.extend(header_commands)

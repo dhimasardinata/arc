@@ -14,12 +14,16 @@ git_files() {
     git ls-files "$@"
 }
 
+worktree_files() {
+    git ls-files --cached --others --exclude-standard "$@"
+}
+
 grep_files() {
     local pattern="$1"
     shift
     local files=("$@")
     [[ ${#files[@]} -gt 0 ]] || return 1
-    grep -nE "$pattern" "${files[@]}"
+    grep -nIE -- "$pattern" "${files[@]}"
 }
 
 load_arc_projects() {
@@ -37,9 +41,35 @@ load_arc_projects() {
     fi
 }
 
+workflow_line() {
+    local needle="$1"
+    awk -v needle="$needle" 'index($0, needle) { print NR; exit }' .github/workflows/build.yml
+}
+
+workflow_step_before() {
+    local earlier="$1"
+    local later="$2"
+    local message="$3"
+    local earlier_line
+    local later_line
+    earlier_line="$(workflow_line "$earlier")"
+    later_line="$(workflow_line "$later")"
+    if [[ -z "$earlier_line" || -z "$later_line" || "$earlier_line" -ge "$later_line" ]]; then
+        die "$message"
+    fi
+}
+
+git diff --check >/dev/null 2>&1 || die "working tree diff contains whitespace errors"
 git diff --check --cached >/dev/null 2>&1 || die "staged diff contains whitespace errors"
+mapfile -t whitespace_files < <(worktree_files)
+if grep_files '[[:blank:]]$' "${whitespace_files[@]}" >/dev/null 2>&1; then
+    grep_files '[[:blank:]]$' "${whitespace_files[@]}" || true
+    die "tracked or untracked non-ignored files contain trailing whitespace"
+fi
 
 ./tools/format.sh --check || die "format check failed; run ./tools/format.sh"
+./tools/tool-tests.sh || die "tool tests failed"
+go run tools/arc-audit.go -root . -all || die "realtime audit failed"
 
 while IFS= read -r file; do
     if [[ -e "$file" ]]; then
@@ -87,7 +117,7 @@ if grep_files 'MBEDTLS_CONFIG_FILE|TF_PSA_CRYPTO_USER_CONFIG_FILE|esp-idf/compon
     die ".clangd must not hardcode toolchain paths or optional mbedTLS include paths"
 fi
 
-mapfile -t docs < <(git_files README.md .github examples)
+mapfile -t docs < <(worktree_files README.md AGENTS.md docs .github examples)
 if grep_files '^[[:space:]]*idf\.py set-target ' "${docs[@]}" >/dev/null 2>&1; then
     die "docs or workflows still tell users to run set-target; use ARC_TARGET through cmake/arc-idf.cmake"
 fi
@@ -145,6 +175,10 @@ if ! grep -qE 'arc_target' cmake/arc-idf.cmake; then
     die "cmake/arc-idf.cmake must provide arc_target()"
 fi
 
+if ! grep -qF '#if __has_include("esp_tls.h") && __has_include("lwip/netdb.h") && __has_include("lwip/sockets.h")' components/arc/include/arc.hpp; then
+    die "arc.hpp must only include arc/tls.hpp when both ESP-TLS and lwIP socket headers are visible"
+fi
+
 mapfile -t target_api_files < <(find components/arc/include/arc/arch components/arc/include/arc/soc -type f -name '*.hpp' | sort)
 if grep_files '\b[a-z][a-z0-9]*(_[a-z0-9]+){2,}\b' "${target_api_files[@]}" >/dev/null 2>&1; then
     grep_files '\b[a-z][a-z0-9]*(_[a-z0-9]+){2,}\b' "${target_api_files[@]}" || true
@@ -191,9 +225,15 @@ if ! grep -qE '\./tools/host-tests\.sh' .github/workflows/build.yml; then
     die "build workflow must run host tests before firmware builds"
 fi
 
+if ! grep -qE 'go run tools/arc-audit\.go -root \. -all' .github/workflows/build.yml; then
+    die "build workflow must run the strict all-entry realtime audit"
+fi
+
 if ! grep -qE '\./tools/host-bench\.sh' .github/workflows/build.yml; then
     die "build workflow must run host benchmarks before firmware builds"
 fi
+workflow_step_before "name: Host benchmarks" "name: Build all" \
+    "build workflow must run host benchmarks before firmware builds"
 
 if grep -nE 'uses:[[:space:]]+actions/[^@[:space:]]+@v[0-9]+([[:space:]#]|$)' .github/workflows/*.yml; then
     die "GitHub Actions must be pinned to full commit SHA refs, not mutable version tags"
@@ -219,6 +259,7 @@ required_exec=(
     tools/arc-projects.py
     tools/clangd-compile-commands.py
     tools/format.sh
+    tools/tool-tests.sh
     tools/install-git-hooks.sh
 )
 load_arc_projects example_dirs --examples

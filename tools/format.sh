@@ -37,11 +37,18 @@ is_python() {
     esac
 }
 
+is_go() {
+    case "$1" in
+        *.go) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 select_files() {
     if (($#)); then
         printf '%s\0' "$@"
     else
-        git ls-files -z
+        git ls-files -z --cached --others --exclude-standard
     fi
 }
 
@@ -61,6 +68,7 @@ ruff_cmd() {
 
 cpp_files=()
 python_files=()
+go_files=()
 
 while IFS= read -r -d '' file; do
     [[ -f "$file" ]] || continue
@@ -68,6 +76,8 @@ while IFS= read -r -d '' file; do
         cpp_files+=("$file")
     elif is_python "$file"; then
         python_files+=("$file")
+    elif is_go "$file"; then
+        go_files+=("$file")
     fi
 done < <(select_files "$@")
 
@@ -86,6 +96,19 @@ if ((${#python_files[@]})); then
         "${ruff[@]}" format --check "${python_files[@]}"
     else
         "${ruff[@]}" format "${python_files[@]}"
+    fi
+fi
+
+if ((${#go_files[@]})); then
+    need gofmt
+    if [[ "$mode" == "check" ]]; then
+        unformatted="$(gofmt -l "${go_files[@]}")"
+        if [[ -n "$unformatted" ]]; then
+            printf '%s\n' "$unformatted"
+            die "Go files need gofmt"
+        fi
+    else
+        gofmt -w "${go_files[@]}"
     fi
 fi
 

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -23,8 +22,6 @@ type violation struct {
 	Entry string
 	Token string
 }
-
-var callRE = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 
 func main() {
 	root := flag.String("root", ".", "repository root")
@@ -47,9 +44,9 @@ func main() {
 		}
 		clean := strip(text)
 		funcs := parseFunctions(clean)
-		byName := map[string]function{}
+		byName := map[string][]function{}
 		for _, fn := range funcs {
-			byName[fn.Name] = fn
+			byName[fn.Name] = append(byName[fn.Name], fn)
 		}
 		for _, fn := range funcs {
 			if fn.Name != "loop" && fn.Name != "step" {
@@ -77,8 +74,7 @@ func walkSources(root string) []string {
 			return nil
 		}
 		if info.IsDir() {
-			switch info.Name() {
-			case ".git", ".cache", ".codex", ".espressif", ".ruff_cache", "build", "dump", "managed_components", "esp-idf", "arduino-esp32":
+			if skipSourcePart(info.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -97,6 +93,15 @@ func isSource(path string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func skipSourcePart(part string) bool {
+	switch part {
+	case ".git", ".cache", ".codex", ".espressif", ".ruff_cache", "build", "dump", "managed_components", "esp-idf", "arduino-esp32":
+		return true
+	default:
+		return strings.HasPrefix(part, "build-")
 	}
 }
 
@@ -123,55 +128,59 @@ func strip(text string) string {
 	b.Grow(len(text))
 	inLine := false
 	inBlock := false
-	inString := rune(0)
+	inString := byte(0)
 	escape := false
-	for i, r := range text {
+	for i := 0; i < len(text); i++ {
+		ch := text[i]
 		next := byte(0)
 		if i+1 < len(text) {
 			next = text[i+1]
 		}
 		switch {
 		case inLine:
-			if r == '\n' {
+			if ch == '\n' {
 				inLine = false
-				b.WriteRune('\n')
+				b.WriteByte('\n')
 			} else {
 				b.WriteByte(' ')
 			}
 		case inBlock:
-			if r == '*' && next == '/' {
+			if ch == '*' && next == '/' {
 				inBlock = false
 				b.WriteString("  ")
-			} else if r == '\n' {
-				b.WriteRune('\n')
+				i++
+			} else if ch == '\n' {
+				b.WriteByte('\n')
 			} else {
 				b.WriteByte(' ')
 			}
 		case inString != 0:
-			if r == '\n' {
-				b.WriteRune('\n')
+			if ch == '\n' {
+				b.WriteByte('\n')
 				escape = false
 				continue
 			}
 			if escape {
 				escape = false
-			} else if r == '\\' {
+			} else if ch == '\\' {
 				escape = true
-			} else if r == inString {
+			} else if ch == inString {
 				inString = 0
 			}
 			b.WriteByte(' ')
-		case r == '/' && next == '/':
+		case ch == '/' && next == '/':
 			inLine = true
 			b.WriteString("  ")
-		case r == '/' && next == '*':
+			i++
+		case ch == '/' && next == '*':
 			inBlock = true
 			b.WriteString("  ")
-		case r == '"' || r == '\'':
-			inString = r
+			i++
+		case ch == '"' || ch == '\'':
+			inString = ch
 			b.WriteByte(' ')
 		default:
-			b.WriteRune(r)
+			b.WriteByte(ch)
 		}
 	}
 	return b.String()
@@ -216,7 +225,7 @@ func signatureStart(text string, pos int) int {
 }
 
 func functionName(sig string) string {
-	if strings.Contains(sig, "=") || strings.Contains(sig, "->*") {
+	if strings.Contains(sig, "->*") {
 		return ""
 	}
 	open := strings.LastIndex(sig, "(")
@@ -255,15 +264,16 @@ func matchBrace(text string, open int) int {
 	return -1
 }
 
-func walkCallGraph(path string, entry function, funcs map[string]function, tokens []string) []violation {
+func walkCallGraph(path string, entry function, funcs map[string][]function, tokens []string) []violation {
 	seen := map[string]bool{}
 	var out []violation
 	var visit func(function)
 	visit = func(fn function) {
-		if seen[fn.Name] {
+		key := fmt.Sprintf("%s:%d", fn.Name, fn.Line)
+		if seen[key] {
 			return
 		}
-		seen[fn.Name] = true
+		seen[key] = true
 		for _, token := range tokens {
 			if containsToken(fn.Body, token) {
 				out = append(out, violation{
@@ -274,12 +284,11 @@ func walkCallGraph(path string, entry function, funcs map[string]function, token
 				})
 			}
 		}
-		for _, match := range callRE.FindAllStringSubmatch(fn.Body, -1) {
-			name := match[1]
+		for _, name := range callNames(fn.Body) {
 			if isKeyword(name) {
 				continue
 			}
-			if next, ok := funcs[name]; ok {
+			for _, next := range funcs[name] {
 				visit(next)
 			}
 		}
@@ -288,11 +297,87 @@ func walkCallGraph(path string, entry function, funcs map[string]function, token
 	return out
 }
 
+func callNames(body string) []string {
+	var out []string
+	for pos := 0; pos < len(body); pos++ {
+		if !isIdentStart(body[pos]) || (pos > 0 && isIdent(body[pos-1])) {
+			continue
+		}
+		end := pos + 1
+		for end < len(body) && isIdent(body[end]) {
+			end++
+		}
+		next := nextNonSpace(body, end)
+		if next < len(body) && body[next] == '<' {
+			if templateEnd := skipTemplateArgs(body, next); templateEnd >= 0 {
+				next = nextNonSpace(body, templateEnd+1)
+			}
+		}
+		if next < len(body) && body[next] == '(' {
+			out = append(out, body[pos:end])
+		}
+		pos = end
+	}
+	return out
+}
+
+func nextNonSpace(text string, pos int) int {
+	for pos < len(text) {
+		switch text[pos] {
+		case ' ', '\t', '\r', '\n':
+			pos++
+		default:
+			return pos
+		}
+	}
+	return pos
+}
+
+func skipTemplateArgs(text string, open int) int {
+	depth := 0
+	for pos := open; pos < len(text); pos++ {
+		switch text[pos] {
+		case '<':
+			depth++
+		case '>':
+			depth--
+			if depth == 0 {
+				return pos
+			}
+		}
+	}
+	return -1
+}
+
 func containsToken(body string, token string) bool {
 	if token == "new" || token == "virtual" {
 		return containsWord(body, token)
 	}
-	return strings.Contains(body, token+"(") || strings.Contains(body, token+" <")
+	return containsCall(body, token)
+}
+
+func containsCall(body string, name string) bool {
+	for offset := 0; ; {
+		idx := strings.Index(body[offset:], name)
+		if idx < 0 {
+			return false
+		}
+		idx += offset
+		before := idx == 0 || !isIdent(body[idx-1])
+		after := idx+len(name) >= len(body) || !isIdent(body[idx+len(name)])
+		if before && after {
+			next := nextNonSpace(body, idx+len(name))
+			if next < len(body) && body[next] == '<' {
+				if templateEnd := skipTemplateArgs(body, next); templateEnd >= 0 {
+					next = nextNonSpace(body, templateEnd+1)
+				}
+			}
+			if next < len(body) && body[next] == '(' {
+				return true
+			}
+		}
+		offset = idx + len(name)
+	}
 }
 
 func containsWord(body string, word string) bool {
@@ -322,4 +407,8 @@ func isKeyword(name string) bool {
 
 func isIdent(c byte) bool {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
+}
+
+func isIdentStart(c byte) bool {
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'
 }

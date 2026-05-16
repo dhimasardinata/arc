@@ -122,13 +122,21 @@ jobs:
       - name: Host realtime audit
         shell: bash
         run: |
-          go run tools/arc-audit.go -root .
+          go run tools/arc-audit.go -root . -all
 
       - name: Host formal specs
         shell: bash
         run: |
           chmod +x tools/arc-prove.sh
           ./tools/arc-prove.sh
+
+      - name: Host benchmarks
+        shell: bash
+        run: |
+          chmod +x tools/host-bench.sh
+          chmod +x tools/framework-compare.sh
+          ./tools/host-bench.sh
+          ARC_SKIP_HOST_BENCH=1 ARC_IDF_PATH="$HOME/esp-idf" ./tools/framework-compare.sh
 
       - name: Build all
         shell: bash
@@ -201,14 +209,6 @@ jobs:
             extra_args+=(--changed-arc-headers "$ARC_BASE_SHA")
           fi
           go run tools/clangd-compile-commands.go --validate-arc-headers -o compile_commands.json "${extra_args[@]}"
-
-      - name: Host benchmarks
-        shell: bash
-        run: |
-          chmod +x tools/host-bench.sh
-          chmod +x tools/framework-compare.sh
-          ./tools/host-bench.sh
-          ARC_SKIP_HOST_BENCH=1 ARC_IDF_PATH="$HOME/esp-idf" ./tools/framework-compare.sh
 
       - name: Upload binaries
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

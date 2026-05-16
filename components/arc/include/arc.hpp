@@ -49,6 +49,7 @@
 #include "arc/task.hpp"
 #include "arc/tight.hpp"
 #include "arc/topology.hpp"
+#include "arc/uri.hpp"
 #include "arc/watch.hpp"
 #include "arc/wave.hpp"
 #include "arc/ws.hpp"
@@ -238,7 +239,7 @@
 #include "arc/pbuf.hpp"
 #endif
 
-#if __has_include("esp_tls.h")
+#if __has_include("esp_tls.h") && __has_include("lwip/netdb.h") && __has_include("lwip/sockets.h")
 #include "arc/tls.hpp"
 #endif
 
