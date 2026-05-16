@@ -169,7 +169,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Tight` runs a masked per-step loop with optional cycle-budget overrun telemetry for the rare path that needs tighter jitter than `arc::App`.
 - `arc::App` runs a tiny zero-cost program on a chosen core.
 - `arc::Link` gives shared event/control state without heap or virtual dispatch.
-- `arc::Spsc` gives a bounded lock-free lane for one producer and one consumer; `arc::Ring` remains the terse compatibility alias.
+- `arc::Spsc` gives a bounded lock-free lane for one producer and one consumer; `arc::Roles<Lane>` owns a lane privately when you want producer/consumer endpoints to be the only compile-time API; `arc::Ring` remains the terse compatibility alias.
 - `arc::Audit<Topology>` adds opt-in ownership assertions when you want topology misuse to fail fast instead of staying purely contractual.
 - `arc::Mpsc` gives bounded lock-free fan-in when several producers must feed one Core 0 consumer; `arc::Mux` is the terse topology alias.
 - `arc::DenseMpsc` keeps the same algorithm but packs cells tightly when RAM density matters more than cache-line isolation.
@@ -299,7 +299,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 | --- | --- | --- |
 | Profile umbrellas | `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/math.hpp`, `arc.hpp` | Subset entry points for substrate, coherency/DMA, no-heap codecs, DSP/math, and the compatibility umbrella |
 | Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
-| Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit` |
+| Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp`, `arc/roles.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit`, `arc::Roles` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/hotpatch.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/pipeline.hpp`, `arc/mmu_span.hpp`, `arc/distributed_mmu.hpp`, `arc/place.hpp`, `arc/prefetch.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::HotPatch`, `arc::HotPatchImage`, `arc::HotPatchDetour`, `arc::DmaChain`, `arc::DmaEndpoint`, `arc::Pipeline`, `arc::Dma2dWindow`, `arc::bind_rows`, `arc::MmuSpan`, `arc::mmu::DistributedSpan`, `arc::mmu::DistributedPager`, `arc::Copy`, `arc::prefetch` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp`, `arc/rpc.hpp`, `arc/rtc_ring.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem`, `arc::RpcLane`, `arc::RtcRing` |
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/flexroute.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/power_governor.hpp`, `arc/power_profiler.hpp`, `arc/timesync.hpp`, `arc/tdma.hpp`, `arc/covert.hpp`, `arc/lifi.hpp`, `arc/sdr.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::matrix::FlexRoute`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::EtmRoute`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::power::Governor`, `arc::power::Profiler`, `arc::TimeSync`, `arc::net::Tdma`, `arc::covert::Fsk`, `arc::covert::EmTx`, `arc::covert::SonicTx`, `arc::optical::LiFi`, `arc::sdr::PulseSynth`, `arc::sdr::Tx` |
@@ -1299,6 +1299,7 @@ Bounded lock-free lane for one producer and one consumer.
 - `try_push(event)` is producer-only.
 - `try_pop(event)` is consumer-only.
 - `producer()`, `consumer()`, and `split()` return move-only role endpoints, so task setup can pass only the push or pop side instead of exposing the full lane API.
+- `arc::Roles<arc::Spsc<T, Capacity>>` owns the lane privately and exposes only role endpoints, so direct queue mutation is not part of the wrapper's compile-time API.
 - `push(span)` and `pop(span)` batch contiguous transfers, wrapping at most once, so burst handoff avoids per-element index publication.
 - `size()` and `space()` expose the current ring occupancy and producer room.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation.
@@ -1327,7 +1328,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 
 Use this when several OS-side tasks with the same scheduling priority need to feed one telemetry or transport owner without a FreeRTOS queue. If producer preemption must never block completed work from another producer, use `arc::Fanin`.
 
-`arc::DenseMpsc<T, Capacity>` keeps the same queue semantics but drops cache-line isolation and packs each cell to the payload's natural alignment. Use it when internal RAM density matters more than worst-case false-sharing avoidance. `arc::Audit<arc::Mpsc<T, Capacity>>` adds audited `producer()`, `consumer()`, and `split()` role endpoints plus a fail-fast single-consumer assertion on top of the cache-line-isolated lane, and `arc::Audit<arc::DenseMpsc<T, Capacity>>` combines both trade-offs.
+`arc::DenseMpsc<T, Capacity>` keeps the same queue semantics but drops cache-line isolation and packs each cell to the payload's natural alignment. Use it when internal RAM density matters more than worst-case false-sharing avoidance. `arc::Audit<arc::Mpsc<T, Capacity>>` adds audited `producer()`, `consumer()`, and `split()` role endpoints plus a fail-fast single-consumer assertion on top of the cache-line-isolated lane, and `arc::Audit<arc::DenseMpsc<T, Capacity>>` combines both trade-offs. `arc::Roles<arc::Mpsc<T, Capacity>>` owns the lane privately and exposes only producer/consumer endpoints when direct root-lane push/pop should be rejected at compile time.
 
 ### `arc::Mux<T, Capacity>`
 
@@ -1351,7 +1352,7 @@ Static fan-in made from one SPSC lane per producer and one round-robin consumer.
 
 Use this when producer identity is static and tail latency matters more than one global FIFO order.
 
-`arc::Audit<arc::Fanin<T, Capacity, Producers>>` keeps the same API, also exposes audited `producer<Index>()` and `consumer()` role endpoints, and asserts that each lane remains single-producer and the fan-in side stays single-consumer.
+`arc::Audit<arc::Fanin<T, Capacity, Producers>>` keeps the same API, also exposes audited `producer<Index>()` and `consumer()` role endpoints, and asserts that each lane remains single-producer and the fan-in side stays single-consumer. `arc::Roles<arc::Fanin<T, Capacity, Producers>>` hides root-lane `try_push<Index>`/`try_pop` and exposes only lane producer endpoints plus the fan-in consumer endpoint.
 
 ### `arc::RpcLane<Op, RequestPayload, ReplyPayload, RequestCapacity, ReplyCapacity = RequestCapacity>`
 

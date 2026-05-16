@@ -96,6 +96,7 @@
 #include "arc/rcu.hpp"
 #include "arc/rdma.hpp"
 #include "arc/rpc.hpp"
+#include "arc/roles.hpp"
 #include "arc/rtos.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
@@ -728,12 +729,24 @@ void expect_abort(Fn&& fn, const char* const message)
     expect(WIFSIGNALED(status) || (WIFEXITED(status) && WEXITSTATUS(status) != 0), message);
 }
 
+template <typename T>
+concept HasRootPush = requires(T& roles, int in) { roles.try_push(in); };
+
+template <typename T>
+concept HasRootPop = requires(T& roles, int& out) { roles.try_pop(out); };
+
+template <typename T>
+concept HasRootFaninPush = requires(T& roles, int in) { roles.template try_push<0>(in); };
+
 void test_spsc()
 {
     arc::Spsc<int, 4> queue;
     using SpscInt = arc::Spsc<int, 4>;
+    using RoleSpsc = arc::Roles<arc::Spsc<int, 4>>;
     static_assert(!std::is_copy_constructible_v<SpscInt::Producer>);
     static_assert(!std::is_copy_constructible_v<SpscInt::Consumer>);
+    static_assert(!HasRootPush<RoleSpsc>);
+    static_assert(!HasRootPop<RoleSpsc>);
     expect(queue.cap() == 3U, "SPSC usable capacity");
     expect(queue.bytes() == sizeof(queue), "SPSC bytes");
     expect(queue.empty(), "SPSC starts empty");
@@ -781,6 +794,11 @@ void test_spsc()
     auto moved_producer = std::move(endpoints.producer);
     expect(!static_cast<bool>(endpoints.producer) && static_cast<bool>(moved_producer),
            "SPSC producer endpoint is move-only");
+
+    arc::Roles<arc::Spsc<int, 4>> role_only;
+    auto role_endpoints = role_only.split();
+    expect(role_endpoints.producer.try_push(14), "Roles SPSC producer endpoint push");
+    expect(role_endpoints.consumer.try_pop(value) && value == 14, "Roles SPSC consumer endpoint pop");
 }
 
 void test_checked_spsc()
@@ -820,8 +838,11 @@ void test_mpsc_single()
 {
     arc::Mpsc<int, 4> queue;
     using MpscInt = arc::Mpsc<int, 4>;
+    using RoleMpsc = arc::Roles<arc::Mpsc<int, 4>>;
     static_assert(std::is_copy_constructible_v<MpscInt::Producer>);
     static_assert(!std::is_copy_constructible_v<MpscInt::Consumer>);
+    static_assert(!HasRootPush<RoleMpsc>);
+    static_assert(!HasRootPop<RoleMpsc>);
     expect(queue.cap() == 4U, "MPSC capacity");
     expect(queue.cell_align() == arc::cache_line, "MPSC cache-line alignment");
     expect(queue.bytes() == sizeof(queue), "MPSC bytes");
@@ -850,6 +871,13 @@ void test_mpsc_single()
     expect(!static_cast<bool>(endpoints.consumer) && static_cast<bool>(moved_consumer),
            "MPSC consumer endpoint is move-only");
     expect(moved_consumer.try_pop(value) && value == 13, "MPSC moved consumer endpoint pop 13");
+
+    arc::Roles<arc::Mpsc<int, 4>> role_only;
+    auto role_endpoints = role_only.split();
+    auto role_second_producer = role_only.producer();
+    expect(role_endpoints.producer.try_push(14) && role_second_producer.try_push(15),
+           "Roles MPSC producer endpoints push");
+    expect(role_endpoints.consumer.try_pop(value) && value == 14, "Roles MPSC consumer endpoint pop");
 }
 
 void test_compact_mpsc()
@@ -956,8 +984,11 @@ void test_fanin()
 {
     arc::Fanin<int, 4, 3> fan;
     using Fan = arc::Fanin<int, 4, 3>;
+    using RoleFan = arc::Roles<arc::Fanin<int, 4, 3>>;
     static_assert(!std::is_copy_constructible_v<Fan::Producer<0>>);
     static_assert(!std::is_copy_constructible_v<Fan::Consumer>);
+    static_assert(!HasRootFaninPush<RoleFan>);
+    static_assert(!HasRootPop<RoleFan>);
     expect(fan.producers() == 3U, "Fanin producer count");
     expect(fan.cap() == 3U, "Fanin lane capacity");
     expect(fan.bytes() == sizeof(fan), "Fanin bytes");
@@ -1001,6 +1032,13 @@ void test_fanin()
     out = {};
     expect(fan.pop(std::span(out)) == 3U, "Fanin batch pushed pop count");
     expect(out[0] == 100 && out[1] == 101 && out[2] == 102, "Fanin batch pushed order");
+
+    arc::Roles<arc::Fanin<int, 4, 3>> role_only;
+    auto role_lane = role_only.producer<2>();
+    auto role_sink = role_only.consumer();
+    expect(role_lane.try_push(200), "Roles Fanin producer endpoint push");
+    expect(role_sink.try_pop(producer, value) && producer == 2U && value == 200,
+           "Roles Fanin consumer endpoint pop");
 }
 
 void test_rpc_lane()

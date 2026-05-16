@@ -26,6 +26,7 @@
 #include "arc/rcu.hpp"
 #include "arc/reg.hpp"
 #include "arc/result.hpp"
+#include "arc/roles.hpp"
 #include "arc/rpc.hpp"
 #include "arc/rtos.hpp"
 #include "arc/sdk.hpp"
