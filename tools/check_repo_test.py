@@ -59,6 +59,13 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("use-after-move lint gate", text)
         self.assertIn("tools/use-after-move-check.sh", text)
 
+    def test_use_after_move_lint_probes_expected_support(self) -> None:
+        text = (ROOT / "tools" / "use-after-move-check.sh").read_text(encoding="utf-8")
+
+        self.assertIn("std_expected_probe.cpp", text)
+        self.assertIn("clang-tidy cannot parse Arc C++23 std::expected headers", text)
+        self.assertIn("no (template|member) named 'expected' in namespace 'std'", text)
+
     def test_repo_policy_keeps_hil_evidence_checker_executable(self) -> None:
         text = (ROOT / "tools" / "check-repo.sh").read_text(encoding="utf-8")
 
