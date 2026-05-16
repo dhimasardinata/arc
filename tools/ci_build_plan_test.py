@@ -44,7 +44,9 @@ class CiBuildPlanTest(unittest.TestCase):
             add_root_project(root)
             add_project(root, "examples/esp32s3/udp")
 
-            planned = self.run_plan(root, "README.md", "docs/architecture.md", "package.json", "package-lock.json")
+            planned = self.run_plan(
+                root, ".gitignore", "README.md", "docs/architecture.md", "package.json", "package-lock.json"
+            )
 
         self.assertEqual(planned, [])
 

@@ -32,6 +32,7 @@ ROOT_FILES = {
     "sdkconfig.defaults.release",
 }
 NON_FIRMWARE_FILES = {
+    ".gitignore",
     "package.json",
     "package-lock.json",
 }
