@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -374,6 +375,230 @@ private:
         const std::size_t pos) noexcept
     {
         return static_cast<std::uint16_t>((static_cast<std::uint16_t>(in[pos]) << 8U) | in[pos + 1U]);
+    }
+};
+
+template <typename Codec>
+concept CoapAdapter = requires(
+    Codec& codec,
+    std::span<std::uint8_t> out,
+    std::span<const std::uint8_t> token,
+    std::span<const CoapOption> options,
+    std::span<const std::uint8_t> payload,
+    std::span<const std::uint8_t> frame,
+    std::span<const std::uint8_t> option_bytes,
+    std::size_t& offset,
+    std::uint16_t& number) {
+    { codec.message(out, CoapType::confirmable, std::uint8_t{}, std::uint16_t{}, token, options, payload) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.ping(out, std::uint16_t{}, token) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.reset(out, std::uint16_t{}, token) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.parse(frame) } -> std::same_as<Result<CoapMessage>>;
+    { codec.next(option_bytes, offset, number) } -> std::same_as<Result<CoapOptionView>>;
+};
+
+struct AnyCoap {
+    using MessageFn = Result<std::span<const std::uint8_t>> (*)(
+        void*,
+        std::span<std::uint8_t>,
+        CoapType,
+        std::uint8_t,
+        std::uint16_t,
+        std::span<const std::uint8_t>,
+        std::span<const CoapOption>,
+        std::span<const std::uint8_t>) noexcept;
+    using EmptyFn = Result<std::span<const std::uint8_t>> (*)(
+        void*,
+        std::span<std::uint8_t>,
+        std::uint16_t,
+        std::span<const std::uint8_t>) noexcept;
+    using ParseFn = Result<CoapMessage> (*)(void*, std::span<const std::uint8_t>) noexcept;
+    using NextFn = Result<CoapOptionView> (*)(
+        void*,
+        std::span<const std::uint8_t>,
+        std::size_t&,
+        std::uint16_t&) noexcept;
+
+    void* ctx{};
+    MessageFn message_fn{};
+    EmptyFn ping_fn{};
+    EmptyFn reset_fn{};
+    ParseFn parse_fn{};
+    NextFn next_fn{};
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept
+    {
+        return message_fn != nullptr &&
+            ping_fn != nullptr &&
+            reset_fn != nullptr &&
+            parse_fn != nullptr &&
+            next_fn != nullptr;
+    }
+
+    [[nodiscard]] static constexpr AnyCoap arc() noexcept
+    {
+        return {
+            .ctx = nullptr,
+            .message_fn = &arc_message,
+            .ping_fn = &arc_ping,
+            .reset_fn = &arc_reset,
+            .parse_fn = &arc_parse,
+            .next_fn = &arc_next,
+        };
+    }
+
+    template <CoapAdapter Codec>
+    [[nodiscard]] static constexpr AnyCoap bind(Codec& codec) noexcept
+    {
+        return {
+            .ctx = &codec,
+            .message_fn = &message_object<Codec>,
+            .ping_fn = &ping_object<Codec>,
+            .reset_fn = &reset_object<Codec>,
+            .parse_fn = &parse_object<Codec>,
+            .next_fn = &next_object<Codec>,
+        };
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> message(
+        std::span<std::uint8_t> out,
+        const CoapType type,
+        const std::uint8_t code,
+        const std::uint16_t id,
+        const std::span<const std::uint8_t> token = {},
+        const std::span<const CoapOption> options = {},
+        const std::span<const std::uint8_t> payload = {}) noexcept
+    {
+        return message_fn == nullptr ? fail(ESP_ERR_INVALID_STATE)
+                                     : message_fn(ctx, out, type, code, id, token, options, payload);
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> ping(
+        std::span<std::uint8_t> out,
+        const std::uint16_t id,
+        const std::span<const std::uint8_t> token = {}) noexcept
+    {
+        return ping_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : ping_fn(ctx, out, id, token);
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> reset(
+        std::span<std::uint8_t> out,
+        const std::uint16_t id,
+        const std::span<const std::uint8_t> token = {}) noexcept
+    {
+        return reset_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : reset_fn(ctx, out, id, token);
+    }
+
+    [[nodiscard]] Result<CoapMessage> parse(const std::span<const std::uint8_t> frame) noexcept
+    {
+        return parse_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : parse_fn(ctx, frame);
+    }
+
+    [[nodiscard]] Result<CoapOptionView> next(
+        const std::span<const std::uint8_t> options,
+        std::size_t& offset,
+        std::uint16_t& number) noexcept
+    {
+        return next_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : next_fn(ctx, options, offset, number);
+    }
+
+private:
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_message(
+        void*,
+        const std::span<std::uint8_t> out,
+        const CoapType type,
+        const std::uint8_t code,
+        const std::uint16_t id,
+        const std::span<const std::uint8_t> token,
+        const std::span<const CoapOption> options,
+        const std::span<const std::uint8_t> payload) noexcept
+    {
+        return Coap::message(out, type, code, id, token, options, payload);
+    }
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_ping(
+        void*,
+        const std::span<std::uint8_t> out,
+        const std::uint16_t id,
+        const std::span<const std::uint8_t> token) noexcept
+    {
+        return Coap::ping(out, id, token);
+    }
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_reset(
+        void*,
+        const std::span<std::uint8_t> out,
+        const std::uint16_t id,
+        const std::span<const std::uint8_t> token) noexcept
+    {
+        return Coap::reset(out, id, token);
+    }
+
+    [[nodiscard]] static Result<CoapMessage> arc_parse(
+        void*,
+        const std::span<const std::uint8_t> frame) noexcept
+    {
+        return Coap::parse(frame);
+    }
+
+    [[nodiscard]] static Result<CoapOptionView> arc_next(
+        void*,
+        const std::span<const std::uint8_t> options,
+        std::size_t& offset,
+        std::uint16_t& number) noexcept
+    {
+        return Coap::next(options, offset, number);
+    }
+
+    template <CoapAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> message_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out,
+        const CoapType type,
+        const std::uint8_t code,
+        const std::uint16_t id,
+        const std::span<const std::uint8_t> token,
+        const std::span<const CoapOption> options,
+        const std::span<const std::uint8_t> payload) noexcept
+    {
+        return static_cast<Codec*>(ctx)->message(out, type, code, id, token, options, payload);
+    }
+
+    template <CoapAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> ping_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out,
+        const std::uint16_t id,
+        const std::span<const std::uint8_t> token) noexcept
+    {
+        return static_cast<Codec*>(ctx)->ping(out, id, token);
+    }
+
+    template <CoapAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> reset_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out,
+        const std::uint16_t id,
+        const std::span<const std::uint8_t> token) noexcept
+    {
+        return static_cast<Codec*>(ctx)->reset(out, id, token);
+    }
+
+    template <CoapAdapter Codec>
+    [[nodiscard]] static Result<CoapMessage> parse_object(
+        void* const ctx,
+        const std::span<const std::uint8_t> frame) noexcept
+    {
+        return static_cast<Codec*>(ctx)->parse(frame);
+    }
+
+    template <CoapAdapter Codec>
+    [[nodiscard]] static Result<CoapOptionView> next_object(
+        void* const ctx,
+        const std::span<const std::uint8_t> options,
+        std::size_t& offset,
+        std::uint16_t& number) noexcept
+    {
+        return static_cast<Codec*>(ctx)->next(options, offset, number);
     }
 };
 

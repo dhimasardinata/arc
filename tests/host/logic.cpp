@@ -1265,6 +1265,70 @@ void test_mqtt()
 
 void test_ws()
 {
+    struct WsMock {
+        std::size_t frames{};
+
+        [[nodiscard]] arc::Result<std::span<const char>> key(
+            const std::span<char> out,
+            const std::span<const std::uint8_t> nonce) noexcept
+        {
+            return arc::net::Ws::key(out, nonce);
+        }
+
+        [[nodiscard]] arc::Result<std::span<const char>> accept(
+            const std::span<char> out,
+            const char* const key) noexcept
+        {
+            return arc::net::Ws::accept(out, key);
+        }
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> frame(
+            const std::span<std::uint8_t> out,
+            const arc::net::WsOpcode opcode,
+            const void* const data,
+            const std::size_t bytes,
+            const bool fin,
+            const std::uint32_t mask,
+            const bool rsv1,
+            const bool rsv2,
+            const bool rsv3) noexcept
+        {
+            ++frames;
+            return arc::net::Ws::frame(out, opcode, data, bytes, fin, mask, rsv1, rsv2, rsv3);
+        }
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> text(
+            const std::span<std::uint8_t> out,
+            const char* const value,
+            const bool fin,
+            const std::uint32_t mask) noexcept
+        {
+            return arc::net::Ws::text(out, value, fin, mask);
+        }
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> close(
+            const std::span<std::uint8_t> out,
+            const std::uint16_t code,
+            const std::span<const std::uint8_t> reason,
+            const std::uint32_t mask) noexcept
+        {
+            return arc::net::Ws::close(out, code, reason, mask);
+        }
+
+        [[nodiscard]] arc::Result<arc::net::WsFrame> parse(
+            const std::span<const std::uint8_t> frame,
+            const std::span<std::uint8_t> scratch) noexcept
+        {
+            return arc::net::Ws::parse(frame, scratch);
+        }
+
+        [[nodiscard]] arc::Result<arc::net::WsClose> close_view(
+            const arc::net::WsFrame& frame) noexcept
+        {
+            return arc::net::Ws::close_view(frame);
+        }
+    };
+
     std::array<char, 32> accept_buf{};
     const auto accept = arc::net::Ws::accept(accept_buf, "dGhlIHNhbXBsZSBub25jZQ==");
     expect(accept.has_value(), "WS accept encodes");
@@ -1324,10 +1388,75 @@ void test_ws()
     expect(close_view->code == 1000U, "WS close code");
     expect(close_view->reason.size() == reason.size(), "WS close reason size");
     expect(std::memcmp(close_view->reason.data(), reason.data(), reason.size()) == 0, "WS close reason");
+
+    auto codec = arc::net::AnyWs::arc();
+    expect(static_cast<bool>(codec), "AnyWs arc codec binds");
+    const auto any_text = codec.text(frame, "abi", true, 0U);
+    expect(any_text.has_value() && codec.parse(*any_text).has_value(), "AnyWs arc text parses");
+    WsMock mock{};
+    static_assert(arc::net::WsAdapter<WsMock>);
+    auto erased = arc::net::AnyWs::bind(mock);
+    const auto any_binary = erased.frame(
+        frame,
+        arc::net::WsOpcode::binary,
+        ping_data.data(),
+        ping_data.size());
+    expect(any_binary.has_value() && mock.frames == 1U, "AnyWs bound frame forwards");
+    const auto any_frame = erased.parse(*any_binary);
+    expect(any_frame.has_value() && any_frame->opcode == arc::net::WsOpcode::binary, "AnyWs bound parse");
+    arc::net::AnyWs empty{};
+    expect(!empty.text(frame, "x") && !static_cast<bool>(empty), "AnyWs empty rejects");
 }
 
 void test_coap()
 {
+    struct CoapMock {
+        std::size_t messages{};
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> message(
+            const std::span<std::uint8_t> out,
+            const arc::net::CoapType type,
+            const std::uint8_t code,
+            const std::uint16_t id,
+            const std::span<const std::uint8_t> token,
+            const std::span<const arc::net::CoapOption> options,
+            const std::span<const std::uint8_t> payload) noexcept
+        {
+            ++messages;
+            return arc::net::Coap::message(out, type, code, id, token, options, payload);
+        }
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> ping(
+            const std::span<std::uint8_t> out,
+            const std::uint16_t id,
+            const std::span<const std::uint8_t> token) noexcept
+        {
+            return arc::net::Coap::ping(out, id, token);
+        }
+
+        [[nodiscard]] arc::Result<std::span<const std::uint8_t>> reset(
+            const std::span<std::uint8_t> out,
+            const std::uint16_t id,
+            const std::span<const std::uint8_t> token) noexcept
+        {
+            return arc::net::Coap::reset(out, id, token);
+        }
+
+        [[nodiscard]] arc::Result<arc::net::CoapMessage> parse(
+            const std::span<const std::uint8_t> frame) noexcept
+        {
+            return arc::net::Coap::parse(frame);
+        }
+
+        [[nodiscard]] arc::Result<arc::net::CoapOptionView> next(
+            const std::span<const std::uint8_t> options,
+            std::size_t& offset,
+            std::uint16_t& number) noexcept
+        {
+            return arc::net::Coap::next(options, offset, number);
+        }
+    };
+
     std::array<std::uint8_t, 256> buffer{};
     const std::array<std::uint8_t, 2> token{0xdeU, 0xadU};
     const std::array options{
@@ -1412,6 +1541,26 @@ void test_coap()
 
     const auto reset = arc::net::Coap::reset(buffer, 0x40U);
     expect(reset.has_value(), "CoAP reset encodes");
+
+    auto codec = arc::net::AnyCoap::arc();
+    expect(static_cast<bool>(codec), "AnyCoap arc codec binds");
+    const auto any_ping = codec.ping(buffer, 0x41U, std::span(token));
+    expect(any_ping.has_value() && codec.parse(*any_ping).has_value(), "AnyCoap arc ping parses");
+    CoapMock mock{};
+    static_assert(arc::net::CoapAdapter<CoapMock>);
+    auto erased = arc::net::AnyCoap::bind(mock);
+    const auto any_request = erased.message(
+        buffer,
+        arc::net::CoapType::confirmable,
+        static_cast<std::uint8_t>(arc::net::CoapCode::get),
+        0x4321U,
+        std::span(token),
+        std::span(options));
+    expect(any_request.has_value() && mock.messages == 1U, "AnyCoap bound message forwards");
+    const auto any_msg = erased.parse(*any_request);
+    expect(any_msg.has_value() && any_msg->id == 0x4321U, "AnyCoap bound parse");
+    arc::net::AnyCoap empty{};
+    expect(!empty.ping(buffer, 0x42U) && !static_cast<bool>(empty), "AnyCoap empty rejects");
 
     const std::array<std::uint8_t, 4> overflow_option{0xe0U, 0xffU, 0xf2U, 0x00U};
     std::size_t overflow_offset{};

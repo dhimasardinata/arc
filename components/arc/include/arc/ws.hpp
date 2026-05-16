@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -542,6 +543,302 @@ private:
             value = (value << 8U) | in[pos + i];
         }
         return value;
+    }
+};
+
+template <typename Codec>
+concept WsAdapter = requires(
+    Codec& codec,
+    std::span<char> text_out,
+    std::span<std::uint8_t> out,
+    std::span<const std::uint8_t> bytes,
+    const char* key,
+    const char* text,
+    const WsFrame& frame) {
+    { codec.key(text_out, bytes) } -> std::same_as<Result<std::span<const char>>>;
+    { codec.accept(text_out, key) } -> std::same_as<Result<std::span<const char>>>;
+    { codec.frame(out, WsOpcode::binary, bytes.data(), bytes.size(), true, std::uint32_t{}, false, false, false) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.text(out, text, true, std::uint32_t{}) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.close(out, std::uint16_t{}, bytes, std::uint32_t{}) } -> std::same_as<Result<std::span<const std::uint8_t>>>;
+    { codec.parse(bytes, out) } -> std::same_as<Result<WsFrame>>;
+    { codec.close_view(frame) } -> std::same_as<Result<WsClose>>;
+};
+
+struct AnyWs {
+    using KeyFn = Result<std::span<const char>> (*)(void*, std::span<char>, std::span<const std::uint8_t>) noexcept;
+    using AcceptFn = Result<std::span<const char>> (*)(void*, std::span<char>, const char*) noexcept;
+    using FrameFn = Result<std::span<const std::uint8_t>> (*)(
+        void*,
+        std::span<std::uint8_t>,
+        WsOpcode,
+        const void*,
+        std::size_t,
+        bool,
+        std::uint32_t,
+        bool,
+        bool,
+        bool) noexcept;
+    using TextFn = Result<std::span<const std::uint8_t>> (*)(
+        void*,
+        std::span<std::uint8_t>,
+        const char*,
+        bool,
+        std::uint32_t) noexcept;
+    using CloseFn = Result<std::span<const std::uint8_t>> (*)(
+        void*,
+        std::span<std::uint8_t>,
+        std::uint16_t,
+        std::span<const std::uint8_t>,
+        std::uint32_t) noexcept;
+    using ParseFn = Result<WsFrame> (*)(void*, std::span<const std::uint8_t>, std::span<std::uint8_t>) noexcept;
+    using CloseViewFn = Result<WsClose> (*)(void*, const WsFrame&) noexcept;
+
+    void* ctx{};
+    KeyFn key_fn{};
+    AcceptFn accept_fn{};
+    FrameFn frame_fn{};
+    TextFn text_fn{};
+    CloseFn close_fn{};
+    ParseFn parse_fn{};
+    CloseViewFn close_view_fn{};
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept
+    {
+        return key_fn != nullptr &&
+            accept_fn != nullptr &&
+            frame_fn != nullptr &&
+            text_fn != nullptr &&
+            close_fn != nullptr &&
+            parse_fn != nullptr &&
+            close_view_fn != nullptr;
+    }
+
+    [[nodiscard]] static constexpr AnyWs arc() noexcept
+    {
+        return {
+            .ctx = nullptr,
+            .key_fn = &arc_key,
+            .accept_fn = &arc_accept,
+            .frame_fn = &arc_frame,
+            .text_fn = &arc_text,
+            .close_fn = &arc_close,
+            .parse_fn = &arc_parse,
+            .close_view_fn = &arc_close_view,
+        };
+    }
+
+    template <WsAdapter Codec>
+    [[nodiscard]] static constexpr AnyWs bind(Codec& codec) noexcept
+    {
+        return {
+            .ctx = &codec,
+            .key_fn = &key_object<Codec>,
+            .accept_fn = &accept_object<Codec>,
+            .frame_fn = &frame_object<Codec>,
+            .text_fn = &text_object<Codec>,
+            .close_fn = &close_object<Codec>,
+            .parse_fn = &parse_object<Codec>,
+            .close_view_fn = &close_view_object<Codec>,
+        };
+    }
+
+    [[nodiscard]] Result<std::span<const char>> key(
+        std::span<char> out,
+        const std::span<const std::uint8_t> nonce) noexcept
+    {
+        return key_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : key_fn(ctx, out, nonce);
+    }
+
+    [[nodiscard]] Result<std::span<const char>> accept(
+        std::span<char> out,
+        const char* const key) noexcept
+    {
+        return accept_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : accept_fn(ctx, out, key);
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> frame(
+        std::span<std::uint8_t> out,
+        const WsOpcode opcode,
+        const void* const data,
+        const std::size_t bytes,
+        const bool fin = true,
+        const std::uint32_t mask = 0U,
+        const bool rsv1 = false,
+        const bool rsv2 = false,
+        const bool rsv3 = false) noexcept
+    {
+        return frame_fn == nullptr ? fail(ESP_ERR_INVALID_STATE)
+                                   : frame_fn(ctx, out, opcode, data, bytes, fin, mask, rsv1, rsv2, rsv3);
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> text(
+        std::span<std::uint8_t> out,
+        const char* const value,
+        const bool fin = true,
+        const std::uint32_t mask = 0U) noexcept
+    {
+        return text_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : text_fn(ctx, out, value, fin, mask);
+    }
+
+    [[nodiscard]] Result<std::span<const std::uint8_t>> close(
+        std::span<std::uint8_t> out,
+        const std::uint16_t code = 1000U,
+        const std::span<const std::uint8_t> reason = {},
+        const std::uint32_t mask = 0U) noexcept
+    {
+        return close_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : close_fn(ctx, out, code, reason, mask);
+    }
+
+    [[nodiscard]] Result<WsFrame> parse(
+        const std::span<const std::uint8_t> in,
+        const std::span<std::uint8_t> scratch = {}) noexcept
+    {
+        return parse_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : parse_fn(ctx, in, scratch);
+    }
+
+    [[nodiscard]] Result<WsClose> close_view(const WsFrame& frame) noexcept
+    {
+        return close_view_fn == nullptr ? fail(ESP_ERR_INVALID_STATE) : close_view_fn(ctx, frame);
+    }
+
+private:
+    [[nodiscard]] static Result<std::span<const char>> arc_key(
+        void*,
+        const std::span<char> out,
+        const std::span<const std::uint8_t> nonce) noexcept
+    {
+        return Ws::key(out, nonce);
+    }
+
+    [[nodiscard]] static Result<std::span<const char>> arc_accept(
+        void*,
+        const std::span<char> out,
+        const char* const key) noexcept
+    {
+        return Ws::accept(out, key);
+    }
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_frame(
+        void*,
+        const std::span<std::uint8_t> out,
+        const WsOpcode opcode,
+        const void* const data,
+        const std::size_t bytes,
+        const bool fin,
+        const std::uint32_t mask,
+        const bool rsv1,
+        const bool rsv2,
+        const bool rsv3) noexcept
+    {
+        return Ws::frame(out, opcode, data, bytes, fin, mask, rsv1, rsv2, rsv3);
+    }
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_text(
+        void*,
+        const std::span<std::uint8_t> out,
+        const char* const value,
+        const bool fin,
+        const std::uint32_t mask) noexcept
+    {
+        return Ws::text(out, value, fin, mask);
+    }
+
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> arc_close(
+        void*,
+        const std::span<std::uint8_t> out,
+        const std::uint16_t code,
+        const std::span<const std::uint8_t> reason,
+        const std::uint32_t mask) noexcept
+    {
+        return Ws::close(out, code, reason, mask);
+    }
+
+    [[nodiscard]] static Result<WsFrame> arc_parse(
+        void*,
+        const std::span<const std::uint8_t> in,
+        const std::span<std::uint8_t> scratch) noexcept
+    {
+        return Ws::parse(in, scratch);
+    }
+
+    [[nodiscard]] static Result<WsClose> arc_close_view(
+        void*,
+        const WsFrame& frame) noexcept
+    {
+        return Ws::close_view(frame);
+    }
+
+    template <WsAdapter Codec>
+    [[nodiscard]] static Result<std::span<const char>> key_object(
+        void* const ctx,
+        const std::span<char> out,
+        const std::span<const std::uint8_t> nonce) noexcept
+    {
+        return static_cast<Codec*>(ctx)->key(out, nonce);
+    }
+
+    template <WsAdapter Codec>
+    [[nodiscard]] static Result<std::span<const char>> accept_object(
+        void* const ctx,
+        const std::span<char> out,
+        const char* const key) noexcept
+    {
+        return static_cast<Codec*>(ctx)->accept(out, key);
+    }
+
+    template <WsAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> frame_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out,
+        const WsOpcode opcode,
+        const void* const data,
+        const std::size_t bytes,
+        const bool fin,
+        const std::uint32_t mask,
+        const bool rsv1,
+        const bool rsv2,
+        const bool rsv3) noexcept
+    {
+        return static_cast<Codec*>(ctx)->frame(out, opcode, data, bytes, fin, mask, rsv1, rsv2, rsv3);
+    }
+
+    template <WsAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> text_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out,
+        const char* const value,
+        const bool fin,
+        const std::uint32_t mask) noexcept
+    {
+        return static_cast<Codec*>(ctx)->text(out, value, fin, mask);
+    }
+
+    template <WsAdapter Codec>
+    [[nodiscard]] static Result<std::span<const std::uint8_t>> close_object(
+        void* const ctx,
+        const std::span<std::uint8_t> out,
+        const std::uint16_t code,
+        const std::span<const std::uint8_t> reason,
+        const std::uint32_t mask) noexcept
+    {
+        return static_cast<Codec*>(ctx)->close(out, code, reason, mask);
+    }
+
+    template <WsAdapter Codec>
+    [[nodiscard]] static Result<WsFrame> parse_object(
+        void* const ctx,
+        const std::span<const std::uint8_t> in,
+        const std::span<std::uint8_t> scratch) noexcept
+    {
+        return static_cast<Codec*>(ctx)->parse(in, scratch);
+    }
+
+    template <WsAdapter Codec>
+    [[nodiscard]] static Result<WsClose> close_view_object(
+        void* const ctx,
+        const WsFrame& frame) noexcept
+    {
+        return static_cast<Codec*>(ctx)->close_view(frame);
     }
 };
 

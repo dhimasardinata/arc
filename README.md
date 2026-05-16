@@ -2360,6 +2360,7 @@ Thin WebSocket handshake and frame codec for caller-owned buffers.
 - `text(...)`, `binary(...)`, `ping(...)`, `pong(...)`, and `close(...)` encode one frame into a caller-provided byte span.
 - `parse(frame, scratch)` decodes one frame, and unmasking stays explicit through the caller-provided scratch span.
 - `close_view(frame)` decodes the close code and reason without hiding the wire payload.
+- `AnyWs::arc()` and `AnyWs::bind(codec)` expose a small runtime WebSocket codec adapter for callers that should not template on Arc's static codec type.
 
 Use this when you want WebSocket batteries on top of `arc::net::Tcp` or `arc::net::Http` without giving the framework ownership of handshake policy, reconnect loops, or tasking.
 
@@ -2372,6 +2373,7 @@ Thin CoAP datagram codec for caller-owned buffers.
 - `parse(...)` splits token, raw option bytes, and payload out of one received datagram.
 - `next(options, offset, number)` walks decoded options in order without heap allocation or hidden iterators.
 - `option(...)` and `text(...)` build explicit option descriptors for URI path/query and content-format composition.
+- `AnyCoap::arc()` and `AnyCoap::bind(codec)` expose a small runtime CoAP codec adapter for callers that should not template on Arc's static codec type.
 
 Use this when you want CoAP on top of UDP or another datagram lane without hiding message IDs, token policy, retransmission policy, or blockwise state.
 
