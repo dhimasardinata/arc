@@ -66,6 +66,25 @@ ruff_cmd() {
     fi
 }
 
+format_jobs() {
+    local jobs="${ARC_FORMAT_JOBS:-}"
+    if [[ ! "$jobs" =~ ^[0-9]+$ || "$jobs" -le 0 ]]; then
+        jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+    fi
+    if ((jobs < 1)); then
+        jobs=1
+    fi
+    printf '%s\n' "$jobs"
+}
+
+run_clang_format() {
+    local jobs="$1"
+    shift
+    local args=("$@")
+
+    printf '%s\0' "${cpp_files[@]}" | xargs -0 -r -n 64 -P "$jobs" clang-format "${args[@]}"
+}
+
 cpp_files=()
 python_files=()
 go_files=()
@@ -84,9 +103,9 @@ done < <(select_files "$@")
 if ((${#cpp_files[@]})); then
     need clang-format
     if [[ "$mode" == "check" ]]; then
-        clang-format --dry-run --Werror "${cpp_files[@]}"
+        run_clang_format "$(format_jobs)" --dry-run --Werror
     else
-        clang-format -i "${cpp_files[@]}"
+        run_clang_format "$(format_jobs)" -i
     fi
 fi
 

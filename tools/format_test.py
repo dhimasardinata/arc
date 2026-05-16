@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FormatToolTest(unittest.TestCase):
+    def test_cpp_formatting_is_parallelized(self) -> None:
+        text = (ROOT / "tools" / "format.sh").read_text(encoding="utf-8")
+
+        self.assertIn("ARC_FORMAT_JOBS", text)
+        self.assertIn("xargs -0 -r -n 64 -P", text)
+
     def test_default_check_includes_untracked_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
