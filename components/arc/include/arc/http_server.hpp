@@ -126,10 +126,20 @@ struct HttpRoute {
 
     [[nodiscard]] static constexpr bool matches(const HttpRequestView& req) noexcept
     {
-        return req.method == Method && equal(req.target, std::span<const char>{Path.value, Path.size()});
+        return req.method == Method && equal(route_path(req.target), std::span<const char>{Path.value, Path.size()});
     }
 
 private:
+    [[nodiscard]] static constexpr std::span<const char> route_path(const std::span<const char> target) noexcept
+    {
+        for (std::size_t i = 0U; i < target.size(); ++i) {
+            if (target[i] == '?') {
+                return target.first(i);
+            }
+        }
+        return target;
+    }
+
     [[nodiscard]] static constexpr bool equal(
         const std::span<const char> lhs,
         const std::span<const char> rhs) noexcept
@@ -250,6 +260,48 @@ struct HttpServer {
             value = (value * 10U) + digit;
         }
         return value;
+    }
+
+    [[nodiscard]] static constexpr std::span<const char> path(const HttpRequestView& req) noexcept
+    {
+        const auto split = find_char(req.target, '?', 0U);
+        return split == npos ? req.target : req.target.first(split);
+    }
+
+    [[nodiscard]] static constexpr std::span<const char> query(const HttpRequestView& req) noexcept
+    {
+        const auto split = find_char(req.target, '?', 0U);
+        if (split == npos || split + 1U >= req.target.size()) {
+            return {};
+        }
+        return req.target.subspan(split + 1U);
+    }
+
+    [[nodiscard]] static Result<std::span<const char>> find_query(
+        const HttpRequestView& req,
+        const char* const name) noexcept
+    {
+        if (name == nullptr || *name == '\0') {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        const auto wanted = std::span<const char>{name, std::strlen(name)};
+        auto rest = query(req);
+        while (!rest.empty()) {
+            const auto next = find_char(rest, '&', 0U);
+            const auto pair = next == npos ? rest : rest.first(next);
+            const auto eq = find_char(pair, '=', 0U);
+            const auto key = eq == npos ? pair : pair.first(eq);
+            const auto value = eq == npos ? std::span<const char>{} : pair.subspan(eq + 1U);
+            if (span_equal(key, wanted)) {
+                return value;
+            }
+            if (next == npos) {
+                break;
+            }
+            rest = rest.subspan(next + 1U);
+        }
+        return fail(ESP_ERR_NOT_FOUND);
     }
 
     [[nodiscard]] static const HttpHeaderView* find_header(
@@ -523,15 +575,38 @@ private:
 
     [[nodiscard]] static constexpr bool ascii_iequal(std::span<const char> lhs, std::span<const char> rhs) noexcept
     {
+        if (!span_equal(lhs, rhs, [](const char lhs_ch, const char rhs_ch) {
+                return lower(lhs_ch) == lower(rhs_ch);
+            })) {
+            return false;
+        }
+        return true;
+    }
+
+    template <typename Eq>
+    [[nodiscard]] static constexpr bool span_equal(
+        const std::span<const char> lhs,
+        const std::span<const char> rhs,
+        Eq&& eq) noexcept(noexcept(eq(lhs[0], rhs[0])))
+    {
         if (lhs.size() != rhs.size()) {
             return false;
         }
         for (std::size_t i = 0; i < lhs.size(); ++i) {
-            if (lower(lhs[i]) != lower(rhs[i])) {
+            if (!eq(lhs[i], rhs[i])) {
                 return false;
             }
         }
         return true;
+    }
+
+    [[nodiscard]] static constexpr bool span_equal(
+        const std::span<const char> lhs,
+        const std::span<const char> rhs) noexcept
+    {
+        return span_equal(lhs, rhs, [](const char lhs_ch, const char rhs_ch) {
+            return lhs_ch == rhs_ch;
+        });
     }
 };
 

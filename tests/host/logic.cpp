@@ -1803,6 +1803,29 @@ void test_http_server()
     });
     expect(get_hit && routed, "HTTP router matches compile-time route");
 
+    constexpr char query_raw[] = "GET /config?mode=tight&limit=5&flag&empty= HTTP/1.1\r\nHost: arc.local\r\n\r\n";
+    const auto query_req = arc::net::HttpServer::parse(
+        std::span<const char>{query_raw, sizeof(query_raw) - 1U},
+        std::span(headers));
+    expect(query_req.has_value(), "HTTP query request parses");
+    const auto query_path = arc::net::HttpServer::path(*query_req);
+    expect(query_path.size() == 7U && std::memcmp(query_path.data(), "/config", query_path.size()) == 0, "HTTP path strips query");
+    expect(arc::net::HttpServer::query(*query_req).size() == 30U, "HTTP query view");
+    const auto query_hit = arc::net::HttpRouter<ConfigGet, MetricsGet>::dispatch(*query_req, [&](auto route) {
+        routed = route.id() == ConfigGet::id();
+    });
+    expect(query_hit && routed, "HTTP router ignores query string");
+    const auto mode_arg = arc::net::HttpServer::find_query(*query_req, "mode");
+    expect(mode_arg.has_value() && std::memcmp(mode_arg->data(), "tight", mode_arg->size()) == 0, "HTTP query param value");
+    const auto limit_arg = arc::net::HttpServer::find_query(*query_req, "limit");
+    expect(limit_arg.has_value() && std::memcmp(limit_arg->data(), "5", limit_arg->size()) == 0, "HTTP query numeric value");
+    const auto flag_arg = arc::net::HttpServer::find_query(*query_req, "flag");
+    expect(flag_arg.has_value() && flag_arg->empty(), "HTTP query bare flag");
+    const auto empty_arg = arc::net::HttpServer::find_query(*query_req, "empty");
+    expect(empty_arg.has_value() && empty_arg->empty(), "HTTP query empty value");
+    expect(!arc::net::HttpServer::find_query(*query_req, "missing"), "HTTP query missing value");
+    expect(!arc::net::HttpServer::find_query(*query_req, nullptr), "HTTP query null key rejects");
+
     std::array<char, 128> response{};
     constexpr char body[] = "ok";
     const auto encoded = arc::net::HttpServer::text_response(
