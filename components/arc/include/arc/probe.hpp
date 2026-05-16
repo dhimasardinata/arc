@@ -143,4 +143,45 @@ struct DeadlineStats {
     }
 };
 
+struct StallStats {
+    std::uint32_t samples{};
+    std::uint32_t stalls{};
+    esp_cpu_cycle_count_t max{};
+    std::uint64_t total{};
+
+    IRAM_ATTR [[gnu::always_inline]] inline void add(
+        const esp_cpu_cycle_count_t elapsed,
+        const esp_cpu_cycle_count_t baseline,
+        const esp_cpu_cycle_count_t guard = 0U) noexcept
+    {
+        samples += 1U;
+
+        const auto limit = static_cast<std::uint64_t>(baseline) + static_cast<std::uint64_t>(guard);
+        if (static_cast<std::uint64_t>(elapsed) <= limit) {
+            return;
+        }
+
+        const auto raw = static_cast<std::uint64_t>(elapsed) - limit;
+        const auto excess = raw > std::numeric_limits<esp_cpu_cycle_count_t>::max()
+            ? std::numeric_limits<esp_cpu_cycle_count_t>::max()
+            : static_cast<esp_cpu_cycle_count_t>(raw);
+        max = excess > max ? excess : max;
+        total += excess;
+        stalls += 1U;
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline esp_cpu_cycle_count_t avg() const noexcept
+    {
+        return stalls == 0U ? 0U : static_cast<esp_cpu_cycle_count_t>(total / stalls);
+    }
+
+    IRAM_ATTR [[gnu::always_inline]] inline void clear() noexcept
+    {
+        samples = 0U;
+        stalls = 0U;
+        max = 0U;
+        total = 0U;
+    }
+};
+
 }  // namespace arc

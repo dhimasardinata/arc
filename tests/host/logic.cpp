@@ -3544,6 +3544,15 @@ void test_probe_stats()
     deadline.clear();
     expect(deadline.samples == 0U && deadline.overruns == 0U, "DeadlineStats clear");
 
+    arc::StallStats stalls{};
+    stalls.add(100U, 90U, 10U);
+    stalls.add(125U, 90U, 10U);
+    stalls.add(UINT32_MAX, 0U, 0U);
+    expect(stalls.samples == 3U && stalls.stalls == 2U && stalls.max == UINT32_MAX, "StallStats counts excess cycles");
+    expect(stalls.avg() == ((25ULL + UINT32_MAX) / 2ULL), "StallStats averages stall excess");
+    stalls.clear();
+    expect(stalls.samples == 0U && stalls.stalls == 0U && stalls.avg() == 0U, "StallStats clear");
+
     expect(arc::Clock::ns(240U, 240U) == 1000U, "Clock cycle ns");
     expect(arc::Clock::signed_ns(-240, 240U) == -1000, "Clock signed cycle ns");
 }
