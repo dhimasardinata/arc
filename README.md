@@ -456,6 +456,7 @@ Arc no longer needs to drag every hardware driver into every app.
 - `components/arc` now exports only the shared core headers and dependencies.
 - `arc.hpp` only pulls feature headers when the matching ESP-IDF headers are visible through the current target's `REQUIRES`.
 - `cmake/arc-deps.cmake` gives a terse way to declare only the Arc features a target actually uses.
+- `tools/profile-export.py` can materialize a profile header closure such as `core`, `memory`, `net_codecs`, or `math` into `dump/profiles/<profile>` with a header-only ESP-IDF component stub.
 
 Use this pattern in `main/CMakeLists.txt` or any example `main/CMakeLists.txt`:
 
@@ -468,6 +469,12 @@ idf_component_register(
     SRCS "app_main.cpp"
     REQUIRES ${main_requires}
 )
+```
+
+Export a standalone profile package when another project only needs one Arc subset:
+
+```bash
+./tools/profile-export.py core
 ```
 
 Feature names map directly to hardware lanes:
