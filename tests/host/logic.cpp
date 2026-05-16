@@ -1826,6 +1826,29 @@ void test_http_server()
     expect(!arc::net::HttpServer::find_query(*query_req, "missing"), "HTTP query missing value");
     expect(!arc::net::HttpServer::find_query(*query_req, nullptr), "HTTP query null key rejects");
 
+    constexpr char encoded_query_raw[] =
+        "GET /config?mode=tight%20loop&label=A%2BB+C&bad=%xz HTTP/1.1\r\nHost: arc.local\r\n\r\n";
+    const auto encoded_query_req = arc::net::HttpServer::parse(
+        std::span<const char>{encoded_query_raw, sizeof(encoded_query_raw) - 1U},
+        std::span(headers));
+    expect(encoded_query_req.has_value(), "HTTP encoded query request parses");
+    std::array<char, 16> decoded_query{};
+    const auto decoded_mode = arc::net::HttpServer::find_query(*encoded_query_req, "mode", std::span(decoded_query));
+    expect(decoded_mode.has_value() && decoded_mode->size() == 10U &&
+               std::memcmp(decoded_mode->data(), "tight loop", decoded_mode->size()) == 0,
+           "HTTP query value decodes percent escapes");
+    const auto decoded_label = arc::net::HttpServer::find_query(*encoded_query_req, "label", std::span(decoded_query));
+    expect(decoded_label.has_value() && decoded_label->size() == 5U &&
+               std::memcmp(decoded_label->data(), "A+B C", decoded_label->size()) == 0,
+           "HTTP query value decodes form spaces");
+    std::array<char, 4> small_query{};
+    expect(!arc::net::HttpServer::find_query(*encoded_query_req, "mode", std::span(small_query)),
+           "HTTP query decode capacity rejects");
+    expect(!arc::net::HttpServer::find_query(*encoded_query_req, "bad", std::span(decoded_query)),
+           "HTTP query decode invalid escape rejects");
+    expect(!arc::net::HttpServer::find_query(*encoded_query_req, "missing", std::span(decoded_query)),
+           "HTTP decoded query missing value");
+
     std::array<char, 128> response{};
     constexpr char body[] = "ok";
     const auto encoded = arc::net::HttpServer::text_response(

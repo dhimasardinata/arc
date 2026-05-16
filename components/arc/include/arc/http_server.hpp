@@ -11,6 +11,7 @@
 
 #include "arc/result.hpp"
 #include "arc/text.hpp"
+#include "arc/uri.hpp"
 
 namespace arc::net {
 
@@ -302,6 +303,29 @@ struct HttpServer {
             rest = rest.subspan(next + 1U);
         }
         return fail(ESP_ERR_NOT_FOUND);
+    }
+
+    [[nodiscard]] static Result<std::span<const char>> decode_query(
+        const std::span<char> out,
+        const std::span<const char> value) noexcept
+    {
+        const auto decoded = Uri::decode(out, value, true);
+        if (!decoded) {
+            return fail(decoded.error());
+        }
+        return std::span<const char>{decoded->data(), decoded->size()};
+    }
+
+    [[nodiscard]] static Result<std::span<const char>> find_query(
+        const HttpRequestView& req,
+        const char* const name,
+        const std::span<char> out) noexcept
+    {
+        const auto value = find_query(req, name);
+        if (!value) {
+            return fail(value.error());
+        }
+        return decode_query(out, *value);
     }
 
     [[nodiscard]] static const HttpHeaderView* find_header(

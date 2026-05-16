@@ -2308,6 +2308,7 @@ Zero-allocation HTTP/1.x request parser and compile-time route matcher for small
 - `parse(bytes, header_scratch)` returns an `HttpRequestView` whose method, target, headers, and body point into caller-owned receive storage.
 - `path(req)` and `query(req)` split the request target into raw path/query views without copying or decoding.
 - `find_query(req, "mode")` finds one raw query value and treats bare flags as present empty values.
+- `decode_query(scratch, raw)` and `find_query(req, "label", scratch)` decode percent escapes and `+` form spaces into caller-owned scratch storage.
 - `find_header(req, "content-length")` performs ASCII case-insensitive header lookup without copying keys.
 - `HttpRoute<HttpMethod::get, "/metrics">` creates a compile-time method/path tag with a stable route ID; matching ignores the query string.
 - `HttpRouter<Routes...>::dispatch(req, fn)` calls `fn(route_tag)` for the first matching route.
