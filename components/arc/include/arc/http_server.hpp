@@ -1,14 +1,15 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <span>
+#include <string_view>
 
 #include "esp_err.h"
 
 #include "arc/result.hpp"
+#include "arc/text.hpp"
 
 namespace arc::net {
 
@@ -225,15 +226,15 @@ struct HttpServer {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
-        auto pos = std::size_t{0U};
-        if (!append(out, pos, "HTTP/1.1 ") || !append_u16(out, pos, static_cast<std::uint16_t>(status)) ||
-            !append(out, pos, " ") || !append(out, pos, reason) || !append(out, pos, "\r\nContent-Type: ") ||
-            !append(out, pos, content_type) || !append(out, pos, "\r\nContent-Length: ") ||
-            !append_usize(out, pos, body.size()) || !append(out, pos, "\r\nConnection: close\r\n\r\n") ||
-            !append(out, pos, body)) {
+        Text text{out};
+        if (!text.append("HTTP/1.1 ") || !text.u32(static_cast<std::uint32_t>(status)) ||
+            !text.push(' ') || !text.append(reason) || !text.append("\r\nContent-Type: ") ||
+            !text.append(content_type) || !text.append("\r\nContent-Length: ") ||
+            !text.usize(body.size()) || !text.append("\r\nConnection: close\r\n\r\n") ||
+            !text.append(body)) {
             return fail(ESP_ERR_NO_MEM);
         }
-        return out.first(pos);
+        return text.span();
     }
 
 private:
@@ -343,50 +344,6 @@ private:
             if (lower(lhs[i]) != lower(rhs[i])) {
                 return false;
             }
-        }
-        return true;
-    }
-
-    [[nodiscard]] static bool append(std::span<char> out, std::size_t& pos, std::span<const char> value) noexcept
-    {
-        if (out.size() - pos < value.size()) {
-            return false;
-        }
-        std::memcpy(out.data() + pos, value.data(), value.size());
-        pos += value.size();
-        return true;
-    }
-
-    [[nodiscard]] static bool append(std::span<char> out, std::size_t& pos, const char* value) noexcept
-    {
-        return append(out, pos, std::span<const char>{value, std::strlen(value)});
-    }
-
-    [[nodiscard]] static bool append_u16(std::span<char> out, std::size_t& pos, std::uint16_t value) noexcept
-    {
-        if (out.size() - pos < 3U) {
-            return false;
-        }
-        out[pos++] = static_cast<char>('0' + ((value / 100U) % 10U));
-        out[pos++] = static_cast<char>('0' + ((value / 10U) % 10U));
-        out[pos++] = static_cast<char>('0' + (value % 10U));
-        return true;
-    }
-
-    [[nodiscard]] static bool append_usize(std::span<char> out, std::size_t& pos, std::size_t value) noexcept
-    {
-        std::array<char, 20> digits{};
-        auto count = std::size_t{0U};
-        do {
-            digits[count++] = static_cast<char>('0' + (value % 10U));
-            value /= 10U;
-        } while (value != 0U);
-
-        if (out.size() - pos < count) {
-            return false;
-        }
-        while (count != 0U) {
-            out[pos++] = digits[--count];
         }
         return true;
     }

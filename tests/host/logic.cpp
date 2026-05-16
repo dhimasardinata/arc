@@ -108,6 +108,7 @@
 #include "arc/thread.hpp"
 #include "arc/timesync.hpp"
 #include "arc/tcp.hpp"
+#include "arc/text.hpp"
 #include "arc/tls.hpp"
 #include "arc/trace_event.hpp"
 #include "arc/trace_live.hpp"
@@ -2634,6 +2635,47 @@ void test_log_lane()
     expect(payload_sum == 24U, "LogLane payloads");
 }
 
+void test_text()
+{
+    std::array<char, 96> out{};
+    arc::Text text{std::span(out)};
+
+    expect(text.empty() && text.cap() == out.size(), "Text starts empty");
+    expect(text.append("adc="), "Text append literal");
+    expect(text.u32(42U), "Text u32");
+    expect(text.push(','), "Text push");
+    expect(text.i32(-7), "Text i32");
+    expect(text.append(",pc=0x"), "Text append second literal");
+    expect(text.hex(0x1afU, 4U), "Text hex width");
+    expect(text.append(",name=\""), "Text append json prefix");
+    expect(text.json("core\"loop\n\x01"), "Text json escape");
+    expect(text.push('"'), "Text close quote");
+
+    const auto view = text.view();
+    expect(view == "adc=42,-7,pc=0x01af,name=\"core\\\"loop\\n\\u0001\"", "Text formatted output");
+    expect(text.done().has_value() && text.done()->size() == view.size(), "Text done span");
+    text.clear();
+    expect(text.empty(), "Text clear");
+
+    std::array<char, 4> small{};
+    arc::Text tiny{std::span(small)};
+    expect(!tiny.append("toolong"), "Text rejects oversized append");
+    expect(tiny.empty(), "Text oversized append is not partial");
+    expect(tiny.append("1234") && tiny.full(), "Text fills exactly");
+    expect(!tiny.push('5'), "Text rejects full push");
+
+    arc::Text empty{};
+    expect(empty.view().empty() && !empty.push('x'), "Text default storage is inert");
+
+    std::array<char, 2> signed_small{};
+    arc::Text negative{std::span(signed_small)};
+    expect(!negative.i32(-123) && negative.empty(), "Text failed signed write rolls back");
+
+    std::array<char, 4> json_small{};
+    arc::Text escaped{std::span(json_small)};
+    expect(!escaped.json("ab\nc") && escaped.empty(), "Text failed json write rolls back");
+}
+
 void test_trace_event()
 {
     std::array<char, 256> out{};
@@ -2647,6 +2689,11 @@ void test_trace_event()
     expect(std::strstr(out.data(), "\"name\":\"core1.loop\"") != nullptr, "TraceEvent name");
     expect(std::strstr(out.data(), "\"ts\":1234") != nullptr, "TraceEvent timestamp");
     expect(std::strstr(out.data(), "\"payload\":77") != nullptr, "TraceEvent payload");
+
+    std::array<char, 256> escaped{};
+    const auto escaped_event = arc::TraceEventWriter::json_event(std::span(escaped), event, false, "core\"loop\n");
+    expect(escaped_event.has_value(), "TraceEvent escaped event");
+    expect(std::strstr(escaped.data(), "\"name\":\"core\\\"loop\\n\"") != nullptr, "TraceEvent escaped name");
 
     std::array<char, 8> small{};
     expect(!arc::TraceEventWriter::json_event(std::span(small), event), "TraceEvent small buffer rejects");
@@ -4990,6 +5037,7 @@ int main()
     test_matrix_kalman_storage_swarm();
     test_trace_provision_ethernet_flashoff_hil_ecs();
     test_log_lane();
+    test_text();
     test_trace_event();
     test_postmortem();
     test_timesync();

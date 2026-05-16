@@ -47,6 +47,7 @@
 #include "arc/stack.hpp"
 #include "arc/stream.hpp"
 #include "arc/task.hpp"
+#include "arc/text.hpp"
 #include "arc/tight.hpp"
 #include "arc/topology.hpp"
 #include "arc/uri.hpp"
