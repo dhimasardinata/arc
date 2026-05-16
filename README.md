@@ -1300,6 +1300,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 
 - `try_push(event)` can be called by multiple producer tasks.
 - `try_pop(event)` is single-consumer and fits Core 0 drain loops.
+- `producer()`, `consumer()`, and `split()` return role endpoints; producer handles may be copied across producers, while the consumer handle is move-only.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation.
 - `cap()` exposes the power-of-two static capacity.
 - `cell_align()`, `cell_bytes()`, and `bytes()` expose the queue's RAM geometry.

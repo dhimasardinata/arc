@@ -803,6 +803,9 @@ void test_checked_spsc()
 void test_mpsc_single()
 {
     arc::Mpsc<int, 4> queue;
+    using MpscInt = arc::Mpsc<int, 4>;
+    static_assert(std::is_copy_constructible_v<MpscInt::Producer>);
+    static_assert(!std::is_copy_constructible_v<MpscInt::Consumer>);
     expect(queue.cap() == 4U, "MPSC capacity");
     expect(queue.cell_align() == arc::cache_line, "MPSC cache-line alignment");
     expect(queue.bytes() == sizeof(queue), "MPSC bytes");
@@ -820,6 +823,17 @@ void test_mpsc_single()
     expect(queue.try_pop(value) && value == 10, "MPSC pop 10");
     expect(queue.try_pop(value) && value == 11, "MPSC pop 11");
     expect(!queue.try_pop(value), "MPSC empty rejects");
+
+    auto endpoints = queue.split();
+    auto second_producer = endpoints.producer;
+    expect(static_cast<bool>(endpoints.producer) && static_cast<bool>(endpoints.consumer),
+           "MPSC role endpoints split");
+    expect(endpoints.producer.try_push(12) && second_producer.try_push(13), "MPSC producer endpoints push");
+    expect(endpoints.consumer.try_pop(value) && value == 12, "MPSC consumer endpoint pop 12");
+    auto moved_consumer = std::move(endpoints.consumer);
+    expect(!static_cast<bool>(endpoints.consumer) && static_cast<bool>(moved_consumer),
+           "MPSC consumer endpoint is move-only");
+    expect(moved_consumer.try_pop(value) && value == 13, "MPSC moved consumer endpoint pop 13");
 }
 
 void test_compact_mpsc()

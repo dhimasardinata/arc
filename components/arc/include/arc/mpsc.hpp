@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 #include "esp_attr.h"
 
@@ -29,6 +30,115 @@ struct MpscImpl {
     static_assert(std::is_trivially_copyable_v<T>, "MPSC payload must be trivially copyable");
     static_assert(CellAlign >= alignof(std::uint32_t), "MPSC cell alignment must fit the sequence word");
     static_assert((CellAlign & (CellAlign - 1U)) == 0U, "MPSC cell alignment must be a power of two");
+
+    class Producer {
+    public:
+        constexpr Producer() noexcept = default;
+
+        explicit constexpr Producer(MpscImpl& lane) noexcept
+            : lane_(&lane)
+        {
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return lane_ != nullptr;
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_push(const T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->try_push(value);
+        }
+
+        [[nodiscard]] static constexpr std::size_t cap() noexcept
+        {
+            return MpscImpl::cap();
+        }
+
+    private:
+        MpscImpl* lane_{};
+    };
+
+    class Consumer {
+    public:
+        constexpr Consumer() noexcept = default;
+
+        explicit constexpr Consumer(MpscImpl& lane) noexcept
+            : lane_(&lane)
+        {
+        }
+
+        Consumer(const Consumer&) = delete;
+        Consumer& operator=(const Consumer&) = delete;
+
+        constexpr Consumer(Consumer&& other) noexcept
+            : lane_(std::exchange(other.lane_, nullptr))
+        {
+        }
+
+        constexpr Consumer& operator=(Consumer&& other) noexcept
+        {
+            if (this != &other) {
+                lane_ = std::exchange(other.lane_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return lane_ != nullptr;
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->try_pop(value);
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool empty() const noexcept
+        {
+            return lane_ == nullptr || lane_->empty();
+        }
+
+        template <typename Fn>
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t drain(
+            T& value,
+            Fn&& fn,
+            const std::size_t max = Capacity) noexcept(noexcept(fn(value)))
+        {
+            return lane_ == nullptr ? 0U : lane_->drain(value, std::forward<Fn>(fn), max);
+        }
+
+        [[nodiscard]] static constexpr std::size_t cap() noexcept
+        {
+            return MpscImpl::cap();
+        }
+
+    private:
+        MpscImpl* lane_{};
+    };
+
+    struct Endpoints {
+        Producer producer;
+        Consumer consumer;
+    };
+
+    [[nodiscard]] constexpr Producer producer() noexcept
+    {
+        return Producer{*this};
+    }
+
+    [[nodiscard]] constexpr Consumer consumer() noexcept
+    {
+        return Consumer{*this};
+    }
+
+    [[nodiscard]] constexpr Endpoints split() noexcept
+    {
+        return Endpoints{
+            .producer = Producer{*this},
+            .consumer = Consumer{*this},
+        };
+    }
 
     constexpr MpscImpl() noexcept
     {
