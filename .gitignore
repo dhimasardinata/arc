@@ -15,6 +15,9 @@ arduino-esp32/
 .cache/
 .arc-build-projects
 .arc-build-cache/
+node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 __pycache__/
 *.pyc
 .rustup/

@@ -86,6 +86,16 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("go run tools/clangd-compile-commands.go --validate-arc-headers", workflow)
         self.assertIn("--changed-arc-headers", workflow)
 
+    def test_pages_workflow_uses_official_node24_actions(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8")
+
+        self.assertIn("npm ci", workflow)
+        self.assertIn("npm run docs:build", workflow)
+        self.assertIn("actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e", workflow)
+        self.assertIn("actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d", workflow)
+        self.assertIn("actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9", workflow)
+        self.assertIn("actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -31,6 +31,10 @@ ROOT_FILES = {
     "sdkconfig.defaults",
     "sdkconfig.defaults.release",
 }
+NON_FIRMWARE_FILES = {
+    "package.json",
+    "package-lock.json",
+}
 NON_FIRMWARE_PREFIXES = (
     ".github/",
     ".vscode/",
@@ -81,7 +85,9 @@ def is_root(path: str) -> bool:
 
 
 def is_non_firmware(path: str) -> bool:
-    return any(path == prefix.rstrip("/") or path.startswith(prefix) for prefix in NON_FIRMWARE_PREFIXES)
+    return path in NON_FIRMWARE_FILES or any(
+        path == prefix.rstrip("/") or path.startswith(prefix) for prefix in NON_FIRMWARE_PREFIXES
+    )
 
 
 def plan(changed: list[str] | None, buildable: list[ArcProject]) -> list[ArcProject]:
