@@ -14,11 +14,11 @@ jobs:
       ARC_PYTHON: "3.12"
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 1
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ env.ARC_PYTHON }}
 
@@ -83,7 +83,7 @@ jobs:
       - name: Restore ESP-IDF and tools cache
         id: idf-cache
         if: steps.firmware-plan.outputs.count != '0'
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/esp-idf
@@ -95,7 +95,7 @@ jobs:
 
       - name: Cache ccache
         if: steps.firmware-plan.outputs.count != '0'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.ccache
           key: ${{ runner.os }}-ccache-${{ env.ARC_IDF_REF }}-py${{ env.ARC_PYTHON }}-${{ hashFiles('components/**/*.hpp', 'components/**/*.cpp', 'examples/**/CMakeLists.txt', 'examples/**/sdkconfig.defaults', 'cmake/**/*.cmake') }}
@@ -106,7 +106,7 @@ jobs:
       - name: Restore firmware build cache
         id: firmware-build-cache
         if: steps.firmware-plan.outputs.count != '0'
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: .arc-build-cache
           key: ${{ runner.os }}-firmware-build-${{ env.ARC_IDF_REF }}-${{ env.ARC_IDF_TARGET }}-${{ hashFiles('CMakeLists.txt', 'main/CMakeLists.txt', 'sdkconfig.defaults*', 'partitions_*.csv', 'components/**/CMakeLists.txt', 'cmake/**/*.cmake', 'examples/**/CMakeLists.txt', 'examples/**/sdkconfig.defaults*', 'examples/**/partitions_*.csv') }}-${{ github.sha }}
@@ -138,7 +138,7 @@ jobs:
       - name: Save ESP-IDF and tools cache
         if: steps.firmware-plan.outputs.count != '0' && steps.idf-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/esp-idf
