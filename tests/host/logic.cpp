@@ -4089,6 +4089,17 @@ void test_current_goal_surfaces()
     expect(copy_lease->finish().has_value() && !copy_lease->active(), "Copy coherent lease finishes");
     expect(copy_lease->finish().has_value() && copy_dst[0] == 42U, "Copy coherent lease finish is idempotent");
 
+    auto copy_src_dma = arc::dmabuf<std::uint8_t>(65U);
+    auto copy_dst_dma = arc::dmabuf<std::uint8_t>(65U);
+    expect(static_cast<bool>(copy_src_dma) && static_cast<bool>(copy_dst_dma), "Copy CapsBuf allocations succeed");
+    copy_src_dma[0] = 33U;
+    copy_src_dma[64] = 99U;
+    esp_cache_last_msync_bytes = 0U;
+    expect(arc::Copy<>::copy_coherent(copy_dst_dma, copy_src_dma) == ESP_OK &&
+               copy_dst_dma[0] == 33U && copy_dst_dma[64] == 99U &&
+               esp_cache_last_msync_bytes == copy_dst_dma.storage_bytes(),
+           "Copy coherent CapsBuf syncs padded storage");
+
     struct CloakPolicy {
         static std::uint32_t rng() noexcept
         {

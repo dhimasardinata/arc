@@ -43,6 +43,7 @@ struct CopyTicket {
     std::uint32_t target{};
     void* dst{};
     std::size_t bytes{};
+    std::size_t cache_bytes{};
 };
 
 template <std::uint32_t Backlog = 4,
@@ -247,6 +248,18 @@ struct Copy {
         return copy_coherent(dst.data(), src.data(), src.size_bytes());
     }
 
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t copy_coherent(CapsBuf<Dst>& dst, const CapsBuf<Src>& src) noexcept
+    {
+        Ticket ticket{};
+        const auto ret = send_coherent(ticket, dst, src);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        return finish_coherent(ticket);
+    }
+
     template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
     static esp_err_t copy_strict(std::span<Dst, DstExtent> dst, std::span<Src, SrcExtent> src) noexcept
@@ -256,6 +269,18 @@ struct Copy {
         }
 
         return copy_strict(dst.data(), src.data(), src.size_bytes());
+    }
+
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t copy_strict(CapsBuf<Dst>& dst, const CapsBuf<Src>& src) noexcept
+    {
+        StrictTicket ticket{};
+        const auto ret = send_strict(ticket, dst, src);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+        return finish_coherent(ticket);
     }
 
     template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
@@ -271,6 +296,18 @@ struct Copy {
         return lease_coherent(dst.data(), src.data(), src.size_bytes());
     }
 
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    [[nodiscard]] static Result<Lease> lease_coherent(CapsBuf<Dst>& dst, const CapsBuf<Src>& src) noexcept
+    {
+        Ticket ticket{};
+        const auto ret = send_coherent(ticket, dst, src);
+        if (ret != ESP_OK) {
+            return fail(ret);
+        }
+        return Lease{ticket};
+    }
+
     template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
     [[nodiscard]] static Result<StrictLease> lease_strict(
@@ -282,6 +319,18 @@ struct Copy {
         }
 
         return lease_strict(dst.data(), src.data(), src.size_bytes());
+    }
+
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    [[nodiscard]] static Result<StrictLease> lease_strict(CapsBuf<Dst>& dst, const CapsBuf<Src>& src) noexcept
+    {
+        StrictTicket ticket{};
+        const auto ret = send_strict(ticket, dst, src);
+        if (ret != ESP_OK) {
+            return fail(ret);
+        }
+        return StrictLease{ticket};
     }
 
     static esp_err_t send_coherent(
@@ -316,6 +365,13 @@ struct Copy {
         return send_coherent(ticket, dst.data(), src.data(), src.size_bytes());
     }
 
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t send_coherent(Ticket& ticket, CapsBuf<Dst>& dst, const CapsBuf<Src>& src) noexcept
+    {
+        return send_cache_buf(ticket, dst, src);
+    }
+
     template <typename Dst, std::size_t DstExtent, typename Src, std::size_t SrcExtent>
         requires CopySpan<Dst, Src>
     static esp_err_t send_strict(
@@ -328,6 +384,13 @@ struct Copy {
         }
 
         return send_strict(ticket, dst.data(), src.data(), src.size_bytes());
+    }
+
+    template <typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t send_strict(StrictTicket& ticket, CapsBuf<Dst>& dst, const CapsBuf<Src>& src) noexcept
+    {
+        return send_cache_buf(ticket, dst, src);
     }
 
     [[nodiscard]] static bool ready(const Ticket& ticket) noexcept
@@ -554,6 +617,54 @@ private:
                 .target = seq,
                 .dst = dst,
                 .bytes = bytes,
+                .cache_bytes = bytes,
+            };
+        }
+
+        return sent;
+    }
+
+    template <bool Strict, typename Dst, typename Src>
+        requires CopySpan<Dst, Src>
+    static esp_err_t send_cache_buf(
+        CopyTicket<Strict>& ticket,
+        CapsBuf<Dst>& dst,
+        const CapsBuf<Src>& src) noexcept
+    {
+        if (!dst || !src || dst.size() < src.size()) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        const auto source = [&]() noexcept -> esp_err_t {
+            if constexpr (Strict) {
+                return Cache::to_aligned(src);
+            } else {
+                return Cache::to_device(src);
+            }
+        }();
+        if (source != ESP_OK) {
+            return source;
+        }
+
+        const auto target = [&]() noexcept -> esp_err_t {
+            if constexpr (Strict) {
+                return Cache::discard_aligned(dst);
+            } else {
+                return Cache::discard(dst);
+            }
+        }();
+        if (target != ESP_OK) {
+            return target;
+        }
+
+        std::uint32_t seq{};
+        const auto sent = send_impl<void>(dst.data(), src.data(), src.bytes(), &seq);
+        if (sent == ESP_OK) {
+            ticket = CopyTicket<Strict>{
+                .target = seq,
+                .dst = dst.data(),
+                .bytes = src.bytes(),
+                .cache_bytes = dst.storage_bytes(),
             };
         }
 
@@ -568,11 +679,12 @@ private:
         }
 
         wait(ticket.target);
+        const auto bytes = ticket.cache_bytes == 0U ? ticket.bytes : ticket.cache_bytes;
 
         if constexpr (Strict) {
-            return Cache::from_aligned(ticket.dst, ticket.bytes);
+            return Cache::from_aligned(ticket.dst, bytes);
         } else {
-            return Cache::from_device(ticket.dst, ticket.bytes);
+            return Cache::from_device(ticket.dst, bytes);
         }
     }
 
