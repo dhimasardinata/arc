@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 #include "esp_err.h"
 
@@ -37,6 +38,122 @@ struct RpcLane {
     static_assert(std::is_integral_v<Op> || std::is_enum_v<Op>, "RPC opcode must be integral or enum");
     static_assert(std::is_trivially_copyable_v<RequestPayload>, "RPC request payload must be trivially copyable");
     static_assert(std::is_trivially_copyable_v<ReplyPayload>, "RPC reply payload must be trivially copyable");
+
+    class Client {
+    public:
+        constexpr Client() noexcept = default;
+
+        explicit constexpr Client(RpcLane& lane) noexcept
+            : lane_(&lane)
+        {
+        }
+
+        Client(const Client&) = delete;
+        Client& operator=(const Client&) = delete;
+
+        constexpr Client(Client&& other) noexcept
+            : lane_(std::exchange(other.lane_, nullptr))
+        {
+        }
+
+        constexpr Client& operator=(Client&& other) noexcept
+        {
+            if (this != &other) {
+                lane_ = std::exchange(other.lane_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return lane_ != nullptr;
+        }
+
+        [[nodiscard]] bool call(
+            const Op op,
+            const RequestPayload& payload,
+            const std::uint32_t serial) noexcept
+        {
+            return lane_ != nullptr && lane_->call(op, payload, serial);
+        }
+
+        [[nodiscard]] bool poll(Reply& out) noexcept
+        {
+            return lane_ != nullptr && lane_->poll(out);
+        }
+
+        [[nodiscard]] bool poll_match(
+            const std::uint32_t serial,
+            Reply& out) noexcept
+        {
+            return lane_ != nullptr && lane_->poll_match(serial, out);
+        }
+
+        [[nodiscard]] bool poll_deferred(Reply& out) noexcept
+        {
+            return lane_ != nullptr && lane_->poll_deferred(out);
+        }
+
+    private:
+        RpcLane* lane_{};
+    };
+
+    class Server {
+    public:
+        constexpr Server() noexcept = default;
+
+        explicit constexpr Server(RpcLane& lane) noexcept
+            : lane_(&lane)
+        {
+        }
+
+        Server(const Server&) = delete;
+        Server& operator=(const Server&) = delete;
+
+        constexpr Server(Server&& other) noexcept
+            : lane_(std::exchange(other.lane_, nullptr))
+        {
+        }
+
+        constexpr Server& operator=(Server&& other) noexcept
+        {
+            if (this != &other) {
+                lane_ = std::exchange(other.lane_, nullptr);
+            }
+            return *this;
+        }
+
+        [[nodiscard]] constexpr explicit operator bool() const noexcept
+        {
+            return lane_ != nullptr;
+        }
+
+        [[nodiscard]] bool recv(Request& out) noexcept
+        {
+            return lane_ != nullptr && lane_->recv(out);
+        }
+
+        [[nodiscard]] bool reply(
+            const std::uint32_t serial,
+            const esp_err_t status,
+            const ReplyPayload& payload) noexcept
+        {
+            return lane_ != nullptr && lane_->reply(serial, status, payload);
+        }
+
+    private:
+        RpcLane* lane_{};
+    };
+
+    [[nodiscard]] constexpr Client client() noexcept
+    {
+        return Client{*this};
+    }
+
+    [[nodiscard]] constexpr Server server() noexcept
+    {
+        return Server{*this};
+    }
 
     [[nodiscard]] bool call(
         const Op op,

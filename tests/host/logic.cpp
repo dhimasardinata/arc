@@ -984,22 +984,31 @@ void test_rpc_lane()
     };
 
     arc::RpcLane<Op, Request, Reply, 4> rpc;
-    expect(rpc.call(Op::set, Request{.value = 42U}, 7U), "RPC call queues request");
+    using Rpc = decltype(rpc);
+    static_assert(!std::is_copy_constructible_v<Rpc::Client>);
+    static_assert(!std::is_copy_constructible_v<Rpc::Server>);
+
+    auto client = rpc.client();
+    auto server = rpc.server();
+    expect(static_cast<bool>(client) && static_cast<bool>(server), "RPC role endpoints bind");
+    expect(client.call(Op::set, Request{.value = 42U}, 7U), "RPC client queues request");
 
     decltype(rpc)::Request request{};
-    expect(rpc.recv(request), "RPC recv request");
+    expect(server.recv(request), "RPC server recv request");
     expect(request.serial == 7U && request.op == Op::set && request.payload.value == 42U, "RPC request fields");
-    expect(rpc.reply(request.serial, ESP_OK, Reply{.applied = request.payload.value + 1U}), "RPC queues reply");
+    expect(server.reply(request.serial, ESP_OK, Reply{.applied = request.payload.value + 1U}), "RPC server queues reply");
 
     decltype(rpc)::Reply reply{};
-    expect(rpc.poll_match(7U, reply), "RPC match reply");
+    expect(client.poll_match(7U, reply), "RPC client match reply");
     expect(reply.status == ESP_OK && reply.payload.applied == 43U, "RPC reply fields");
 
-    expect(rpc.call(Op::set, Request{.value = 1U}, 8U), "RPC second call");
-    expect(rpc.recv(request), "RPC second recv");
-    expect(rpc.reply(9U, ESP_OK, Reply{.applied = 9U}), "RPC out-of-order reply");
-    expect(!rpc.poll_match(8U, reply), "RPC defers unmatched reply");
-    expect(rpc.poll_deferred(reply) && reply.serial == 9U, "RPC deferred reply preserved");
+    auto moved_client = std::move(client);
+    expect(!static_cast<bool>(client) && static_cast<bool>(moved_client), "RPC client endpoint is move-only");
+    expect(moved_client.call(Op::set, Request{.value = 1U}, 8U), "RPC second client call");
+    expect(server.recv(request), "RPC second server recv");
+    expect(server.reply(9U, ESP_OK, Reply{.applied = 9U}), "RPC out-of-order reply");
+    expect(!moved_client.poll_match(8U, reply), "RPC client defers unmatched reply");
+    expect(moved_client.poll_deferred(reply) && reply.serial == 9U, "RPC client deferred reply preserved");
 }
 
 void test_checked_fanin()

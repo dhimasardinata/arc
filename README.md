@@ -1344,6 +1344,7 @@ Typed request/reply command lane built from static SPSC queues.
 - `call(op, payload, serial)` queues a command from the requester side.
 - `recv(request)` drains commands on the owner side.
 - `reply(serial, status, payload)` sends a structured completion.
+- `client()` and `server()` return move-only role endpoints so setup code can pass only requester or owner-side operations.
 - `poll(reply)` drains replies in FIFO order.
 - `poll_match(serial, reply)` accepts the requested serial and parks one unmatched reply in a static deferred lane.
 - `poll_deferred(reply)` lets the requester recover deferred out-of-order replies.
