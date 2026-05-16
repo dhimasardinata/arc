@@ -43,6 +43,14 @@ class CheckRepoToolTest(unittest.TestCase):
 
         self.assertIn("Roles", text)
 
+    def test_formal_gate_links_spsc_model_to_cpp(self) -> None:
+        text = (ROOT / "tools" / "arc-prove.sh").read_text(encoding="utf-8")
+
+        self.assertIn("Spsc model push must advance head", text)
+        self.assertIn("Spsc model pop must advance tail", text)
+        self.assertIn("store_release(&head_, next);", text)
+        self.assertIn("store_release(&tail_, increment(tail));", text)
+
     def test_tool_tests_runner_parallelizes_test_files(self) -> None:
         text = (ROOT / "tools" / "tool-tests.sh").read_text(encoding="utf-8")
 
