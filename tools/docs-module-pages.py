@@ -160,6 +160,85 @@ GROUP_EXAMPLES = {
     "ULP And Low-Power Coprocessor": "examples/esp32s3/sleep",
 }
 
+GROUP_GUIDANCE = {
+    "Buses, Displays, And Data Capture": {
+        "when": "a real ESP32-S3 peripheral needs one visible owner for pins, DMA descriptors, and transfer lifetime",
+        "avoid": "the code only needs a protocol codec or a board-independent data transform",
+        "check": "prove pin mapping, DMA-capable buffers, queue/finish ordering, and attached-device wiring before treating runtime output as evidence",
+    },
+    "Crypto, Security, VM, And Sandbox": {
+        "when": "security-sensitive bytes need caller-owned buffers, explicit hardware-policy boundaries, or bounded sandbox hooks",
+        "avoid": "key custody, trust decisions, product authorization, or threat modeling belongs above Arc",
+        "check": "document key source, buffer lifetime, failure handling, and which side owns the final security decision",
+    },
+    "DSP, Control, ML, And Vision": {
+        "when": "fixed-shape compute must run without dynamic framework allocation in the realtime lane",
+        "avoid": "a model, matrix, or vision pipeline still has runtime-varying shapes that need a higher-level planner first",
+        "check": "pin input/output sizes, align hot buffers, and benchmark on ESP32-S3 before publishing timing claims",
+    },
+    "Detail Headers": {
+        "when": "you are maintaining Arc internals and need the small support type behind a public module",
+        "avoid": "application firmware is choosing a public API; start from the owning public header instead",
+        "check": "keep direct use inside Arc code and preserve the public module contract that depends on this helper",
+    },
+    "GPIO, Timing, And Power": {
+        "when": "pin edges, timing sources, sleep state, watchdogs, or power locks must be explicit at the call site",
+        "avoid": "a slow policy task can own the work without a realtime hardware contract",
+        "check": "verify target clock source, interrupt context, wake source, and board-level pin safety before flashing",
+    },
+    "Lock-Free Lanes": {
+        "when": "Core 1 or an ISR-adjacent lane needs bounded handoff without FreeRTOS queue allocation",
+        "avoid": "the producer/consumer shape is not fixed yet or blocking semantics are acceptable",
+        "check": "name the producer and consumer, size the queue from worst-case bursts, and drain logs on Core 0",
+    },
+    "Memory, DMA, And Placement": {
+        "when": "a pointer crosses cache, DMA, PSRAM, flash mapping, or another core boundary",
+        "avoid": "ordinary stack/local data stays inside one task and never crosses a hardware owner",
+        "check": "confirm alignment, capability flags, cache ownership, and completion tickets before reusing buffers",
+    },
+    "Network, Radio, And Wire Protocols": {
+        "when": "Core 0 owns the radio/socket work and payload bytes still need deterministic framing or parsing",
+        "avoid": "Core 1 would block on Wi-Fi, TLS, DNS, storage, or heap-heavy service code",
+        "check": "keep radio state on Core 0, bound payload buffers, and capture real serial/network output for protocol evidence",
+    },
+    "Observability And Trace": {
+        "when": "runtime evidence must leave the hot path as compact events and be formatted later",
+        "avoid": "the hot loop would format strings, allocate JSON, or block on a sink",
+        "check": "prove the producer only writes bounded records and the drain path owns formatting, files, UDP, or WebSocket output",
+    },
+    "Profile Modules": {
+        "when": "a reader wants one coherent entry point for a domain or a subset build wants a profile root",
+        "avoid": "one source file only needs a narrow peripheral or codec header",
+        "check": "confirm the profile does not drag domain roots into small substrate builds unless that is intentional",
+    },
+    "Program Shape And Ownership": {
+        "when": "firmware structure, task lifetime, ownership, command parsing, or policy state needs a visible contract",
+        "avoid": "a hardware-specific module already owns the same decision more directly",
+        "check": "put the owner near board topology, make rollback explicit, and keep slow side effects on Core 0",
+    },
+    "Storage And Update": {
+        "when": "flash, files, NVS, OTA, or capacity checks must stay recoverable and Core 0-owned",
+        "avoid": "a realtime loop would wait on flash, VFS, or partition work",
+        "check": "record partition assumptions, rollback behavior, and the exact failure path before shipping update logic",
+    },
+    "Target And Naming Contract": {
+        "when": "code needs compile-time target facts, SDK naming boundaries, or public naming rules",
+        "avoid": "runtime board wiring or product policy can express the decision more clearly",
+        "check": "keep ESP32-S3 as the stable default and gate ESP32-S31 paths through Arc target selection only",
+    },
+    "ULP And Low-Power Coprocessor": {
+        "when": "tiny retained-state policy must keep running while the main cores sleep",
+        "avoid": "the job needs heap, Wi-Fi, storage, or broad C++ runtime support",
+        "check": "verify RTC memory layout, wake source, retained data alignment, and the main-core handoff after wake",
+    },
+}
+
+DEFAULT_GUIDANCE = {
+    "when": "the module purpose matches the firmware boundary you are trying to make explicit",
+    "avoid": "another narrower Arc header owns the same boundary with less surface area",
+    "check": "build the closest example, then capture the real board evidence that matches the module purpose",
+}
+
 
 def slug_for(rel: str) -> str:
     return rel.removesuffix(".hpp").replace("/", "-")
@@ -198,6 +277,12 @@ def header_paths() -> list[str]:
     return items
 
 
+def header_file(rel: str) -> Path:
+    if rel == "arc.hpp":
+        return ROOT / "components" / "arc" / "include" / "arc.hpp"
+    return ROOT / "components" / "arc" / "include" / rel
+
+
 def feature_for(rel: str, features: set[str]) -> str:
     if rel == "arc.hpp":
         return "core"
@@ -218,63 +303,72 @@ def example_for(rel: str, group: str) -> str:
 
 
 def simulated_output(rel: str, feature: str, example: str) -> str:
-    name = rel.removesuffix(".hpp")
-    target = "root" if example == "." else example.rsplit("/", 1)[-1]
-    return "\n".join(
-        [
-            f"I (000) arc-doc: module={name}",
-            f"I (001) arc-doc: feature={feature} example={target}",
-            "I (002) arc-doc: init policy explicit",
-            "I (003) arc-doc: no hidden heap in hot path",
-        ]
-    )
+    raise RuntimeError("module pages use real build/runtime check guidance instead of simulated logs")
+
+
+def public_landmarks(rel: str) -> list[str]:
+    text = header_file(rel).read_text(encoding="utf-8")
+    names: list[str] = []
+    patterns = [
+        r"^\s*(?:template\s*<[^;{}]+>\s*)?(?:class|struct)\s+([A-Z][A-Za-z0-9_]*)\b",
+        r"^\s*(?:enum\s+class|enum)\s+([A-Z][A-Za-z0-9_]*)\b",
+        r"^\s*using\s+([A-Z][A-Za-z0-9_]*)\b",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, flags=re.MULTILINE):
+            name = match.group(1)
+            if name not in names:
+                names.append(name)
+            if len(names) >= 10:
+                return names
+    if names:
+        return names
+
+    includes: list[str] = []
+    for match in re.finditer(r'#include\s+"(arc/[^"]+)"', text):
+        include = match.group(1)
+        if include not in includes:
+            includes.append(include)
+        if len(includes) >= 8:
+            break
+    return includes
+
+
+def feature_requirements(feature: str) -> str:
+    if feature in {"core", "internal"}:
+        return "arc_requires(main_requires core)"
+    return f"arc_requires(main_requires core {feature})"
+
+
+def render_bullets(items: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in items)
 
 
 def page_for(rel: str, group: str, purpose: str, feature: str, example: str) -> str:
     include = '#include "arc.hpp"' if rel == "arc.hpp" else f'#include "{rel}"'
-    cmake_expr = (
-        "arc_requires(main_requires core)" if feature == "core" else f"arc_requires(main_requires core {feature})"
+    cmake_expr = feature_requirements(feature)
+    guidance = GROUP_GUIDANCE.get(group, DEFAULT_GUIDANCE)
+    landmarks = public_landmarks(rel)
+    landmark_line = (
+        "Source landmarks: " + ", ".join(f"`{name}`" for name in landmarks) + "."
+        if landmarks
+        else "This header is mostly compile-time policy or forwarding glue; use the purpose and group contract here, then open the source for the exact inline contract."
     )
+    is_internal = group == "Detail Headers" or feature == "internal"
     feature_line = (
-        "This is an internal support header; application code normally reaches it through a public module."
-        if feature == "internal"
-        else f"Declare the CMake feature with `{cmake_expr}` when this header needs ESP-IDF components beyond the base Arc component."
-    )
-    build_cmd = "idf.py build" if example == "." else f"idf.py -C {example} build"
-    flash_cmd = (
-        "idf.py -p /dev/ttyACM0 flash monitor"
-        if example == "."
-        else f"idf.py -C {example} -p /dev/ttyACM0 flash monitor"
+        "This is Arc implementation support. Application firmware should enter through the public module that owns the behavior."
+        if is_internal
+        else f"Declare `{cmake_expr}` in the component that includes this header."
     )
     example_note = (
         "The root project is the smallest place to try this module."
         if example == "."
         else f"The closest shipped example is `{example}`."
     )
-    return f"""# {title_for(rel)}
-
-{purpose}
-
-## What It Owns
-
-- Header: `{rel}`
-- Module group: {group}
-- CMake feature: `{feature}`
-- Closest example: `{example}`
-
-{feature_line}
-
-## Start From Zero
-
-1. Create or clone an Arc project.
-2. Load the ESP-IDF environment with `. ./env.sh`.
-3. Include the module header in the file that owns this hardware or policy lane.
-4. Add the matching `arc_requires(...)` feature in that component's `CMakeLists.txt`.
-5. Build the closest example first, then move the same pattern into your app.
-
-Minimal component shape:
-
-```cmake
+    include_section = (
+        "Application code should not include this detail header directly. Keep direct includes inside Arc internals, tests, or a public wrapper that preserves the public contract."
+        if is_internal
+        else f"""```cmake
 include(${{CMAKE_CURRENT_LIST_DIR}}/../cmake/arc-deps.cmake)
 
 {cmake_expr}
@@ -287,59 +381,128 @@ idf_component_register(
 
 ```cpp
 {include}
+```"""
+    )
+    start_steps = [
+        "Start from the closest example or the root project listed below.",
+        "Load the ESP-IDF environment with `. ./env.sh`.",
+        "Add the include and CMake feature only in the component that owns this lane.",
+        "Keep board topology, buffers, and ownership in one visible owner type.",
+        "Move from build proof to hardware proof only after the wiring or runtime dependency is known.",
+    ]
+    if is_internal:
+        start_steps = [
+            "Find the public Arc module that uses this helper.",
+            "Change the public wrapper or test first, then adjust the detail helper.",
+            "Keep the helper small enough that application code still has a public entry point.",
+            "Run the docs generator and host checks after the internal contract changes.",
+        ]
+    if is_internal:
+        owner_section = """The owner is the public Arc wrapper or test that reaches this helper. Do not add a
+new application-facing dependency on `arc/detail/...`.
 
-namespace app {{
+```cpp
+// Inside Arc internals or a focused test only.
+#include "arc/detail/owner.hpp"
+```"""
+        step_check = """1. Name the public header that depends on this helper.
+2. Keep the helper hidden behind that public header.
+3. Add or update the host test that exercises the public behavior.
+4. Regenerate module pages so this detail page stays synchronized.
+5. Run the repository checks before publishing."""
+        example_note = "Use host checks for this internal helper before any firmware build."
+        command_block = """```sh
+python3 tools/docs_module_pages_test.py
+./tools/host-tests.sh
+```"""
+        runtime_check = """This page does not create a user-facing runtime surface. Runtime proof belongs to
+the public module or example that owns the behavior using this helper."""
+    else:
+        build_cmd = "idf.py build" if example == "." else f"idf.py -C {example} build"
+        flash_cmd = (
+            "idf.py -p /dev/ttyACM0 flash monitor"
+            if example == "."
+            else f"idf.py -C {example} -p /dev/ttyACM0 flash monitor"
+        )
+        owner_section = """```cpp
+namespace app {
 void boot()
-{{
-    // Keep board policy explicit here. Configure pins, buffers, and ownership
-    // before handing work to Core 1 or a Core 0 transport task.
-}}
-}}
+{
+    // Put board policy, buffer ownership, and failure handling here.
+    // Keep Core 1 hot work separate from Core 0 service work.
+}
+}
 
 extern "C" void app_main()
-{{
+{
     app::boot();
-}}
-```
-
-## Usage Pattern
-
-- Put topology facts in one board header instead of scattering aliases.
-- Keep buffer ownership visible with `std::span`, `std::array`, or Arc capability buffers.
-- Use recoverable `init()`, `begin()`, or `set(...)` paths when runtime data can fail.
-- Use fail-fast `boot()` or `start()` only for board invariants.
-- Keep slow logs, storage, Wi-Fi, and protocol work on Core 0.
-
-## Step-By-Step Check
-
-1. Decide whether this module owns silicon, memory, protocol bytes, or policy only.
+}
+```"""
+        step_check = """1. Decide whether this module owns silicon, memory, protocol bytes, or policy only.
 2. Name the owner type once, close to the board topology.
 3. Allocate any DMA or shared buffers before the hardware starts.
 4. Initialize with the recoverable path while bringing up the board.
 5. Switch to the fail-fast path only after the topology is treated as fixed.
-6. Log from Core 0 after the hot path has handed off a compact event or snapshot.
-
-## Example
-
-{example_note}
-
-```sh
+6. Log from Core 0 after the hot path has handed off a compact event or snapshot."""
+        command_block = f"""```sh
 . ./env.sh
 {build_cmd}
 {flash_cmd}
-```
+```"""
+        runtime_check = """The build command proves the dependency path. Runtime proof still needs the
+actual board condition that matches this module: attached device, loopback,
+radio peer, flash partition, sleep wake source, or captured serial/network
+output. Do not turn the example command into a performance or hardware claim
+without that evidence."""
 
-If the example needs a jumper, sensor, display, or external bus device, read the
-example README before flashing. The command above proves the build path; real
-electrical output still depends on the attached board.
+    return f"""# {title_for(rel)}
 
-## Simulated Output
+{purpose}
 
-This is a documentation simulation, not a captured hardware log:
+## Fit
 
-```text
-{simulated_output(rel, feature, example)}
-```
+- Use it when {guidance["when"]}.
+- Do not start here when {guidance["avoid"]}.
+- Verification focus: {guidance["check"]}.
+
+## Arc Contract
+
+- Header: `{rel}`
+- Module group: {group}
+- CMake feature: `{feature}`
+- Closest example: `{example}`
+
+{feature_line}
+
+## CMake And Include
+
+{include_section}
+
+## Source Landmarks
+
+{landmark_line}
+
+## Start From Zero
+
+{render_bullets(start_steps)}
+
+## Owner Skeleton
+
+{owner_section}
+
+## Step-By-Step Check
+
+{step_check}
+
+## Build Or Example
+
+{example_note}
+
+{command_block}
+
+## Runtime Check
+
+{runtime_check}
 
 ## Next Reading
 
@@ -352,14 +515,17 @@ This is a documentation simulation, not a captured hardware log:
 def write_pages() -> None:
     table = read_module_table()
     features = cmake_features()
+    headers = header_paths()
+    missing = [rel for rel in headers if rel not in table]
+    if missing:
+        names = ", ".join(missing)
+        raise SystemExit(f"docs/modules.md is missing public header entries: {names}")
+
     OUT.mkdir(parents=True, exist_ok=True)
     by_group: dict[str, list[tuple[str, str]]] = {}
 
-    for rel in header_paths():
-        group, purpose = table.get(
-            rel,
-            ("Unsorted", "Arc public header. Use the API reference and source comments for the exact contract."),
-        )
+    for rel in headers:
+        group, purpose = table[rel]
         slug = slug_for(rel)
         feature = feature_for(rel, features)
         example = example_for(rel, group)
@@ -372,14 +538,19 @@ def write_pages() -> None:
     lines = [
         "# Module Page Index",
         "",
-        "Every public Arc header has a generated website page with purpose, CMake feature, zero-start steps, usage pattern, example command, and simulated output.",
+        "Every public Arc header has a generated website page with purpose, fit, CMake feature, source landmarks, zero-start steps, and the closest build or runtime proof path.",
+        "",
+        "Use this page when you know the header name. Use the [Module Guide](/modules) when you only know the problem area.",
         "",
     ]
     for group in sorted(by_group):
         lines.append(f"## {group}")
         lines.append("")
+        lines.append("| Header | Purpose | Page |")
+        lines.append("| --- | --- | --- |")
         for rel, slug in sorted(by_group[group]):
-            lines.append(f"- [`{rel}`](/modules/{slug})")
+            purpose = table[rel][1]
+            lines.append(f"| `{rel}` | {purpose} | [Open](/modules/{slug}) |")
         lines.append("")
     (DOCS / "module-pages.md").write_text("\n".join(lines), encoding="utf-8")
 

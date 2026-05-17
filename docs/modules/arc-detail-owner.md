@@ -2,94 +2,67 @@
 
 Internal move-only ownership helpers.
 
-## What It Owns
+## Fit
+
+- Use it when you are maintaining Arc internals and need the small support type behind a public module.
+- Do not start here when application firmware is choosing a public API; start from the owning public header instead.
+- Verification focus: keep direct use inside Arc code and preserve the public module contract that depends on this helper.
+
+## Arc Contract
 
 - Header: `arc/detail/owner.hpp`
 - Module group: Detail Headers
 - CMake feature: `internal`
 - Closest example: `.`
 
-This is an internal support header; application code normally reaches it through a public module.
+This is Arc implementation support. Application firmware should enter through the public module that owns the behavior.
+
+## CMake And Include
+
+Application code should not include this detail header directly. Keep direct includes inside Arc internals, tests, or a public wrapper that preserves the public contract.
+
+## Source Landmarks
+
+Source landmarks: `EndpointOwner`.
 
 ## Start From Zero
 
-1. Create or clone an Arc project.
-2. Load the ESP-IDF environment with `. ./env.sh`.
-3. Include the module header in the file that owns this hardware or policy lane.
-4. Add the matching `arc_requires(...)` feature in that component's `CMakeLists.txt`.
-5. Build the closest example first, then move the same pattern into your app.
+- Find the public Arc module that uses this helper.
+- Change the public wrapper or test first, then adjust the detail helper.
+- Keep the helper small enough that application code still has a public entry point.
+- Run the docs generator and host checks after the internal contract changes.
 
-Minimal component shape:
+## Owner Skeleton
 
-```cmake
-include(${CMAKE_CURRENT_LIST_DIR}/../cmake/arc-deps.cmake)
-
-arc_requires(main_requires core internal)
-
-idf_component_register(
-    SRCS "app_main.cpp"
-    REQUIRES ${main_requires}
-)
-```
+The owner is the public Arc wrapper or test that reaches this helper. Do not add a
+new application-facing dependency on `arc/detail/...`.
 
 ```cpp
+// Inside Arc internals or a focused test only.
 #include "arc/detail/owner.hpp"
-
-namespace app {
-void boot()
-{
-    // Keep board policy explicit here. Configure pins, buffers, and ownership
-    // before handing work to Core 1 or a Core 0 transport task.
-}
-}
-
-extern "C" void app_main()
-{
-    app::boot();
-}
 ```
-
-## Usage Pattern
-
-- Put topology facts in one board header instead of scattering aliases.
-- Keep buffer ownership visible with `std::span`, `std::array`, or Arc capability buffers.
-- Use recoverable `init()`, `begin()`, or `set(...)` paths when runtime data can fail.
-- Use fail-fast `boot()` or `start()` only for board invariants.
-- Keep slow logs, storage, Wi-Fi, and protocol work on Core 0.
 
 ## Step-By-Step Check
 
-1. Decide whether this module owns silicon, memory, protocol bytes, or policy only.
-2. Name the owner type once, close to the board topology.
-3. Allocate any DMA or shared buffers before the hardware starts.
-4. Initialize with the recoverable path while bringing up the board.
-5. Switch to the fail-fast path only after the topology is treated as fixed.
-6. Log from Core 0 after the hot path has handed off a compact event or snapshot.
+1. Name the public header that depends on this helper.
+2. Keep the helper hidden behind that public header.
+3. Add or update the host test that exercises the public behavior.
+4. Regenerate module pages so this detail page stays synchronized.
+5. Run the repository checks before publishing.
 
-## Example
+## Build Or Example
 
-The root project is the smallest place to try this module.
+Use host checks for this internal helper before any firmware build.
 
 ```sh
-. ./env.sh
-idf.py build
-idf.py -p /dev/ttyACM0 flash monitor
+python3 tools/docs_module_pages_test.py
+./tools/host-tests.sh
 ```
 
-If the example needs a jumper, sensor, display, or external bus device, read the
-example README before flashing. The command above proves the build path; real
-electrical output still depends on the attached board.
+## Runtime Check
 
-## Simulated Output
-
-This is a documentation simulation, not a captured hardware log:
-
-```text
-I (000) arc-doc: module=arc/detail/owner
-I (001) arc-doc: feature=internal example=root
-I (002) arc-doc: init policy explicit
-I (003) arc-doc: no hidden heap in hot path
-```
+This page does not create a user-facing runtime surface. Runtime proof belongs to
+the public module or example that owns the behavior using this helper.
 
 ## Next Reading
 

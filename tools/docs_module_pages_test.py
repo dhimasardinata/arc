@@ -33,19 +33,25 @@ class DocsModulePagesTest(unittest.TestCase):
         index = (ROOT / "docs" / "module-pages.md").read_text(encoding="utf-8")
         missing = []
         for rel in headers():
-            link = f"[`{rel}`](/modules/{slug_for(rel)})"
+            link = f"| `{rel}` |"
+            page = f"[Open](/modules/{slug_for(rel)})"
             if link not in index:
                 missing.append(link)
+            if page not in index:
+                missing.append(page)
 
         self.assertEqual(missing, [])
 
     def test_generated_pages_include_required_sections(self) -> None:
         required = [
-            "## What It Owns",
+            "## Fit",
+            "## Arc Contract",
+            "## CMake And Include",
+            "## Source Landmarks",
             "## Start From Zero",
-            "## Usage Pattern",
-            "## Example",
-            "## Simulated Output",
+            "## Owner Skeleton",
+            "## Build Or Example",
+            "## Runtime Check",
             "## Next Reading",
         ]
         bad = []
@@ -53,6 +59,21 @@ class DocsModulePagesTest(unittest.TestCase):
             page = ROOT / "docs" / "modules" / f"{slug_for(rel)}.md"
             text = page.read_text(encoding="utf-8")
             if any(section not in text for section in required):
+                bad.append(str(page.relative_to(ROOT)))
+
+        self.assertEqual(bad, [])
+
+    def test_generated_pages_do_not_use_placeholder_output(self) -> None:
+        bad = []
+        forbidden = [
+            "## Simulated Output",
+            "This is a documentation simulation",
+            "Arc public header. Use the API reference",
+            "arc_requires(main_requires core internal)",
+        ]
+        for page in (ROOT / "docs" / "modules").glob("*.md"):
+            text = page.read_text(encoding="utf-8")
+            if any(item in text for item in forbidden):
                 bad.append(str(page.relative_to(ROOT)))
 
         self.assertEqual(bad, [])

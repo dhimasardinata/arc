@@ -13,7 +13,7 @@ Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 diffe
 
 Website: `https://dhimasardinata.github.io/arc/`.
 
-License: `AGPL-3.0-only`. Arc is open source, but intentionally strict copyleft: if you distribute modified firmware or run modified network-accessible services built from Arc, keep the corresponding source available under the same license terms. A non-AGPL commercial/proprietary license path is paid only and is documented in `COMMERCIAL-LICENSE.md`.
+License: `AGPL-3.0-only`. Arc is open source, but intentionally strict copyleft: if you distribute modified firmware or run modified network-accessible services built from Arc, keep the corresponding Arc-covered source available under the same license terms. Proprietary or private-source Arc rights require a signed paid commercial agreement; cloning or embedding this repository does not create that grant.
 
 Arc is not a convenience wrapper around ESP-IDF. It is a typed substrate for firmware that needs deterministic hot loops, explicit DMA/cache ownership, static task memory, and transport/protocol composition without hidden heap policy.
 
@@ -714,7 +714,7 @@ Arc is licensed under `AGPL-3.0-only`, with the license notice in `LICENSE` and 
 
 The intent is strict open source: you can study, use, modify, and redistribute Arc under AGPLv3-only, but downstream modifications must preserve the same reciprocal source-availability obligations.
 
-Commercial/proprietary use outside AGPLv3-only is not granted for free. The paid commercial path is documented in `COMMERCIAL-LICENSE.md` and `docs/licensing.md`; it is intended to keep an LGPLv3-style copyleft floor for Arc-covered portions while granting proprietary distribution rights only through a signed agreement.
+Commercial/proprietary use outside AGPLv3-only is not granted for free. The paid commercial path is documented in `COMMERCIAL-LICENSE.md` and `docs/licensing.md`; it keeps Arc-covered portions visible, auditable, and bounded to the signed product scope while granting proprietary distribution rights only through a signed agreement.
 
 ### Dependency Compatibility
 

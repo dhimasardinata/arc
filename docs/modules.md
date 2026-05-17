@@ -4,9 +4,9 @@ Arc is easier to read when you group the headers by job instead of reading the
 file list alphabetically. Use this page as the map, then open the API reference
 for exact method names and arguments.
 
-Every public header also has its own generated module page with the exact header
-name, CMake feature, zero-start steps, usage pattern, build/run command, and a
-simulated monitor output. Open the [Module Page Index](/module-pages) when you
+Every public header also has its own generated module page with fit guidance,
+the exact header name, CMake feature, source landmarks, zero-start steps, and
+the closest proof path. Open the [Module Page Index](/module-pages) when you
 want the per-header pages.
 
 ## How To Choose

@@ -27,3 +27,36 @@ features:
   - title: Methodical Docs
     details: The README and website carry per-header module pages, API reference, examples, benchmark policy, licensing, and safety evidence.
 ---
+
+## Choose The Next Page
+
+Use this map before opening the full API reference.
+
+| If you need to... | Go here | Why |
+| --- | --- | --- |
+| build Arc for the first time | [Getting Started](/getting-started) | environment, first build, local checks, and the shortest reading path |
+| understand why Arc splits Core 0 and Core 1 | [Architecture](/architecture) | ownership model, realtime limits, DMA/cache rules, and profile boundaries |
+| choose the right header | [Module Guide](/modules) | problem-first groups for every public Arc header |
+| open one header page directly | [Module Page Index](/module-pages) | generated per-header pages with fit, CMake, source landmarks, and proof path |
+| find exact public names and behavior | [API Reference](/api) | method-level notes mirrored from the source-backed README |
+| pick firmware to build | [Examples](/examples) | one table for ESP32-S3 examples, portable examples, and ESP32-S31 scaffolds |
+| decide license path | [Licensing](/licensing) | Arc public AGPL path and paid commercial policy |
+| publish performance claims | [Benchmarking](/benchmarking) | evidence levels and reporting rules |
+
+## First Fifteen Minutes
+
+1. Run `source ./env.sh`.
+2. Build `idf.py -C examples/esp32s3/udp build`.
+3. Read [Architecture](/architecture) to understand Core 0 service work versus Core 1 deterministic work.
+4. Use [Module Guide](/modules) to choose the smallest header for your problem.
+5. Open that header in [Module Page Index](/module-pages), then check exact names in [API Reference](/api).
+
+## Documentation Shape
+
+Arc docs are arranged from decision to evidence:
+
+- start pages explain where to go next;
+- module pages map headers to purpose, dependency, and proof path;
+- examples show the buildable firmware surface;
+- API pages keep exact names and ownership behavior available without reading the whole README;
+- benchmarking, safety, and licensing pages state the rules before claims are published.

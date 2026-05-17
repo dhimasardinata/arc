@@ -2,24 +2,22 @@
 
 Direct TCP client sockets.
 
-## What It Owns
+## Fit
+
+- Use it when Core 0 owns the radio/socket work and payload bytes still need deterministic framing or parsing.
+- Do not start here when Core 1 would block on Wi-Fi, TLS, DNS, storage, or heap-heavy service code.
+- Verification focus: keep radio state on Core 0, bound payload buffers, and capture real serial/network output for protocol evidence.
+
+## Arc Contract
 
 - Header: `arc/tcp.hpp`
 - Module group: Network, Radio, And Wire Protocols
 - CMake feature: `tcp`
 - Closest example: `examples/esp32s3/udp`
 
-Declare the CMake feature with `arc_requires(main_requires core tcp)` when this header needs ESP-IDF components beyond the base Arc component.
+Declare `arc_requires(main_requires core tcp)` in the component that includes this header.
 
-## Start From Zero
-
-1. Create or clone an Arc project.
-2. Load the ESP-IDF environment with `. ./env.sh`.
-3. Include the module header in the file that owns this hardware or policy lane.
-4. Add the matching `arc_requires(...)` feature in that component's `CMakeLists.txt`.
-5. Build the closest example first, then move the same pattern into your app.
-
-Minimal component shape:
+## CMake And Include
 
 ```cmake
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/arc-deps.cmake)
@@ -34,12 +32,28 @@ idf_component_register(
 
 ```cpp
 #include "arc/tcp.hpp"
+```
 
+## Source Landmarks
+
+Source landmarks: `Tcp`.
+
+## Start From Zero
+
+- Start from the closest example or the root project listed below.
+- Load the ESP-IDF environment with `. ./env.sh`.
+- Add the include and CMake feature only in the component that owns this lane.
+- Keep board topology, buffers, and ownership in one visible owner type.
+- Move from build proof to hardware proof only after the wiring or runtime dependency is known.
+
+## Owner Skeleton
+
+```cpp
 namespace app {
 void boot()
 {
-    // Keep board policy explicit here. Configure pins, buffers, and ownership
-    // before handing work to Core 1 or a Core 0 transport task.
+    // Put board policy, buffer ownership, and failure handling here.
+    // Keep Core 1 hot work separate from Core 0 service work.
 }
 }
 
@@ -48,14 +62,6 @@ extern "C" void app_main()
     app::boot();
 }
 ```
-
-## Usage Pattern
-
-- Put topology facts in one board header instead of scattering aliases.
-- Keep buffer ownership visible with `std::span`, `std::array`, or Arc capability buffers.
-- Use recoverable `init()`, `begin()`, or `set(...)` paths when runtime data can fail.
-- Use fail-fast `boot()` or `start()` only for board invariants.
-- Keep slow logs, storage, Wi-Fi, and protocol work on Core 0.
 
 ## Step-By-Step Check
 
@@ -66,7 +72,7 @@ extern "C" void app_main()
 5. Switch to the fail-fast path only after the topology is treated as fixed.
 6. Log from Core 0 after the hot path has handed off a compact event or snapshot.
 
-## Example
+## Build Or Example
 
 The closest shipped example is `examples/esp32s3/udp`.
 
@@ -76,20 +82,13 @@ idf.py -C examples/esp32s3/udp build
 idf.py -C examples/esp32s3/udp -p /dev/ttyACM0 flash monitor
 ```
 
-If the example needs a jumper, sensor, display, or external bus device, read the
-example README before flashing. The command above proves the build path; real
-electrical output still depends on the attached board.
+## Runtime Check
 
-## Simulated Output
-
-This is a documentation simulation, not a captured hardware log:
-
-```text
-I (000) arc-doc: module=arc/tcp
-I (001) arc-doc: feature=tcp example=udp
-I (002) arc-doc: init policy explicit
-I (003) arc-doc: no hidden heap in hot path
-```
+The build command proves the dependency path. Runtime proof still needs the
+actual board condition that matches this module: attached device, loopback,
+radio peer, flash partition, sleep wake source, or captured serial/network
+output. Do not turn the example command into a performance or hardware claim
+without that evidence.
 
 ## Next Reading
 

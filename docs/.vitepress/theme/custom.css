@@ -94,6 +94,11 @@
   border-radius: 6px;
 }
 
+.vp-doc div[class*="language-"] pre,
+.vp-doc div[class*="language-"] code {
+  tab-size: 2;
+}
+
 .VPSidebarItem.level-0 > .item .text {
   letter-spacing: 0;
   text-transform: none;
@@ -105,4 +110,59 @@
 
 .VPFooter {
   border-top: 1px solid var(--arc-line);
+}
+
+@media (max-width: 720px) {
+  .VPHome .VPHero .name,
+  .VPHome .VPHero .text {
+    letter-spacing: 0;
+  }
+
+  .VPHome .VPHero .tagline {
+    max-width: 100%;
+  }
+
+  .vp-doc table {
+    display: block;
+    width: 100%;
+    font-size: 13px;
+  }
+
+  .vp-doc thead,
+  .vp-doc tbody,
+  .vp-doc tr,
+  .vp-doc th,
+  .vp-doc td {
+    display: block;
+    width: 100%;
+  }
+
+  .vp-doc tr {
+    border-top: 1px solid var(--arc-line);
+  }
+
+  .vp-doc th,
+  .vp-doc td {
+    border: 0;
+    padding: 8px 10px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .vp-doc div[class*="language-"] {
+    overflow-x: hidden;
+  }
+
+  .vp-doc div[class*="language-"] pre,
+  .vp-doc div[class*="language-"] code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .vp-doc :not(pre) > code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
 }
