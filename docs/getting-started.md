@@ -57,11 +57,12 @@ Read in this order when Arc is new to you:
 
 1. [Architecture](/architecture) explains why Core 0 and Core 1 have different jobs.
 2. [Production Integration](/production-integration) explains the CMake, target, topology, validation, and release-evidence path for product work.
-3. [Module Guide](/modules) maps every public header to the problem it solves.
-4. [Module Page Index](/module-pages) gives one page per public header, including zero-start steps and proof paths.
-5. [Examples](/examples) shows which firmware project to build for each hardware lane.
-6. [API Reference](/api) gives the exact public methods, failure behavior, and ownership notes.
-7. [Licensing](/licensing) explains the AGPL public path and paid commercial path.
-8. [Benchmarking](/benchmarking) explains what evidence is required before publishing performance claims.
+3. [Troubleshooting](/troubleshooting) maps common setup, CMake, editor, docs, benchmark, and evidence failures to fixes.
+4. [Module Guide](/modules) maps every public header to the problem it solves.
+5. [Module Page Index](/module-pages) gives one page per public header, including zero-start steps and proof paths.
+6. [Examples](/examples) shows which firmware project to build for each hardware lane.
+7. [API Reference](/api) gives the exact public methods, failure behavior, and ownership notes.
+8. [Licensing](/licensing) explains the AGPL public path and paid commercial path.
+9. [Benchmarking](/benchmarking) explains what evidence is required before publishing performance claims.
 
 The shortest practical path is still: read architecture, build the closest example, then open the matching module and API section.

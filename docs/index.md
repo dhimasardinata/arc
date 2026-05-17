@@ -40,6 +40,7 @@ Use this map before opening the full API reference.
 | build Arc for the first time | [Getting Started](/getting-started) | environment, first build, local checks, and the shortest reading path |
 | understand why Arc splits Core 0 and Core 1 | [Architecture](/architecture) | ownership model, realtime limits, DMA/cache rules, and profile boundaries |
 | move from example firmware to a product tree | [Production Integration](/production-integration) | CMake shape, target policy, board topology, validation ladder, and release evidence |
+| diagnose a build, editor, docs, benchmark, or evidence failure | [Troubleshooting](/troubleshooting) | symptom-first fixes for target setup, CMake, clangd, VitePress, repo policy, and claims |
 | choose the right header | [Module Guide](/modules) | problem-first groups for every public Arc header |
 | open one header page directly | [Module Page Index](/module-pages) | generated per-header pages with fit, CMake, source landmarks, and proof path |
 | find exact public names and behavior | [API Reference](/api) | method-level notes mirrored from the source-backed README |
@@ -63,6 +64,7 @@ Arc docs are arranged from decision to evidence:
 - start pages explain where to go next;
 - module pages map headers to purpose, dependency, and proof path;
 - integration docs connect target policy, CMake shape, board topology, and evidence level;
+- troubleshooting keeps common setup, build, editor, site, and evidence failures actionable;
 - examples show the buildable firmware surface;
 - API pages keep exact names and ownership behavior available without reading the whole README;
 - benchmarking, safety, and licensing pages state the rules before claims are published.

@@ -27,6 +27,7 @@ export default defineConfig({
           { text: "Getting Started", link: "/getting-started" },
           { text: "Architecture", link: "/architecture" },
           { text: "Production Integration", link: "/production-integration" },
+          { text: "Troubleshooting", link: "/troubleshooting" },
           { text: "Module Guide", link: "/modules" },
           { text: "Module Page Index", link: "/module-pages" },
           { text: "API Reference", link: "/api" },
