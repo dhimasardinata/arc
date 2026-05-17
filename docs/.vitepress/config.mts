@@ -10,6 +10,7 @@ export default defineConfig({
     siteTitle: "Arc",
     nav: [
       { text: "Guide", link: "/getting-started" },
+      { text: "Integrate", link: "/production-integration" },
       { text: "Modules", link: "/modules" },
       { text: "API", link: "/api" },
       { text: "Examples", link: "/examples" },
@@ -25,6 +26,7 @@ export default defineConfig({
           { text: "Overview", link: "/" },
           { text: "Getting Started", link: "/getting-started" },
           { text: "Architecture", link: "/architecture" },
+          { text: "Production Integration", link: "/production-integration" },
           { text: "Module Guide", link: "/modules" },
           { text: "Module Page Index", link: "/module-pages" },
           { text: "API Reference", link: "/api" },

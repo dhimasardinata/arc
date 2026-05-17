@@ -293,16 +293,17 @@ Arc benchmark policy is strict:
 
 Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/), [Arduino-ESP32 documentation](https://docs.espressif.com/projects/arduino-esp32/), [Arduino as an ESP-IDF component](https://docs.espressif.com/projects/arduino-esp32/en/latest/esp-idf_component.html), [PlatformIO ESP-IDF framework docs](https://docs.platformio.org/en/latest/frameworks/espidf.html), and [ESPHome ESP32 platform docs](https://esphome.io/components/esp32.html).
 
-Arc project docs live in `docs/` and are also built as a VitePress default-theme GitHub Pages site. The README is the full single-file manual; the website splits the same material into a reading path: `docs/getting-started.md`, `docs/architecture.md`, `docs/modules.md`, `docs/module-pages.md`, `docs/api.md`, `docs/examples.md`, `docs/licensing.md`, `docs/benchmarking.md`, `docs/safety-case.md`, `docs/hil-test-jig.md`, and `docs/references.md`. `docs/modules.md` maps every public header to the problem it solves, `docs/module-pages.md` indexes one generated page per public header, and `docs/api.md` mirrors this README's API reference so the web docs do not stop at a high-level overview. `tools/docs-module-pages.py` regenerates the per-header pages from the real header list and module guide. `tools/safety-case-check.py` keeps the safety evidence map source-backed and prevents accidental certification overclaims in docs.
+Arc project docs live in `docs/` and are also built as a VitePress default-theme GitHub Pages site. The README is the full single-file manual; the website splits the same material into a reading path: `docs/getting-started.md`, `docs/architecture.md`, `docs/production-integration.md`, `docs/modules.md`, `docs/module-pages.md`, `docs/api.md`, `docs/examples.md`, `docs/licensing.md`, `docs/benchmarking.md`, `docs/safety-case.md`, `docs/hil-test-jig.md`, and `docs/references.md`. `docs/production-integration.md` carries the product integration checklist for CMake shape, target policy, board topology, validation level, release evidence, and license duties. `docs/modules.md` maps every public header to the problem it solves, `docs/module-pages.md` indexes one generated page per public header, and `docs/api.md` mirrors this README's API reference so the web docs do not stop at a high-level overview. `tools/docs-module-pages.py` regenerates the per-header pages from the real header list and module guide. `tools/safety-case-check.py` keeps the safety evidence map source-backed and prevents accidental certification overclaims in docs.
 
 Beginner reading path:
 
 1. Read `docs/getting-started.md` for setup and the shortest build loop.
 2. Read `docs/architecture.md` to understand why Core 0 and Core 1 have different jobs.
-3. Use `docs/modules.md` to choose the right Arc header.
-4. Use `docs/module-pages.md` for a page dedicated to that header.
-5. Use `docs/examples.md` to pick a working firmware project near that hardware lane.
-6. Use `docs/api.md` for exact public methods, failure behavior, and ownership notes.
+3. Read `docs/production-integration.md` before moving example code into a product tree.
+4. Use `docs/modules.md` to choose the right Arc header.
+5. Use `docs/module-pages.md` for a page dedicated to that header.
+6. Use `docs/examples.md` to pick a working firmware project near that hardware lane.
+7. Use `docs/api.md` for exact public methods, failure behavior, and ownership notes.
 
 Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target and opt-in libFuzzer harness for HTTP, URI, MQTT, WebSocket, and CoAP parsers. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/arc-audit.go -all` scans every local `loop`/`step` realtime entry call graph, `tools/topology-check.py` scans literal `arc::Pins<...>` packs for duplicate/out-of-range GPIOs, `tools/use-after-move-check.sh` runs `clang-tidy`'s moved-from-use lint when available, `tools/hil-evidence-check.py` validates captured physical HIL JSONL artifacts, and `tools/arc-prove.sh` validates the SPSC, role-exposure, and consensus TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
 
