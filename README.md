@@ -1,14 +1,19 @@
 # Arc
 
 [![build](https://github.com/dhimasardinata/arc/actions/workflows/build.yml/badge.svg)](https://github.com/dhimasardinata/arc/actions/workflows/build.yml)
+[![docs](https://github.com/dhimasardinata/arc/actions/workflows/pages.yml/badge.svg)](https://github.com/dhimasardinata/arc/actions/workflows/pages.yml)
+[![website](https://img.shields.io/badge/docs-dhimasardinata.github.io%2Farc-0f7c80.svg)](https://dhimasardinata.github.io/arc/)
 [![license: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](LICENSE)
+[![commercial license: paid required](https://img.shields.io/badge/commercial%20license-paid%20required-a84f2b.svg)](COMMERCIAL-LICENSE.md)
 ![ESP-IDF v6.0.1](https://img.shields.io/badge/ESP--IDF-v6.0.1-E7352C.svg)
 ![C++ gnu++26](https://img.shields.io/badge/C%2B%2B-gnu%2B%2B26-00599C.svg)
 ![target ESP32-S3](https://img.shields.io/badge/target-ESP32--S3-222222.svg)
 
 Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 differently on purpose.
 
-License: `AGPL-3.0-only`. Arc is open source, but intentionally strict copyleft: if you distribute modified firmware or run modified network-accessible services built from Arc, keep the corresponding source available under the same license terms.
+Website: `https://dhimasardinata.github.io/arc/`.
+
+License: `AGPL-3.0-only`. Arc is open source, but intentionally strict copyleft: if you distribute modified firmware or run modified network-accessible services built from Arc, keep the corresponding source available under the same license terms. A non-AGPL commercial/proprietary license path is paid only and is documented in `COMMERCIAL-LICENSE.md`.
 
 Arc is not a convenience wrapper around ESP-IDF. It is a typed substrate for firmware that needs deterministic hot loops, explicit DMA/cache ownership, static task memory, and transport/protocol composition without hidden heap policy.
 
@@ -288,7 +293,16 @@ Arc benchmark policy is strict:
 
 Reference docs: [ESP-IDF ESP32-S3 Programming Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/), [Arduino-ESP32 documentation](https://docs.espressif.com/projects/arduino-esp32/), [Arduino as an ESP-IDF component](https://docs.espressif.com/projects/arduino-esp32/en/latest/esp-idf_component.html), [PlatformIO ESP-IDF framework docs](https://docs.platformio.org/en/latest/frameworks/espidf.html), and [ESPHome ESP32 platform docs](https://esphome.io/components/esp32.html).
 
-Arc project docs live in `docs/` and are also built as a VitePress default-theme GitHub Pages site. `docs/architecture.md` explains the Core 0/Core 1 substrate choices, `docs/benchmarking.md` defines benchmark evidence levels, `docs/safety-case.md` maps safety claims to evidence and non-claims, and `docs/hil-test-jig.md` describes the three-node physical fault test shape. `tools/safety-case-check.py` keeps the safety evidence map source-backed and prevents accidental certification overclaims in docs.
+Arc project docs live in `docs/` and are also built as a VitePress default-theme GitHub Pages site. The README is the full single-file manual; the website splits the same material into a reading path: `docs/getting-started.md`, `docs/architecture.md`, `docs/modules.md`, `docs/module-pages.md`, `docs/api.md`, `docs/examples.md`, `docs/licensing.md`, `docs/benchmarking.md`, `docs/safety-case.md`, `docs/hil-test-jig.md`, and `docs/references.md`. `docs/modules.md` maps every public header to the problem it solves, `docs/module-pages.md` indexes one generated page per public header, and `docs/api.md` mirrors this README's API reference so the web docs do not stop at a high-level overview. `tools/docs-module-pages.py` regenerates the per-header pages from the real header list and module guide. `tools/safety-case-check.py` keeps the safety evidence map source-backed and prevents accidental certification overclaims in docs.
+
+Beginner reading path:
+
+1. Read `docs/getting-started.md` for setup and the shortest build loop.
+2. Read `docs/architecture.md` to understand why Core 0 and Core 1 have different jobs.
+3. Use `docs/modules.md` to choose the right Arc header.
+4. Use `docs/module-pages.md` for a page dedicated to that header.
+5. Use `docs/examples.md` to pick a working firmware project near that hardware lane.
+6. Use `docs/api.md` for exact public methods, failure behavior, and ownership notes.
 
 Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target and opt-in libFuzzer harness for HTTP, URI, MQTT, WebSocket, and CoAP parsers. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/arc-audit.go -all` scans every local `loop`/`step` realtime entry call graph, `tools/topology-check.py` scans literal `arc::Pins<...>` packs for duplicate/out-of-range GPIOs, `tools/use-after-move-check.sh` runs `clang-tidy`'s moved-from-use lint when available, `tools/hil-evidence-check.py` validates captured physical HIL JSONL artifacts, and `tools/arc-prove.sh` validates the SPSC, role-exposure, and consensus TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
 
@@ -699,6 +713,8 @@ This keeps static peripheral wrappers cheap while still giving buses, radios, fi
 Arc is licensed under `AGPL-3.0-only`, with the license notice in `LICENSE` and the full GNU Affero GPL v3 text in `COPYING`.
 
 The intent is strict open source: you can study, use, modify, and redistribute Arc under AGPLv3-only, but downstream modifications must preserve the same reciprocal source-availability obligations.
+
+Commercial/proprietary use outside AGPLv3-only is not granted for free. The paid commercial path is documented in `COMMERCIAL-LICENSE.md` and `docs/licensing.md`; it is intended to keep an LGPLv3-style copyleft floor for Arc-covered portions while granting proprietary distribution rights only through a signed agreement.
 
 ### Dependency Compatibility
 
@@ -2013,7 +2029,7 @@ Fixed-buffer text writer for Core 0 formatting paths that must stay explicit abo
 - `hex(value, width)` appends lowercase hexadecimal with optional zero padding.
 - `json(text)` appends JSON string content with quotes, backslashes, tabs, newlines, carriage returns, and control bytes escaped.
 - `span()`, `view()`, and `done()` expose the written prefix without adding a terminator or allocating.
-- `format_to(out, "temp={} pc=0x{}", temp, arc::hex(pc, 8))` writes `{}` placeholders, escaped `{{` / `}}`, strings, chars, bools, integers, and explicit hex values into the same caller-owned buffer.
+- `format_to(out, "temp={} pc=0x{}", temp, arc::hex(pc, 8))` writes `{}` placeholders, escaped double braces, strings, chars, bools, integers, and explicit hex values into the same caller-owned buffer.
 
 `arc::TraceEventWriter`, `arc::net::HttpServer::text_response(...)`, and `json_response(...)` use this helper internally, so response and trace formatting share one no-heap overflow policy instead of duplicating local append cursors.
 

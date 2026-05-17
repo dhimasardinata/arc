@@ -32,7 +32,8 @@ It measures runtime on the target using the Xtensa cycle counter and prints cycl
 The firmware now also compares Arc against other framework surfaces on the same ESP32-S3 run:
 
 - raw ESP-IDF silicon APIs for RNG, PSA SHA-256, `esp_aes_*`, `esp_aes_gcm_*`, and async memcpy
-- Arduino-ESP32 core paths for `Print::write`, manual `frame16` emission, integer print formatting, and `base64::encode`
+- Arduino-ESP32 core paths for multi-size `Print::write`, manual `frame16` emission, integer print formatting, and `base64::encode`
+- Arc text integer formatting through `arc::Text` and `arc::format_to` beside the Arduino integer print lane
 
 It still does not publish fake numbers for SPI/I2C/UART/ADC/LCD/etc. Those need a board fixture, attached devices, and a stable wiring policy to be meaningful. The CAN lane here is strictly the ESP32-S3 self-test loopback path, not a benchmark for a real external bus. Realtime jitter/latency probes are internal only: no pin toggles, no loopback wire, and no attached device.
 
@@ -58,4 +59,4 @@ idf.py build flash monitor
 
 If you do not want the Arduino leg, skip `./tools/ensure-frameworks.sh` and run the same `idf.py` flow; the firmware will still publish Arc plus raw ESP-IDF comparisons.
 
-Look for `arc-bench` log lines. Output is grouped by benchmark area. Every result line starts with a `surface` column so the implementation is explicit: `arc`, `idf`, `arduino`, or `std`. Throughput lanes print total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Realtime lanes print sample count plus min/avg/max cycles and matching nanoseconds; jitter and slack rows are signed, and the `misses` column is the missed-deadline count.
+Look for `arc-bench` log lines. Output is grouped by benchmark area. Every result line starts with a `surface` column so the implementation is explicit: `arc`, `idf`, `arduino`, or `std`. Throughput lanes print total operations, cycles per operation, and nanoseconds per operation for the real ESP32-S3 run. Realtime lanes print sample count plus min/avg/max cycles and matching nanoseconds; jitter and slack rows are signed, and the `misses` column is the missed-deadline count. The Arduino component section uses 8, 32, 128, and 256 byte write/frame lanes so the comparison shows both tiny control messages and larger telemetry packets.

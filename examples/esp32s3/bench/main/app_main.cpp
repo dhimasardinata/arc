@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <span>
@@ -28,6 +29,7 @@
 #include "arc/store.hpp"
 #include "arc/stream.hpp"
 #include "arc/temp.hpp"
+#include "arc/text.hpp"
 #include "arc/time.hpp"
 #include "arc/ws.hpp"
 
@@ -451,6 +453,65 @@ void init_arduino()
         initArduino();
         ready = true;
     }
+}
+
+template <std::size_t Bytes>
+void bench_arduino_io_set()
+{
+    static std::array<std::uint8_t, Bytes> payload{};
+    const std::array<std::uint8_t, 2> frame_header{
+        static_cast<std::uint8_t>(Bytes >> 8U),
+        static_cast<std::uint8_t>(Bytes),
+    };
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = static_cast<std::uint8_t>(i * 3U);
+    }
+
+    char arc_write_name[40]{};
+    char arduino_write_name[40]{};
+    char arc_frame_name[40]{};
+    char arduino_frame_name[40]{};
+    std::snprintf(arc_write_name, sizeof(arc_write_name), "arc stream write %zuB", Bytes);
+    std::snprintf(arduino_write_name, sizeof(arduino_write_name), "arduino write %zuB", Bytes);
+    std::snprintf(arc_frame_name, sizeof(arc_frame_name), "arc frame16 %zuB", Bytes);
+    std::snprintf(arduino_frame_name, sizeof(arduino_frame_name), "arduino frame16 %zuB", Bytes);
+
+    static SinkStream arc_write{};
+    print(measure(arc_write_name, rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[i % payload.size()] = static_cast<std::uint8_t>(i);
+            configASSERT(arc::net::Stream::write(arc_write, std::span(payload)).has_value());
+        }
+    }));
+    sink += arc_write.pos + arc_write.checksum;
+
+    static ArduinoSinkPrint arduino_write;
+    print(measure(arduino_write_name, rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[i % payload.size()] = static_cast<std::uint8_t>(i);
+            configASSERT(arduino_write.write(payload.data(), payload.size()) == payload.size());
+        }
+    }));
+    sink += arduino_write.pos + arduino_write.checksum;
+
+    static SinkStream arc_frame{};
+    print(measure(arc_frame_name, rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[i % payload.size()] = static_cast<std::uint8_t>(i);
+            configASSERT(arc::net::Stream::write_frame16(arc_frame, std::span(payload)).has_value());
+        }
+    }));
+    sink += arc_frame.pos + arc_frame.checksum;
+
+    static ArduinoSinkPrint arduino_frame;
+    print(measure(arduino_frame_name, rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[i % payload.size()] = static_cast<std::uint8_t>(i);
+            configASSERT(arduino_frame.write(frame_header.data(), frame_header.size()) == frame_header.size());
+            configASSERT(arduino_frame.write(payload.data(), payload.size()) == payload.size());
+        }
+    }));
+    sink += arduino_frame.pos + arduino_frame.checksum;
 }
 #endif
 
@@ -1410,63 +1471,41 @@ void bench_arduino()
 {
     init_arduino();
 
-    static std::array<std::uint8_t, 32> payload{};
     static std::array<std::uint8_t, 16> nonce{};
     static std::array<char, 32> arc_key{};
     static std::array<unsigned char, 32> idf_key{};
-    const std::array<std::uint8_t, 2> frame_header{
-        0U,
-        static_cast<std::uint8_t>(payload.size()),
-    };
-    for (std::size_t i = 0; i < payload.size(); ++i) {
-        payload[i] = static_cast<std::uint8_t>(i);
-    }
+    static std::array<char, 32> text{};
     for (std::size_t i = 0; i < nonce.size(); ++i) {
         nonce[i] = static_cast<std::uint8_t>(i * 7U);
     }
 
-    static SinkStream arc_write{};
-    print(measure("arc stream write 32B", rounds, [&]() {
-        for (std::uint32_t i = 0; i < rounds; ++i) {
-            payload[0] = static_cast<std::uint8_t>(i);
-            configASSERT(arc::net::Stream::write(arc_write, std::span(payload)).has_value());
-        }
-    }));
-    sink += arc_write.pos + arc_write.checksum;
+    bench_arduino_io_set<8>();
+    bench_arduino_io_set<32>();
+    bench_arduino_io_set<128>();
+    bench_arduino_io_set<256>();
 
-    static ArduinoSinkPrint arduino_write;
-    print(measure("arduino write 32B", rounds, [&]() {
+    print(measure("arc text u32", rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
-            payload[0] = static_cast<std::uint8_t>(i);
-            configASSERT(arduino_write.write(payload.data(), payload.size()) == payload.size());
+            arc::Text out{std::span{text}};
+            const auto value = (static_cast<std::uint32_t>(i & 0xffU) << 16U) | i;
+            configASSERT(out.u32(value));
+            sink += out.size();
         }
     }));
-    sink += arduino_write.pos + arduino_write.checksum;
 
-    static SinkStream arc_frame{};
-    print(measure("arc frame16 32B", rounds, [&]() {
+    print(measure("arc format u32", rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
-            payload[0] = static_cast<std::uint8_t>(i);
-            configASSERT(arc::net::Stream::write_frame16(arc_frame, std::span(payload)).has_value());
+            const auto value = (static_cast<std::uint32_t>(i & 0xffU) << 16U) | i;
+            const auto out = arc::format_to(std::span{text}, "{}", value);
+            configASSERT(out.has_value());
+            sink += out->size();
         }
     }));
-    sink += arc_frame.pos + arc_frame.checksum;
-
-    static ArduinoSinkPrint arduino_frame;
-    print(measure("arduino frame16 32B", rounds, [&]() {
-        for (std::uint32_t i = 0; i < rounds; ++i) {
-            payload[0] = static_cast<std::uint8_t>(i);
-            configASSERT(arduino_frame.write(frame_header.data(), frame_header.size()) == frame_header.size());
-            configASSERT(arduino_frame.write(payload.data(), payload.size()) == payload.size());
-        }
-    }));
-    sink += arduino_frame.pos + arduino_frame.checksum;
 
     static ArduinoSinkPrint arduino_numbers;
     print(measure("arduino print u32", rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
-            payload[0] = static_cast<std::uint8_t>(i);
-            const auto value = static_cast<unsigned long>((static_cast<std::uint32_t>(payload[0]) << 16U) | i);
+            const auto value = static_cast<unsigned long>((static_cast<std::uint32_t>(i & 0xffU) << 16U) | i);
             configASSERT(arduino_numbers.print(value, DEC) != 0U);
         }
     }));

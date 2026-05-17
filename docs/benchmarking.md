@@ -47,7 +47,8 @@ The benchmark should compare real, like-for-like work:
 - telemetry bridge, control tick, and protocol-bundle usage mixes;
 - DSP dot, scale, MAC, FIR, SOS, state-space, and SIMD-adjacent kernels;
 - raw ESP-IDF RNG, SHA, AES/GCM, NVS, OTA, temperature, async memcpy, and TWAI self-test paths;
-- optional Arduino `Print`, frame emission, integer formatting, and base64 paths.
+- optional Arduino `Print`, frame emission, integer formatting, and base64 paths;
+- Arc `Text` and `format_to` integer formatting lanes beside the Arduino print lane.
 
 Do not publish fake external-bus numbers. SPI, I2C, UART, ADC, LCD, camera, and wired CAN comparisons need a documented fixture, attached devices, stable wiring, and captured evidence.
 

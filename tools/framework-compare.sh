@@ -102,6 +102,7 @@ cat >"$BUILD/framework-print-compare.cpp" <<'CPP'
 #include "Arduino.h"
 #include "Print.h"
 #include "arc/stream.hpp"
+#include "arc/text.hpp"
 #include "arc/ws.hpp"
 
 extern "C" {
@@ -360,6 +361,27 @@ int main()
     bench_frame_set<256>(arc_sink, byte_base, bulk_base);
 
     constexpr std::uint32_t rounds = 500'000U;
+    std::array<char, 32> arc_text{};
+    bench("Arc Text::u32", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            const auto value = (static_cast<std::uint32_t>(next_byte()) << 16U) | i;
+            barrier();
+            arc::Text out{std::span{arc_text}};
+            expect(out.u32(value), "Arc Text::u32");
+            sink += out.size();
+        }
+    });
+
+    bench("Arc format_to u32", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            const auto value = (static_cast<std::uint32_t>(next_byte()) << 16U) | i;
+            barrier();
+            const auto out = arc::format_to(std::span{arc_text}, "{}", value);
+            expect(out.has_value(), "Arc format_to u32");
+            sink += out->size();
+        }
+    });
+
     bench("Arduino Print::print u32", rounds, [&]() {
         for (std::uint32_t i = 0; i < rounds; ++i) {
             const auto value = static_cast<unsigned long>((static_cast<std::uint32_t>(next_byte()) << 16U) | i);

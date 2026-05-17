@@ -10,14 +10,20 @@ hero:
       text: Start
       link: /getting-started
     - theme: alt
-      text: Benchmark Policy
-      link: /benchmarking
+      text: Module Guide
+      link: /modules
+    - theme: alt
+      text: API Reference
+      link: /api
+    - theme: alt
+      text: Licensing
+      link: /licensing
 
 features:
   - title: Fixed Silicon Contract
     details: Arc targets ESP32-S3 on ESP-IDF and keeps topology, memory capability, and task placement visible in code.
   - title: Hot Path Discipline
     details: Queue, DSP, codec, DMA, and realtime lanes use caller-owned storage and explicit ownership transfer instead of hidden framework heap.
-  - title: Evidence First
-    details: CI runs repo policy checks, host tests, host benchmarks, formal structural checks, and selected firmware builds before changes land.
+  - title: Methodical Docs
+    details: The README and website carry per-header module pages, API reference, examples, benchmark policy, licensing, and safety evidence.
 ---

@@ -10,6 +10,10 @@ export default defineConfig({
     siteTitle: "Arc",
     nav: [
       { text: "Guide", link: "/getting-started" },
+      { text: "Modules", link: "/modules" },
+      { text: "API", link: "/api" },
+      { text: "Examples", link: "/examples" },
+      { text: "License", link: "/licensing" },
       { text: "Benchmarks", link: "/benchmarking" },
       { text: "Safety", link: "/safety-case" },
       { text: "References", link: "/references" }
@@ -21,6 +25,10 @@ export default defineConfig({
           { text: "Overview", link: "/" },
           { text: "Getting Started", link: "/getting-started" },
           { text: "Architecture", link: "/architecture" },
+          { text: "Module Guide", link: "/modules" },
+          { text: "Module Page Index", link: "/module-pages" },
+          { text: "API Reference", link: "/api" },
+          { text: "Examples", link: "/examples" },
           { text: "API Naming", link: "/api-naming" }
         ]
       },
@@ -30,6 +38,7 @@ export default defineConfig({
           { text: "Benchmarking", link: "/benchmarking" },
           { text: "Safety Case", link: "/safety-case" },
           { text: "HIL Test Jig", link: "/hil-test-jig" },
+          { text: "Licensing", link: "/licensing" },
           { text: "References", link: "/references" }
         ]
       }
