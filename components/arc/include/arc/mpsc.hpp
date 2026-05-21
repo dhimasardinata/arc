@@ -4,6 +4,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -72,6 +73,14 @@ struct MpscImpl {
         [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_push(const T& value) noexcept
         {
             return lane_ != nullptr && lane_->try_push(value);
+        }
+
+        template <typename U, std::size_t Extent>
+            requires(std::is_same_v<std::remove_cv_t<U>, T>)
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(
+            const std::span<U, Extent> data) noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->push(data);
         }
 
         [[nodiscard]] static constexpr std::size_t cap() noexcept
@@ -198,6 +207,56 @@ struct MpscImpl {
         cell->value = value;
         store_release(&cell->seq, head + 1U);
         return true;
+    }
+
+    template <typename U, std::size_t Extent>
+        requires(std::is_same_v<std::remove_cv_t<U>, T>)
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(
+        const std::span<U, Extent> data) noexcept
+    {
+        if (data.empty()) {
+            return 0U;
+        }
+
+        auto head = load_relaxed(&head_);
+        Backoff backoff{};
+        const auto limit = data.size() < Capacity ? data.size() : Capacity;
+
+        for (;;) {
+            std::size_t claim{};
+            bool stale{};
+            while (claim < limit) {
+                const auto pos = head + static_cast<std::uint32_t>(claim);
+                const auto seq = load_acquire(&buffer_[pos & kMask].seq);
+                const auto diff = delta(seq, pos);
+                if (diff == 0) {
+                    ++claim;
+                } else if (diff < 0) {
+                    break;
+                } else {
+                    stale = true;
+                    break;
+                }
+            }
+
+            if (claim != 0U) {
+                if (compare_exchange(&head_, &head, head + static_cast<std::uint32_t>(claim))) {
+                    for (std::size_t i = 0; i < claim; ++i) {
+                        const auto pos = head + static_cast<std::uint32_t>(i);
+                        auto& cell = buffer_[pos & kMask];
+                        cell.value = data[i];
+                        store_release(&cell.seq, pos + 1U);
+                    }
+                    return claim;
+                }
+                backoff.wait();
+            } else if (stale) {
+                head = load_relaxed(&head_);
+                backoff.wait();
+            } else {
+                return 0U;
+            }
+        }
     }
 
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(T& value) noexcept
@@ -370,6 +429,13 @@ struct Audit<detail::MpscImpl<T, Capacity, CellAlign>> {
             return lane_ != nullptr && lane_->try_push(value);
         }
 
+        template <typename U, std::size_t Extent>
+            requires(std::is_same_v<std::remove_cv_t<U>, T>)
+        [[nodiscard]] inline std::size_t push(const std::span<U, Extent> data) noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->push(data);
+        }
+
         [[nodiscard]] static constexpr std::size_t cap() noexcept
         {
             return Lane::cap();
@@ -463,6 +529,13 @@ struct Audit<detail::MpscImpl<T, Capacity, CellAlign>> {
     [[nodiscard]] inline bool try_push(const T& value) noexcept
     {
         return lane_.try_push(value);
+    }
+
+    template <typename U, std::size_t Extent>
+        requires(std::is_same_v<std::remove_cv_t<U>, T>)
+    [[nodiscard]] inline std::size_t push(const std::span<U, Extent> data) noexcept
+    {
+        return lane_.push(data);
     }
 
     [[nodiscard]] inline bool try_pop(T& value) noexcept
