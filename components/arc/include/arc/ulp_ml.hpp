@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 
+#include "arc/detail/quant.hpp"
 #include "arc/result.hpp"
 #include "arc/ulp_cxx.hpp"
 
@@ -27,8 +28,8 @@ struct QuantParams {
     const std::int64_t acc,
     const QuantParams params) noexcept
 {
-    const auto scaled = params.shift >= 31U ? 0 : ((acc * params.multiplier) >> params.shift);
-    return saturate_s8(scaled + params.output_zero);
+    const auto scaled = params.shift >= 31U ? 0 : detail::round_shift_s64(detail::mul_sat(acc, params.multiplier), params.shift);
+    return saturate_s8(detail::add_sat(scaled, params.output_zero));
 }
 
 template <std::size_t In, std::size_t Out>

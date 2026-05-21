@@ -1,6 +1,6 @@
-# `arc/detail/cold.hpp`
+# `arc/detail/quant.hpp`
 
-Internal cold-path annotations.
+Internal quantized rounding helpers.
 
 ## Fit
 
@@ -10,7 +10,7 @@ Internal cold-path annotations.
 
 ## Arc Contract
 
-- Header: `arc/detail/cold.hpp`
+- Header: `arc/detail/quant.hpp`
 - Module group: Detail Headers
 - CMake feature: `internal`
 - Closest example: `.`
@@ -23,7 +23,7 @@ Application code should not include this detail header directly. Keep direct inc
 
 ## Source Landmarks
 
-Source landmarks: `TimerSpec`, `BurstSpec`, `TraceSpec`, `TempSpec`, `CountSpec`, `UsbSpec`, `UartSpec`, `CaptureSpec`, `ScopeSpec`, `TimerAlarmCallback`.
+Source landmarks: `mul_sat`, `add_sat`, `round_shift_s64`.
 
 ## Start From Zero
 
@@ -39,7 +39,7 @@ new application-facing dependency on `arc/detail/...`.
 
 ```cpp
 // Inside Arc internals or a focused test only.
-#include "arc/detail/cold.hpp"
+#include "arc/detail/quant.hpp"
 ```
 
 ## Step-By-Step Check

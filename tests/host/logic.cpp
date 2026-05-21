@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <memory_resource>
 #include <span>
 #include <string_view>
@@ -2476,6 +2477,10 @@ void test_caps()
     expect(static_cast<bool>(plain), "plain cap buffer allocation succeeds");
     expect(plain.size() == 65U && plain.bytes() == 65U, "plain cap buffer preserves logical size");
     expect(heap_caps_last_calloc_bytes == 65U, "plain cap buffer allocation stays logical");
+    heap_caps_last_calloc_bytes = 777U;
+    auto overflow = arc::inbuf<std::uint16_t>(
+        (std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t)) + 1U);
+    expect(!overflow && heap_caps_last_calloc_bytes == 777U, "cap buffer rejects byte overflow before allocation");
 
     heap_caps_last_calloc_bytes = 0U;
     auto dma = arc::dmabuf<std::uint8_t>(65U);
@@ -2794,6 +2799,13 @@ void test_ml_tensor()
     expect(qdense.eval(std::span<const std::int8_t, 4>{qx}, std::span<std::int8_t, 1>{qy}).has_value(),
            "ML quant dense eval");
     expect(qy[0] == 10, "ML quant dense output");
+    expect(arc::ml::quantize_s8(3, 1, 1, 0) == 2 && arc::ml::quantize_s8(-3, 1, 1, 0) == -2,
+           "ML quantize rounds symmetrically");
+    expect(arc::ml::quantize_s8(std::numeric_limits<std::int64_t>::max(), 2, 0, 0) == 127 &&
+               arc::ml::quantize_s8(std::numeric_limits<std::int64_t>::min(), 2, 0, 0) == -128 &&
+               arc::ml::quantize_s8(std::numeric_limits<std::int64_t>::max(), 1, 0, 1) == 127 &&
+               arc::ml::quantize_s8(std::numeric_limits<std::int64_t>::min(), 1, 0, -1) == -128,
+           "ML quantize saturates overflow paths");
 }
 
 void test_simd_ml_pipeline()
@@ -3911,11 +3923,25 @@ void test_pipeline_usb_ulp()
     camera.bind(1, std::span(camera_bytes).subspan(4), true);
     expect(!camera.try_bind(2, std::span(camera_bytes).first(1)), "DmaChain checked bind rejects index");
     expect(!camera.try_bind(0, std::span<std::uint8_t>{}), "DmaChain checked bind rejects empty span");
+    static_assert(arc::detail::dma_bytes_fit<std::uint16_t>(
+        static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) / sizeof(std::uint16_t)));
+    static_assert(!arc::detail::dma_bytes_fit<std::uint16_t>(
+        (static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) / sizeof(std::uint16_t)) + 1U));
     std::array<std::uint16_t, 2> typed_dma{};
     arc::DmaChain<1> typed_chain{};
     expect(typed_chain.try_bind(0, std::span(typed_dma)).has_value() &&
                typed_chain.head()->length == typed_dma.size() * sizeof(std::uint16_t),
            "DmaChain checked bind accepts typed spans");
+    alignas(arc::cache_line) std::array<std::uint8_t, 128> coherent_dma{};
+    arc::DmaChain<1> coherent_chain{};
+    expect(coherent_chain.try_bind(0, arc::CacheLines{.data = coherent_dma.data(), .bytes = 128U}).has_value() &&
+               coherent_chain.head()->buffer == coherent_dma.data() &&
+               coherent_chain.head()->length == 128U,
+           "DmaChain cache-line bind accepts coherent spans");
+    expect(!coherent_chain.try_bind(0, arc::CacheLines{.data = coherent_dma.data() + 1U, .bytes = 64U}),
+           "DmaChain cache-line bind rejects unaligned data");
+    expect(!coherent_chain.try_bind(0, arc::CacheLines{.data = coherent_dma.data(), .bytes = 65U}),
+           "DmaChain cache-line bind rejects partial lines");
     arc::OwnedDmaChain<std::uint8_t, 2> owned_dma{};
     static_assert(!std::is_move_constructible_v<decltype(owned_dma)>);
     expect(owned_dma.alloc(4U, true).has_value(), "OwnedDmaChain allocates descriptor buffers");
@@ -3927,17 +3953,50 @@ void test_pipeline_usb_ulp()
     display.bind(1, std::span(display_bytes).subspan(4), true);
 
     arc::Pipeline<2> pipe{};
+    arc::DmaChain<1> empty_endpoint{};
+    expect(!pipe.bind(0, arc::endpoint(empty_endpoint)), "Pipeline rejects empty DMA endpoints");
     expect(pipe.bind(0, arc::endpoint(camera)).has_value(), "Pipeline source bind");
     expect(pipe.bind(1, arc::endpoint(display)).has_value(), "Pipeline sink bind");
     expect(pipe.link_linear().has_value(), "Pipeline linear link");
     expect(camera.tail()->next == display.head() && display.tail()->next == nullptr, "Pipeline descriptor chain");
 
-    std::array<std::uint8_t, 16> frame{};
+    alignas(arc::cache_line) std::array<std::uint8_t, 384> frame{};
     arc::DmaChain<2> rows{};
-    const arc::Dma2dWindow crop{.x_bytes = 1U, .y = 1U, .width_bytes = 2U, .height = 2U, .stride_bytes = 4U};
+    const arc::Dma2dWindow unaligned{.x_bytes = 1U, .y = 1U, .width_bytes = 2U, .height = 2U, .stride_bytes = 4U};
+    expect(!arc::bind_rows(rows, std::span(frame), unaligned), "Pipeline 2D rejects cache-unsafe rows");
+    const arc::Dma2dWindow wrapping{
+        .x_bytes = std::numeric_limits<std::size_t>::max() - 63U,
+        .y = 0U,
+        .width_bytes = 128U,
+        .height = 1U,
+        .stride_bytes = std::numeric_limits<std::size_t>::max(),
+    };
+    expect(!arc::valid(wrapping) && !arc::bind_rows(rows, std::span(frame), wrapping),
+           "Pipeline 2D rejects wrapped row bounds");
+    const arc::Dma2dWindow huge_y{
+        .x_bytes = 0U,
+        .y = std::numeric_limits<std::size_t>::max(),
+        .width_bytes = 64U,
+        .height = 2U,
+        .stride_bytes = 64U,
+    };
+    expect(!arc::fits(frame.size(), huge_y) && !arc::bind_rows(rows, std::span(frame), huge_y),
+           "Pipeline 2D rejects wrapped row index");
+    const arc::Dma2dWindow too_wide{
+        .x_bytes = 0U,
+        .y = 0U,
+        .width_bytes = static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) + 1U,
+        .height = 1U,
+        .stride_bytes = static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) + 1U,
+    };
+    expect(!arc::fits(std::numeric_limits<std::size_t>::max(), too_wide),
+           "Pipeline 2D rejects descriptor-wide rows");
+    const arc::Dma2dWindow crop{.x_bytes = 64U, .y = 1U, .width_bytes = 64U, .height = 2U, .stride_bytes = 128U};
+    expect(!arc::cache_safe(std::span<std::uint8_t>{}, crop), "Pipeline 2D cache safety rejects empty frames");
     expect(arc::bind_rows(rows, std::span(frame), crop).has_value(), "Pipeline 2D row bind");
-    expect(rows.desc[0].buffer == frame.data() + 5U && rows.desc[1].buffer == frame.data() + 9U, "Pipeline 2D offsets");
-    expect(rows.desc[0].length == 2U && rows.desc[1].next == nullptr, "Pipeline 2D lengths");
+    expect(rows.desc[0].buffer == frame.data() + 192U && rows.desc[1].buffer == frame.data() + 320U,
+           "Pipeline 2D offsets");
+    expect(rows.desc[0].length == 64U && rows.desc[1].next == nullptr, "Pipeline 2D lengths");
 
     const std::array<std::uint8_t, 2> payload{0xaaU, 0x55U};
     std::array<std::uint8_t, 32> packet{};
@@ -4215,6 +4274,12 @@ void test_ulp_ml_paillier_covert()
     expect(ulp_dense.eval(std::span<const std::int8_t, 2>{ulp_input}, std::span<std::int8_t, 1>{ulp_logits}),
            "ULP ML dense eval");
     expect(ulp_logits[0] == 6, "ULP ML dense output");
+    expect(arc::ulp::ml::requantize(3, {.shift = 1}) == 2 &&
+               arc::ulp::ml::requantize(-3, {.shift = 1}) == -2,
+           "ULP ML requantize rounds symmetrically");
+    expect(arc::ulp::ml::requantize(std::numeric_limits<std::int64_t>::max(), {.multiplier = 2}) == 127 &&
+               arc::ulp::ml::requantize(std::numeric_limits<std::int64_t>::min(), {.multiplier = 2}) == -128,
+           "ULP ML requantize saturates overflow paths");
 
     struct WakePolicy {
         static esp_err_t i2c_read(int port, std::uint8_t address, std::span<std::uint8_t> data) noexcept

@@ -30,6 +30,7 @@ SPECIAL_FEATURES = {
     "count": "pcnt",
     "detail-cold": "internal",
     "detail-owner": "internal",
+    "detail-quant": "internal",
     "drive": "gpio",
     "ecs": "math",
     "fence": "core",
@@ -158,6 +159,10 @@ GROUP_EXAMPLES = {
     "Storage And Update": "examples/esp32s3/store",
     "Target And Naming Contract": ".",
     "ULP And Low-Power Coprocessor": "examples/esp32s3/sleep",
+}
+
+SPECIAL_LANDMARKS = {
+    "arc/detail/quant.hpp": ["mul_sat", "add_sat", "round_shift_s64"],
 }
 
 GROUP_GUIDANCE = {
@@ -307,6 +312,9 @@ def simulated_output(rel: str, feature: str, example: str) -> str:
 
 
 def public_landmarks(rel: str) -> list[str]:
+    if rel in SPECIAL_LANDMARKS:
+        return SPECIAL_LANDMARKS[rel]
+
     text = header_file(rel).read_text(encoding="utf-8")
     names: list[str] = []
     patterns = [
@@ -398,12 +406,12 @@ idf_component_register(
             "Run the docs generator and host checks after the internal contract changes.",
         ]
     if is_internal:
-        owner_section = """The owner is the public Arc wrapper or test that reaches this helper. Do not add a
+        owner_section = f"""The owner is the public Arc wrapper or test that reaches this helper. Do not add a
 new application-facing dependency on `arc/detail/...`.
 
 ```cpp
 // Inside Arc internals or a focused test only.
-#include "arc/detail/owner.hpp"
+{include}
 ```"""
         step_check = """1. Name the public header that depends on this helper.
 2. Keep the helper hidden behind that public header.

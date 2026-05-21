@@ -8,7 +8,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "arc/caps.hpp"
+#include "arc/cache.hpp"
 #include "arc/result.hpp"
 
 namespace arc {
@@ -21,6 +21,22 @@ struct DmaDesc {
     void* buffer{};
     DmaDesc* next{};
 };
+
+namespace detail {
+
+template <typename T>
+[[nodiscard]] constexpr bool dma_bytes_fit(const std::size_t items) noexcept
+{
+    return items <= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) / sizeof(T);
+}
+
+template <typename T>
+[[nodiscard]] constexpr std::size_t dma_bytes(const std::size_t items) noexcept
+{
+    return items * sizeof(T);
+}
+
+}  // namespace detail
 
 template <std::size_t N>
 struct DmaChain {
@@ -64,6 +80,28 @@ struct DmaChain {
         return ok();
     }
 
+    [[nodiscard]] Status try_bind(
+        const std::size_t index,
+        const CacheLines region,
+        const bool eof = false) noexcept
+    {
+        if (index >= N || region.data == nullptr || region.bytes == 0U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (!Cache::aligned(region.data) || !Cache::whole_lines(region.bytes)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (region.bytes > std::numeric_limits<std::uint32_t>::max()) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        desc[index].buffer = region.data;
+        desc[index].size = static_cast<std::uint32_t>(region.bytes);
+        desc[index].length = static_cast<std::uint32_t>(region.bytes);
+        desc[index].owner = 1U;
+        desc[index].flags = eof ? 1U : 0U;
+        return ok();
+    }
+
     template <typename T, std::size_t Extent>
         requires(!std::is_const_v<T> && std::is_trivially_copyable_v<T>)
     [[nodiscard]] Status try_bind(
@@ -71,14 +109,15 @@ struct DmaChain {
         const std::span<T, Extent> values,
         const bool eof = false) noexcept
     {
-        if (values.size_bytes() > std::numeric_limits<std::uint32_t>::max()) {
+        if (!detail::dma_bytes_fit<T>(values.size())) {
             return fail(ESP_ERR_INVALID_ARG);
         }
+        const auto bytes = detail::dma_bytes<T>(values.size());
         return try_bind(
             index,
             std::span<std::uint8_t>{
                 reinterpret_cast<std::uint8_t*>(values.data()),
-                values.size_bytes(),
+                bytes,
             },
             eof);
     }
@@ -145,7 +184,7 @@ public:
         const std::size_t items,
         const bool circular = false) noexcept
     {
-        if (items == 0U || items > std::numeric_limits<std::size_t>::max() / sizeof(T)) {
+        if (items == 0U || !detail::dma_bytes_fit<T>(items)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 

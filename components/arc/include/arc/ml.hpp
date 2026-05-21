@@ -9,6 +9,7 @@
 #include <span>
 #include <type_traits>
 
+#include "arc/detail/quant.hpp"
 #include "arc/mmu_span.hpp"
 #include "arc/result.hpp"
 #include "arc/simd.hpp"
@@ -32,8 +33,8 @@ namespace arc::ml {
     const std::uint8_t shift,
     const std::int32_t output_zero) noexcept
 {
-    const auto scaled = (acc * multiplier) >> shift;
-    return saturate_s8(scaled + output_zero);
+    const auto scaled = detail::round_shift_s64(detail::mul_sat(acc, multiplier), shift);
+    return saturate_s8(detail::add_sat(scaled, output_zero));
 }
 
 template <typename T, std::size_t Count>

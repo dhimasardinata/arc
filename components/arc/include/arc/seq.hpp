@@ -68,7 +68,7 @@ struct alignas(cache_line) SeqReg {
         __builtin_memcpy(&value, &slots_[index(head)], sizeof(T));
         acquire_fence();
 
-        return head == __atomic_load_n(&seq_, __ATOMIC_RELAXED);
+        return head == __atomic_load_n(&seq_, __ATOMIC_ACQUIRE);
     }
 
 private:

@@ -23,10 +23,12 @@ type violation struct {
 	Token string
 }
 
+const defaultForbidden = "malloc,calloc,realloc,free,heap_caps_malloc,heap_caps_calloc,heap_caps_realloc,heap_caps_free,new,delete,virtual,vTaskDelay,vTaskDelayUntil,vTaskSuspend,xSemaphoreTake,xSemaphoreTakeRecursive,xQueueReceive,xQueuePeek,xQueueSemaphoreTake,xQueueSend,xQueueSendToBack,xQueueSendToFront,xEventGroupWaitBits,xEventGroupSync,ulTaskNotifyTake,ulTaskNotifyTakeIndexed,xTaskNotifyWait,xTaskNotifyWaitIndexed,xTimerPendFunctionCall,ESP_LOGE,ESP_LOGW,ESP_LOGI,ESP_LOGD,ESP_LOGV,printf,puts"
+
 func main() {
 	root := flag.String("root", ".", "repository root")
 	all := flag.Bool("all", false, "scan every source file instead of annotated realtime entries")
-	forbid := flag.String("forbid", "malloc,heap_caps_malloc,new,vTaskDelay,xSemaphoreTake,virtual", "comma-separated forbidden realtime tokens")
+	forbid := flag.String("forbid", defaultForbidden, "comma-separated forbidden realtime tokens")
 	flag.Parse()
 
 	tokens := splitCSV(*forbid)
@@ -350,7 +352,7 @@ func skipTemplateArgs(text string, open int) int {
 }
 
 func containsToken(body string, token string) bool {
-	if token == "new" || token == "virtual" {
+	if token == "new" || token == "delete" || token == "virtual" {
 		return containsWord(body, token)
 	}
 	return containsCall(body, token)

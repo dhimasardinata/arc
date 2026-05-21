@@ -96,6 +96,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | --- | --- | --- |
 | `arc/detail/cold.hpp` | Internal cold-path annotations. | [Open](/modules/arc-detail-cold) |
 | `arc/detail/owner.hpp` | Internal move-only ownership helpers. | [Open](/modules/arc-detail-owner) |
+| `arc/detail/quant.hpp` | Internal quantized rounding helpers. | [Open](/modules/arc-detail-quant) |
 
 ## GPIO, Timing, And Power
 

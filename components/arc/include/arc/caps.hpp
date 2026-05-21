@@ -313,6 +313,9 @@ template <typename T, std::uint32_t Caps, std::size_t Align = alignof(T)>
     if (count == 0U) {
         return {};
     }
+    if (count > (std::numeric_limits<std::size_t>::max() / sizeof(T))) {
+        return {};
+    }
 
     constexpr auto min_align = alignof(T) > sizeof(void*) ? alignof(T) : sizeof(void*);
     constexpr auto actual_align = Align > min_align ? Align : min_align;

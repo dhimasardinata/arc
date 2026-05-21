@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/dma_chain.hpp"
@@ -18,7 +19,7 @@ struct DmaEndpoint {
 
     [[nodiscard]] constexpr explicit operator bool() const noexcept
     {
-        return head != nullptr && tail != nullptr && descriptors != 0U;
+        return head != nullptr && tail != nullptr && descriptors != 0U && bytes != 0U;
     }
 };
 
@@ -97,7 +98,47 @@ struct Dma2dWindow {
     return window.width_bytes != 0U &&
         window.height != 0U &&
         window.stride_bytes != 0U &&
-        window.x_bytes + window.width_bytes <= window.stride_bytes;
+        window.x_bytes <= window.stride_bytes &&
+        window.width_bytes <= window.stride_bytes - window.x_bytes;
+}
+
+[[nodiscard]] constexpr bool fits(const std::size_t frame_bytes, const Dma2dWindow window) noexcept
+{
+    if (!valid(window)) {
+        return false;
+    }
+
+    if (window.width_bytes > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
+        return false;
+    }
+
+    constexpr auto max = std::numeric_limits<std::size_t>::max();
+    if (window.y > max - (window.height - 1U)) {
+        return false;
+    }
+    const auto last = window.y + window.height - 1U;
+    if (last > max / window.stride_bytes) {
+        return false;
+    }
+    const auto row_base = last * window.stride_bytes;
+    if (row_base > max - window.x_bytes) {
+        return false;
+    }
+    const auto row_start = row_base + window.x_bytes;
+    if (row_start > max - window.width_bytes) {
+        return false;
+    }
+    return row_start + window.width_bytes <= frame_bytes;
+}
+
+[[nodiscard]] inline bool cache_safe(const std::span<std::uint8_t> frame, const Dma2dWindow window) noexcept
+{
+    return frame.data() != nullptr &&
+        !frame.empty() &&
+        Cache::aligned(frame.data()) &&
+        Cache::whole_lines(window.x_bytes) &&
+        Cache::whole_lines(window.width_bytes) &&
+        Cache::whole_lines(window.stride_bytes);
 }
 
 template <std::size_t Rows>
@@ -107,18 +148,19 @@ template <std::size_t Rows>
     const Dma2dWindow window,
     const bool circular = false) noexcept
 {
-    if (!valid(window) || window.height > Rows) {
-        return Status{fail(ESP_ERR_INVALID_ARG)};
-    }
-
-    const auto last = window.y + window.height - 1U;
-    if ((last * window.stride_bytes) + window.x_bytes + window.width_bytes > frame.size()) {
+    if (!fits(frame.size(), window) || !cache_safe(frame, window) || window.height > Rows) {
         return Status{fail(ESP_ERR_INVALID_ARG)};
     }
 
     for (std::size_t row = 0; row < window.height; ++row) {
         const auto offset = ((window.y + row) * window.stride_bytes) + window.x_bytes;
-        const auto ready = chain.try_bind(row, frame.subspan(offset, window.width_bytes), row + 1U == window.height && !circular);
+        const auto ready = chain.try_bind(
+            row,
+            CacheLines{
+                .data = frame.data() + offset,
+                .bytes = window.width_bytes,
+            },
+            row + 1U == window.height && !circular);
         if (!ready) {
             return ready;
         }

@@ -150,6 +150,77 @@ class ArcAuditTest(unittest.TestCase):
         self.assertIn("realtime entry loop reaches forbidden token", result.stderr)
         self.assertIn('"heap_caps_malloc"', result.stderr)
 
+    def test_realtime_default_tokens_reject_logging_and_queue_waits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app.cpp").write_text(
+                "\n".join(
+                    [
+                        "#define ARC_REALTIME_PROOF 1",
+                        "void wait_for_work() { xQueueReceive(nullptr, nullptr, 1); }",
+                        "void send_work() { xQueueSend(nullptr, nullptr, 1); }",
+                        'void log_sample() { ESP_LOGI("rt", "sample"); }',
+                        "void loop() { wait_for_work(); send_work(); log_sample(); }",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_arc_audit(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('"xQueueReceive"', result.stderr)
+        self.assertIn('"xQueueSend"', result.stderr)
+        self.assertIn('"ESP_LOGI"', result.stderr)
+
+    def test_realtime_default_tokens_reject_wait_variants(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app.cpp").write_text(
+                "\n".join(
+                    [
+                        "#define ARC_REALTIME_PROOF 1",
+                        "void delay_until() { vTaskDelayUntil(nullptr, 1); }",
+                        "void peek_queue() { xQueuePeek(nullptr, nullptr, 1); }",
+                        "void wait_notify() { ulTaskNotifyTakeIndexed(0, true, 1); }",
+                        "void pend_timer() { xTimerPendFunctionCall(nullptr, nullptr, 0, 1); }",
+                        "void loop() { delay_until(); peek_queue(); wait_notify(); pend_timer(); }",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_arc_audit(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('"vTaskDelayUntil"', result.stderr)
+        self.assertIn('"xQueuePeek"', result.stderr)
+        self.assertIn('"ulTaskNotifyTakeIndexed"', result.stderr)
+        self.assertIn('"xTimerPendFunctionCall"', result.stderr)
+
+    def test_realtime_default_tokens_reject_delete_word(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app.cpp").write_text(
+                "\n".join(
+                    [
+                        "#define ARC_REALTIME_PROOF 1",
+                        "void loop() {",
+                        "  int* value = nullptr;",
+                        "  delete value;",
+                        "  struct Local { virtual void run() {} };",
+                        "}",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_arc_audit(root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('"delete"', result.stderr)
+        self.assertIn('"virtual"', result.stderr)
+
     def test_realtime_safe_source_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
