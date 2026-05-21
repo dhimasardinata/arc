@@ -76,10 +76,10 @@ struct Ftm {
             }
         }
 
-        dsp::Matrix<float, 3, 3> ata{};
-        dsp::Matrix<float, 3, 1> atb{};
+        dsp::Matrix<double, 3, 3> ata{};
+        dsp::Matrix<double, 3, 1> atb{};
         const auto origin = peers[0].position;
-        const auto r0 = ranges[0].distance_mm;
+        const auto r0 = static_cast<double>(ranges[0].distance_mm);
         if (peers[0].node_id != ranges[0].node_id) {
             return fail(ESP_ERR_INVALID_ARG);
         }
@@ -88,16 +88,20 @@ struct Ftm {
                 return fail(ESP_ERR_INVALID_ARG);
             }
             const auto p = peers[i].position;
-            const float row[3]{
-                2.0F * (p.x_mm - origin.x_mm),
-                2.0F * (p.y_mm - origin.y_mm),
-                2.0F * (p.z_mm - origin.z_mm),
+            const double row[3]{
+                2.0 * (static_cast<double>(p.x_mm) - static_cast<double>(origin.x_mm)),
+                2.0 * (static_cast<double>(p.y_mm) - static_cast<double>(origin.y_mm)),
+                2.0 * (static_cast<double>(p.z_mm) - static_cast<double>(origin.z_mm)),
             };
+            const auto range = static_cast<double>(ranges[i].distance_mm);
             const auto b =
-                (r0 * r0) - (ranges[i].distance_mm * ranges[i].distance_mm) -
-                (origin.x_mm * origin.x_mm) + (p.x_mm * p.x_mm) -
-                (origin.y_mm * origin.y_mm) + (p.y_mm * p.y_mm) -
-                (origin.z_mm * origin.z_mm) + (p.z_mm * p.z_mm);
+                (r0 * r0) - (range * range) -
+                (static_cast<double>(origin.x_mm) * static_cast<double>(origin.x_mm)) +
+                (static_cast<double>(p.x_mm) * static_cast<double>(p.x_mm)) -
+                (static_cast<double>(origin.y_mm) * static_cast<double>(origin.y_mm)) +
+                (static_cast<double>(p.y_mm) * static_cast<double>(p.y_mm)) -
+                (static_cast<double>(origin.z_mm) * static_cast<double>(origin.z_mm)) +
+                (static_cast<double>(p.z_mm) * static_cast<double>(p.z_mm));
 
             for (std::size_t r = 0U; r < 3U; ++r) {
                 atb(r, 0) += row[r] * b;
@@ -111,8 +115,8 @@ struct Ftm {
 
 private:
     [[nodiscard]] static Result<swarm::Position3> solve3(
-        dsp::Matrix<float, 3, 3> a,
-        dsp::Matrix<float, 3, 1> b) noexcept
+        dsp::Matrix<double, 3, 3> a,
+        dsp::Matrix<double, 3, 1> b) noexcept
     {
         for (std::size_t pivot = 0U; pivot < 3U; ++pivot) {
             auto best = pivot;
@@ -124,7 +128,7 @@ private:
                     best_abs = value;
                 }
             }
-            if (best_abs < 0.000001F) {
+            if (best_abs < 0.000000000001) {
                 return fail(ESP_ERR_INVALID_STATE);
             }
             if (best != pivot) {
@@ -155,12 +159,16 @@ private:
                 b(row, 0) -= scale * b(pivot, 0);
             }
         }
-        return swarm::Position3{.x_mm = b(0, 0), .y_mm = b(1, 0), .z_mm = b(2, 0)};
+        return swarm::Position3{
+            .x_mm = static_cast<float>(b(0, 0)),
+            .y_mm = static_cast<float>(b(1, 0)),
+            .z_mm = static_cast<float>(b(2, 0)),
+        };
     }
 
-    [[nodiscard]] static constexpr float abs(const float value) noexcept
+    [[nodiscard]] static constexpr double abs(const double value) noexcept
     {
-        return value < 0.0F ? -value : value;
+        return value < 0.0 ? -value : value;
     }
 };
 

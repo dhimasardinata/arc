@@ -1995,7 +1995,7 @@ Seqlock-style latest-snapshot lane for payloads larger than one word.
 - `read()` retries until one stable snapshot is observed
 - `try_read(value)` gives you the same read without blocking
 
-`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It publishes into an inactive shadow slot before flipping the even sequence, so readers never copy from the slot a writer is mutating. The sequence counter carries release/acquire visibility, and the payload boundary uses acquire/release fences without forcing seq-cst ordering. `write()` still masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
+`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It publishes into an inactive shadow slot before flipping the even sequence, so readers normally copy from a stable slot, and payload bytes are stored/loaded through relaxed atomics to avoid non-atomic data races if a stale reader overlaps a writer. The sequence counter carries release/acquire visibility without forcing seq-cst ordering. `write()` still masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
 

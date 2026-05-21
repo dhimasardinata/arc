@@ -4509,6 +4509,28 @@ void test_goal_wave_surfaces()
     const auto solved = arc::swarm::AcousticSlam::solve(std::span<const arc::swarm::AcousticAnchor, 4>{anchors}, std::span<const float, 4>{ranges});
     expect(solved.has_value() && near(solved->x_mm, target.x_mm, 0.5F) && near(solved->z_mm, target.z_mm, 0.5F),
            "Acoustic 3D trilateration");
+    const std::array<arc::swarm::AcousticAnchor, 4> far_anchors{
+        arc::swarm::AcousticAnchor{.node_id = 1U, .position = {.x_mm = 1'000'000.0F, .y_mm = 1'000'000.0F, .z_mm = 1'000'000.0F}},
+        arc::swarm::AcousticAnchor{.node_id = 2U, .position = {.x_mm = 1'005'000.0F, .y_mm = 1'000'000.0F, .z_mm = 1'000'000.0F}},
+        arc::swarm::AcousticAnchor{.node_id = 3U, .position = {.x_mm = 1'000'000.0F, .y_mm = 1'005'000.0F, .z_mm = 1'000'000.0F}},
+        arc::swarm::AcousticAnchor{.node_id = 4U, .position = {.x_mm = 1'000'000.0F, .y_mm = 1'000'000.0F, .z_mm = 1'005'000.0F}},
+    };
+    const arc::swarm::Position3 far_target{.x_mm = 1'001'234.5F, .y_mm = 1'002'345.25F, .z_mm = 1'003'456.75F};
+    std::array<float, 4> far_ranges{};
+    for (std::size_t i = 0U; i < far_anchors.size(); ++i) {
+        const auto dx = static_cast<double>(far_target.x_mm) - static_cast<double>(far_anchors[i].position.x_mm);
+        const auto dy = static_cast<double>(far_target.y_mm) - static_cast<double>(far_anchors[i].position.y_mm);
+        const auto dz = static_cast<double>(far_target.z_mm) - static_cast<double>(far_anchors[i].position.z_mm);
+        far_ranges[i] = static_cast<float>(std::sqrt((dx * dx) + (dy * dy) + (dz * dz)));
+    }
+    const auto far_solved = arc::swarm::AcousticSlam::solve(
+        std::span<const arc::swarm::AcousticAnchor, 4>{far_anchors},
+        std::span<const float, 4>{far_ranges});
+    expect(far_solved.has_value() &&
+               near(far_solved->x_mm, far_target.x_mm, 0.25F) &&
+               near(far_solved->y_mm, far_target.y_mm, 0.25F) &&
+               near(far_solved->z_mm, far_target.z_mm, 0.25F),
+           "Acoustic trilateration keeps precision with large coordinates");
     arc::dsp::Kalman<float, 6, 3> slam_filter{};
     expect(arc::swarm::AcousticSlam::correct_filter(slam_filter, *solved).has_value(), "Acoustic Kalman correction");
 
@@ -5221,6 +5243,27 @@ void test_current_goal_surfaces()
                near(ftm_position->y_mm, rf_point.y_mm, 0.1F) &&
                near(ftm_position->z_mm, rf_point.z_mm, 0.1F),
            "FTM starts ESP-IDF session policy and solves RF trilateration");
+    const std::array<arc::net::FtmPeer, 4> far_ftm_peers{
+        arc::net::FtmPeer{.node_id = 1U, .position = {.x_mm = 1'000'000.0F, .y_mm = 1'000'000.0F, .z_mm = 1'000'000.0F}, .channel = 6U},
+        arc::net::FtmPeer{.node_id = 2U, .position = {.x_mm = 1'005'000.0F, .y_mm = 1'000'000.0F, .z_mm = 1'000'000.0F}, .channel = 6U},
+        arc::net::FtmPeer{.node_id = 3U, .position = {.x_mm = 1'000'000.0F, .y_mm = 1'005'000.0F, .z_mm = 1'000'000.0F}, .channel = 6U},
+        arc::net::FtmPeer{.node_id = 4U, .position = {.x_mm = 1'000'000.0F, .y_mm = 1'000'000.0F, .z_mm = 1'005'000.0F}, .channel = 6U},
+    };
+    const arc::swarm::Position3 far_rf_point{.x_mm = 1'001'234.5F, .y_mm = 1'002'345.25F, .z_mm = 1'003'456.75F};
+    const std::array<arc::net::FtmMeasurement, 4> far_ftm_ranges{
+        arc::net::FtmMeasurement{.node_id = 1U, .distance_mm = rf_range(far_ftm_peers[0].position, far_rf_point)},
+        arc::net::FtmMeasurement{.node_id = 2U, .distance_mm = rf_range(far_ftm_peers[1].position, far_rf_point)},
+        arc::net::FtmMeasurement{.node_id = 3U, .distance_mm = rf_range(far_ftm_peers[2].position, far_rf_point)},
+        arc::net::FtmMeasurement{.node_id = 4U, .distance_mm = rf_range(far_ftm_peers[3].position, far_rf_point)},
+    };
+    const auto far_ftm_position = arc::net::Ftm::trilaterate(
+        std::span<const arc::net::FtmPeer, 4>{far_ftm_peers},
+        std::span<const arc::net::FtmMeasurement, 4>{far_ftm_ranges});
+    expect(far_ftm_position.has_value() &&
+               near(far_ftm_position->x_mm, far_rf_point.x_mm, 0.25F) &&
+               near(far_ftm_position->y_mm, far_rf_point.y_mm, 0.25F) &&
+               near(far_ftm_position->z_mm, far_rf_point.z_mm, 0.25F),
+           "FTM trilateration keeps precision with large coordinates");
 
     struct MigrationPolicy {
         static esp_err_t send(

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -30,6 +32,7 @@ struct alignas(cache_line) SeqReg {
     static_assert(sizeof(T) > sizeof(std::uint32_t), "prefer arc::Reg<T> for one-word payloads");
     static_assert(std::is_trivially_copyable_v<T>, "seq payload must be trivially copyable");
     static_assert(std::is_default_constructible_v<T>, "seq payload must be default constructible");
+    static_assert(std::atomic<std::uint8_t>::is_always_lock_free, "seq payload byte atomics must be lock-free");
 
     void write(const T& value) noexcept
     {
@@ -44,7 +47,7 @@ struct alignas(cache_line) SeqReg {
         const auto slot = index(next);
         __atomic_store_n(&seq_, seq + 1U, __ATOMIC_RELEASE);
         sync_fence();
-        __builtin_memcpy(&slots_[slot], &value, sizeof(T));
+        store_slot(slots_[slot], value);
         release_fence();
         __atomic_store_n(&seq_, next, __ATOMIC_RELEASE);
     }
@@ -65,20 +68,38 @@ struct alignas(cache_line) SeqReg {
             return false;
         }
 
-        __builtin_memcpy(&value, &slots_[index(head)], sizeof(T));
+        load_slot(slots_[index(head)], value);
         acquire_fence();
 
         return head == __atomic_load_n(&seq_, __ATOMIC_ACQUIRE);
     }
 
 private:
+    using Slot = std::array<std::atomic<std::uint8_t>, sizeof(T)>;
+
     [[nodiscard]] static constexpr std::size_t index(const std::uint32_t seq) noexcept
     {
         return (seq >> 1U) & 1U;
     }
 
+    static void store_slot(Slot& slot, const T& value) noexcept
+    {
+        const auto* const bytes = reinterpret_cast<const std::uint8_t*>(&value);
+        for (std::size_t i = 0U; i < sizeof(T); ++i) {
+            slot[i].store(bytes[i], std::memory_order_relaxed);
+        }
+    }
+
+    static void load_slot(const Slot& slot, T& value) noexcept
+    {
+        auto* const bytes = reinterpret_cast<std::uint8_t*>(&value);
+        for (std::size_t i = 0U; i < sizeof(T); ++i) {
+            bytes[i] = slot[i].load(std::memory_order_relaxed);
+        }
+    }
+
     alignas(4) std::uint32_t seq_{0};
-    std::array<T, 2> slots_{};
+    std::array<Slot, 2> slots_{};
 };
 
 }  // namespace arc
