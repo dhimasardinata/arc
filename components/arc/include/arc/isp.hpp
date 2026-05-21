@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/result.hpp"
@@ -44,6 +45,18 @@ enum class Color : std::uint8_t {
 }
 
 struct Debayer {
+private:
+    [[nodiscard]] static constexpr Result<std::size_t> pixels(
+        const std::size_t width,
+        const std::size_t height) noexcept
+    {
+        if (width == 0U || height == 0U || width > std::numeric_limits<std::size_t>::max() / height) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return width * height;
+    }
+
+public:
     [[nodiscard]] static Result<std::size_t> to_rgb565(
         const std::span<const std::uint8_t> raw,
         const std::size_t width,
@@ -51,7 +64,8 @@ struct Debayer {
         const std::span<std::uint16_t> out,
         const Bayer pattern = Bayer::rggb) noexcept
     {
-        if (width == 0U || height == 0U || raw.size() < width * height || out.size() < width * height) {
+        const auto total = pixels(width, height);
+        if (!total || raw.size() < *total || out.size() < *total) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -95,7 +109,7 @@ struct Debayer {
                     static_cast<std::uint8_t>(nb == 0U ? 0U : b / nb));
             }
         }
-        return width * height;
+        return *total;
     }
 };
 

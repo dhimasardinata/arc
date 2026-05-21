@@ -4155,6 +4155,17 @@ void test_pru_isp_vision()
     std::array<std::uint16_t, 16> rgb{};
     const auto debayered = arc::isp::Debayer::to_rgb565(std::span(raw), 4U, 4U, std::span(rgb), arc::isp::Bayer::rggb);
     expect(debayered.has_value() && *debayered == rgb.size(), "ISP debayer RGB565");
+
+    std::array<std::uint8_t, 1> tiny_raw{};
+    std::array<std::uint16_t, 1> tiny_rgb{};
+    const auto oversized = arc::isp::Debayer::to_rgb565(
+        std::span(tiny_raw),
+        (std::numeric_limits<std::size_t>::max() / 2U) + 1U,
+        2U,
+        std::span(tiny_rgb),
+        arc::isp::Bayer::rggb);
+    expect(!oversized && oversized.error() == ESP_ERR_INVALID_ARG, "ISP rejects oversized frame");
+
     const auto stats = arc::isp::AecAwb::measure_rgb565(std::span(rgb));
     const auto tuning = arc::isp::AecAwb::tune(stats);
     expect(stats.pixels == rgb.size() && tuning.red_gain_q8 != 0U, "ISP AEC/AWB tuning");
