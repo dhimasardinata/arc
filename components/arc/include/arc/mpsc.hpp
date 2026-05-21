@@ -127,6 +127,14 @@ struct MpscImpl {
             return lane_ != nullptr && lane_->try_pop(value);
         }
 
+        template <typename U, std::size_t Extent>
+            requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t pop(
+            const std::span<U, Extent> out) noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->pop(out);
+        }
+
         [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool empty() const noexcept
         {
             return lane_ == nullptr || lane_->empty();
@@ -274,6 +282,38 @@ struct MpscImpl {
         store_relaxed(&tail_, tail + 1U);
         store_release(&cell.seq, tail + static_cast<std::uint32_t>(Capacity));
         return true;
+    }
+
+    template <typename U, std::size_t Extent>
+        requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t pop(
+        const std::span<U, Extent> out) noexcept
+    {
+        if (out.empty()) {
+            return 0U;
+        }
+
+        const auto tail = load_relaxed(&tail_);
+        const auto limit = out.size() < Capacity ? out.size() : Capacity;
+        std::size_t count{};
+
+        while (count < limit) {
+            const auto pos = tail + static_cast<std::uint32_t>(count);
+            auto& cell = buffer_[pos & kMask];
+            const auto seq = load_acquire(&cell.seq);
+            if (delta(seq, pos + 1U) != 0) {
+                break;
+            }
+
+            out[count] = cell.value;
+            store_release(&cell.seq, pos + static_cast<std::uint32_t>(Capacity));
+            ++count;
+        }
+
+        if (count != 0U) {
+            store_relaxed(&tail_, tail + static_cast<std::uint32_t>(count));
+        }
+        return count;
     }
 
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool empty() const noexcept
@@ -480,6 +520,13 @@ struct Audit<detail::MpscImpl<T, Capacity, CellAlign>> {
             return lane_ != nullptr && lane_->try_pop(value);
         }
 
+        template <typename U, std::size_t Extent>
+            requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
+        [[nodiscard]] inline std::size_t pop(const std::span<U, Extent> out) noexcept
+        {
+            return lane_ == nullptr ? 0U : lane_->pop(out);
+        }
+
         [[nodiscard]] inline bool empty() const noexcept
         {
             return lane_ == nullptr || lane_->empty();
@@ -542,6 +589,14 @@ struct Audit<detail::MpscImpl<T, Capacity, CellAlign>> {
     {
         consumer_.assert_single("arc::Audit<Mpsc> pop must stay single-consumer");
         return lane_.try_pop(value);
+    }
+
+    template <typename U, std::size_t Extent>
+        requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
+    [[nodiscard]] inline std::size_t pop(const std::span<U, Extent> out) noexcept
+    {
+        consumer_.assert_single("arc::Audit<Mpsc> pop must stay single-consumer");
+        return lane_.pop(out);
     }
 
     [[nodiscard]] inline bool empty() const noexcept

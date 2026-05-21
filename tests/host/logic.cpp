@@ -1017,10 +1017,12 @@ void test_mpsc_single()
     const std::array more{16, 17, 18, 19, 20};
     expect(queue.push(std::span(more)) == 4U, "MPSC batch push caps at capacity");
     expect(queue.push(std::span(more).first(1U)) == 0U, "MPSC batch full rejects");
-    expect(queue.try_pop(value) && value == 16, "MPSC batch pop 16");
-    expect(queue.try_pop(value) && value == 17, "MPSC batch pop 17");
-    expect(queue.try_pop(value) && value == 18, "MPSC batch pop 18");
-    expect(queue.try_pop(value) && value == 19, "MPSC batch pop 19");
+    std::array<int, 5> out{};
+    expect(queue.pop(std::span(out).first(2U)) == 2U, "MPSC batch partial pop count");
+    expect(out[0] == 16 && out[1] == 17, "MPSC batch partial pop order");
+    out = {};
+    expect(queue.pop(std::span(out)) == 2U, "MPSC batch remainder pop count");
+    expect(out[0] == 18 && out[1] == 19, "MPSC batch remainder pop order");
     expect(!queue.try_pop(value), "MPSC batch drains empty");
 
     auto endpoints = queue.split();
@@ -1034,9 +1036,9 @@ void test_mpsc_single()
            "MPSC consumer endpoint is move-only");
     expect(moved_consumer.try_pop(value) && value == 13, "MPSC moved consumer endpoint pop 13");
     expect(second_producer.push(std::span(more).first(3U)) == 3U, "MPSC producer endpoint batch push");
-    expect(moved_consumer.try_pop(value) && value == 16, "MPSC producer endpoint batch pop 16");
-    expect(moved_consumer.try_pop(value) && value == 17, "MPSC producer endpoint batch pop 17");
-    expect(moved_consumer.try_pop(value) && value == 18, "MPSC producer endpoint batch pop 18");
+    out = {};
+    expect(moved_consumer.pop(std::span(out)) == 3U, "MPSC consumer endpoint batch pop");
+    expect(out[0] == 16 && out[1] == 17 && out[2] == 18, "MPSC consumer endpoint batch order");
 
     arc::Roles<arc::Mpsc<int, 4>> role_only;
     auto role_endpoints = role_only.split();
@@ -1071,10 +1073,9 @@ void test_checked_mpsc()
     expect(queue.try_pop(value) && value == 1, "Audit MPSC pop 1");
     const std::array more{4, 5, 6, 7, 8};
     expect(queue.push(std::span(more)) == 4U, "Audit MPSC batch push caps at capacity");
-    expect(queue.try_pop(value) && value == 4, "Audit MPSC batch pop 4");
-    expect(queue.try_pop(value) && value == 5, "Audit MPSC batch pop 5");
-    expect(queue.try_pop(value) && value == 6, "Audit MPSC batch pop 6");
-    expect(queue.try_pop(value) && value == 7, "Audit MPSC batch pop 7");
+    std::array<int, 5> out{};
+    expect(queue.pop(std::span(out)) == 4U, "Audit MPSC batch pop count");
+    expect(out[0] == 4 && out[1] == 5 && out[2] == 6 && out[3] == 7, "Audit MPSC batch pop order");
 
     auto endpoints = queue.split();
     auto second_producer = endpoints.producer;
@@ -1087,9 +1088,9 @@ void test_checked_mpsc()
            "Audit MPSC consumer endpoint is move-only");
     expect(moved_consumer.try_pop(value) && value == 3, "Audit MPSC moved consumer endpoint pop");
     expect(second_producer.push(std::span(more).subspan(1U, 3U)) == 3U, "Audit MPSC producer endpoint batch push");
-    expect(moved_consumer.try_pop(value) && value == 5, "Audit MPSC producer endpoint batch pop 5");
-    expect(moved_consumer.try_pop(value) && value == 6, "Audit MPSC producer endpoint batch pop 6");
-    expect(moved_consumer.try_pop(value) && value == 7, "Audit MPSC producer endpoint batch pop 7");
+    out = {};
+    expect(moved_consumer.pop(std::span(out).last(3U)) == 3U, "Audit MPSC consumer endpoint batch pop");
+    expect(out[2] == 5 && out[3] == 6 && out[4] == 7, "Audit MPSC consumer endpoint batch order");
 
     expect_abort(
         []() {
