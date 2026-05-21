@@ -4217,6 +4217,17 @@ void test_pru_isp_vision()
            "Vision Sobel edges");
     expect(edges[5] != 0U || edges[6] != 0U, "Vision Sobel detects edge");
 
+    std::array<std::uint8_t, 4> tiny_gray{};
+    std::array<std::uint8_t, 4> tiny_edges{};
+    const auto huge_width = (std::numeric_limits<std::size_t>::max() / 3U) + 1U;
+    const auto oversized_edges = arc::vision::Sobel::edges(
+        std::span(tiny_gray),
+        huge_width,
+        3U,
+        std::span(tiny_edges),
+        0U);
+    expect(!oversized_edges && oversized_edges.error() == ESP_ERR_INVALID_ARG, "Vision Sobel rejects oversized frame");
+
     const std::array<std::uint8_t, 16> shifted{
         0U,
         0U,
@@ -4237,6 +4248,10 @@ void test_pru_isp_vision()
     };
     const auto flow = arc::vision::OpticalFlow::lucas_kanade(std::span(gray), std::span(shifted), 4U, 4U);
     expect(flow.has_value(), "Vision optical flow");
+    const auto oversized_flow =
+        arc::vision::OpticalFlow::lucas_kanade(std::span(tiny_gray), std::span(tiny_edges), huge_width, 3U);
+    expect(!oversized_flow && oversized_flow.error() == ESP_ERR_INVALID_ARG,
+           "Vision optical flow rejects oversized frame");
     const auto target = arc::vision::VisualServo::flow_target({.dx_q8 = 256, .confidence = 1U}, 0.25F, 12.0F);
     expect(target.q == -0.25F && target.bus == 12.0F, "Vision flow to FOC target");
 }

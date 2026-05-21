@@ -2,12 +2,27 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/foc.hpp"
 #include "arc/result.hpp"
 
 namespace arc::vision {
+
+namespace detail {
+
+[[nodiscard]] constexpr Result<std::size_t> pixels(
+    const std::size_t width,
+    const std::size_t height) noexcept
+{
+    if (width == 0U || height == 0U || width > std::numeric_limits<std::size_t>::max() / height) {
+        return fail(ESP_ERR_INVALID_ARG);
+    }
+    return width * height;
+}
+
+}  // namespace detail
 
 struct MotionVector {
     std::int32_t dx_q8{};
@@ -23,11 +38,12 @@ struct Sobel {
         const std::span<std::uint8_t> out,
         const std::uint16_t threshold = 0U) noexcept
     {
-        if (width < 3U || height < 3U || gray.size() < width * height || out.size() < width * height) {
+        const auto total = detail::pixels(width, height);
+        if (!total || width < 3U || height < 3U || gray.size() < *total || out.size() < *total) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
-        for (auto& value : out.first(width * height)) {
+        for (auto& value : out.first(*total)) {
             value = 0U;
         }
 
@@ -52,7 +68,7 @@ struct Sobel {
                 out[idx] = mag > static_cast<int>(threshold) ? clamp_u8(mag) : 0U;
             }
         }
-        return width * height;
+        return *total;
     }
 
 private:
@@ -74,7 +90,8 @@ struct OpticalFlow {
         const std::size_t width,
         const std::size_t height) noexcept
     {
-        if (width < 3U || height < 3U || previous.size() < width * height || current.size() < width * height) {
+        const auto total = detail::pixels(width, height);
+        if (!total || width < 3U || height < 3U || previous.size() < *total || current.size() < *total) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
