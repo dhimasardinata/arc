@@ -4843,6 +4843,15 @@ void test_resilient_edge_goal_surfaces()
     const auto star_count = arc::vision::StarTracker::centroids(stars_frame, 5U, 5U, 200U, stars);
     expect(star_count.has_value() && *star_count == 3U && stars[0].x_q4 == 16U && stars[2].y_q4 == 48U,
            "StarTracker sub-pixel centroids");
+    std::array<std::uint8_t, 4> tiny_stars_frame{};
+    const auto oversized_stars = arc::vision::StarTracker::centroids(
+        std::span(tiny_stars_frame),
+        (std::numeric_limits<std::size_t>::max() / 3U) + 1U,
+        3U,
+        200U,
+        stars);
+    expect(!oversized_stars && oversized_stars.error() == ESP_ERR_INVALID_ARG,
+           "StarTracker rejects oversized frame");
     auto signature = arc::vision::StarTracker::triangle(stars[0], stars[1], stars[2]);
     signature.pitch_rad = 0.1F;
     signature.yaw_rad = -0.2F;
@@ -5247,6 +5256,14 @@ void test_current_goal_surfaces()
     }
     std::array<arc::vision::Corner, 64> corners{};
     const auto fast = arc::vision::VSlam::fast_corners(gray, 10U, 10U, corners, 40U);
+    std::array<std::uint8_t, 4> tiny_vslam_gray{};
+    const auto oversized_fast = arc::vision::VSlam::fast_corners(
+        std::span(tiny_vslam_gray),
+        (std::numeric_limits<std::size_t>::max() / 7U) + 1U,
+        7U,
+        corners,
+        40U);
+    expect(!oversized_fast && oversized_fast.error() == ESP_ERR_INVALID_ARG, "VSlam rejects oversized frame");
     const std::array<arc::vision::Corner, 2> prev_corners{
         arc::vision::Corner{.x = 10U, .y = 10U, .score = 12U},
         arc::vision::Corner{.x = 20U, .y = 12U, .score = 12U},

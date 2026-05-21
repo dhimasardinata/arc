@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/dsp.hpp"
@@ -11,6 +12,20 @@
 #include "arc/simd.hpp"
 
 namespace arc::vision {
+
+namespace detail {
+
+[[nodiscard]] constexpr Result<std::size_t> vslam_pixels(
+    const std::size_t width,
+    const std::size_t height) noexcept
+{
+    if (width == 0U || height == 0U || width > std::numeric_limits<std::size_t>::max() / height) {
+        return fail(ESP_ERR_INVALID_ARG);
+    }
+    return width * height;
+}
+
+}  // namespace detail
 
 struct Corner {
     std::uint16_t x{};
@@ -58,7 +73,8 @@ struct VSlam {
         const std::span<Corner> out,
         const std::uint8_t threshold = 20U) noexcept
     {
-        if (width < 7U || height < 7U || gray.size() < width * height || out.empty()) {
+        const auto total = detail::vslam_pixels(width, height);
+        if (!total || width < 7U || height < 7U || gray.size() < *total || out.empty()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 

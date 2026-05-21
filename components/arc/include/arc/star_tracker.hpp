@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/mmu_span.hpp"
@@ -10,6 +11,20 @@
 #include "arc/simd.hpp"
 
 namespace arc::vision {
+
+namespace detail {
+
+[[nodiscard]] constexpr Result<std::size_t> star_pixels(
+    const std::size_t width,
+    const std::size_t height) noexcept
+{
+    if (width == 0U || height == 0U || width > std::numeric_limits<std::size_t>::max() / height) {
+        return fail(ESP_ERR_INVALID_ARG);
+    }
+    return width * height;
+}
+
+}  // namespace detail
 
 struct StarPoint {
     std::uint16_t x_q4{};
@@ -68,7 +83,8 @@ struct StarTracker {
         const std::uint8_t cutoff,
         const std::span<StarPoint> out) noexcept
     {
-        if (width < 3U || height < 3U || gray.size() < width * height || out.empty()) {
+        const auto total = detail::star_pixels(width, height);
+        if (!total || width < 3U || height < 3U || gray.size() < *total || out.empty()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
