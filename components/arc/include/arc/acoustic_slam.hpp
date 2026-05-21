@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/covert.hpp"
@@ -75,7 +76,8 @@ struct AcousticSlam {
         const std::size_t max_lag,
         const float sound_mmps = 343'000.0F) noexcept
     {
-        if (sample_hz == 0U || sound_mmps <= 0.0F) {
+        constexpr auto max_scan_lag = static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max() - 1);
+        if (reference.empty() || delayed.empty() || sample_hz == 0U || max_lag > max_scan_lag || sound_mmps <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 

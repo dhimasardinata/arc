@@ -532,7 +532,8 @@ struct Beamform {
         const std::span<const T> delayed,
         const std::size_t max_lag) noexcept
     {
-        if (reference.empty() || delayed.empty() || max_lag == 0U) {
+        constexpr auto max_scan_lag = static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max() - 1);
+        if (reference.empty() || delayed.empty() || max_lag == 0U || max_lag > max_scan_lag) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -608,6 +609,10 @@ struct Beamform {
         BeamEstimate<float> best{};
         auto best_ready = false;
         const auto bounded_lag = max_lag < (reference.size() / 2U) ? max_lag : (reference.size() / 2U);
+        constexpr auto max_scan_lag = static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max() - 1);
+        if (bounded_lag > max_scan_lag) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         const auto signed_max = static_cast<std::int32_t>(bounded_lag);
         for (auto lag = -signed_max; lag <= signed_max; ++lag) {
             const auto index = lag < 0 ? reference.size() - static_cast<std::size_t>(-lag) : static_cast<std::size_t>(lag);

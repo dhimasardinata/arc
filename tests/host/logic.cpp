@@ -2633,6 +2633,11 @@ void test_dsp()
 
     const auto lag = Beam::lag_xcorr(std::span<const float>{mic0}, std::span<const float>{mic1}, 2U);
     expect(lag.has_value() && lag->lag_samples == 1, "DSP Beamform xcorr lag");
+    expect(!Beam::lag_xcorr(
+               std::span<const float>{mic0},
+               std::span<const float>{mic1},
+               static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max())),
+           "DSP Beamform rejects oversized lag windows");
 
     std::array<arc::simd::ComplexF32, 4> ref_fft{{
         {.re = 1.0F},
@@ -4484,6 +4489,12 @@ void test_goal_wave_surfaces()
     const std::array<std::int16_t, 6> delayed{0, 1, 2, 3, 4, 0};
     const auto tdoa = arc::swarm::AcousticSlam::tdoa(ref, delayed, 1'000U, 3U);
     expect(tdoa.has_value() && tdoa->lag_samples == 1 && near(tdoa->delta_mm, 343.0F, 0.1F), "Acoustic TDoA");
+    expect(!arc::swarm::AcousticSlam::tdoa(
+               ref,
+               delayed,
+               1'000U,
+               static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max())),
+           "Acoustic TDoA rejects oversized lag windows");
     std::array<arc::simd::ComplexF32, 8> fft_ref{};
     std::array<arc::simd::ComplexF32, 8> fft_delayed{};
     std::array<arc::simd::ComplexF32, 8> fft_scratch{};
