@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
@@ -32,7 +31,6 @@ struct alignas(cache_line) SeqReg {
     static_assert(sizeof(T) > sizeof(std::uint32_t), "prefer arc::Reg<T> for one-word payloads");
     static_assert(std::is_trivially_copyable_v<T>, "seq payload must be trivially copyable");
     static_assert(std::is_default_constructible_v<T>, "seq payload must be default constructible");
-    static_assert(std::atomic<std::uint8_t>::is_always_lock_free, "seq payload byte atomics must be lock-free");
 
     void write(const T& value) noexcept
     {
@@ -75,7 +73,7 @@ struct alignas(cache_line) SeqReg {
     }
 
 private:
-    using Slot = std::array<std::atomic<std::uint8_t>, sizeof(T)>;
+    using Slot = std::array<std::uint8_t, sizeof(T)>;
 
     [[nodiscard]] static constexpr std::size_t index(const std::uint32_t seq) noexcept
     {
@@ -86,7 +84,7 @@ private:
     {
         const auto* const bytes = reinterpret_cast<const std::uint8_t*>(&value);
         for (std::size_t i = 0U; i < sizeof(T); ++i) {
-            slot[i].store(bytes[i], std::memory_order_relaxed);
+            __atomic_store_n(&slot[i], bytes[i], __ATOMIC_RELAXED);
         }
     }
 
@@ -94,7 +92,7 @@ private:
     {
         auto* const bytes = reinterpret_cast<std::uint8_t*>(&value);
         for (std::size_t i = 0U; i < sizeof(T); ++i) {
-            bytes[i] = slot[i].load(std::memory_order_relaxed);
+            bytes[i] = __atomic_load_n(&slot[i], __ATOMIC_RELAXED);
         }
     }
 
