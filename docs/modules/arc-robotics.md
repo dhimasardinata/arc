@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `arc/acoustic_slam.hpp`, `arc/cnc.hpp`, `arc/digital_twin.hpp`, `arc/foc.hpp`, `arc/hyper_matrix.hpp`, `arc/maglev.hpp`, `arc/motion.hpp`, `arc/nav.hpp`.
+Source landmarks: `arc/acoustic_slam.hpp`, `arc/cnc.hpp`, `arc/crdt.hpp`, `arc/digital_twin.hpp`, `arc/foc.hpp`, `arc/hyper_matrix.hpp`, `arc/maglev.hpp`, `arc/motion.hpp`.
 
 ## Start From Zero
 

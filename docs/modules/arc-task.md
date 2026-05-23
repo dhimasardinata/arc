@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `CoreMap`, `TaskMem`, `CoreLocal`, `CoreMsg`, `Core`, `CoreRole`, `StaticObject`.
+Source landmarks: `CoreMap`, `CoreLocal`, `CoreMsg`, `TaskMem`, `Core`, `CoreRole`, `StaticObject`.
 
 ## Start From Zero
 

@@ -28,6 +28,7 @@ SPECIAL_FEATURES = {
     "concepts": "core",
     "coro": "core",
     "count": "pcnt",
+    "crdt": "net_codecs",
     "detail-cold": "internal",
     "detail-owner": "internal",
     "detail-quant": "internal",

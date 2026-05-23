@@ -1,6 +1,6 @@
 # `arc/net_codecs.hpp`
 
-URI, streams, fixed records, MQTT, WebSocket, CoAP, and small HTTP server helpers without owning Wi-Fi.
+URI, streams, fixed records, CRDTs, MQTT, WebSocket, CoAP, and small HTTP server helpers without owning Wi-Fi.
 
 ## Fit
 
@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `arc/coap.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/netrpc.hpp`, `arc/stream.hpp`, `arc/uri.hpp`, `arc/ws.hpp`.
+Source landmarks: `arc/coap.hpp`, `arc/crdt.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/netrpc.hpp`, `arc/stream.hpp`, `arc/uri.hpp`, `arc/ws.hpp`.
 
 ## Start From Zero
 

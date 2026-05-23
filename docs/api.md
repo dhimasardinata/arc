@@ -1342,6 +1342,17 @@ Tiny stream composition helpers for transports that expose `send_all(...)` and `
 
 Use this when an application protocol needs exact records on top of TCP or TLS but still should not own a reconnect loop, parser task, or heap buffer.
 
+### `arc::Crdt<State, Peers>`
+
+Heapless state-based CRDT envelope for UDP, ESP-NOW, or custom fixed-frame swarm state.
+
+- `arc::GCounter<T, Peers>` stores one monotonic unsigned cell per peer, rejects per-cell overflow in `add(...)`, and merges by per-peer maximum.
+- `arc::PnCounter<T, Peers>` composes increment/decrement G-counters and returns a signed converged value without allocating.
+- `arc::LwwReg<T, Clock>` stores one trivially copyable value with a logical timestamp and deterministic node-ID tie break.
+- `arc::Crdt<State, Peers>` wraps any trivially copyable state with a `merge(...)` method, emits a fixed `Frame`, parses the same ABI back from caller-owned bytes, and tracks a bounded peer table.
+
+Use this for small fleet state that must converge after radio partitions without a master node. The raw frame ABI is meant for matching Arc firmware builds; product protocols that cross compiler or version boundaries should wrap it in `arc::pack`.
+
 ### `arc::pack::Schema<Fields...>`
 
 Fixed binary record packer for telemetry and configuration frames.

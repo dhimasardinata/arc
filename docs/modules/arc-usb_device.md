@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `SetupPacket`, `Device`, `DeviceDescriptor`, `ConfigurationDescriptor`, `InterfaceDescriptor`, `EndpointDescriptor`, `Bulk`, `Cdc`, `Uvc`, `Uac`, `Fifo`.
+Source landmarks: `SetupPacket`, `DeviceDescriptor`, `ConfigurationDescriptor`, `InterfaceDescriptor`, `EndpointDescriptor`, `Bulk`, `Cdc`, `Uvc`, `Uac`, `Fifo`.
 
 ## Start From Zero
 

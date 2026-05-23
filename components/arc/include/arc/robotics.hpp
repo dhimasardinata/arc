@@ -5,6 +5,7 @@
 
 #include "arc/acoustic_slam.hpp"
 #include "arc/cnc.hpp"
+#include "arc/crdt.hpp"
 #include "arc/digital_twin.hpp"
 #include "arc/foc.hpp"
 #include "arc/hyper_matrix.hpp"

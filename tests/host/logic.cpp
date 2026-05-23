@@ -32,6 +32,7 @@
 #include "arc/concepts.hpp"
 #include "arc/coro.hpp"
 #include "arc/covert.hpp"
+#include "arc/crdt.hpp"
 #include "arc/csi.hpp"
 #include "arc/crypto_dma.hpp"
 #include "arc/dsp.hpp"
@@ -4236,6 +4237,53 @@ void test_matrix_kalman_storage_swarm()
     const auto remote = slave.read_remote(20U);
     expect(remote.has_value() && (*remote)->value == 42U, "DistributedRcu remote RCU read");
     expect(slave.stale(20U, 1'400, 100), "DistributedRcu stale detection");
+
+    arc::GCounter<std::uint32_t, 4> gc_a{};
+    arc::GCounter<std::uint32_t, 4> gc_b{};
+    expect(gc_a.add(0U, 2U).has_value() && gc_a.add(1U, 3U).has_value(), "GCounter local increments");
+    expect(gc_b.add(0U, 1U).has_value() && gc_b.add(2U, 5U).has_value(), "GCounter peer increments");
+    expect(gc_a.merge(gc_b) && gc_a.value() == 10U, "GCounter merge keeps per-peer maxima");
+    expect(gc_a.exact().has_value() && *gc_a.exact() == 10U, "GCounter exact sum");
+    gc_a.cells[3] = std::numeric_limits<std::uint32_t>::max();
+    expect(!gc_a.add(3U, 1U) && !gc_a.exact(), "GCounter rejects overflow");
+
+    arc::PnCounter<std::uint32_t, 4> pn_a{};
+    arc::PnCounter<std::uint32_t, 4> pn_b{};
+    expect(pn_a.add(0U, 7U).has_value() && pn_a.sub(1U, 2U).has_value(), "PnCounter local mutation");
+    expect(pn_b.add(2U, 1U).has_value() && pn_b.sub(1U, 4U).has_value(), "PnCounter peer mutation");
+    expect(pn_a.merge(pn_b) && pn_a.value() == 4, "PnCounter converges signed value");
+
+    arc::LwwReg<std::uint32_t> reg_a{};
+    arc::LwwReg<std::uint32_t> reg_b{};
+    expect(reg_a.set(10U, 5U, 1U).has_value(), "LwwReg first write");
+    expect(reg_b.set(20U, 4U, 2U).has_value(), "LwwReg older peer write");
+    expect(!reg_a.merge(reg_b) && reg_a.value() == 10U, "LwwReg ignores older stamp");
+    expect(reg_b.set(30U, 5U, 2U).has_value(), "LwwReg tie-break write");
+    expect(reg_a.merge(reg_b) && reg_a.value() == 30U, "LwwReg breaks ties by node");
+    expect(!reg_a.set(31U, 5U, 1U), "LwwReg rejects non-monotonic local write");
+
+    using SharedCount = arc::GCounter<std::uint32_t, 4>;
+    using SharedCrdt = arc::Crdt<SharedCount, 4>;
+    SharedCrdt drone_a{10U};
+    SharedCrdt drone_b{20U};
+    expect(drone_b.assign(3U, 99U).has_value() && !drone_b.assign(2U, 99U),
+           "Crdt assign rejects duplicate node");
+    expect(drone_a.state.add(0U, 4U).has_value(), "Crdt local counter state");
+    expect(drone_b.state.add(1U, 5U).has_value(), "Crdt peer counter state");
+    const auto crdt_frame = drone_a.transmit();
+    expect(crdt_frame.has_value() && crdt_frame->node == 10U, "Crdt transmit frame");
+    const auto crdt_wire = SharedCrdt::bytes(*crdt_frame);
+    const auto crdt_decoded = SharedCrdt::parse(crdt_wire);
+    expect(crdt_decoded.has_value(), "Crdt fixed frame parse");
+    const auto crdt_slot = drone_b.ingest(*crdt_decoded);
+    expect(crdt_slot.has_value() && *crdt_slot == 0U && drone_b.peers[0] == 10U && drone_b.state.value() == 9U,
+           "Crdt ingest merges fixed state");
+    auto zero_crdt_frame = *crdt_decoded;
+    zero_crdt_frame.node = 0U;
+    expect(!drone_b.ingest(zero_crdt_frame), "Crdt rejects zero node");
+    expect(!SharedCrdt::parse(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), sizeof(SharedCrdt::Frame)}),
+           "Crdt parse rejects null wire span");
 
     arc::dsp::Kalman<float, 1, 1> reckon{};
     reckon.x(0, 0) = 2.0F;
