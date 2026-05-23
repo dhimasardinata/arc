@@ -89,23 +89,25 @@ public:
     }
 
     [[nodiscard]] constexpr const value_type* operator->() const noexcept
+        requires(Owner == Core::any)
     {
         return Object;
     }
 
     [[nodiscard]] constexpr const value_type& operator*() const noexcept
+        requires(Owner == Core::any)
     {
         return *Object;
     }
 
     [[nodiscard]] constexpr value_type* operator->() noexcept
-        requires(Mode == BorrowMode::mut) && (!std::is_const_v<raw_type>)
+        requires(Owner == Core::any) && (Mode == BorrowMode::mut) && (!std::is_const_v<raw_type>)
     {
         return Object;
     }
 
     [[nodiscard]] constexpr value_type& operator*() noexcept
-        requires(Mode == BorrowMode::mut) && (!std::is_const_v<raw_type>)
+        requires(Owner == Core::any) && (Mode == BorrowMode::mut) && (!std::is_const_v<raw_type>)
     {
         return *Object;
     }

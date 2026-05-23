@@ -952,6 +952,15 @@ concept HasCoreMsg = requires(const T& local) { local.template msg<Access, To>()
 template <typename T, arc::Core Access>
 concept HasMsgGet = requires(const T& msg) { msg.template get<Access>(); };
 
+template <typename T>
+concept HasLoanArrow = requires(T& loan) { loan.operator->(); };
+
+template <typename T>
+concept HasConstLoanArrow = requires(const T& loan) { loan.operator->(); };
+
+template <typename T>
+concept HasConstLoanDeref = requires(const T& loan) { *loan; };
+
 struct FlowPacket {
     std::uint32_t seq{};
 };
@@ -1169,6 +1178,7 @@ void test_static_borrow()
     using OtherCell = arc::StaticRef<&other_borrow_fixture, arc::Core::core1>;
     using OtherWrite = OtherCell::Write;
     using ConstCell = arc::StaticRef<&const_borrow_fixture>;
+    using AnyRead = ConstCell::Read;
     using ReadPack = arc::StaticReads<Cell, Cell>;
     using WritePack = arc::StaticWrites<Cell, OtherCell>;
 
@@ -1216,6 +1226,10 @@ void test_static_borrow()
     static_assert(arc::LoanWritable<Write, arc::Core::core1>);
     static_assert(!arc::LoanWritable<Write, arc::Core::core0>);
     static_assert(!arc::LoanWritable<Read, arc::Core::core1>);
+    static_assert(!HasConstLoanArrow<Read>);
+    static_assert(!HasLoanArrow<Write>);
+    static_assert(HasConstLoanArrow<AnyRead>);
+    static_assert(HasConstLoanDeref<AnyRead>);
     static_assert(arc::StaticReadable<ConstCell, arc::Core::core0>);
     static_assert(!arc::StaticWritable<ConstCell, arc::Core::core0>);
 
@@ -1223,13 +1237,13 @@ void test_static_borrow()
     {
         const auto read = Cell::read<arc::Core::core1>();
         const auto copied = read;
-        expect(read->value == 7U && copied.get<arc::Core::core1>().value == 7U,
+        expect(read.get<arc::Core::core1>().value == 7U && copied.get<arc::Core::core1>().value == 7U,
                "StaticRef shared loan reads static storage");
     }
 
     {
         auto write = Cell::write<arc::Core::core1>();
-        write->value = 11U;
+        write.get<arc::Core::core1>().value = 11U;
         auto moved = std::move(write);
         moved.get<arc::Core::core1>().value = 12U;
     }

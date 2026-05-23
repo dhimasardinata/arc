@@ -378,6 +378,7 @@ around as a raw pointer or reference.
 - `with_read<Ref, Core>(fn)` and `with_write<Ref, Core>(fn)` keep a loan scoped to one callback when code should not hold it across a larger block.
 - `loans_ok<Loans...>()` lets compile-contract tests check the same alias rule without intentionally failing the build.
 - Access from the wrong core owner is absent from the overload set.
+- Pointer shorthand through `operator->` and `operator*` is only available for `Core::any`; owner-bound loans must name the accessing core through `get<Core>()` or the scoped helpers.
 - `write<...>()` is absent for const storage, so readonly global state cannot be accidentally made mutable.
 
 Use this when a task, simulator harness, or policy object should receive state
