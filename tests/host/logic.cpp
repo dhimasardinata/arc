@@ -1259,6 +1259,39 @@ void test_sim()
     expect(Button::tick() && Button::low(), "Sim Sense consumes low sample");
     expect(Button::tick() && Button::high() && !Button::tick() && SimTrace::sense_reads == 3U,
            "Sim Sense reports FIFO exhaustion");
+
+    using Log = arc::sim::TraceLog<8>;
+    using HarnessLed = arc::sim::Drive<7, Log>;
+    using HarnessButton = arc::sim::Sense<8, 4, Log>;
+    using Rig = arc::sim::Harness<Log, HarnessButton>;
+    Rig::reset();
+    HarnessLed::level = false;
+    HarnessLed::out();
+    HarnessButton::in();
+    const std::array harness_samples{true, false, true};
+    expect(HarnessButton::feed(std::span<const bool>{harness_samples}) == harness_samples.size(),
+           "Sim Harness queues input samples");
+    HarnessLed::hi();
+    expect(Rig::tick() == 1U, "Sim Harness advances queued inputs");
+    HarnessLed::lo();
+    Rig::run(2U);
+    const auto events = Log::events();
+    expect(events.size() == 5U &&
+               events[0].tick == 0U && events[0].kind == arc::sim::EventKind::drive &&
+               events[0].pin == 7 && events[0].level &&
+               events[1].tick == 0U && events[1].kind == arc::sim::EventKind::sense &&
+               events[1].pin == 8 && events[1].level &&
+               events[2].tick == 1U && events[2].kind == arc::sim::EventKind::drive &&
+               !events[2].level &&
+               events[4].tick == 2U && events[4].kind == arc::sim::EventKind::sense &&
+               events[4].level && !Log::overflow(),
+           "Sim TraceLog records deterministic pin timeline");
+
+    using TinyLog = arc::sim::TraceLog<1>;
+    TinyLog::reset();
+    TinyLog::mark(1);
+    TinyLog::mark(2);
+    expect(TinyLog::events().size() == 1U && TinyLog::overflow(), "Sim TraceLog reports overflow");
 }
 
 void test_checked_spsc()

@@ -1,6 +1,6 @@
 # `arc/sim.hpp`
 
-Host simulator FIFO plus pin drive/sense facades for app logic tests.
+Host simulator FIFO, trace log, harness ticks, and pin drive/sense facades for app logic tests.
 
 ## Fit
 
@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `QuietTrace`, `StdoutTrace`, `Fifo`, `Drive`, `Sense`.
+Source landmarks: `QuietTrace`, `StdoutTrace`, `Event`, `TraceLog`, `Fifo`, `Drive`, `Sense`, `Harness`, `EventKind`.
 
 ## Start From Zero
 

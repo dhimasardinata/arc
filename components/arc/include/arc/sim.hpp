@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <span>
 #include <type_traits>
@@ -24,6 +25,85 @@ struct StdoutTrace {
     static void sense(const int pin, const bool level) noexcept
     {
         std::printf("arc-sim sense pin=%d level=%u\n", pin, level ? 1U : 0U);
+    }
+};
+
+enum class EventKind : std::uint8_t {
+    drive,
+    sense,
+    mark,
+};
+
+struct Event {
+    std::uint32_t tick{};
+    EventKind kind{};
+    int pin{};
+    bool level{};
+};
+
+template <std::size_t Capacity>
+struct TraceLog {
+    static_assert(Capacity > 0U,
+                  "[ARC ERROR] arc::sim::TraceLog needs storage. Action: set Capacity to the fixed event count.");
+
+    static inline std::array<Event, Capacity> items{};
+    static inline std::size_t used{};
+    static inline std::uint32_t now{};
+    static inline bool lost{};
+
+    static void reset() noexcept
+    {
+        used = 0U;
+        now = 0U;
+        lost = false;
+    }
+
+    static void step(const std::uint32_t ticks = 1U) noexcept
+    {
+        now += ticks;
+    }
+
+    static void mark(const int id = 0, const bool level = true) noexcept
+    {
+        record(EventKind::mark, id, level);
+    }
+
+    static void drive(const int pin, const bool level) noexcept
+    {
+        record(EventKind::drive, pin, level);
+    }
+
+    static void sense(const int pin, const bool level) noexcept
+    {
+        record(EventKind::sense, pin, level);
+    }
+
+    [[nodiscard]] static std::span<const Event> events() noexcept
+    {
+        return std::span<const Event>{items.data(), used};
+    }
+
+    [[nodiscard]] static bool overflow() noexcept
+    {
+        return lost;
+    }
+
+private:
+    static void record(
+        const EventKind kind,
+        const int pin,
+        const bool level) noexcept
+    {
+        if (used == Capacity) {
+            lost = true;
+            return;
+        }
+        items[used++] = Event{
+            .tick = now,
+            .kind = kind,
+            .pin = pin,
+            .level = level,
+        };
     }
 };
 
@@ -250,6 +330,29 @@ struct Sense {
     {
         level = false;
         samples.clear();
+    }
+};
+
+template <typename Trace, typename... Inputs>
+struct Harness {
+    static void reset() noexcept
+    {
+        Trace::reset();
+        (Inputs::clear(), ...);
+    }
+
+    [[nodiscard]] static std::size_t tick() noexcept
+    {
+        const auto moved = (std::size_t{0U} + ... + (Inputs::tick() ? 1U : 0U));
+        Trace::step();
+        return moved;
+    }
+
+    static void run(const std::size_t ticks) noexcept
+    {
+        for (std::size_t i = 0U; i < ticks; ++i) {
+            static_cast<void>(tick());
+        }
     }
 };
 

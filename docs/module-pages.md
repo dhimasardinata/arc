@@ -250,7 +250,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/plane.hpp` | Stateful pinned workloads with explicit shared state. | [Open](/modules/arc-plane) |
 | `arc/roles.hpp` | Producer/consumer endpoint exposure without exposing root queue mutation. | [Open](/modules/arc-roles) |
 | `arc/rtos.hpp` | Safe chrono-to-FreeRTOS tick conversion helpers. | [Open](/modules/arc-rtos) |
-| `arc/sim.hpp` | Host simulator FIFO plus pin drive/sense facades for app logic tests. | [Open](/modules/arc-sim) |
+| `arc/sim.hpp` | Host simulator FIFO, trace log, harness ticks, and pin drive/sense facades for app logic tests. | [Open](/modules/arc-sim) |
 | `arc/sketch.hpp` | Compatibility alias for small app-style programs. | [Open](/modules/arc-sketch) |
 | `arc/stack.hpp` | Compile-time stack budget helpers and task stack floors. | [Open](/modules/arc-stack) |
 | `arc/task.hpp` | Static FreeRTOS task memory and pinned task bring-up. | [Open](/modules/arc-task) |
