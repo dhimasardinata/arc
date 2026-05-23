@@ -84,6 +84,7 @@ the API docs while still making the meaning easy to check.
 ## Where To Go Next
 
 - [Getting Started](/getting-started) for first build commands.
+- [Safety Patterns](/safety-patterns) for copyable ownership and proof-contract shapes.
 - [Production Integration](/production-integration) for product integration rules.
 - [Troubleshooting](/troubleshooting) for symptom-first fixes.
 - [Module Guide](/modules) for choosing the right header.

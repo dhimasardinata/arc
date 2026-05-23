@@ -49,6 +49,10 @@ remain outside Arc.
 
 ## Required Local Evidence
 
+Use [Safety Patterns](/safety-patterns) when writing the first local ownership
+contract for a task or module. This safety case is the evidence map after the
+contract exists.
+
 Run these before treating a safety-relevant Arc change as reviewed:
 
 ```bash

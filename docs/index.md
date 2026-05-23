@@ -39,6 +39,7 @@ Use this map before opening the full API reference.
 | --- | --- | --- |
 | build Arc for the first time | [Getting Started](/getting-started) | environment, first build, local checks, and the shortest reading path |
 | understand why Arc splits Core 0 and Core 1 | [Architecture](/architecture) | ownership model, realtime limits, DMA/cache rules, and profile boundaries |
+| write the first safe ownership contract | [Safety Patterns](/safety-patterns) | copyable static-lifetime, core-owner, loan-pack, and proof-pack patterns |
 | move from example firmware to a product tree | [Production Integration](/production-integration) | CMake shape, target policy, board topology, validation ladder, and release evidence |
 | diagnose a build, editor, docs, benchmark, or evidence failure | [Troubleshooting](/troubleshooting) | symptom-first fixes for target setup, CMake, clangd, VitePress, repo policy, and claims |
 | decode Arc-specific words | [Glossary](/glossary) | short definitions for Core 0/Core 1, ownership, DMA/cache, target, evidence, protocol, and licensing terms |
@@ -54,15 +55,17 @@ Use this map before opening the full API reference.
 1. Run `source ./env.sh`.
 2. Build `idf.py -C examples/esp32s3/udp build`.
 3. Read [Architecture](/architecture) to understand Core 0 service work versus Core 1 deterministic work.
-4. Read [Production Integration](/production-integration) before moving code into a product tree.
-5. Use [Module Guide](/modules) to choose the smallest header for your problem.
-6. Open that header in [Module Page Index](/module-pages), then check exact names in [API Reference](/api).
+4. Read [Safety Patterns](/safety-patterns) before writing shared state or cross-core handoff code.
+5. Read [Production Integration](/production-integration) before moving code into a product tree.
+6. Use [Module Guide](/modules) to choose the smallest header for your problem.
+7. Open that header in [Module Page Index](/module-pages), then check exact names in [API Reference](/api).
 
 ## Documentation Shape
 
 Arc docs are arranged from decision to evidence:
 
 - start pages explain where to go next;
+- safety patterns turn the ownership model into copyable code shapes;
 - module pages map headers to purpose, dependency, and proof path;
 - integration docs connect target policy, CMake shape, board topology, and evidence level;
 - troubleshooting keeps common setup, build, editor, site, and evidence failures actionable;

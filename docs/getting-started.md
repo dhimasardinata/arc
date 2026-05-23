@@ -66,19 +66,38 @@ When Arc is new to you, start with ownership instead of feature count:
 This path gives beginner code a small shape first, then lets you open specific
 modules only when the app needs that hardware or protocol.
 
+## First Safety Pattern
+
+Before sharing state between tasks or cores, write down the owner in the type:
+
+```cpp
+constinit ControlState control_state{};
+using ControlCell = arc::StaticRef<&control_state, arc::Core::core1>;
+using ControlRead = decltype(ControlCell::read<arc::Core::core1>());
+using ControlWrite = decltype(ControlCell::write<arc::Core::core1>());
+
+static_assert(arc::loans_ok<ControlRead, ControlRead>());
+static_assert(!arc::loans_ok<ControlRead, ControlWrite>());
+```
+
+Open [Safety Patterns](/safety-patterns) for the complete copyable version,
+including core handoff, `LoanPack`, `proof::Pack`, and validation commands.
+
 ## Reading Path
 
 Read in this order when Arc is new to you:
 
 1. [Architecture](/architecture) explains why Core 0 and Core 1 have different jobs.
-2. [Production Integration](/production-integration) explains the CMake, target, topology, validation, and release-evidence path for product work.
-3. [Troubleshooting](/troubleshooting) maps common setup, CMake, editor, docs, benchmark, and evidence failures to fixes.
-4. [Glossary](/glossary) defines Arc-specific words used throughout the docs.
-5. [Module Guide](/modules) maps every public header to the problem it solves.
-6. [Module Page Index](/module-pages) gives one page per public header, including zero-start steps and proof paths.
-7. [Examples](/examples) shows which firmware project to build for each hardware lane.
-8. [API Reference](/api) gives the exact public methods, failure behavior, and ownership notes.
-9. [Licensing](/licensing) explains the AGPL public path and paid commercial path.
-10. [Benchmarking](/benchmarking) explains what evidence is required before publishing performance claims.
+2. [Safety Patterns](/safety-patterns) gives the first ownership, lifetime, and proof-pack code shapes.
+3. [Production Integration](/production-integration) explains the CMake, target, topology, validation, and release-evidence path for product work.
+4. [Troubleshooting](/troubleshooting) maps common setup, CMake, editor, docs, benchmark, and evidence failures to fixes.
+5. [Glossary](/glossary) defines Arc-specific words used throughout the docs.
+6. [Module Guide](/modules) maps every public header to the problem it solves.
+7. [Module Page Index](/module-pages) gives one page per public header, including zero-start steps and proof paths.
+8. [Examples](/examples) shows which firmware project to build for each hardware lane.
+9. [API Reference](/api) gives the exact public methods, failure behavior, and ownership notes.
+10. [Licensing](/licensing) explains the AGPL public path and paid commercial path.
+11. [Benchmarking](/benchmarking) explains what evidence is required before publishing performance claims.
 
-The shortest practical path is still: read architecture, build the closest example, then open the matching module and API section.
+The shortest practical path is still: read architecture, copy the safety pattern,
+build the closest example, then open the matching module and API section.

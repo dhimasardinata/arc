@@ -26,6 +26,7 @@ export default defineConfig({
           { text: "Overview", link: "/" },
           { text: "Getting Started", link: "/getting-started" },
           { text: "Architecture", link: "/architecture" },
+          { text: "Safety Patterns", link: "/safety-patterns" },
           { text: "Production Integration", link: "/production-integration" },
           { text: "Troubleshooting", link: "/troubleshooting" },
           { text: "Glossary", link: "/glossary" },
