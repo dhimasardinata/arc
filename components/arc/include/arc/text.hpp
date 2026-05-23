@@ -186,46 +186,64 @@ struct Text {
         if (!value.empty() && value.data() == nullptr) {
             return false;
         }
-        const auto start = pos_;
-        const auto fail = [&]() noexcept {
-            pos_ = start;
+        if (!value.empty() && out_.data() == nullptr) {
             return false;
-        };
+        }
+
+        auto bytes = std::size_t{0U};
         for (const char ch : value) {
+            const auto byte = static_cast<std::uint8_t>(ch);
+            const auto encoded = byte < 0x20U ? (ch == '\n' || ch == '\r' || ch == '\t' ? 2U : 6U)
+                                              : (ch == '"' || ch == '\\' ? 2U : 1U);
+            if (bytes > space() || space() - bytes < encoded) {
+                return false;
+            }
+            bytes += encoded;
+        }
+
+        const auto start = pos_;
+        auto pos = start + bytes;
+        for (std::size_t i = value.size(); i != 0U; --i) {
+            const auto ch = value[i - 1U];
             const auto byte = static_cast<std::uint8_t>(ch);
             switch (ch) {
                 case '"':
                 case '\\':
-                    if (!push('\\') || !push(ch)) {
-                        return fail();
-                    }
+                    pos -= 2U;
+                    out_[pos] = '\\';
+                    out_[pos + 1U] = ch;
                     break;
                 case '\n':
-                    if (!append("\\n")) {
-                        return fail();
-                    }
+                    pos -= 2U;
+                    out_[pos] = '\\';
+                    out_[pos + 1U] = 'n';
                     break;
                 case '\r':
-                    if (!append("\\r")) {
-                        return fail();
-                    }
+                    pos -= 2U;
+                    out_[pos] = '\\';
+                    out_[pos + 1U] = 'r';
                     break;
                 case '\t':
-                    if (!append("\\t")) {
-                        return fail();
-                    }
+                    pos -= 2U;
+                    out_[pos] = '\\';
+                    out_[pos + 1U] = 't';
                     break;
                 default:
                     if (byte < 0x20U) {
-                        if (!append("\\u00") || !push(hex_digit(byte >> 4U)) || !push(hex_digit(byte & 0x0fU))) {
-                            return fail();
-                        }
-                    } else if (!push(ch)) {
-                        return fail();
+                        pos -= 6U;
+                        out_[pos] = '\\';
+                        out_[pos + 1U] = 'u';
+                        out_[pos + 2U] = '0';
+                        out_[pos + 3U] = '0';
+                        out_[pos + 4U] = hex_digit(byte >> 4U);
+                        out_[pos + 5U] = hex_digit(byte & 0x0fU);
+                    } else {
+                        out_[--pos] = ch;
                     }
                     break;
             }
         }
+        pos_ = start + bytes;
         return true;
     }
 

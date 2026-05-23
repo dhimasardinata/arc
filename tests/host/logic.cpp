@@ -4394,6 +4394,12 @@ void test_text()
     expect(text.append(std::span<const char>{out.data() + 1U, 3U}) &&
                std::string_view{text.view()} == "xyycd",
            "Text append preserves overlapping source span");
+    text.clear();
+    expect(text.append("a\"b"), "Text json overlap seed");
+    text.clear();
+    expect(text.json(std::string_view{out.data(), 3U}) &&
+               std::string_view{text.view()} == "a\\\"b",
+           "Text json preserves in-place expansion");
 
     std::array<char, 4> small{};
     arc::Text tiny{std::span(small)};
