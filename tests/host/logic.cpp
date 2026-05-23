@@ -5248,6 +5248,18 @@ void test_pipeline_usb_ulp()
                (*in_place_mjpeg_part)[in_place_mjpeg_part->size() - 2U] == '\r' &&
                (*in_place_mjpeg_part)[in_place_mjpeg_part->size() - 1U] == '\n',
            "MJPEG part preserves in-place payload");
+    std::array<std::uint8_t, 96> in_place_mjpeg_boundary{0xaaU, 0x55U, 'c', 'a', 'm'};
+    const auto aliased_mjpeg_part = arc::net::Mjpeg::part(
+        std::span(in_place_mjpeg_boundary),
+        std::span(in_place_mjpeg_boundary).first(2U),
+        std::string_view{reinterpret_cast<const char*>(in_place_mjpeg_boundary.data() + 2U), 3U});
+    expect(aliased_mjpeg_part.has_value() &&
+               (*aliased_mjpeg_part)[2] == 'c' &&
+               (*aliased_mjpeg_part)[3] == 'a' &&
+               (*aliased_mjpeg_part)[4] == 'm' &&
+               (*aliased_mjpeg_part)[aliased_mjpeg_part->size() - 4U] == 0xaaU &&
+               (*aliased_mjpeg_part)[aliased_mjpeg_part->size() - 3U] == 0x55U,
+           "MJPEG part preserves in-place boundary");
     expect(!arc::net::Mjpeg::part(
                std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), part.size()},
                std::span(payload),

@@ -340,6 +340,10 @@ struct Mjpeg {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
+        std::array<char, 64> boundary_storage{};
+        std::memmove(boundary_storage.data(), boundary.data(), boundary.size());
+        const std::string_view safe_boundary{boundary_storage.data(), boundary.size()};
+
         std::array<char, 20> digits{};
         const auto [ptr, ec] = std::to_chars(digits.data(), digits.data() + digits.size(), jpeg.size());
         if (ec != std::errc{}) {
@@ -349,7 +353,7 @@ struct Mjpeg {
         constexpr std::string_view prefix{"\r\nContent-Type: image/jpeg\r\nContent-Length: "};
         constexpr std::string_view header_end{"\r\n\r\n"};
         constexpr std::string_view trailer{"\r\n"};
-        const auto header_bytes = 2U + boundary.size() + prefix.size() + digits_view.size() + header_end.size();
+        const auto header_bytes = 2U + safe_boundary.size() + prefix.size() + digits_view.size() + header_end.size();
         if (header_bytes > out.size() || jpeg.size() > out.size() - header_bytes) {
             return fail(ESP_ERR_NO_MEM);
         }
@@ -374,7 +378,7 @@ struct Mjpeg {
             return true;
         };
 
-        if (!append("--") || !append(boundary) || !append(prefix) || !append(digits_view) || !append(header_end)) {
+        if (!append("--") || !append(safe_boundary) || !append(prefix) || !append(digits_view) || !append(header_end)) {
             return fail(ESP_ERR_NO_MEM);
         }
         std::memcpy(out.data() + trailer_offset, trailer.data(), trailer.size());
