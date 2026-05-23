@@ -74,17 +74,32 @@ using TelemetryCell = arc::StaticRef<&telemetry_state, arc::Core::core1>;
 using TelemetryRead = TelemetryCell::Read;
 
 using TelemetryInputs = arc::StaticReads<ControlCell, TelemetryCell>;
+using ControlStep = arc::LoanPack<ControlWrite, TelemetryRead>;
 static_assert(TelemetryInputs::count == 2U);
 static_assert(TelemetryInputs::contains<ControlRead>());
 static_assert(TelemetryInputs::reads<ControlCell>());
 static_assert(TelemetryInputs::reads<TelemetryCell>());
 static_assert(!TelemetryInputs::writes<ControlCell>());
 static_assert(arc::HasStaticRefRead<TelemetryInputs, TelemetryCell>);
+static_assert(ControlStep::can_access<arc::Core::core1>());
+static_assert(!ControlStep::can_access<arc::Core::core0>());
 ```
 
 If the task later tries to add `ControlWrite` beside `ControlRead`, `LoanPack`
 fails the build. This is not full alias analysis; it is a deliberate contract
 for the static objects listed in the task type.
+
+Run code through the same contract when the callback should receive only the
+references named by the loan pack:
+
+```cpp
+void control_step()
+{
+    ControlStep::with<arc::Core::core1>([](ControlState& control, const ControlState& telemetry) {
+        control.tick += telemetry.tick;
+    });
+}
+```
 
 ## Cross-Core Handoff
 

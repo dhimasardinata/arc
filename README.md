@@ -35,7 +35,7 @@ Arc exists for firmware where "it probably initializes" and "the ISR usually kee
 | DMA buffers silently land in the wrong memory | Capability-tagged buffers and cache handoff APIs make SRAM/PSRAM/DMA ownership visible at the call site. |
 | Realtime work competes with networking and logs | Core 1 is the deterministic compute plane; Core 0 owns control, transport, storage, and framework work. |
 | Shared peripheral lifetime becomes informal | `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, and `arc::RefLease` encode init, rollback, references, and teardown in one atomic word. |
-| Static shared state loses its lifetime story | `arc::StaticRef<&object, Core>`, `StaticLoan`, and `LoanPack` keep global storage, core access, and conflicting static borrows visible in the type. |
+| Static shared state loses its lifetime story | `arc::StaticRef<&object, Core>`, `StaticLoan`, and `LoanPack::with<Core>(fn)` keep global storage, core access, and conflicting static borrows visible in the type. |
 | Lock-free code accidentally invokes C++ data-race UB | Queue and snapshot lanes use explicit acquire/release sequencing, cache-line layout, and dual-buffer handoff where payload tearing would otherwise be undefined. |
 | ESP-IDF APIs leak raw handles into app code | Arc keeps ownership typed, static, and explicit while still returning `esp_err_t` or `arc::Result<T>` when recovery matters. |
 
@@ -1409,6 +1409,8 @@ around as a raw pointer or reference.
 - `StaticReads<Refs...>` and `StaticWrites<Refs...>` build `LoanPack` contracts from `StaticRef` owner types instead of raw object addresses.
 - `LoanPack<Loans...>` rejects packs where one static object has a mutable loan plus any other loan.
 - `LoanPack::contains<Loan>()`, `reads<Ref>()`, `reads<&object>()`, `writes<Ref>()`, and `writes<&object>()` make task-boundary requirements testable.
+- `LoanPack::can_access<Core>()` checks whether the whole pack is usable from one core owner.
+- `LoanPack::with<Core>(fn)` invokes a callback with the pack's readonly and mutable references in declared order, after the same core-owner and alias checks.
 - `HasLoan`, `HasStaticRead`, and `HasStaticWrite` let function templates require a loan pack before accepting a task contract.
 - `HasStaticRefRead` and `HasStaticRefWrite` are the same query shape when the contract should stay expressed in `StaticRef` owner types.
 - `StaticReadable`, `StaticWritable`, `LoanReadable`, and `LoanWritable` let templates check whether a static owner or loan can be used from a specific core.

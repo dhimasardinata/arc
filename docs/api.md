@@ -372,6 +372,8 @@ around as a raw pointer or reference.
 - `StaticReads<Refs...>` and `StaticWrites<Refs...>` build `LoanPack` contracts from `StaticRef` owner types instead of raw object addresses.
 - `LoanPack<Loans...>` rejects packs where one static object has a mutable loan plus any other loan.
 - `LoanPack::contains<Loan>()`, `reads<Ref>()`, `reads<&object>()`, `writes<Ref>()`, and `writes<&object>()` make task-boundary requirements testable.
+- `LoanPack::can_access<Core>()` checks whether the whole pack is usable from one core owner.
+- `LoanPack::with<Core>(fn)` invokes a callback with the pack's readonly and mutable references in declared order, after the same core-owner and alias checks.
 - `HasLoan`, `HasStaticRead`, and `HasStaticWrite` let function templates require a loan pack before accepting a task contract.
 - `HasStaticRefRead` and `HasStaticRefWrite` are the same query shape when the contract should stay expressed in `StaticRef` owner types.
 - `StaticReadable`, `StaticWritable`, `LoanReadable`, and `LoanWritable` let templates check whether a static owner or loan can be used from a specific core.

@@ -169,6 +169,25 @@ template <auto* Object, StaticLoanType Loan>
     return false;
 }
 
+template <Core Access, typename Loan>
+concept LoanCoreAccess = StaticLoanType<Loan> && CoreAccess<Access, Loan::owner>;
+
+template <typename Loan>
+using LoanArg = std::conditional_t<Loan::mode == BorrowMode::mut,
+                                   typename Loan::value_type&,
+                                   const typename Loan::value_type&>;
+
+template <Core Access, typename Loan>
+    requires LoanCoreAccess<Access, Loan>
+[[nodiscard]] constexpr LoanArg<Loan> loan_arg() noexcept
+{
+    if constexpr (Loan::mode == BorrowMode::mut) {
+        return *Loan::object;
+    } else {
+        return static_cast<const typename Loan::value_type&>(*Loan::object);
+    }
+}
+
 template <StaticLoanType... Loans>
 struct LoansOk;
 
@@ -196,6 +215,20 @@ struct LoanPack {
                   "[ARC ERROR] arc::LoanPack has a static borrow conflict. Action: keep mutable static loans exclusive.");
 
     static constexpr std::size_t count = sizeof...(Loans);
+
+    template <Core Access>
+    [[nodiscard]] static consteval bool can_access() noexcept
+    {
+        return (true && ... && detail::LoanCoreAccess<Access, Loans>);
+    }
+
+    template <Core Access, typename Fn>
+        requires(can_access<Access>() && std::invocable<Fn, detail::LoanArg<Loans>...>)
+    static constexpr decltype(auto) with(Fn&& fn) noexcept(
+        noexcept(std::invoke(std::forward<Fn>(fn), detail::loan_arg<Access, Loans>()...)))
+    {
+        return std::invoke(std::forward<Fn>(fn), detail::loan_arg<Access, Loans>()...);
+    }
 
     template <StaticLoanType Need>
     [[nodiscard]] static consteval bool contains() noexcept

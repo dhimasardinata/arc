@@ -19,6 +19,7 @@ using ControlWrite = ControlCell::Write;
 using TelemetryCell = arc::StaticRef<&telemetry_state, arc::Core::core1>;
 using TelemetryRead = TelemetryCell::Read;
 using TelemetryInputs = arc::StaticReads<ControlCell, TelemetryCell>;
+using ControlStep = arc::LoanPack<ControlWrite, TelemetryRead>;
 
 static_assert(ControlCell::can_write<arc::Core::core1>());
 static_assert(!ControlCell::can_write<arc::Core::core0>());
@@ -43,6 +44,10 @@ static_assert(arc::HasStaticRead<TelemetryInputs, &control_state>);
 static_assert(arc::HasStaticRefRead<TelemetryInputs, ControlCell>);
 static_assert(!arc::HasStaticWrite<TelemetryInputs, &control_state>);
 static_assert(!arc::HasStaticRefWrite<TelemetryInputs, ControlCell>);
+static_assert(ControlStep::can_access<arc::Core::core1>());
+static_assert(!ControlStep::can_access<arc::Core::core0>());
+static_assert(ControlStep::writes<ControlCell>());
+static_assert(ControlStep::reads<TelemetryCell>());
 
 using ControlProof = arc::proof::Pack<
     10'000U,
@@ -57,6 +62,13 @@ static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
 {
     arc::with_write<ControlCell, arc::Core::core1>([](ControlState& state) {
         state.tick += 1U;
+    });
+}
+
+[[maybe_unused]] void control_step()
+{
+    ControlStep::with<arc::Core::core1>([](ControlState& control, const ControlState& telemetry) {
+        control.tick += telemetry.tick;
     });
 }
 
