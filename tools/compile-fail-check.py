@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 PREFIX = """
 #include <cstdint>
+#include <functional>
 #include <utility>
 
 #include "arc/borrow.hpp"
@@ -290,6 +291,20 @@ void probe()
         must_contain="callback cannot return a reference or pointer",
     ),
     Case(
+        name="scoped_borrow_returns_reference_wrapper",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::with_write([](State& current) {
+        return std::ref(current);
+    });
+}
+""",
+        must_contain="reference wrapper",
+    ),
+    Case(
         name="scoped_borrow_returns_loan",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;
@@ -362,6 +377,19 @@ void probe()
 }
 """,
         must_contain="callback cannot return a reference or pointer",
+    ),
+    Case(
+        name="core_local_returns_reference_wrapper",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    (void)local.with<arc::Core::core1>([](State& current) {
+        return std::ref(current);
+    });
+}
+""",
+        must_contain="reference wrapper",
     ),
     Case(
         name="wrong_core_local_snapshot",
@@ -456,6 +484,20 @@ void probe()
         must_contain="callback cannot return a reference or pointer",
     ),
     Case(
+        name="core_msg_returns_reference_wrapper",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    const auto msg = local.msg<arc::Core::core0>();
+    (void)msg.with([](const State& current) {
+        return std::cref(current);
+    });
+}
+""",
+        must_contain="reference wrapper",
+    ),
+    Case(
         name="core_local_returns_pointer",
         source="""
 void probe()
@@ -507,6 +549,19 @@ void probe()
 }
 """,
         must_contain="scoped role callback cannot return an endpoint",
+    ),
+    Case(
+        name="scoped_role_returns_reference_wrapper",
+        source="""
+void probe()
+{
+    arc::Roles<arc::Spsc<int, 4>> roles{};
+    (void)roles.with_consumer([](auto& consumer) {
+        return std::ref(consumer);
+    });
+}
+""",
+        must_contain="reference wrapper",
     ),
     Case(
         name="scoped_split_returns_endpoint",

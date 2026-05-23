@@ -7,6 +7,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "arc/detail/scoped_result.hpp"
+
 namespace arc {
 
 namespace detail {
@@ -43,7 +45,7 @@ concept RoleEndpointResult = requires(const std::remove_cvref_t<T>& endpoint) {
 template <typename Result, typename... Endpoint>
 inline constexpr bool scoped_role_result =
     std::is_void_v<Result> ||
-    (!std::is_reference_v<Result> && !std::is_pointer_v<Result> && !RoleEndpointResult<Result> &&
+    (PlainScopedResult<Result> && !RoleEndpointResult<Result> &&
      (!std::same_as<std::remove_cvref_t<Result>, std::remove_cvref_t<Endpoint>> && ...));
 
 template <typename Fn, typename... Args>
@@ -51,7 +53,7 @@ consteval void require_scoped_role_result()
 {
     using Result = std::invoke_result_t<Fn, Args...>;
     static_assert(scoped_role_result<Result, Args...>,
-                  "[ARC ERROR] scoped role callback cannot return an endpoint, reference, or pointer. Action: finish "
+                  "[ARC ERROR] scoped role callback cannot return an endpoint, reference, or pointer, including a reference wrapper. Action: finish "
                   "endpoint use inside the callback and copy out an ordinary value.");
 }
 

@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "arc/detail/scoped_result.hpp"
 #include "arc/soc/target.hpp"
 #include "arc/stack.hpp"
 
@@ -66,14 +67,15 @@ namespace detail {
 
 template <typename Result>
 inline constexpr bool scoped_core_result =
-    std::is_void_v<Result> || (!std::is_reference_v<Result> && !std::is_pointer_v<Result>);
+    std::is_void_v<Result> || PlainScopedResult<Result>;
 
 template <typename Fn, typename... Args>
 consteval void require_scoped_core_result()
 {
     using Result = std::invoke_result_t<Fn, Args...>;
     static_assert(scoped_core_result<Result>,
-                  "[ARC ERROR] scoped core callback cannot return a reference or pointer. Action: copy out a value.");
+                  "[ARC ERROR] scoped core callback cannot return a reference or pointer, including a reference wrapper. "
+                  "Action: copy out a value.");
 }
 
 }  // namespace detail

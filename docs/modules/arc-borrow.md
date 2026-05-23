@@ -1,7 +1,6 @@
 # `arc/borrow.hpp`
 
-Static-lifetime loans, one-writer edit packs, and loan-pack alias checks with
-core-owner access gates.
+Static-lifetime loans, one-writer edit packs, and loan-pack alias checks with core-owner access gates.
 
 ## Fit
 

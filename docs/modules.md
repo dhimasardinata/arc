@@ -357,6 +357,7 @@ not start a new app from them.
 | `arc/detail/cold.hpp` | Internal cold-path annotations. |
 | `arc/detail/owner.hpp` | Internal move-only ownership helpers. |
 | `arc/detail/quant.hpp` | Internal quantized rounding helpers. |
+| `arc/detail/scoped_result.hpp` | Internal scoped-callback return-shape helpers. |
 
 ## Next Step
 
