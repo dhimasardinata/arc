@@ -68,10 +68,10 @@ when code prefers the helper at the call site instead of on the owner type. For
 simple reads, `StaticRef::snapshot()` copies out a value without exposing a
 borrowed reference. Scoped callbacks can return `void` or a copied value;
 returning a reference, raw pointer, `std::reference_wrapper`, common non-owning
-view such as `std::span` / `std::string_view`, standard wrapper such as
-`std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant`
-containing those, or `StaticLoan` fails the build so the borrow token cannot
-escape the callback.
+view such as `std::span` / `std::string_view`, standard/result wrapper such as
+`std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant` /
+`std::expected` / `arc::Result` containing those, or `StaticLoan` fails the
+build so the borrow token cannot escape the callback.
 `StaticRef::set(value)` and `arc::set<Ref>(value)` cover whole-value assignment
 when a callback would only expose a mutable reference for one store.
 
@@ -178,10 +178,11 @@ callback. Explicit `get<Core>()` and `with<Core>(fn)` are still available when a
 boundary should name the core directly. Like static-borrow helpers,
 `CoreLocal::with` and `CoreMsg::with` callbacks cannot return references, raw
 pointers, `std::reference_wrapper`, or common non-owning views such as
-`std::span` / `std::string_view`, or standard wrappers such as `std::tuple` /
-`std::pair` / `std::array` / `std::optional` / `std::variant` containing those.
-Explicit forms such as `CoreLocal::with<Core>(fn)` and `msg<Core, To>()` remain
-available when a boundary should spell the access core directly.
+`std::span` / `std::string_view`, or standard/result wrappers such as
+`std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant` /
+`std::expected` / `arc::Result` containing those. Explicit forms such as
+`CoreLocal::with<Core>(fn)` and `msg<Core, To>()` remain available when a
+boundary should spell the access core directly.
 
 ## Role Boundary
 
@@ -215,7 +216,8 @@ void route_event()
 The `with_producer`, `with_consumer`, `with_split`, `with_client`, and
 `with_server` helpers scope endpoint use to one callback. The callback may
 return `void` or an ordinary copied value; returning an endpoint, reference, or
-raw pointer fails the build. `PushRole`, `PopRole`, `RpcClientRole`, and
+raw pointer fails the build, including when the endpoint or borrow hides inside
+a standard/result wrapper. `PushRole`, `PopRole`, `RpcClientRole`, and
 `RpcServerRole` let template boundaries accept only the endpoint side they
 actually use. The scoped callback check rejects captured endpoint values too,
 so a producer callback cannot smuggle out a consumer endpoint.

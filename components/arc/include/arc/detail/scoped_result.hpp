@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <expected>
 #include <functional>
 #include <optional>
 #include <span>
@@ -44,29 +45,46 @@ template <typename T>
 concept NonOwningViewResult = SpanResult<T> || StringViewResult<T>;
 
 template <typename T>
-struct IsPlainScopedResult : std::bool_constant<!std::is_reference_v<T> &&
-                                                !std::is_pointer_v<std::remove_cv_t<T>> &&
-                                                !ReferenceWrapperResult<T> &&
-                                                !NonOwningViewResult<T>> {};
+struct NoExtraScopedUnsafe : std::false_type {};
 
-template <typename First, typename Second>
-struct IsPlainScopedResult<std::pair<First, Second>>
-    : std::bool_constant<IsPlainScopedResult<std::remove_cv_t<First>>::value &&
-                         IsPlainScopedResult<std::remove_cv_t<Second>>::value> {};
+template <template <typename> typename ExtraUnsafe, typename T>
+struct IsSafeScopedResult : std::bool_constant<!std::is_reference_v<T> &&
+                                               !std::is_pointer_v<std::remove_cv_t<T>> &&
+                                               !ReferenceWrapperResult<T> &&
+                                               !NonOwningViewResult<T> &&
+                                               !ExtraUnsafe<std::remove_cvref_t<T>>::value> {};
 
-template <typename... Items>
-struct IsPlainScopedResult<std::tuple<Items...>>
-    : std::bool_constant<(IsPlainScopedResult<std::remove_cv_t<Items>>::value && ...)> {};
+template <template <typename> typename ExtraUnsafe, typename First, typename Second>
+struct IsSafeScopedResult<ExtraUnsafe, std::pair<First, Second>>
+    : std::bool_constant<IsSafeScopedResult<ExtraUnsafe, std::remove_cv_t<First>>::value &&
+                         IsSafeScopedResult<ExtraUnsafe, std::remove_cv_t<Second>>::value> {};
 
-template <typename Item, std::size_t Count>
-struct IsPlainScopedResult<std::array<Item, Count>> : IsPlainScopedResult<std::remove_cv_t<Item>> {};
+template <template <typename> typename ExtraUnsafe, typename... Items>
+struct IsSafeScopedResult<ExtraUnsafe, std::tuple<Items...>>
+    : std::bool_constant<(IsSafeScopedResult<ExtraUnsafe, std::remove_cv_t<Items>>::value && ...)> {};
 
-template <typename Item>
-struct IsPlainScopedResult<std::optional<Item>> : IsPlainScopedResult<std::remove_cv_t<Item>> {};
+template <template <typename> typename ExtraUnsafe, typename Item, std::size_t Count>
+struct IsSafeScopedResult<ExtraUnsafe, std::array<Item, Count>>
+    : IsSafeScopedResult<ExtraUnsafe, std::remove_cv_t<Item>> {};
 
-template <typename... Items>
-struct IsPlainScopedResult<std::variant<Items...>>
-    : std::bool_constant<(IsPlainScopedResult<std::remove_cv_t<Items>>::value && ...)> {};
+template <template <typename> typename ExtraUnsafe, typename Item>
+struct IsSafeScopedResult<ExtraUnsafe, std::optional<Item>>
+    : IsSafeScopedResult<ExtraUnsafe, std::remove_cv_t<Item>> {};
+
+template <template <typename> typename ExtraUnsafe, typename... Items>
+struct IsSafeScopedResult<ExtraUnsafe, std::variant<Items...>>
+    : std::bool_constant<(IsSafeScopedResult<ExtraUnsafe, std::remove_cv_t<Items>>::value && ...)> {};
+
+template <template <typename> typename ExtraUnsafe, typename Value, typename Error>
+struct IsSafeScopedResult<ExtraUnsafe, std::expected<Value, Error>>
+    : std::bool_constant<IsSafeScopedResult<ExtraUnsafe, std::remove_cv_t<Value>>::value &&
+                         IsSafeScopedResult<ExtraUnsafe, std::remove_cv_t<Error>>::value> {};
+
+template <typename T>
+struct IsPlainScopedResult : IsSafeScopedResult<NoExtraScopedUnsafe, T> {};
+
+template <template <typename> typename ExtraUnsafe, typename T>
+concept SafeScopedResult = IsSafeScopedResult<ExtraUnsafe, std::remove_cv_t<T>>::value;
 
 template <typename T>
 concept PlainScopedResult = IsPlainScopedResult<std::remove_cv_t<T>>::value;

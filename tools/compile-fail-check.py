@@ -14,16 +14,19 @@ ROOT = Path(__file__).resolve().parents[1]
 PREFIX = """
 #include <cstdint>
 #include <array>
+#include <expected>
 #include <functional>
 #include <optional>
 #include <span>
 #include <string_view>
+#include <type_traits>
 #include <tuple>
 #include <utility>
 #include <variant>
 
 #include "arc/borrow.hpp"
 #include "arc/proof.hpp"
+#include "arc/result.hpp"
 #include "arc/roles.hpp"
 #include "arc/rpc.hpp"
 #include "arc/spsc.hpp"
@@ -400,6 +403,20 @@ void probe()
         must_contain="standard wrapper",
     ),
     Case(
+        name="scoped_borrow_returns_result_pointer",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::with_write([](State& current) {
+        return arc::Result<State*>{&current};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
         name="scoped_borrow_returns_loan",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;
@@ -413,6 +430,21 @@ void probe()
 }
 """,
         must_contain="callback cannot return a reference or pointer or static loan",
+    ),
+    Case(
+        name="scoped_borrow_returns_optional_loan",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    const auto read = Cell::read<arc::Core::core1>();
+    (void)Cell::with_write([&](State&) {
+        return std::optional{read};
+    });
+}
+""",
+        must_contain="standard wrapper",
     ),
     Case(
         name="scoped_borrow_pack_returns_loan",
@@ -520,6 +552,19 @@ void probe()
     arc::CoreLocal<State, arc::Core::core1> local{};
     (void)local.with<arc::Core::core1>([](State& current) {
         return std::optional<State*>{&current};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
+        name="core_local_returns_expected_pointer",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    (void)local.with<arc::Core::core1>([](State& current) {
+        return std::expected<State*, int>{&current};
     });
 }
 """,
@@ -674,6 +719,20 @@ void probe()
         must_contain="standard wrapper",
     ),
     Case(
+        name="core_msg_returns_expected_string_view",
+        source="""
+void probe()
+{
+    arc::CoreLocal<Text, arc::Core::core1> local{};
+    const auto msg = local.msg<arc::Core::core0>();
+    (void)msg.with([](const Text& current) {
+        return std::expected<std::string_view, int>{std::string_view{current.value, 3}};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
         name="core_local_returns_pointer",
         source="""
 void probe()
@@ -779,6 +838,19 @@ void probe()
         must_contain="standard wrapper",
     ),
     Case(
+        name="scoped_role_returns_optional_endpoint",
+        source="""
+void probe()
+{
+    arc::Roles<arc::Spsc<int, 4>> roles{};
+    (void)roles.with_consumer([](auto& consumer) {
+        return std::optional{std::move(consumer)};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
         name="scoped_split_returns_endpoint",
         source="""
 void probe()
@@ -790,6 +862,24 @@ void probe()
 }
 """,
         must_contain="scoped role callback cannot return an endpoint",
+    ),
+    Case(
+        name="scoped_rpc_returns_expected_endpoint",
+        source="""
+enum class Op : std::uint8_t {
+    set,
+};
+
+void probe()
+{
+    arc::Roles<arc::RpcLane<Op, State, State, 4>> roles{};
+    (void)roles.with_client([](auto& client) {
+        using Client = std::remove_reference_t<decltype(client)>;
+        return std::expected<Client, int>{std::move(client)};
+    });
+}
+""",
+        must_contain="standard wrapper",
     ),
     Case(
         name="scoped_rpc_returns_other_endpoint",

@@ -185,9 +185,12 @@ using LoanArg = std::conditional_t<Loan::mode == BorrowMode::mut,
                                    typename Loan::value_type&,
                                    const typename Loan::value_type&>;
 
+template <typename T>
+struct ScopedBorrowUnsafe : std::bool_constant<StaticLoanType<std::remove_cvref_t<T>>> {};
+
 template <typename Result>
 inline constexpr bool scoped_borrow_result =
-    std::is_void_v<Result> || (PlainScopedResult<Result> && !StaticLoanType<std::remove_cvref_t<Result>>);
+    std::is_void_v<Result> || SafeScopedResult<ScopedBorrowUnsafe, Result>;
 
 template <typename Fn, typename... Args>
 consteval void require_scoped_borrow_result()

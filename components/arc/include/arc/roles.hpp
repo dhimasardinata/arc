@@ -42,11 +42,17 @@ concept RoleEndpointResult = requires(const std::remove_cvref_t<T>& endpoint) {
     { static_cast<bool>(endpoint) } -> std::same_as<bool>;
 } && (requires { std::remove_cvref_t<T>::cap(); } || requires { std::remove_cvref_t<T>::producers(); } || requires { &std::remove_cvref_t<T>::call; } || requires { &std::remove_cvref_t<T>::recv; });
 
+template <typename... Endpoint>
+struct ScopedRoleUnsafe {
+    template <typename T>
+    struct Apply : std::bool_constant<RoleEndpointResult<T> ||
+                                      (std::same_as<std::remove_cvref_t<T>, std::remove_cvref_t<Endpoint>> || ...)> {};
+};
+
 template <typename Result, typename... Endpoint>
 inline constexpr bool scoped_role_result =
     std::is_void_v<Result> ||
-    (PlainScopedResult<Result> && !RoleEndpointResult<Result> &&
-     (!std::same_as<std::remove_cvref_t<Result>, std::remove_cvref_t<Endpoint>> && ...));
+    SafeScopedResult<ScopedRoleUnsafe<Endpoint...>::template Apply, Result>;
 
 template <typename Fn, typename... Args>
 consteval void require_scoped_role_result()
