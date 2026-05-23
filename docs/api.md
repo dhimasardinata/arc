@@ -359,7 +359,7 @@ Compile-time core ownership tags for state that must not be casually shared acro
 - `CoreLocal::with<Core>(fn)` callbacks may return `void` or an ordinary value, but not a reference or raw pointer.
 - `msg<To>()` creates a copied message from the owner core to the destination core, and `accept(msg)` applies a message addressed to the local core.
 - Access from the wrong core is absent from the overload set, so misuse fails during template checking instead of becoming a runtime convention.
-- `CoreMsg<T, From, To>` carries a copied payload across a queue or mailbox type; only the destination core can call `get<To>()`.
+- `CoreMsg<T, From, To>` carries a copied payload across a queue or mailbox type; `get()` reads through the encoded destination core, while `get<To>()` stays available for explicit boundary code.
 - `accept<Owner>(msg)` applies an addressed message to the destination local slot.
 
 Use this for small ownership-sensitive control or telemetry records where `Spsc`, `SeqReg`, or another lane carries the transfer and the value itself should still remember which core may touch it.

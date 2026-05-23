@@ -99,6 +99,11 @@ public:
         return value_;
     }
 
+    [[nodiscard]] constexpr const T& get() const& noexcept
+    {
+        return get<To>();
+    }
+
 private:
     template <typename, Core>
     friend class CoreLocal;

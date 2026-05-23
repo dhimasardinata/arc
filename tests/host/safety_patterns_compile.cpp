@@ -93,6 +93,7 @@ static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
     auto msg = counter.msg<arc::Core::core0>();
     static_assert(decltype(msg)::from == arc::Core::core1);
     static_assert(decltype(msg)::to == arc::Core::core0);
+    static_cast<void>(msg.get());
 
     arc::CoreLocal<std::uint32_t, arc::Core::core0> mirror{};
     mirror.accept(msg);

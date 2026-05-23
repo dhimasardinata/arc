@@ -959,6 +959,9 @@ template <typename T, arc::Core Access>
 concept HasMsgGet = requires(const T& msg) { msg.template get<Access>(); };
 
 template <typename T>
+concept HasMsgGetInferred = requires(const T& msg) { msg.get(); };
+
+template <typename T>
 concept HasLoanArrow = requires(T& loan) { loan.operator->(); };
 
 template <typename T>
@@ -1177,9 +1180,11 @@ void test_core_local()
     static_assert(Msg::to == arc::Core::core0);
     static_assert(HasMsgGet<Msg, arc::Core::core0>);
     static_assert(!HasMsgGet<Msg, arc::Core::core1>);
+    static_assert(HasMsgGetInferred<Msg>);
     using Core0Counter = arc::CoreLocal<std::uint32_t, arc::Core::core0>;
     static_assert(HasCoreAccept<Core0Counter, Msg>);
     expect(msg.get<arc::Core::core0>() == 44U, "CoreMsg destination reads payload");
+    expect(msg.get() == 44U, "CoreMsg inferred destination reads payload");
 
     Core0Counter mirror{};
     mirror.accept(msg);

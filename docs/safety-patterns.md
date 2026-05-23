@@ -131,10 +131,12 @@ counter.with([](std::uint32_t& value) {
 auto msg = counter.msg<arc::Core::core0>();
 static_assert(decltype(msg)::from == arc::Core::core1);
 static_assert(decltype(msg)::to == arc::Core::core0);
+static_cast<void>(msg.get());
 ```
 
-The destination core can read the message. The source core cannot read it
-through the destination-only accessor. Like static-borrow helpers,
+The message carries its destination in the type, so `msg.get()` reads through
+that encoded destination. Explicit `get<Core>()` is still available when a
+boundary should name the core directly. Like static-borrow helpers,
 `CoreLocal::with` callbacks cannot return references or raw pointers. Explicit
 forms such as `with<Core>(fn)` and `msg<Core, To>()` remain available when a
 boundary should spell the access core directly.
