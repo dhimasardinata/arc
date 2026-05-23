@@ -150,6 +150,34 @@ a boundary should name the core directly. Like static-borrow helpers,
 forms such as `with<Core>(fn)` and `msg<Core, To>()` remain available when a
 boundary should spell the access core directly.
 
+## Role Boundary
+
+Use `Roles<Lane>` when setup code should hand out queue or RPC endpoints without
+keeping the root lane API visible.
+
+```cpp
+#include "arc/roles.hpp"
+#include "arc/spsc.hpp"
+
+arc::Roles<arc::Spsc<std::uint32_t, 4>> events;
+
+void route_event()
+{
+    events.with_producer([](auto& producer) {
+        return producer.try_push(7U);
+    });
+    events.with_consumer([](auto& consumer) {
+        std::uint32_t event{};
+        return consumer.try_pop(event);
+    });
+}
+```
+
+The `with_producer`, `with_consumer`, `with_split`, `with_client`, and
+`with_server` helpers scope endpoint use to one callback. The callback may
+return `void` or an ordinary copied value; returning an endpoint, reference, or
+raw pointer fails the build.
+
 ## Static Plane Launch
 
 When a workload owns static state, bind the task to the same `StaticRef` instead

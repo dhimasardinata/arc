@@ -16,6 +16,8 @@ PREFIX = """
 #include <utility>
 
 #include "arc/borrow.hpp"
+#include "arc/roles.hpp"
+#include "arc/spsc.hpp"
 
 namespace {
 
@@ -246,6 +248,32 @@ void probe()
     static_cast<void>(moved);
 }
 """,
+    ),
+    Case(
+        name="scoped_role_returns_endpoint",
+        source="""
+void probe()
+{
+    arc::Roles<arc::Spsc<int, 4>> roles{};
+    (void)roles.with_producer([](auto& producer) {
+        return std::move(producer);
+    });
+}
+""",
+        must_contain="scoped role callback cannot return an endpoint",
+    ),
+    Case(
+        name="scoped_split_returns_endpoint",
+        source="""
+void probe()
+{
+    arc::Roles<arc::Spsc<int, 4>> roles{};
+    (void)roles.with_split([](auto& producer, auto&) {
+        return std::move(producer);
+    });
+}
+""",
+        must_contain="scoped role callback cannot return an endpoint",
     ),
 )
 

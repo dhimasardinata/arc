@@ -1165,6 +1165,20 @@ void test_spsc()
     auto role_endpoints = role_only.split();
     expect(role_endpoints.producer.try_push(14), "Roles SPSC producer endpoint push");
     expect(role_endpoints.consumer.try_pop(value) && value == 14, "Roles SPSC consumer endpoint pop");
+
+    arc::Roles<arc::Spsc<int, 4>> scoped_roles;
+    expect(scoped_roles.with_producer([](auto& producer) {
+        return producer.try_push(16);
+    }),
+           "Roles SPSC scoped producer push");
+    expect(scoped_roles.with_consumer([&](auto& consumer) {
+        return consumer.try_pop(value) && value == 16;
+    }),
+           "Roles SPSC scoped consumer pop");
+    expect(scoped_roles.with_split([&](auto& producer, auto& consumer) {
+        return producer.try_push(17) && consumer.try_pop(value) && value == 17;
+    }),
+           "Roles SPSC scoped split endpoints");
 }
 
 void test_core_local()
@@ -1700,6 +1714,20 @@ void test_mpsc_single()
     expect(role_endpoints.consumer.peek(value) && value == 14, "Roles MPSC consumer endpoint peek");
     expect(role_endpoints.consumer.drop(), "Roles MPSC consumer endpoint drop");
     expect(role_endpoints.consumer.try_pop(value) && value == 15, "Roles MPSC consumer endpoint pop");
+
+    arc::Roles<arc::Mpsc<int, 4>> scoped_roles;
+    expect(scoped_roles.with_producer([](auto& producer) {
+        return producer.try_push(16);
+    }),
+           "Roles MPSC scoped producer push");
+    expect(scoped_roles.with_consumer([&](auto& consumer) {
+        return consumer.try_pop(value) && value == 16;
+    }),
+           "Roles MPSC scoped consumer pop");
+    expect(scoped_roles.with_split([&](auto& producer, auto& consumer) {
+        return producer.try_push(17) && consumer.try_pop(value) && value == 17;
+    }),
+           "Roles MPSC scoped split endpoints");
 }
 
 void test_compact_mpsc()
@@ -1904,6 +1932,16 @@ void test_fanin()
            "Roles Fanin consumer endpoint peek");
     expect(role_sink.try_pop(producer, value) && producer == 2U && value == 200,
            "Roles Fanin consumer endpoint pop");
+
+    arc::Roles<arc::Fanin<int, 4, 3>> scoped_roles;
+    expect(scoped_roles.with_producer<1>([](auto& lane) {
+        return lane.try_push(210);
+    }),
+           "Roles Fanin scoped producer endpoint push");
+    expect(scoped_roles.with_consumer([&](auto& sink_endpoint) {
+        return sink_endpoint.try_pop(producer, value) && producer == 1U && value == 210;
+    }),
+           "Roles Fanin scoped consumer endpoint pop");
 }
 
 void test_rpc_lane()
@@ -1968,6 +2006,21 @@ void test_rpc_lane()
     expect(request.serial == 10U && request.payload.value == 55U, "Roles RPC request fields");
     expect(role_server.reply(request.serial, ESP_OK, Reply{.applied = 56U}), "Roles RPC server endpoint reply");
     expect(role_client.poll_match(10U, reply) && reply.payload.applied == 56U, "Roles RPC client endpoint reply");
+
+    RoleRpc scoped_roles;
+    expect(scoped_roles.with_client([](auto& scoped_client) {
+        return scoped_client.call(Op::set, Request{.value = 57U}, 11U);
+    }),
+           "Roles RPC scoped client call");
+    expect(scoped_roles.with_server([&](auto& scoped_server) {
+        return scoped_server.recv(request) && request.serial == 11U && request.payload.value == 57U &&
+            scoped_server.reply(request.serial, ESP_OK, Reply{.applied = 58U});
+    }),
+           "Roles RPC scoped server reply");
+    expect(scoped_roles.with_client([&](auto& scoped_client) {
+        return scoped_client.poll_match(11U, reply) && reply.payload.applied == 58U;
+    }),
+           "Roles RPC scoped client reply");
 }
 
 void test_checked_fanin()

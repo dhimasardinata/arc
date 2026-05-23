@@ -2,6 +2,8 @@
 
 #include "arc/borrow.hpp"
 #include "arc/proof.hpp"
+#include "arc/roles.hpp"
+#include "arc/spsc.hpp"
 #include "arc/task.hpp"
 
 namespace {
@@ -103,6 +105,18 @@ static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
     arc::CoreLocal<std::uint32_t, arc::Core::core0> mirror{};
     mirror.accept(msg);
     static_cast<void>(mirror.get<arc::Core::core0>());
+}
+
+[[maybe_unused]] void role_boundary()
+{
+    arc::Roles<arc::Spsc<std::uint32_t, 4>> events{};
+    static_cast<void>(events.with_producer([](auto& producer) {
+        return producer.try_push(7U);
+    }));
+    static_cast<void>(events.with_consumer([](auto& consumer) {
+        std::uint32_t event{};
+        return consumer.try_pop(event) && event == 7U;
+    }));
 }
 
 }  // namespace
