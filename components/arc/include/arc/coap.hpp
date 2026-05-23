@@ -172,6 +172,17 @@ struct Coap {
         if (!token.empty()) {
             std::memmove(out.data() + 4U, token.data(), token.size());
         }
+        auto option_end = bytes - (!payload.empty() ? 1U + payload.size() : 0U);
+        for (std::size_t i = options.size(); i != 0U; --i) {
+            const auto& option = options[i - 1U];
+            const auto number_before = i > 1U ? options[i - 2U].number : 0U;
+            const auto delta = static_cast<std::size_t>(option.number - number_before);
+            option_end -= option.value.size();
+            if (!option.value.empty()) {
+                std::memmove(out.data() + option_end, option.value.data(), option.value.size());
+            }
+            option_end -= 1U + extended_bytes(delta) + extended_bytes(option.value.size());
+        }
 
         auto pos = std::size_t{0U};
         out[pos++] = static_cast<std::uint8_t>((1U << 6U) |
@@ -190,7 +201,6 @@ struct Coap {
             pos += write_option(out, pos, delta, option.value.size());
 
             if (!option.value.empty()) {
-                std::memcpy(out.data() + pos, option.value.data(), option.value.size());
                 pos += option.value.size();
             }
             previous = option.number;

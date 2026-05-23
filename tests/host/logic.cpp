@@ -2036,6 +2036,37 @@ void test_coap()
 
     const auto none = arc::net::Coap::next(parsed->options, offset, number);
     expect(!none.has_value() && none.error() == ESP_ERR_NOT_FOUND, "CoAP option end");
+    std::array<std::uint8_t, 64> in_place_options_buf{'s', 'e', 'n', 's', 'o', 'r', 's', 't', 'e', 'm', 'p'};
+    const std::array in_place_options{
+        arc::net::Coap::option(
+            static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_path),
+            std::span(in_place_options_buf).first(7U)),
+        arc::net::Coap::option(
+            static_cast<std::uint16_t>(arc::net::CoapOptionNumber::uri_path),
+            std::span(in_place_options_buf).subspan(7U, 4U)),
+    };
+    const auto in_place_options_request = arc::net::Coap::message(
+        std::span(in_place_options_buf),
+        arc::net::CoapType::confirmable,
+        static_cast<std::uint8_t>(arc::net::CoapCode::get),
+        0x9876U,
+        {},
+        std::span(in_place_options));
+    expect(in_place_options_request.has_value(), "CoAP in-place options encode");
+    const auto in_place_options_parsed = arc::net::Coap::parse(*in_place_options_request);
+    expect(in_place_options_parsed.has_value(), "CoAP in-place options parse");
+    auto in_place_options_offset = std::size_t{};
+    auto in_place_options_number = std::uint16_t{};
+    const auto in_place_options_first =
+        arc::net::Coap::next(in_place_options_parsed->options, in_place_options_offset, in_place_options_number);
+    expect(in_place_options_first.has_value() &&
+               std::memcmp(in_place_options_first->value.data(), "sensors", in_place_options_first->value.size()) == 0,
+           "CoAP preserves first in-place option");
+    const auto in_place_options_second =
+        arc::net::Coap::next(in_place_options_parsed->options, in_place_options_offset, in_place_options_number);
+    expect(in_place_options_second.has_value() &&
+               std::memcmp(in_place_options_second->value.data(), "temp", in_place_options_second->value.size()) == 0,
+           "CoAP preserves second in-place option");
 
     const std::array<std::uint8_t, 1> format{50U};
     const std::array response_options{
