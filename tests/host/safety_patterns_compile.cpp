@@ -86,16 +86,16 @@ static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
 
     Core1Counter counter{41U};
     counter.set<arc::Core::core1>(42U);
-    counter.with<arc::Core::core1>([](std::uint32_t& value) {
+    counter.with([](std::uint32_t& value) {
         value += 1U;
     });
 
-    auto msg = counter.msg<arc::Core::core1, arc::Core::core0>();
+    auto msg = counter.msg<arc::Core::core0>();
     static_assert(decltype(msg)::from == arc::Core::core1);
     static_assert(decltype(msg)::to == arc::Core::core0);
 
     arc::CoreLocal<std::uint32_t, arc::Core::core0> mirror{};
-    mirror.accept<arc::Core::core0>(msg);
+    mirror.accept(msg);
     static_cast<void>(mirror.get<arc::Core::core0>());
 }
 

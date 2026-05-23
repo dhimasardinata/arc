@@ -123,19 +123,21 @@ using Core1Counter = arc::CoreLocal<std::uint32_t, arc::Core::core1>;
 
 Core1Counter counter{41U};
 counter.set<arc::Core::core1>(42U);
-counter.with<arc::Core::core1>([](std::uint32_t& value) {
+counter.with([](std::uint32_t& value) {
     value += 1U;
     return value;
 });
 
-auto msg = counter.msg<arc::Core::core1, arc::Core::core0>();
+auto msg = counter.msg<arc::Core::core0>();
 static_assert(decltype(msg)::from == arc::Core::core1);
 static_assert(decltype(msg)::to == arc::Core::core0);
 ```
 
 The destination core can read the message. The source core cannot read it
 through the destination-only accessor. Like static-borrow helpers,
-`CoreLocal::with` callbacks cannot return references or raw pointers.
+`CoreLocal::with` callbacks cannot return references or raw pointers. Explicit
+forms such as `with<Core>(fn)` and `msg<Core, To>()` remain available when a
+boundary should spell the access core directly.
 
 ## Static Plane Launch
 

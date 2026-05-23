@@ -949,6 +949,12 @@ concept HasCoreGet = requires(T& local) { local.template get<Access>(); };
 template <typename T, arc::Core Access, arc::Core To>
 concept HasCoreMsg = requires(const T& local) { local.template msg<Access, To>(); };
 
+template <typename T, arc::Core To>
+concept HasCoreMsgTo = requires(const T& local) { local.template msg<To>(); };
+
+template <typename T, typename Msg>
+concept HasCoreAccept = requires(T& local, const Msg& msg) { local.accept(msg); };
+
 template <typename T, arc::Core Access>
 concept HasMsgGet = requires(const T& msg) { msg.template get<Access>(); };
 
@@ -1138,6 +1144,7 @@ void test_core_local()
     static_assert(!HasCoreGet<Core1Counter, arc::Core::core0>);
     static_assert(HasCoreMsg<Core1Counter, arc::Core::core1, arc::Core::core0>);
     static_assert(!HasCoreMsg<Core1Counter, arc::Core::core0, arc::Core::core0>);
+    static_assert(HasCoreMsgTo<Core1Counter, arc::Core::core0>);
 
     Core1Counter counter{41U};
     expect(counter.get<arc::Core::core1>() == 41U, "CoreLocal owner reads local state");
@@ -1148,23 +1155,39 @@ void test_core_local()
         return value;
     });
     expect(scoped == 43U && counter.get<arc::Core::core1>() == 43U, "CoreLocal scoped access updates local state");
+    const auto inferred_scoped = counter.with([](std::uint32_t& value) {
+        value += 1U;
+        return value;
+    });
+    expect(inferred_scoped == 44U && counter.get<arc::Core::core1>() == 44U,
+           "CoreLocal inferred scoped access updates local state");
     const auto scoped_const = static_cast<const Core1Counter&>(counter).with<arc::Core::core1>(
         [](const std::uint32_t& value) {
             return value;
         });
-    expect(scoped_const == 43U, "CoreLocal const scoped access returns copied value");
+    expect(scoped_const == 44U, "CoreLocal const scoped access returns copied value");
+    const auto inferred_const = static_cast<const Core1Counter&>(counter).with([](const std::uint32_t& value) {
+        return value;
+    });
+    expect(inferred_const == 44U, "CoreLocal inferred const scoped access returns copied value");
 
-    const auto msg = counter.msg<arc::Core::core1, arc::Core::core0>();
+    const auto msg = counter.msg<arc::Core::core0>();
     using Msg = decltype(msg);
     static_assert(Msg::from == arc::Core::core1);
     static_assert(Msg::to == arc::Core::core0);
     static_assert(HasMsgGet<Msg, arc::Core::core0>);
     static_assert(!HasMsgGet<Msg, arc::Core::core1>);
-    expect(msg.get<arc::Core::core0>() == 43U, "CoreMsg destination reads payload");
+    using Core0Counter = arc::CoreLocal<std::uint32_t, arc::Core::core0>;
+    static_assert(HasCoreAccept<Core0Counter, Msg>);
+    expect(msg.get<arc::Core::core0>() == 44U, "CoreMsg destination reads payload");
 
-    arc::CoreLocal<std::uint32_t, arc::Core::core0> mirror{};
-    mirror.accept<arc::Core::core0>(msg);
-    expect(mirror.get<arc::Core::core0>() == 43U, "CoreLocal accepts addressed message");
+    Core0Counter mirror{};
+    mirror.accept(msg);
+    expect(mirror.get<arc::Core::core0>() == 44U, "CoreLocal accepts addressed message");
+
+    const auto explicit_msg = counter.msg<arc::Core::core1, arc::Core::core0>();
+    mirror.accept<arc::Core::core0>(explicit_msg);
+    expect(mirror.get<arc::Core::core0>() == 44U, "CoreLocal explicit handoff stays available");
 }
 
 struct BorrowFixture {

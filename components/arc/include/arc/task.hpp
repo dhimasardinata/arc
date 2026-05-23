@@ -172,12 +172,26 @@ public:
         return std::invoke(std::forward<Fn>(fn), value_);
     }
 
+    template <typename Fn>
+        requires std::invocable<Fn, T&>
+    constexpr decltype(auto) with(Fn&& fn) &
+    {
+        return with<Owner>(std::forward<Fn>(fn));
+    }
+
     template <Core Access, typename Fn>
         requires CoreOwner<Access, Owner> && std::invocable<Fn, const T&>
     constexpr decltype(auto) with(Fn&& fn) const& noexcept(noexcept(std::invoke(std::forward<Fn>(fn), value_)))
     {
         detail::require_scoped_core_result<Fn, const T&>();
         return std::invoke(std::forward<Fn>(fn), value_);
+    }
+
+    template <typename Fn>
+        requires std::invocable<Fn, const T&>
+    constexpr decltype(auto) with(Fn&& fn) const&
+    {
+        return with<Owner>(std::forward<Fn>(fn));
     }
 
     template <Core Access, Core To>
@@ -187,12 +201,27 @@ public:
         return CoreMsg<T, Owner, To>{value_};
     }
 
+    template <Core To>
+        requires(To != Core::any) && std::copy_constructible<T>
+    [[nodiscard]] constexpr CoreMsg<T, Owner, To> msg() const noexcept(noexcept(CoreMsg<T, Owner, To>{value_}))
+    {
+        return msg<Owner, To>();
+    }
+
     template <Core Access, Core From>
         requires CoreOwner<Access, Owner> && std::assignable_from<T&, const T&>
     constexpr void accept(const CoreMsg<T, From, Owner>& msg) noexcept(
         noexcept(std::declval<T&>() = msg.template get<Owner>()))
     {
         value_ = msg.template get<Owner>();
+    }
+
+    template <Core From>
+        requires std::assignable_from<T&, const T&>
+    constexpr void accept(const CoreMsg<T, From, Owner>& msg) noexcept(
+        noexcept(std::declval<T&>() = msg.template get<Owner>()))
+    {
+        accept<Owner>(msg);
     }
 
 private:
