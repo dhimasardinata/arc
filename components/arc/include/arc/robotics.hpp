@@ -4,6 +4,7 @@
 // coordination surfaces.
 
 #include "arc/acoustic_slam.hpp"
+#include "arc/bft.hpp"
 #include "arc/cnc.hpp"
 #include "arc/crdt.hpp"
 #include "arc/digital_twin.hpp"

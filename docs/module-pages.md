@@ -169,6 +169,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 
 | Header | Purpose | Page |
 | --- | --- | --- |
+| `arc/bft.hpp` | Bounded BFT vote collection and quorum certificates for fleet decisions. | [Open](/modules/arc-bft) |
 | `arc/ble.hpp` | NimBLE lifecycle, GAP, advertising, and scanning bridge. | [Open](/modules/arc-ble) |
 | `arc/ble_mesh.hpp` | BLE Mesh payload validation and policy hooks. | [Open](/modules/arc-ble_mesh) |
 | `arc/coap.hpp` | CoAP datagram codec. | [Open](/modules/arc-coap) |
@@ -219,7 +220,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/crypto.hpp` | AES, SHA, HMAC, signatures, MPI, XTS, Kyber, Paillier, PUF, secure boot, and related security helpers. | [Open](/modules/arc-crypto) |
 | `arc/math.hpp` | DSP, SIMD, fixed matrices, Kalman, motion, ML, and control math surfaces. | [Open](/modules/arc-math) |
 | `arc/memory.hpp` | Capability buffers, cache ownership, DMA copy, descriptor chains, pipelines, and placement helpers. | [Open](/modules/arc-memory) |
-| `arc/net_codecs.hpp` | URI, streams, fixed records, CRDTs, MQTT, WebSocket, CoAP, and small HTTP server helpers without owning Wi-Fi. | [Open](/modules/arc-net_codecs) |
+| `arc/net_codecs.hpp` | URI, streams, fixed records, CRDTs, BFT votes, MQTT, WebSocket, CoAP, and small HTTP server helpers without owning Wi-Fi. | [Open](/modules/arc-net_codecs) |
 | `arc/robotics.hpp` | Motor control, CNC, motion, sensors, vision, DVP/LCD, digital twin, and robotics-oriented hardware paths. | [Open](/modules/arc-robotics) |
 | `arc/sandbox.hpp` | VM, JIT, WASM AOT, hypervisor, PMS/TEE planning, hotpatch, chaos, and sandbox policy hooks. | [Open](/modules/arc-sandbox) |
 

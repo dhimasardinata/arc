@@ -2,6 +2,7 @@
 
 // Profile umbrella: no-heap protocol codecs and transport-neutral adapters.
 
+#include "arc/bft.hpp"
 #include "arc/coap.hpp"
 #include "arc/crdt.hpp"
 #include "arc/http_server.hpp"

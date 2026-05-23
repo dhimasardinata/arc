@@ -1,28 +1,28 @@
-# `arc/robotics.hpp`
+# `arc/bft.hpp`
 
-Motor control, CNC, motion, sensors, vision, DVP/LCD, digital twin, and robotics-oriented hardware paths.
+Bounded BFT vote collection and quorum certificates for fleet decisions.
 
 ## Fit
 
-- Use it when a reader wants one coherent entry point for a domain or a subset build wants a profile root.
-- Do not start here when one source file only needs a narrow peripheral or codec header.
-- Verification focus: confirm the profile does not drag domain roots into small substrate builds unless that is intentional.
+- Use it when Core 0 owns the radio/socket work and payload bytes still need deterministic framing or parsing.
+- Do not start here when Core 1 would block on Wi-Fi, TLS, DNS, storage, or heap-heavy service code.
+- Verification focus: keep radio state on Core 0, bound payload buffers, and capture real serial/network output for protocol evidence.
 
 ## Arc Contract
 
-- Header: `arc/robotics.hpp`
-- Module group: Profile Modules
-- CMake feature: `robotics`
-- Closest example: `.`
+- Header: `arc/bft.hpp`
+- Module group: Network, Radio, And Wire Protocols
+- CMake feature: `net_codecs`
+- Closest example: `examples/esp32s3/udp`
 
-Declare `arc_requires(main_requires core robotics)` in the component that includes this header.
+Declare `arc_requires(main_requires core net_codecs)` in the component that includes this header.
 
 ## CMake And Include
 
 ```cmake
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/arc-deps.cmake)
 
-arc_requires(main_requires core robotics)
+arc_requires(main_requires core net_codecs)
 
 idf_component_register(
     SRCS "app_main.cpp"
@@ -31,12 +31,12 @@ idf_component_register(
 ```
 
 ```cpp
-#include "arc/robotics.hpp"
+#include "arc/bft.hpp"
 ```
 
 ## Source Landmarks
 
-Source landmarks: `arc/acoustic_slam.hpp`, `arc/bft.hpp`, `arc/cnc.hpp`, `arc/crdt.hpp`, `arc/digital_twin.hpp`, `arc/foc.hpp`, `arc/hyper_matrix.hpp`, `arc/maglev.hpp`.
+Source landmarks: `BftVote`, `BftCert`, `Bft`, `Vote`, `Cert`.
 
 ## Start From Zero
 
@@ -74,12 +74,12 @@ extern "C" void app_main()
 
 ## Build Or Example
 
-The root project is the smallest place to try this module.
+The closest shipped example is `examples/esp32s3/udp`.
 
 ```sh
 . ./env.sh
-idf.py build
-idf.py -p /dev/ttyACM0 flash monitor
+idf.py -C examples/esp32s3/udp build
+idf.py -C examples/esp32s3/udp -p /dev/ttyACM0 flash monitor
 ```
 
 ## Runtime Check

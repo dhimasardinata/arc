@@ -17,6 +17,7 @@ SPECIAL_FEATURES = {
     "assume": "core",
     "audit": "core",
     "bare_core": "core",
+    "bft": "net_codecs",
     "bridge": "mcpwm",
     "burst": "rmt",
     "bus": "core",

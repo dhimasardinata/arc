@@ -21,6 +21,7 @@
 #include "arc/any.hpp"
 #include "arc/acoustic_slam.hpp"
 #include "arc/bare_core.hpp"
+#include "arc/bft.hpp"
 #include "arc/ble_mesh.hpp"
 #include "arc/blackbox.hpp"
 #include "arc/burst.hpp"
@@ -4284,6 +4285,40 @@ void test_matrix_kalman_storage_swarm()
     expect(!SharedCrdt::parse(
                std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), sizeof(SharedCrdt::Frame)}),
            "Crdt parse rejects null wire span");
+
+    struct AbortVote {
+        std::uint8_t abort{};
+        auto operator==(const AbortVote&) const -> bool = default;
+    };
+    using AbortBft = arc::Bft<AbortVote, 4>;
+    static_assert(AbortBft::faults() == 1U);
+    static_assert(AbortBft::quorum() == 3U);
+    AbortBft abort{2U, 9U};
+    const AbortVote abort_yes{.abort = 1U};
+    const AbortVote abort_no{.abort = 0U};
+    const auto vote1 = abort.vote(1U, abort_yes, 0xA5U);
+    const auto vote2 = abort.vote(2U, abort_yes, 0xA5U);
+    const auto vote3 = abort.vote(3U, abort_yes, 0xA5U);
+    expect(vote1.has_value() && vote2.has_value() && vote3.has_value(), "Bft creates fixed votes");
+    expect(abort.ingest(*vote1).has_value() && abort.ingest(*vote1).has_value(), "Bft duplicate vote is idempotent");
+    auto equivocate = *vote1;
+    equivocate.value = abort_no;
+    expect(!abort.ingest(equivocate), "Bft rejects same-node equivocation");
+    expect(abort.ingest(*vote2).has_value() && !abort.cert(), "Bft waits for quorum");
+    expect(abort.ingest(*vote3).has_value(), "Bft accepts quorum vote");
+    const auto abort_cert = abort.cert();
+    expect(abort_cert.has_value() && abort_cert->votes == 3U && abort_cert->value.abort == 1U,
+           "Bft emits quorum certificate");
+    auto wrong_view = *vote3;
+    wrong_view.view = 3U;
+    expect(!abort.ingest(wrong_view), "Bft rejects wrong view");
+    const auto bft_wire = AbortBft::bytes(*vote1);
+    const auto bft_decoded = AbortBft::parse(bft_wire);
+    expect(bft_decoded.has_value() && bft_decoded->node == 1U && bft_decoded->value.abort == 1U,
+           "Bft parses fixed vote frame");
+    expect(!AbortBft::parse(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), sizeof(AbortBft::Vote)}),
+           "Bft parse rejects null wire span");
 
     arc::dsp::Kalman<float, 1, 1> reckon{};
     reckon.x(0, 0) = 2.0F;

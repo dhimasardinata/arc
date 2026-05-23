@@ -1353,6 +1353,18 @@ Heapless state-based CRDT envelope for UDP, ESP-NOW, or custom fixed-frame swarm
 
 Use this for small fleet state that must converge after radio partitions without a master node. The raw frame ABI is meant for matching Arc firmware builds; product protocols that cross compiler or version boundaries should wrap it in `arc::pack`.
 
+### `arc::Bft<T, Peers>`
+
+Bounded Byzantine-fault-tolerant quorum collection for critical fleet decisions.
+
+- `Bft::faults()` derives the tolerated Byzantine fault count from the fixed peer count, and `Bft::quorum()` returns `2f + 1`.
+- `vote(node, value, digest)` emits a fixed vote frame for the current view/sequence.
+- `ingest(vote)` accepts one vote per node, treats duplicate identical votes as idempotent, and rejects equivocation from the same node.
+- `cert()` returns a quorum certificate once enough peers agree on the same value and digest.
+- `bytes(vote)` and `parse(bytes)` expose the raw fixed ABI for UDP, ESP-NOW, or a caller-owned authenticated envelope.
+
+Use this for small abort/commit/role-transfer decisions where the application already owns peer identity, digest policy, and authentication. It is a bounded vote collector, not a radio task or membership service.
+
 ### `arc::pack::Schema<Fields...>`
 
 Fixed binary record packer for telemetry and configuration frames.
