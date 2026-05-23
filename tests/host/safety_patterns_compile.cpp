@@ -80,6 +80,9 @@ static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
     ControlStep::with<arc::Core::core1>([](ControlState& control, const ControlState& telemetry) {
         control.tick += telemetry.tick;
     });
+    ControlCell::with_edit<TelemetryCell>([](ControlState& control, const ControlState& telemetry) {
+        control.tick += telemetry.tick;
+    });
     arc::with_edit<ControlCell, TelemetryCell>([](ControlState& control, const ControlState& telemetry) {
         control.tick += telemetry.tick;
     });

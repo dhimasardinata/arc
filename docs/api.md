@@ -377,6 +377,8 @@ around as a raw pointer or reference.
 - `arc::snapshots<Refs...>()` copies several read-only static refs into a tuple through the inferred owner core.
 - `StaticRef::with_read(fn)` and `StaticRef::with_write(fn)` scope a single static owner through its own declared core.
 - `StaticRef::with_read<Core>(fn)` and `StaticRef::with_write<Core>(fn)` keep the explicit-core form for boundaries that should not infer from the owner.
+- `StaticRef::with_edit<ReadRefs...>(fn)` scopes the common one-writer, many-reader edit without naming a separate `StaticEdit` contract first.
+- `StaticRef::with_edit<Core, ReadRefs...>(fn)` keeps the explicit-core form for mixed-boundary code.
 - Scoped borrow callbacks may return `void` or an ordinary value, but not a reference or raw pointer.
 - `StaticReads<Refs...>` and `StaticWrites<Refs...>` build `LoanPack` contracts from `StaticRef` owner types instead of raw object addresses.
 - `StaticEdit<WriteRef, ReadRefs...>` builds the common one-writer, many-reader `LoanPack` without manually naming each loan type.

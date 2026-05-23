@@ -990,6 +990,16 @@ concept HasStaticSnapshot = requires { T::template snapshot<Access>(); };
 template <typename T>
 concept HasStaticSnapshotInferred = requires { T::snapshot(); };
 
+template <typename Ref, typename ReadRef>
+concept HasStaticMemberEdit = requires {
+    Ref::template with_edit<ReadRef>([](typename Ref::value_type&, const typename ReadRef::value_type&) {});
+};
+
+template <typename Ref, arc::Core Access, typename ReadRef>
+concept HasStaticMemberEditCore = requires {
+    Ref::template with_edit<Access, ReadRef>([](typename Ref::value_type&, const typename ReadRef::value_type&) {});
+};
+
 template <typename T, arc::Core Access>
 concept HasLoanSnapshot = requires(const T& loan) { loan.template snapshot<Access>(); };
 
@@ -1336,6 +1346,9 @@ void test_static_borrow()
     static_assert(HasStaticSnapshots<arc::Core::core1, Cell, OtherCell>);
     static_assert(!HasStaticSnapshots<arc::Core::core0, Cell, OtherCell>);
     static_assert(HasStaticSnapshotsInferred<Cell, OtherCell>);
+    static_assert(HasStaticMemberEdit<Cell, OtherCell>);
+    static_assert(HasStaticMemberEditCore<Cell, arc::Core::core1, OtherCell>);
+    static_assert(!HasStaticMemberEditCore<Cell, arc::Core::core0, OtherCell>);
     static_assert(std::is_copy_constructible_v<Read>);
     static_assert(!std::is_copy_constructible_v<Write>);
     static_assert(std::is_move_constructible_v<Read>);
@@ -1428,6 +1441,23 @@ void test_static_borrow()
             return state.value;
         });
     expect(explicit_core == 24U && borrow_fixture.value == 24U, "StaticEdit explicit core helper stays available");
+
+    other_borrow_fixture.value = 6U;
+    const auto member_edited = Cell::with_edit<OtherCell>(
+        [](BorrowFixture& state, const BorrowFixture& other) {
+            state.value += other.value;
+            return state.value;
+        });
+    expect(member_edited == 30U && borrow_fixture.value == 30U,
+           "StaticRef member edit scopes one writer with reads");
+
+    const auto explicit_member_edit = Cell::with_edit<arc::Core::core1, OtherCell>(
+        [](BorrowFixture& state, const BorrowFixture& other) {
+            state.value += other.value;
+            return state.value;
+        });
+    expect(explicit_member_edit == 36U && borrow_fixture.value == 36U,
+           "StaticRef explicit member edit stays available");
 
     const auto read_any = ConstCell::read<arc::Core::core0>();
     expect((*read_any).value == 9U, "StaticRef default owner allows readonly global access");

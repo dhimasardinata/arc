@@ -302,6 +302,21 @@ concept HasStaticRefRead = StaticLoanPack<Pack> && StaticRefType<Ref> && Pack::t
 template <typename Pack, typename Ref>
 concept HasStaticRefWrite = StaticLoanPack<Pack> && StaticRefType<Ref> && Pack::template writes<Ref>();
 
+namespace detail {
+
+template <typename WriteLoan, typename... ReadRefs>
+using StaticMemberEditPack = LoanPack<WriteLoan, typename ReadRefs::Read...>;
+
+template <Core Access, typename WriteLoan, typename... ReadRefs>
+concept StaticMemberEditAccess =
+    (StaticRefType<ReadRefs> && ...) && StaticMemberEditPack<WriteLoan, ReadRefs...>::template can_access<Access>();
+
+template <typename Fn, typename WriteRef, typename... ReadRefs>
+concept StaticMemberEditFn =
+    std::invocable<Fn, typename WriteRef::value_type&, const typename ReadRefs::value_type&...>;
+
+}  // namespace detail
+
 template <auto* Object, Core Owner>
 struct StaticRef {
     static_assert(Object != nullptr,
@@ -368,6 +383,26 @@ struct StaticRef {
         detail::require_scoped_borrow_result<Fn, value_type&>();
         auto loan = write<Access>();
         return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
+    }
+
+    template <typename FirstReadRef, typename... ReadRefs, typename Fn>
+        requires writable &&
+        detail::StaticMemberEditAccess<Owner, Write, FirstReadRef, ReadRefs...> &&
+        detail::StaticMemberEditFn<Fn, StaticRef, FirstReadRef, ReadRefs...>
+    static constexpr decltype(auto) with_edit(Fn&& fn)
+    {
+        return detail::StaticMemberEditPack<Write, FirstReadRef, ReadRefs...>::template with<Owner>(
+            std::forward<Fn>(fn));
+    }
+
+    template <Core Access, typename FirstReadRef, typename... ReadRefs, typename Fn>
+        requires writable &&
+        detail::StaticMemberEditAccess<Access, Write, FirstReadRef, ReadRefs...> &&
+        detail::StaticMemberEditFn<Fn, StaticRef, FirstReadRef, ReadRefs...>
+    static constexpr decltype(auto) with_edit(Fn&& fn)
+    {
+        return detail::StaticMemberEditPack<Write, FirstReadRef, ReadRefs...>::template with<Access>(
+            std::forward<Fn>(fn));
     }
 };
 

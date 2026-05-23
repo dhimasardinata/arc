@@ -125,6 +125,18 @@ static_assert(Bad::count == 2U);
         must_contain="static borrow conflict",
     ),
     Case(
+        name="wrong_core_static_member_edit",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+using OtherCell = arc::StaticRef<&other, arc::Core::core1>;
+
+void probe()
+{
+    Cell::with_edit<arc::Core::core0, OtherCell>([](State&, const State&) {});
+}
+""",
+    ),
+    Case(
         name="mixed_owner_inferred_reads",
         source="""
 using Core1Cell = arc::StaticRef<&state, arc::Core::core1>;
@@ -184,6 +196,21 @@ void probe()
 {
     (void)arc::with_reads<Cell, OtherCell>([](const State& current, const State&) {
         return &current;
+    });
+}
+""",
+        must_contain="callback cannot return a reference or pointer",
+    ),
+    Case(
+        name="scoped_member_edit_returns_reference",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+using OtherCell = arc::StaticRef<&other, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::with_edit<OtherCell>([](State& current, const State&) -> State& {
+        return current;
     });
 }
 """,
