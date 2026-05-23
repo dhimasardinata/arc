@@ -62,7 +62,7 @@ static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
 
 [[maybe_unused]] void control_tick()
 {
-    arc::with_write<ControlCell, arc::Core::core1>([](ControlState& state) {
+    ControlCell::with_write([](ControlState& state) {
         state.tick += 1U;
     });
 }

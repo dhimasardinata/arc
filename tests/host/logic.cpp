@@ -1256,13 +1256,24 @@ void test_static_borrow()
     }
     expect(borrow_fixture.value == 12U, "StaticRef mutable loan writes static storage");
 
+    Cell::with_write([](BorrowFixture& state) {
+        state.value = 14U;
+    });
+    const auto scoped_read = Cell::with_read([](const BorrowFixture& state) {
+        return state.value;
+    });
+    expect(scoped_read == 14U, "StaticRef member scoped helpers keep loan use local");
+    const auto explicit_member_read = Cell::with_read<arc::Core::core1>([](const BorrowFixture& state) {
+        return state.value;
+    });
+    expect(explicit_member_read == 14U, "StaticRef explicit member read stays available");
     arc::with_write<Cell, arc::Core::core1>([](BorrowFixture& state) {
         state.value = 14U;
     });
-    const auto scoped_read = arc::with_read<Cell, arc::Core::core1>([](const BorrowFixture& state) {
+    const auto free_read = arc::with_read<Cell, arc::Core::core1>([](const BorrowFixture& state) {
         return state.value;
     });
-    expect(scoped_read == 14U, "StaticRef scoped helpers keep loan use local");
+    expect(free_read == 14U, "StaticRef free scoped helpers stay available");
     const auto reads_sum = arc::with_reads<Cell, OtherCell>(
         [](const BorrowFixture& state, const BorrowFixture& other) {
             return state.value + other.value;

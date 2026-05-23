@@ -52,14 +52,16 @@ Use the loans at the owner boundary:
 ```cpp
 void control_tick()
 {
-    arc::with_write<ControlCell, arc::Core::core1>([](ControlState& state) {
+    ControlCell::with_write([](ControlState& state) {
         state.tick += 1U;
     });
 }
 ```
 
 That is the basic Arc pattern: name the owner, make access mode explicit, and
-let the wrong core or wrong access mode disappear from the overload set.
+let the wrong core or wrong access mode disappear from the overload set. The
+free `arc::with_read<...>` and `arc::with_write<...>` helpers remain available
+when code prefers the helper at the call site instead of on the owner type.
 
 ## Shared Task Contract
 

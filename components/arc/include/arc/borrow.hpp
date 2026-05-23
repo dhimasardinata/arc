@@ -317,11 +317,27 @@ struct StaticRef {
         return StaticLoan<Object, Owner, BorrowMode::read>{typename StaticLoan<Object, Owner, BorrowMode::read>::Key{}};
     }
 
+    template <Core Access = Owner, typename Fn>
+        requires CoreAccess<Access, Owner> && std::invocable<Fn, const value_type&>
+    static constexpr decltype(auto) with_read(Fn&& fn)
+    {
+        const auto loan = read<Access>();
+        return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
+    }
+
     template <Core Access = Owner>
         requires CoreAccess<Access, Owner> && (!std::is_const_v<raw_type>)
     [[nodiscard]] static constexpr StaticLoan<Object, Owner, BorrowMode::mut> write() noexcept
     {
         return StaticLoan<Object, Owner, BorrowMode::mut>{typename StaticLoan<Object, Owner, BorrowMode::mut>::Key{}};
+    }
+
+    template <Core Access = Owner, typename Fn>
+        requires CoreAccess<Access, Owner> && writable && std::invocable<Fn, value_type&>
+    static constexpr decltype(auto) with_write(Fn&& fn)
+    {
+        auto loan = write<Access>();
+        return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
     }
 };
 

@@ -51,6 +51,17 @@ void probe()
 """,
     ),
     Case(
+        name="wrong_core_static_member_write",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    Cell::with_write<arc::Core::core0>([](State&) {});
+}
+""",
+    ),
+    Case(
         name="owner_bound_arrow",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;
