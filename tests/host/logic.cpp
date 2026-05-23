@@ -4914,8 +4914,45 @@ void test_matrix_kalman_storage_swarm()
                adapted_lqr->b(0, 0) > lqr_b(0, 0) &&
                adapted_lqr->residual > 0.0F,
            "LQR adapt identifies model deltas from observed state");
+    const auto recovered_lqr = ScalarLqr::recover(
+        lqr_a,
+        lqr_b,
+        lqr_q,
+        lqr_r,
+        terminal,
+        ScalarLqr::AdaptSample{
+            .previous = ScalarLqr::State{{2.0F}},
+            .input = ScalarLqr::Input{{1.0F}},
+            .observed = ScalarLqr::State{{4.0F}},
+        },
+        {
+            .adapt = {.rate = 0.1F, .limit = 0.5F, .epsilon = 0.001F, .steps = 1U},
+            .trigger = 0.25F,
+            .input_min = -1.0F,
+            .input_max = 1.0F,
+        });
+    expect(recovered_lqr.has_value() && recovered_lqr->adapted && recovered_lqr->saturated &&
+               near(recovered_lqr->input(0, 0), -1.0F) &&
+               recovered_lqr->a(0, 0) > lqr_a(0, 0),
+           "LQR recover adapts plant and clamps control envelope");
+    const auto nominal_lqr = ScalarLqr::recover(
+        lqr_a,
+        lqr_b,
+        lqr_q,
+        lqr_r,
+        terminal,
+        ScalarLqr::AdaptSample{
+            .previous = ScalarLqr::State{{2.0F}},
+            .input = ScalarLqr::Input{{1.0F}},
+            .observed = ScalarLqr::State{{3.0F}},
+        },
+        {.trigger = 0.25F, .input_min = -10.0F, .input_max = 10.0F});
+    expect(nominal_lqr.has_value() && !nominal_lqr->adapted && !nominal_lqr->saturated,
+           "LQR recover keeps nominal plant inside residual envelope");
     expect(!ScalarLqr::adapt(lqr_a, lqr_b, lqr_q, lqr_r, terminal, {}, {.rate = 0.0F}),
            "LQR adapt rejects invalid config");
+    expect(!ScalarLqr::recover(lqr_a, lqr_b, lqr_q, lqr_r, terminal, {}, {.input_min = 1.0F, .input_max = -1.0F}),
+           "LQR recover rejects inverted control envelope");
     expect(!arc::dsp::inverse(arc::dsp::Matrix<float, 1, 1>{{0.0F}}), "Matrix inverse rejects singular");
 
     struct Sink {

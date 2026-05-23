@@ -185,6 +185,23 @@ struct Lqr {
         T residual{};
     };
 
+    struct RecoverConfig {
+        AdaptConfig adapt{};
+        T trigger{T{0}};
+        T input_min{T{-1}};
+        T input_max{T{1}};
+    };
+
+    struct Recovery {
+        A a{};
+        B b{};
+        K k{};
+        Input input{};
+        T residual{};
+        bool adapted{};
+        bool saturated{};
+    };
+
     [[nodiscard]] static Result<K> gain(
         const A& a,
         const B& b,
@@ -240,17 +257,16 @@ struct Lqr {
         const AdaptSample& sample,
         const AdaptConfig config = {}) noexcept
     {
-        if (config.rate <= T{} || config.limit < T{} || config.epsilon <= T{}) {
+        if (!valid(config)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
         auto next_a = a;
         auto next_b = b;
         const auto predicted = add(mul_vec(a, sample.previous), mul_vec(b, sample.input));
-        auto residual = T{};
+        const auto residual = distance(sample.observed, predicted);
         for (std::size_t row = 0U; row < States; ++row) {
             const auto error = sample.observed(row, 0U) - predicted(row, 0U);
-            residual += abs(error);
             for (std::size_t col = 0U; col < States; ++col) {
                 tune(next_a(row, col), sample.previous(col, 0U), error, config);
             }
@@ -263,16 +279,72 @@ struct Lqr {
         return Adapted{.a = next_a, .b = next_b, .k = next_k, .residual = residual};
     }
 
+    [[nodiscard]] static Result<Recovery> recover(
+        const A& a,
+        const B& b,
+        const Q& q,
+        const R& r,
+        const P& terminal,
+        const AdaptSample& sample,
+        const RecoverConfig config = {}) noexcept
+    {
+        if (!valid(config.adapt) || config.trigger < T{} || config.input_min > config.input_max) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        const auto predicted = add(mul_vec(a, sample.previous), mul_vec(b, sample.input));
+        const auto residual = distance(sample.observed, predicted);
+        Recovery out{.a = a, .b = b, .residual = residual};
+        if (residual > config.trigger) {
+            ARC_TRY(adapted, adapt(a, b, q, r, terminal, sample, config.adapt));
+            out.a = adapted.a;
+            out.b = adapted.b;
+            out.k = adapted.k;
+            out.adapted = true;
+        } else {
+            ARC_TRY(k, solve(a, b, q, r, terminal, config.adapt.steps));
+            out.k = k;
+        }
+
+        out.input = act(out.k, sample.observed);
+        for (auto& item : out.input.data) {
+            const auto clamped = clamp(item, config.input_min, config.input_max);
+            out.saturated = out.saturated || clamped != item;
+            item = clamped;
+        }
+        return out;
+    }
+
 private:
     [[nodiscard]] static constexpr T abs(const T value) noexcept
     {
         return value < T{} ? -value : value;
     }
 
-    [[nodiscard]] static constexpr T clamp(const T value, const T limit) noexcept
+    [[nodiscard]] static constexpr T clamp(const T value, const T min, const T max) noexcept
+    {
+        return value < min ? min : value > max ? max
+                                               : value;
+    }
+
+    [[nodiscard]] static constexpr T clamp_limit(const T value, const T limit) noexcept
     {
         return value < -limit ? -limit : value > limit ? limit
                                                        : value;
+    }
+
+    [[nodiscard]] static constexpr bool valid(const AdaptConfig config) noexcept
+    {
+        return config.rate > T{} && config.limit >= T{} && config.epsilon > T{};
+    }
+
+    [[nodiscard]] static T distance(const State& lhs, const State& rhs) noexcept
+    {
+        T out{};
+        for (std::size_t row = 0U; row < States; ++row) {
+            out += abs(lhs(row, 0U) - rhs(row, 0U));
+        }
+        return out;
     }
 
     static constexpr void tune(
@@ -284,7 +356,7 @@ private:
         if (abs(basis) <= config.epsilon) {
             return;
         }
-        coefficient += clamp((config.rate * error) / basis, config.limit);
+        coefficient += clamp_limit((config.rate * error) / basis, config.limit);
     }
 };
 
