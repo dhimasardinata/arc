@@ -215,7 +215,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Ble` gives a NimBLE lifecycle, host-task, GAP, advertising, and scanning bridge without taking over GATT profile design.
 - `arc::net::Udp` is a reusable IPv4/IPv6 Core 0 transport plane when you opt into `#include "arc/udp.hpp"`.
 - `arc::net::EspNow` is a reusable Core 0 raw-radio plane when you opt into `#include "arc/espnow.hpp"`.
-- `arc::usb::DeviceDescriptor`, `Bulk`, `Uvc`, `Uac`, and `Fifo` cover compile-time USB device descriptor fragments and FIFO lane bridges for class stacks kept outside Arc.
+- `arc::usb::DeviceDescriptor`, `Device`, `Bulk`, `Uvc`, `Uac`, and `Fifo` cover compile-time USB descriptors, Chapter 9 setup flow, class setup dispatch, and FIFO lane bridges.
 - `arc::usb::Host` is a lean policy facade for USB host bring-up, polling, and transfers when a board owns the class stack.
 - `arc::nav::Eskf`, `arc::nav::Quaternion`, `arc::ml::Snn`, and `arc::MagLev` cover high-rate inertial fusion, spike-driven inference, and unstable state-space control surfaces.
 
@@ -3343,7 +3343,7 @@ For hardware numbers, build and flash `examples/esp32s3/bench` on an ESP32-S3. T
 - `arc::power::Governor` predicts control-loop slack; actual DFS limits, thermal policy, and PM lock names stay with board policy.
 - `arc::net::Thread` and `arc::ble::Mesh` validate mesh payload surfaces; radio provisioning, stack lifecycle, and credential storage stay with board policy.
 - `arc::SdioSlave` owns coherent queue/finish semantics, and `lease_coherent(...)` ties queue, finish, and RX invalidation to one buffer lifetime; Linux host driver contracts and pin mux stay with board policy.
-- `arc::usb::Device` handles Chapter 9 descriptor/address/configuration flow; endpoint ISR/DWC2 register policy stays below the class descriptor layer.
+- `arc::usb::Device` handles Chapter 9 descriptor/status/address/configuration flow and rejects class/vendor setup packets unless the class driver exposes an explicit setup hook; endpoint ISR/DWC2 register policy stays below the class descriptor layer.
 - `arc::optical::LiFi` produces Manchester optical symbols; analog comparator thresholds, optics, and eye-safety limits stay with board policy.
 - `arc::nav::Eskf`, `arc::ml::Snn`, and `arc::MagLev` are deterministic math/control surfaces, not sensor calibration or plant-identification tools.
 - `arc::vm::Jit` owns bounded BPF-to-word translation; real Xtensa opcode selection and executable-memory policy stay behind the micro-assembler hook.

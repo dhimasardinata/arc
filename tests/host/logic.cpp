@@ -317,6 +317,8 @@ std::uint32_t sdio_finish_timeout{};
 std::uint8_t usb_device_address{};
 std::uint8_t usb_configuration{};
 std::size_t usb_ep0_bytes{};
+std::uint8_t usb_ep0_first{};
+std::uint8_t usb_class_request{};
 std::uint16_t thread_peer_rloc{};
 std::uint16_t ble_mesh_group{};
 arc::IpcCore ipc_core{};
@@ -7761,6 +7763,7 @@ void test_current_goal_surfaces()
         static esp_err_t ep0_write(const std::span<const std::uint8_t> bytes) noexcept
         {
             usb_ep0_bytes = bytes.size();
+            usb_ep0_first = bytes.empty() ? 0U : bytes[0];
             return ESP_OK;
         }
 
@@ -7793,6 +7796,39 @@ void test_current_goal_surfaces()
                    .has_value() &&
                usb_configuration == 1U && usb_ch9.state == arc::usb::DeviceState::configured,
            "USB Device handles Chapter 9 address/configure requests");
+    expect(usb_ch9.setup({.request_type = 0x80U,
+                          .request = static_cast<std::uint8_t>(arc::usb::StandardRequest::get_configuration),
+                          .length = 1U})
+                   .has_value() &&
+               usb_ep0_bytes == 1U && usb_ep0_first == 1U &&
+               usb_ch9.setup({.request_type = 0x80U,
+                              .request = static_cast<std::uint8_t>(arc::usb::StandardRequest::get_status),
+                              .length = 2U})
+                   .has_value() &&
+               usb_ep0_bytes == 2U && usb_ep0_first == 0U,
+           "USB Device reports Chapter 9 status/configuration");
+    expect(!usb_ch9.setup({.request_type = 0x40U,
+                           .request = static_cast<std::uint8_t>(arc::usb::StandardRequest::set_address),
+                           .value = 9U})
+                   .has_value() &&
+               usb_device_address == 5U,
+           "USB Device does not treat class requests as standard requests");
+
+    struct ClassSetup {
+        [[nodiscard]] static consteval auto descriptors() noexcept
+        {
+            return arc::usb::Bulk<0x01U, 0x82U>::descriptors();
+        }
+
+        [[nodiscard]] static arc::Status setup(const arc::usb::SetupPacket packet) noexcept
+        {
+            usb_class_request = packet.request;
+            return arc::ok();
+        }
+    };
+    arc::usb::Device<ClassSetup, UsbDevicePolicy> usb_class{};
+    expect(usb_class.setup({.request_type = 0x40U, .request = 0x22U}).has_value() && usb_class_request == 0x22U,
+           "USB Device dispatches class setup hook");
 
     struct ThreadPolicy {
         static esp_err_t thread_attach(const arc::net::ThreadDataset& dataset) noexcept

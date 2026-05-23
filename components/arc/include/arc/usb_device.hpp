@@ -45,8 +45,12 @@ enum class EndpointAttr : std::uint8_t {
 };
 
 enum class StandardRequest : std::uint8_t {
+    get_status = 0U,
+    clear_feature = 1U,
+    set_feature = 3U,
     set_address = 5U,
     get_descriptor = 6U,
+    get_configuration = 8U,
     set_configuration = 9U,
 };
 
@@ -63,6 +67,21 @@ struct SetupPacket {
     std::uint16_t value{};
     std::uint16_t index{};
     std::uint16_t length{};
+
+    [[nodiscard]] constexpr bool standard() const noexcept
+    {
+        return (request_type & 0x60U) == 0U;
+    }
+
+    [[nodiscard]] constexpr bool in() const noexcept
+    {
+        return (request_type & 0x80U) != 0U;
+    }
+
+    [[nodiscard]] constexpr std::uint8_t recipient() const noexcept
+    {
+        return request_type & 0x1fU;
+    }
 };
 
 struct DeviceDescriptor {
@@ -416,14 +435,22 @@ struct Device {
 
     [[nodiscard]] Status setup(const SetupPacket packet) noexcept
     {
+        if (!packet.standard()) {
+            return class_setup(packet);
+        }
+
         const auto request = static_cast<StandardRequest>(packet.request);
         switch (request) {
+            case StandardRequest::get_status:
+                return get_status(packet.length);
             case StandardRequest::get_descriptor:
                 return descriptor(packet.value, packet.length);
             case StandardRequest::set_address:
                 address = static_cast<std::uint8_t>(packet.value & 0x7fU);
                 state = address == 0U ? DeviceState::powered : DeviceState::addressed;
                 return status(Policy::set_address(address));
+            case StandardRequest::get_configuration:
+                return get_configuration(packet.length);
             case StandardRequest::set_configuration:
                 configuration = static_cast<std::uint8_t>(packet.value & 0xffU);
                 state = configuration == 0U ? DeviceState::addressed : DeviceState::configured;
@@ -434,6 +461,29 @@ struct Device {
     }
 
 private:
+    [[nodiscard]] Status class_setup(const SetupPacket packet) noexcept
+    {
+        if constexpr (requires { ClassDriver::setup(packet); }) {
+            return ClassDriver::setup(packet);
+        } else {
+            return Status{fail(ESP_ERR_NOT_SUPPORTED)};
+        }
+    }
+
+    [[nodiscard]] Status get_status(const std::uint16_t length) noexcept
+    {
+        const std::array<std::uint8_t, 2> bytes{};
+        const auto count = length < bytes.size() ? length : bytes.size();
+        return status(Policy::ep0_write(std::span<const std::uint8_t>{bytes.data(), count}));
+    }
+
+    [[nodiscard]] Status get_configuration(const std::uint16_t length) noexcept
+    {
+        const std::array<std::uint8_t, 1> bytes{configuration};
+        const auto count = length < bytes.size() ? length : bytes.size();
+        return status(Policy::ep0_write(std::span<const std::uint8_t>{bytes.data(), count}));
+    }
+
     [[nodiscard]] Status descriptor(const std::uint16_t value, const std::uint16_t length) noexcept
     {
         const auto type = static_cast<DescriptorType>(value >> 8U);
