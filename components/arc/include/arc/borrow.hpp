@@ -194,7 +194,8 @@ consteval void require_scoped_borrow_result()
 {
     using Result = std::invoke_result_t<Fn, Args...>;
     static_assert(scoped_borrow_result<Result>,
-                  "[ARC ERROR] scoped static borrow callback cannot return a reference or pointer or static loan, including a reference wrapper. "
+                  "[ARC ERROR] scoped static borrow callback cannot return a reference or pointer or static loan, "
+                  "including a reference wrapper or non-owning view. "
                   "Action: copy out a value.");
 }
 

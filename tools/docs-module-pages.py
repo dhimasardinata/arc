@@ -195,7 +195,14 @@ SPECIAL_LANDMARKS = {
         "with_edit",
     ],
     "arc/detail/quant.hpp": ["mul_sat", "add_sat", "round_shift_s64"],
-    "arc/detail/scoped_result.hpp": ["IsReferenceWrapper", "ReferenceWrapperResult", "PlainScopedResult"],
+    "arc/detail/scoped_result.hpp": [
+        "IsReferenceWrapper",
+        "ReferenceWrapperResult",
+        "SpanResult",
+        "StringViewResult",
+        "NonOwningViewResult",
+        "PlainScopedResult",
+    ],
     "arc/migrator.hpp": [
         "FleetPeer",
         "IdleCore",

@@ -74,7 +74,8 @@ consteval void require_scoped_core_result()
 {
     using Result = std::invoke_result_t<Fn, Args...>;
     static_assert(scoped_core_result<Result>,
-                  "[ARC ERROR] scoped core callback cannot return a reference or pointer, including a reference wrapper. "
+                  "[ARC ERROR] scoped core callback cannot return a reference or pointer, including a reference "
+                  "wrapper or non-owning view. "
                   "Action: copy out a value.");
 }
 

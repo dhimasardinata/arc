@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PREFIX = """
 #include <cstdint>
 #include <functional>
+#include <span>
+#include <string_view>
 #include <utility>
 
 #include "arc/borrow.hpp"
@@ -28,9 +30,14 @@ struct State {
     std::uint32_t value{};
 };
 
+struct Text {
+    char value[4]{'a', 'r', 'c', '\\0'};
+};
+
 constinit State state{};
 constinit State other{};
 constinit const State const_state{};
+constinit Text text{};
 
 }  // namespace
 """
@@ -305,6 +312,34 @@ void probe()
         must_contain="reference wrapper",
     ),
     Case(
+        name="scoped_borrow_returns_span",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::with_write([](State& current) {
+        return std::span<State, 1>{&current, 1};
+    });
+}
+""",
+        must_contain="non-owning view",
+    ),
+    Case(
+        name="scoped_borrow_returns_string_view",
+        source="""
+using TextCell = arc::StaticRef<&text, arc::Core::core1>;
+
+void probe()
+{
+    (void)TextCell::with_write([](Text& current) {
+        return std::string_view{current.value, 3};
+    });
+}
+""",
+        must_contain="non-owning view",
+    ),
+    Case(
         name="scoped_borrow_returns_loan",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;
@@ -390,6 +425,19 @@ void probe()
 }
 """,
         must_contain="reference wrapper",
+    ),
+    Case(
+        name="core_local_returns_span",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    (void)local.with<arc::Core::core1>([](State& current) {
+        return std::span<State, 1>{&current, 1};
+    });
+}
+""",
+        must_contain="non-owning view",
     ),
     Case(
         name="wrong_core_local_snapshot",
@@ -498,6 +546,20 @@ void probe()
         must_contain="reference wrapper",
     ),
     Case(
+        name="core_msg_returns_string_view",
+        source="""
+void probe()
+{
+    arc::CoreLocal<Text, arc::Core::core1> local{};
+    const auto msg = local.msg<arc::Core::core0>();
+    (void)msg.with([](const Text& current) {
+        return std::string_view{current.value, 3};
+    });
+}
+""",
+        must_contain="non-owning view",
+    ),
+    Case(
         name="core_local_returns_pointer",
         source="""
 void probe()
@@ -562,6 +624,19 @@ void probe()
 }
 """,
         must_contain="reference wrapper",
+    ),
+    Case(
+        name="scoped_role_returns_span",
+        source="""
+void probe()
+{
+    arc::Roles<arc::Spsc<int, 4>> roles{};
+    (void)roles.with_consumer([](auto& consumer) {
+        return std::span{&consumer, 1};
+    });
+}
+""",
+        must_contain="non-owning view",
     ),
     Case(
         name="scoped_split_returns_endpoint",

@@ -53,7 +53,8 @@ consteval void require_scoped_role_result()
 {
     using Result = std::invoke_result_t<Fn, Args...>;
     static_assert(scoped_role_result<Result, Args...>,
-                  "[ARC ERROR] scoped role callback cannot return an endpoint, reference, or pointer, including a reference wrapper. Action: finish "
+                  "[ARC ERROR] scoped role callback cannot return an endpoint, reference, or pointer, including a "
+                  "reference wrapper or non-owning view. Action: finish "
                   "endpoint use inside the callback and copy out an ordinary value.");
 }
 
