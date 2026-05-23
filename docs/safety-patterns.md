@@ -98,6 +98,9 @@ using Core1Counter = arc::CoreLocal<std::uint32_t, arc::Core::core1>;
 
 Core1Counter counter{41U};
 counter.set<arc::Core::core1>(42U);
+counter.with<arc::Core::core1>([](std::uint32_t& value) {
+    value += 1U;
+});
 
 auto msg = counter.msg<arc::Core::core1, arc::Core::core0>();
 static_assert(decltype(msg)::from == arc::Core::core1);

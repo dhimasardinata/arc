@@ -1391,6 +1391,7 @@ Arc's component interface enables GCC `-Werror=stack-usage=2048` and `-Werror=fr
 Compile-time core ownership tags for state that must not be casually shared across the AMP boundary.
 
 - `CoreLocal<T, Core::core1>` stores the value privately and only exposes `get<Core::core1>()`, `set<Core::core1>(...)`, and `msg<Core::core1, To>()`.
+- `CoreLocal::can_access<Core>()` and `with<Core>(fn)` keep common owner checks and short scoped mutations readable.
 - Access from the wrong core is absent from the overload set, so misuse fails during template checking instead of becoming a runtime convention.
 - `CoreMsg<T, From, To>` carries a copied payload across a queue or mailbox type; only the destination core can call `get<To>()`.
 - `accept<Owner>(msg)` applies an addressed message to the destination local slot.

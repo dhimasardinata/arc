@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <type_traits>
 #include <utility>
 
@@ -104,6 +105,12 @@ public:
     using value_type = T;
     static constexpr Core owner = Owner;
 
+    template <Core Access>
+    [[nodiscard]] static consteval bool can_access() noexcept
+    {
+        return CoreOwner<Access, Owner>;
+    }
+
     constexpr CoreLocal() noexcept(std::is_nothrow_default_constructible_v<T>)
         requires std::default_initializable<T>
     = default;
@@ -139,6 +146,20 @@ public:
     constexpr void set(T value) noexcept(noexcept(std::declval<T&>() = std::move(value)))
     {
         value_ = std::move(value);
+    }
+
+    template <Core Access, typename Fn>
+        requires CoreOwner<Access, Owner> && std::invocable<Fn, T&>
+    constexpr decltype(auto) with(Fn&& fn) & noexcept(noexcept(std::invoke(std::forward<Fn>(fn), value_)))
+    {
+        return std::invoke(std::forward<Fn>(fn), value_);
+    }
+
+    template <Core Access, typename Fn>
+        requires CoreOwner<Access, Owner> && std::invocable<Fn, const T&>
+    constexpr decltype(auto) with(Fn&& fn) const& noexcept(noexcept(std::invoke(std::forward<Fn>(fn), value_)))
+    {
+        return std::invoke(std::forward<Fn>(fn), value_);
     }
 
     template <Core Access, Core To>

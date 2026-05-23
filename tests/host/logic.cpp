@@ -1123,6 +1123,8 @@ void test_core_local()
     using Core1Counter = arc::CoreLocal<std::uint32_t, arc::Core::core1>;
     static_assert(Core1Counter::owner == arc::Core::core1);
     static_assert(arc::CoreOwner<arc::Core::core1, Core1Counter::owner>);
+    static_assert(Core1Counter::can_access<arc::Core::core1>());
+    static_assert(!Core1Counter::can_access<arc::Core::core0>());
     static_assert(HasCoreGet<Core1Counter, arc::Core::core1>);
     static_assert(!HasCoreGet<Core1Counter, arc::Core::core0>);
     static_assert(HasCoreMsg<Core1Counter, arc::Core::core1, arc::Core::core0>);
@@ -1132,6 +1134,11 @@ void test_core_local()
     expect(counter.get<arc::Core::core1>() == 41U, "CoreLocal owner reads local state");
     counter.set<arc::Core::core1>(42U);
     expect(counter.get<arc::Core::core1>() == 42U, "CoreLocal owner writes local state");
+    const auto scoped = counter.with<arc::Core::core1>([](std::uint32_t& value) {
+        value += 1U;
+        return value;
+    });
+    expect(scoped == 43U && counter.get<arc::Core::core1>() == 43U, "CoreLocal scoped access updates local state");
 
     const auto msg = counter.msg<arc::Core::core1, arc::Core::core0>();
     using Msg = decltype(msg);
@@ -1139,11 +1146,11 @@ void test_core_local()
     static_assert(Msg::to == arc::Core::core0);
     static_assert(HasMsgGet<Msg, arc::Core::core0>);
     static_assert(!HasMsgGet<Msg, arc::Core::core1>);
-    expect(msg.get<arc::Core::core0>() == 42U, "CoreMsg destination reads payload");
+    expect(msg.get<arc::Core::core0>() == 43U, "CoreMsg destination reads payload");
 
     arc::CoreLocal<std::uint32_t, arc::Core::core0> mirror{};
     mirror.accept<arc::Core::core0>(msg);
-    expect(mirror.get<arc::Core::core0>() == 42U, "CoreLocal accepts addressed message");
+    expect(mirror.get<arc::Core::core0>() == 43U, "CoreLocal accepts addressed message");
 }
 
 struct BorrowFixture {
