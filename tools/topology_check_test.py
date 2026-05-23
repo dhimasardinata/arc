@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import tempfile
 import unittest
@@ -96,6 +97,19 @@ class TopologyCheckTest(unittest.TestCase):
         self.assertIn('pack_0_unresolved_1["CONFIG_LED"]', result.stdout)
         self.assertIn("pack_0 -->|1| gpio_4", result.stdout)
         self.assertIn("pack_0 -. unresolved .-> pack_0_unresolved_1", result.stdout)
+        self.assertNotIn("arc topology check: OK", result.stdout)
+
+    def test_json_format_emits_machine_readable_evidence(self) -> None:
+        result = self.run_tool("struct Board { using pins = arc::Pins<4, -1, CONFIG_LED>; };\n", "--format", "json")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["summary"], {"gpio": 1, "packs": 1, "sentinels": 1, "unresolved": 1})
+        self.assertEqual(payload["packs"][0]["line"], 1)
+        self.assertEqual(payload["packs"][0]["pins"], [4, -1])
+        self.assertEqual(payload["packs"][0]["gpio"], [4])
+        self.assertEqual(payload["packs"][0]["sentinels"], [-1])
+        self.assertEqual(payload["packs"][0]["unresolved"], ["CONFIG_LED"])
         self.assertNotIn("arc topology check: OK", result.stdout)
 
 

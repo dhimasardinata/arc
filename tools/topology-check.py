@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -13,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PINS_RE = re.compile(r"\barc::Pins\s*<(?P<body>[^>]*)>", re.MULTILINE | re.DOTALL)
 GPIO_NUM_RE = re.compile(r"^GPIO_NUM_(?P<pin>\d+|NC)$")
 INT_SUFFIX_RE = re.compile(r"(ull|llu|ul|lu|u|ll|l)$", re.IGNORECASE)
-OUTPUT_FORMATS = ("text", "report", "dot", "mermaid")
+OUTPUT_FORMATS = ("text", "report", "dot", "mermaid", "json")
 
 
 @dataclass(frozen=True)
@@ -234,6 +235,29 @@ def print_mermaid(packs: list[Pack]) -> None:
             print(f"  {pack_id} -. unresolved .-> {node_id}")
 
 
+def print_json(packs: list[Pack]) -> None:
+    payload = {
+        "packs": [
+            {
+                "path": display(pack.path),
+                "line": pack.line,
+                "pins": list(pack.pins),
+                "gpio": [pin for pin in pack.pins if pin >= 0],
+                "sentinels": [pin for pin in pack.pins if pin < 0],
+                "unresolved": list(pack.unresolved),
+            }
+            for pack in packs
+        ],
+        "summary": {
+            "packs": len(packs),
+            "gpio": sum(1 for pack in packs for pin in pack.pins if pin >= 0),
+            "sentinels": sum(1 for pack in packs for pin in pack.pins if pin < 0),
+            "unresolved": sum(len(pack.unresolved) for pack in packs),
+        },
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Check literal arc::Pins topology packs")
     parser.add_argument(
@@ -250,7 +274,7 @@ def main(argv: list[str]) -> int:
         "--format",
         choices=OUTPUT_FORMATS,
         default="text",
-        help="output style when not quiet: text list, beginner report, Graphviz DOT, or Mermaid",
+        help="output style when not quiet: text list, beginner report, Graphviz DOT, Mermaid, or JSON",
     )
     args = parser.parse_args(argv)
 
@@ -275,6 +299,8 @@ def main(argv: list[str]) -> int:
             print_dot(packs)
         elif args.format == "mermaid":
             print_mermaid(packs)
+        elif args.format == "json":
+            print_json(packs)
         else:
             print_text(packs)
 
@@ -283,7 +309,7 @@ def main(argv: list[str]) -> int:
             print(problem, file=sys.stderr)
         return 1
 
-    if args.quiet or args.format not in ("dot", "mermaid"):
+    if args.quiet or args.format not in ("dot", "mermaid", "json"):
         print(f"arc topology check: OK ({len(packs)} pin packs)")
     return 0
 
