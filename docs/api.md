@@ -374,6 +374,7 @@ around as a raw pointer or reference.
 - `HasLoan`, `HasStaticRead`, and `HasStaticWrite` let function templates require a loan pack before accepting a task contract.
 - `HasStaticRefRead` and `HasStaticRefWrite` are the same query shape when the contract should stay expressed in `StaticRef` owner types.
 - `StaticReadable`, `StaticWritable`, `LoanReadable`, and `LoanWritable` let templates check whether a static owner or loan can be used from a specific core.
+- `with_read<Ref, Core>(fn)` and `with_write<Ref, Core>(fn)` keep a loan scoped to one callback when code should not hold it across a larger block.
 - `loans_ok<Loans...>()` lets compile-contract tests check the same alias rule without intentionally failing the build.
 - Access from the wrong core owner is absent from the overload set.
 - `write<...>()` is absent for const storage, so readonly global state cannot be accidentally made mutable.

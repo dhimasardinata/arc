@@ -52,8 +52,9 @@ Use the loans at the owner boundary:
 ```cpp
 void control_tick()
 {
-    auto state = ControlCell::write<arc::Core::core1>();
-    state->tick += 1U;
+    arc::with_write<ControlCell, arc::Core::core1>([](ControlState& state) {
+        state.tick += 1U;
+    });
 }
 ```
 

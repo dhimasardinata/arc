@@ -1228,6 +1228,14 @@ void test_static_borrow()
     }
     expect(borrow_fixture.value == 12U, "StaticRef mutable loan writes static storage");
 
+    arc::with_write<Cell, arc::Core::core1>([](BorrowFixture& state) {
+        state.value = 14U;
+    });
+    const auto scoped_read = arc::with_read<Cell, arc::Core::core1>([](const BorrowFixture& state) {
+        return state.value;
+    });
+    expect(scoped_read == 14U, "StaticRef scoped helpers keep loan use local");
+
     const auto read_any = ConstCell::read<arc::Core::core0>();
     expect((*read_any).value == 9U, "StaticRef default owner allows readonly global access");
 }

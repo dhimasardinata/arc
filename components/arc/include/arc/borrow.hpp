@@ -3,7 +3,9 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <type_traits>
+#include <utility>
 
 #include "arc/task.hpp"
 
@@ -299,5 +301,21 @@ using StaticReads = LoanPack<typename Refs::Read...>;
 template <StaticRefType... Refs>
     requires((Refs::writable && ...))
 using StaticWrites = LoanPack<typename Refs::Write...>;
+
+template <StaticRefType Ref, Core Access = Ref::owner, typename Fn>
+    requires StaticReadable<Ref, Access> && std::invocable<Fn, const typename Ref::value_type&>
+constexpr decltype(auto) with_read(Fn&& fn)
+{
+    const auto loan = Ref::template read<Access>();
+    return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
+}
+
+template <StaticRefType Ref, Core Access = Ref::owner, typename Fn>
+    requires StaticWritable<Ref, Access> && std::invocable<Fn, typename Ref::value_type&>
+constexpr decltype(auto) with_write(Fn&& fn)
+{
+    auto loan = Ref::template write<Access>();
+    return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
+}
 
 }  // namespace arc
