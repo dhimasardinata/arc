@@ -991,6 +991,16 @@ template <typename T>
 concept HasStaticSnapshotInferred = requires { T::snapshot(); };
 
 template <typename Ref, typename ReadRef>
+concept HasStaticMemberReads = requires {
+    Ref::template with_reads<ReadRef>([](const typename Ref::value_type&, const typename ReadRef::value_type&) {});
+};
+
+template <typename Ref, arc::Core Access, typename ReadRef>
+concept HasStaticMemberReadsCore = requires {
+    Ref::template with_reads<Access, ReadRef>([](const typename Ref::value_type&, const typename ReadRef::value_type&) {});
+};
+
+template <typename Ref, typename ReadRef>
 concept HasStaticMemberEdit = requires {
     Ref::template with_edit<ReadRef>([](typename Ref::value_type&, const typename ReadRef::value_type&) {});
 };
@@ -1346,6 +1356,9 @@ void test_static_borrow()
     static_assert(HasStaticSnapshots<arc::Core::core1, Cell, OtherCell>);
     static_assert(!HasStaticSnapshots<arc::Core::core0, Cell, OtherCell>);
     static_assert(HasStaticSnapshotsInferred<Cell, OtherCell>);
+    static_assert(HasStaticMemberReads<Cell, OtherCell>);
+    static_assert(HasStaticMemberReadsCore<Cell, arc::Core::core1, OtherCell>);
+    static_assert(!HasStaticMemberReadsCore<Cell, arc::Core::core0, OtherCell>);
     static_assert(HasStaticMemberEdit<Cell, OtherCell>);
     static_assert(HasStaticMemberEditCore<Cell, arc::Core::core1, OtherCell>);
     static_assert(!HasStaticMemberEditCore<Cell, arc::Core::core0, OtherCell>);
@@ -1411,6 +1424,16 @@ void test_static_borrow()
         return state.value;
     });
     expect(free_read == 14U, "StaticRef free scoped helpers stay available");
+    const auto member_reads_sum = Cell::with_reads<OtherCell>(
+        [](const BorrowFixture& state, const BorrowFixture& other) {
+            return state.value + other.value;
+        });
+    expect(member_reads_sum == 27U, "StaticRef member reads scope readonly refs");
+    const auto explicit_member_reads_sum = Cell::with_reads<arc::Core::core1, OtherCell>(
+        [](const BorrowFixture& state, const BorrowFixture& other) {
+            return state.value + other.value;
+        });
+    expect(explicit_member_reads_sum == 27U, "StaticRef explicit member reads stay available");
     const auto reads_sum = arc::with_reads<Cell, OtherCell>(
         [](const BorrowFixture& state, const BorrowFixture& other) {
             return state.value + other.value;

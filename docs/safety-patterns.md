@@ -109,6 +109,9 @@ void control_step()
     arc::with_reads<ControlCell, TelemetryCell>([](const ControlState& control, const ControlState& telemetry) {
         static_cast<void>(control.tick + telemetry.tick);
     });
+    ControlCell::with_reads<TelemetryCell>([](const ControlState& control, const ControlState& telemetry) {
+        static_cast<void>(control.tick + telemetry.tick);
+    });
     auto copies = arc::snapshots<ControlCell, TelemetryCell>();
     static_cast<void>(copies);
     ControlCell::with_edit<TelemetryCell>([](ControlState& control, const ControlState& telemetry) {

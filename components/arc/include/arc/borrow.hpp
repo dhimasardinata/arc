@@ -307,9 +307,20 @@ namespace detail {
 template <typename WriteLoan, typename... ReadRefs>
 using StaticMemberEditPack = LoanPack<WriteLoan, typename ReadRefs::Read...>;
 
+template <typename ReadLoan, typename... ReadRefs>
+using StaticMemberReadPack = LoanPack<ReadLoan, typename ReadRefs::Read...>;
+
+template <Core Access, typename ReadLoan, typename... ReadRefs>
+concept StaticMemberReadAccess =
+    (StaticRefType<ReadRefs> && ...) && StaticMemberReadPack<ReadLoan, ReadRefs...>::template can_access<Access>();
+
 template <Core Access, typename WriteLoan, typename... ReadRefs>
 concept StaticMemberEditAccess =
     (StaticRefType<ReadRefs> && ...) && StaticMemberEditPack<WriteLoan, ReadRefs...>::template can_access<Access>();
+
+template <typename Fn, typename SelfRef, typename... ReadRefs>
+concept StaticMemberReadFn =
+    std::invocable<Fn, const typename SelfRef::value_type&, const typename ReadRefs::value_type&...>;
 
 template <typename Fn, typename WriteRef, typename... ReadRefs>
 concept StaticMemberEditFn =
@@ -367,6 +378,24 @@ struct StaticRef {
         detail::require_scoped_borrow_result<Fn, const value_type&>();
         const auto loan = read<Access>();
         return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
+    }
+
+    template <typename FirstReadRef, typename... ReadRefs, typename Fn>
+        requires detail::StaticMemberReadAccess<Owner, Read, FirstReadRef, ReadRefs...> &&
+        detail::StaticMemberReadFn<Fn, StaticRef, FirstReadRef, ReadRefs...>
+    static constexpr decltype(auto) with_reads(Fn&& fn)
+    {
+        return detail::StaticMemberReadPack<Read, FirstReadRef, ReadRefs...>::template with<Owner>(
+            std::forward<Fn>(fn));
+    }
+
+    template <Core Access, typename FirstReadRef, typename... ReadRefs, typename Fn>
+        requires detail::StaticMemberReadAccess<Access, Read, FirstReadRef, ReadRefs...> &&
+        detail::StaticMemberReadFn<Fn, StaticRef, FirstReadRef, ReadRefs...>
+    static constexpr decltype(auto) with_reads(Fn&& fn)
+    {
+        return detail::StaticMemberReadPack<Read, FirstReadRef, ReadRefs...>::template with<Access>(
+            std::forward<Fn>(fn));
     }
 
     template <Core Access = Owner>

@@ -149,6 +149,18 @@ void probe()
 """,
     ),
     Case(
+        name="wrong_core_static_member_reads",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+using OtherCell = arc::StaticRef<&other, arc::Core::core1>;
+
+void probe()
+{
+    Cell::with_reads<arc::Core::core0, OtherCell>([](const State&, const State&) {});
+}
+""",
+    ),
+    Case(
         name="mixed_owner_inferred_snapshots",
         source="""
 using Core1Cell = arc::StaticRef<&state, arc::Core::core1>;
@@ -195,6 +207,21 @@ using OtherCell = arc::StaticRef<&other, arc::Core::core1>;
 void probe()
 {
     (void)arc::with_reads<Cell, OtherCell>([](const State& current, const State&) {
+        return &current;
+    });
+}
+""",
+        must_contain="callback cannot return a reference or pointer",
+    ),
+    Case(
+        name="scoped_member_reads_returns_pointer",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+using OtherCell = arc::StaticRef<&other, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::with_reads<OtherCell>([](const State& current, const State&) {
         return &current;
     });
 }
