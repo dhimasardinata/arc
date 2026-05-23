@@ -4411,6 +4411,11 @@ void test_text()
     expect(text.json(std::string_view{out.data(), 3U}) &&
                std::string_view{text.view()} == "a\\\"b",
            "Text json preserves in-place expansion");
+    text.clear();
+    expect(text.push('x') && text.append("a\"b"), "Text json shifted overlap seed");
+    text.clear();
+    expect(!text.json(std::string_view{out.data() + 1U, 3U}) && text.empty(),
+           "Text json rejects shifted overlap");
 
     std::array<char, 4> small{};
     arc::Text tiny{std::span(small)};

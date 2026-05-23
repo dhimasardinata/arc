@@ -202,6 +202,10 @@ struct Text {
         }
 
         const auto start = pos_;
+        if (bytes != 0U && shifted_overlap(out_.data() + start, bytes, value.data(), value.size())) {
+            return false;
+        }
+
         auto pos = start + bytes;
         for (std::size_t i = value.size(); i != 0U; --i) {
             const auto ch = value[i - 1U];
@@ -251,6 +255,25 @@ private:
     [[nodiscard]] static constexpr char hex_digit(const std::uint8_t value) noexcept
     {
         return static_cast<char>(value < 10U ? ('0' + value) : ('a' + (value - 10U)));
+    }
+
+    [[nodiscard]] static bool shifted_overlap(
+        const char* const out,
+        const std::size_t out_bytes,
+        const char* const in,
+        const std::size_t in_bytes) noexcept
+    {
+        if (out_bytes == 0U || in_bytes == 0U || out == nullptr || in == nullptr || out == in) {
+            return false;
+        }
+        const auto out_first = reinterpret_cast<std::uintptr_t>(out);
+        const auto in_first = reinterpret_cast<std::uintptr_t>(in);
+        if (out_bytes > UINTPTR_MAX - out_first || in_bytes > UINTPTR_MAX - in_first) {
+            return true;
+        }
+        const auto out_last = out_first + out_bytes;
+        const auto in_last = in_first + in_bytes;
+        return out_first < in_last && in_first < out_last;
     }
 
     std::span<char> out_{};
