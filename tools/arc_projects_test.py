@@ -94,6 +94,68 @@ class ArcProjectsTest(unittest.TestCase):
             ],
         )
 
+    def test_report_includes_build_commands_and_target_summary(self) -> None:
+        projects = [
+            arc_projects.ArcProject(Path("/repo"), ".", "root", "esp32s3", False),
+            arc_projects.ArcProject(
+                Path("/repo/examples/esp32s3/udp"),
+                "examples/esp32s3/udp",
+                "example",
+                "esp32s3",
+                False,
+            ),
+            arc_projects.ArcProject(
+                Path("/repo/examples/esp32s31/amp"),
+                "examples/esp32s31/amp",
+                "example",
+                "esp32s31",
+                True,
+            ),
+        ]
+
+        payload = arc_projects.report(projects)
+
+        self.assertEqual(payload["summary"]["projects"], 3)
+        self.assertEqual(payload["summary"]["targets"], {"esp32s3": 2, "esp32s31": 1})
+        self.assertEqual(payload["projects"][0]["build_command"], "idf.py build")
+        self.assertEqual(payload["projects"][1]["build_command"], "idf.py -C examples/esp32s3/udp build")
+        self.assertTrue(payload["projects"][2]["experimental"])
+
+    def test_cli_report_groups_projects_for_humans(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            add_root_project(root)
+            add_project(root, "examples/esp32s3/udp")
+            add_project(root, "examples/esp32s31/amp")
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                code = arc_projects.main(["--root", str(root), "--format", "report"])
+
+        text = stdout.getvalue()
+        self.assertEqual(code, 0)
+        self.assertIn("arc projects report", text)
+        self.assertIn("- projects: 3", text)
+        self.assertIn("  - esp32s3: 2", text)
+        self.assertIn("  - esp32s31: 1", text)
+        self.assertIn("  - . (root, esp32s3)", text)
+        self.assertIn("    build: idf.py build", text)
+        self.assertIn("  - examples/esp32s31/amp (example, esp32s31 experimental)", text)
+
+    def test_cli_format_json_includes_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            add_project(root, "examples/esp32s3/udp")
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                code = arc_projects.main(["--root", str(root), "--examples", "--format", "json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["summary"]["projects"], 1)
+        self.assertEqual(payload["projects"][0]["build_command"], "idf.py -C examples/esp32s3/udp build")
+
 
 if __name__ == "__main__":
     unittest.main()

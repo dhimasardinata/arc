@@ -14,6 +14,9 @@ idf.py -p /dev/ttyACM0 flash monitor
 ```
 
 Use the matching `source ./env.fish` form if your shell is fish.
+Run `./tools/arc-projects.py --buildable --format report` from the repository
+root when you want the discovered project list grouped with target, experiment
+status, and build command.
 
 ## ESP32-S3 Examples
 

@@ -26,6 +26,12 @@ Build a focused ESP32-S3 example:
 idf.py -C examples/esp32s3/udp build
 ```
 
+List buildable projects with the command that builds each one:
+
+```sh
+./tools/arc-projects.py --buildable --format report
+```
+
 ## Fast Local Checks
 
 For source changes that do not require flashing hardware, start with:
