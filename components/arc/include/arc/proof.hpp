@@ -13,6 +13,7 @@ enum class Kind : std::uint8_t {
     no_block,
     no_null,
     static_life,
+    misra_subset,
 };
 
 struct Claim {
@@ -57,6 +58,9 @@ using NoNull = Fact<Kind::no_null, Subject>;
 
 template <std::uint32_t Subject>
 using StaticLife = Fact<Kind::static_life, Subject>;
+
+template <std::uint32_t Subject>
+using MisraSubset = Fact<Kind::misra_subset, Subject>;
 
 template <typename T>
 concept ProofFact = requires {
@@ -149,6 +153,58 @@ struct Certificate {
     [[nodiscard]] static consteval bool covers() noexcept
     {
         return (true && ... && Pack::template has<Required>());
+    }
+};
+
+template <typename T>
+concept ProofCertificate = requires {
+    { T::cycles } -> std::convertible_to<std::uint32_t>;
+    { T::count } -> std::convertible_to<std::size_t>;
+    { T::header() } -> std::same_as<CertificateHeader>;
+    T::claims();
+};
+
+namespace detail {
+
+[[nodiscard]] consteval std::uint32_t proof_max(const std::uint32_t first) noexcept
+{
+    return first;
+}
+
+template <typename... Rest>
+[[nodiscard]] consteval std::uint32_t proof_max(const std::uint32_t first, const Rest... rest) noexcept
+{
+    const auto tail = proof_max(rest...);
+    return first > tail ? first : tail;
+}
+
+}  // namespace detail
+
+template <ProofCertificate... Certificates>
+struct SafetyCase {
+    static_assert(sizeof...(Certificates) > 0U,
+                  "[ARC ERROR] arc::proof::SafetyCase needs at least one certificate. Action: add proof::Certificate entries.");
+
+    static constexpr std::size_t certificates = sizeof...(Certificates);
+    static constexpr std::size_t total_claims = (std::size_t{} + ... + Certificates::count);
+    static constexpr std::uint32_t max_cycles = detail::proof_max(Certificates::cycles...);
+
+    [[nodiscard]] static consteval std::array<CertificateHeader, certificates> headers() noexcept
+    {
+        return {Certificates::header()...};
+    }
+
+    template <Kind... Required>
+    [[nodiscard]] static consteval bool covers() noexcept
+    {
+        return (true && ... && has<Required>());
+    }
+
+private:
+    template <Kind Target>
+    [[nodiscard]] static consteval bool has() noexcept
+    {
+        return (Certificates::template covers<Target>() || ...);
     }
 };
 

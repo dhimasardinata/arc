@@ -6063,6 +6063,25 @@ void test_probe_stats()
                   arc::proof::Kind::deadline,
                   arc::proof::Kind::no_heap,
                   arc::proof::Kind::static_life>());
+    using AnalysisProof = arc::proof::Pack<
+        5'000U,
+        arc::proof::NoBlock<42U>,
+        arc::proof::NoNull<42U>,
+        arc::proof::MisraSubset<42U>>;
+    using AnalysisCertificate = arc::proof::Certificate<AnalysisProof, 3U>;
+    using SafetyEvidence = arc::proof::SafetyCase<ControlCertificate, AnalysisCertificate>;
+    static_assert(SafetyEvidence::certificates == 2U);
+    static_assert(SafetyEvidence::total_claims == 7U);
+    static_assert(SafetyEvidence::max_cycles == 10'000U);
+    static_assert(SafetyEvidence::covers<
+                  arc::proof::Kind::deadline,
+                  arc::proof::Kind::no_heap,
+                  arc::proof::Kind::no_block,
+                  arc::proof::Kind::no_null,
+                  arc::proof::Kind::misra_subset>());
+    constexpr auto safety_headers = SafetyEvidence::headers();
+    static_assert(safety_headers[0].claims == 4U);
+    static_assert(safety_headers[1].version == 3U);
     expect(proof_claims.size() == 4U && proof_claims[1].subject == 17U && proof_claims[3].subject == 18U,
            "Proof pack carries compile-time workload claims");
 
