@@ -1622,6 +1622,20 @@ void test_mqtt()
     expect(std::memcmp(view->topic.data(), "arc/topic", view->topic.size()) == 0, "MQTT publish topic");
     expect(view->payload.size() == payload.size(), "MQTT publish payload size");
     expect(std::memcmp(view->payload.data(), payload.data(), payload.size()) == 0, "MQTT publish payload");
+    std::array<std::uint8_t, 96> in_place_publish{0xdeU, 0xadU, 0xbeU, 0xefU, 0x5aU};
+    const std::array<std::uint8_t, 5> in_place_payload{0xdeU, 0xadU, 0xbeU, 0xefU, 0x5aU};
+    const auto in_place_mqtt = arc::net::Mqtt::publish(
+        std::span(in_place_publish),
+        "arc/in-place",
+        std::span(in_place_publish).first(in_place_payload.size()));
+    expect(in_place_mqtt.has_value(), "MQTT publish in-place encodes");
+    const auto in_place_packet = arc::net::Mqtt::parse(*in_place_mqtt);
+    expect(in_place_packet.has_value(), "MQTT publish in-place parses");
+    const auto in_place_view = arc::net::Mqtt::view(*in_place_packet);
+    expect(in_place_view.has_value() &&
+               in_place_view->payload.size() == in_place_payload.size() &&
+               std::memcmp(in_place_view->payload.data(), in_place_payload.data(), in_place_payload.size()) == 0,
+           "MQTT publish preserves in-place payload");
 
     const std::array subscriptions{
         arc::net::MqttSubscription{.filter = "arc/+/status", .qos = arc::net::MqttQos::at_least},

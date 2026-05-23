@@ -199,22 +199,31 @@ struct Mqtt {
             flags |= 0x01U;
         }
 
+        const auto header = header_bytes(remaining);
+        const auto payload_pos = header + 2U + *topic + (qos != 0U ? 2U : 0U);
+        if (!valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (out.size() < header + remaining) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        if (cfg.bytes != 0U) {
+            std::memmove(out.data() + payload_pos, cfg.data, cfg.bytes);
+        }
+
         auto packet = begin(out, static_cast<std::uint8_t>(MqttType::publish), flags, remaining);
         if (!packet) {
             return fail(packet.error());
         }
 
         auto frame = *packet;
-        auto pos = header_bytes(remaining);
+        auto pos = header;
         pos += write_string(frame, pos, cfg.topic);
 
         if (qos != 0U) {
             pos += write_u16(frame, pos, cfg.packet);
         }
-        if (cfg.bytes != 0U) {
-            std::memcpy(frame.data() + pos, cfg.data, cfg.bytes);
-            pos += cfg.bytes;
-        }
+        pos += cfg.bytes;
         return frame.first(pos);
     }
 
