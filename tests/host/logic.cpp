@@ -118,6 +118,7 @@
 #include "arc/scrub.hpp"
 #include "arc/simd.hpp"
 #include "arc/sdio_slave.hpp"
+#include "arc/sim.hpp"
 #include "arc/snn.hpp"
 #include "arc/stack.hpp"
 #include "arc/store.hpp"
@@ -1178,6 +1179,72 @@ void test_lockstep()
     LockstepBareHaltPolicy::halts = 0U;
     const auto bare = Check::commit<LockstepBareHaltPolicy>(agreed, {.left = 10, .right = -11}, 9U);
     expect(!bare && LockstepBareHaltPolicy::halts == 1U, "Lockstep supports a bare halt policy");
+}
+
+struct SimTrace {
+    static inline int drive_pin{};
+    static inline bool drive_level{};
+    static inline std::size_t drive_writes{};
+    static inline int sense_pin{};
+    static inline bool sense_level{};
+    static inline std::size_t sense_reads{};
+
+    static void drive(const int pin, const bool level) noexcept
+    {
+        drive_pin = pin;
+        drive_level = level;
+        ++drive_writes;
+    }
+
+    static void sense(const int pin, const bool level) noexcept
+    {
+        sense_pin = pin;
+        sense_level = level;
+        ++sense_reads;
+    }
+};
+
+void test_sim()
+{
+    arc::sim::Fifo<int, 3> fifo{};
+    static_assert(decltype(fifo)::cap() == 3U);
+    int value{};
+    expect(fifo.empty() && !fifo.try_pop(value), "Sim Fifo starts empty");
+    const std::array input{1, 2, 3};
+    expect(fifo.push(std::span<const int>{input}) == 3U && fifo.full(), "Sim Fifo batch push fills");
+    expect(!fifo.try_push(4), "Sim Fifo full rejects");
+    std::array<int, 2> partial{};
+    expect(fifo.pop(std::span<int>{partial}) == 2U && partial[0] == 1 && partial[1] == 2,
+           "Sim Fifo batch pop preserves order");
+    expect(fifo.try_push(4) && fifo.size() == 2U, "Sim Fifo wraps after pop");
+    std::array<int, 3> drained{};
+    expect(fifo.pop(std::span<int>{drained}) == 2U && drained[0] == 3 && drained[1] == 4 && fifo.empty(),
+           "Sim Fifo drains wrapped entries");
+
+    using Led = arc::sim::Drive<4, SimTrace>;
+    Led::configured = false;
+    Led::level = false;
+    SimTrace::drive_writes = 0U;
+    Led::out();
+    Led::hi();
+    Led::toggle();
+    Led::write<true>();
+    expect(Led::configured && Led::high() && SimTrace::drive_pin == 4 && SimTrace::drive_level &&
+               SimTrace::drive_writes == 3U,
+           "Sim Drive traces static pin output");
+
+    using Button = arc::sim::Sense<5, 4, SimTrace>;
+    Button::configured = false;
+    Button::clear();
+    SimTrace::sense_reads = 0U;
+    Button::in();
+    const std::array samples{true, false, true};
+    expect(Button::feed(std::span<const bool>{samples}) == samples.size(), "Sim Sense queues input samples");
+    expect(Button::tick() && Button::high() && SimTrace::sense_pin == 5 && SimTrace::sense_level,
+           "Sim Sense consumes first FIFO sample");
+    expect(Button::tick() && Button::low(), "Sim Sense consumes low sample");
+    expect(Button::tick() && Button::high() && !Button::tick() && SimTrace::sense_reads == 3U,
+           "Sim Sense reports FIFO exhaustion");
 }
 
 void test_checked_spsc()
@@ -8509,6 +8576,7 @@ int main()
     test_spsc();
     test_core_local();
     test_lockstep();
+    test_sim();
     test_checked_spsc();
     test_mpsc_single();
     test_compact_mpsc();

@@ -283,6 +283,17 @@ Typed commit point for dual-core redundant control output.
 
 Use this at the end of paired Core 0/Core 1 control ticks, after both sides computed from identical inputs. Board policy should decide whether the mismatch becomes an IPC halt, postmortem capture, relay shutdown, or another product-specific safety action.
 
+### `arc::sim`
+
+Host-side simulator primitives for app logic tests.
+
+- `sim::Fifo<T, N>` is a fixed-capacity ring for trivially copyable host samples.
+- `sim::Drive<Pin, Trace>` mirrors the static `Drive` shape with `out()`, `hi()`, `lo()`, `toggle()`, and `high()`, then calls optional `Trace::drive(pin, level)`.
+- `sim::Sense<Pin, N, Trace>` owns a fixed boolean input FIFO. `feed(...)` queues samples, `tick()` consumes one sample, and `high()` / `low()` read the current simulated pin level.
+- `sim::StdoutTrace` prints drive/sense transitions to stdout for host runs; custom trace policies can store deterministic evidence instead.
+
+Use this when a Linux/macOS host build needs to exercise board logic without ESP32 dedicated GPIO registers. Keep the simulator aliases in the host target; firmware targets should continue to use the real `arc::Drive` and `arc::Sense` headers.
+
 ### `arc::stack`
 
 Compile-time stack sizing helpers for Arc tasks.

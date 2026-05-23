@@ -33,6 +33,7 @@
 #include "arc/rtos.hpp"
 #include "arc/sdk.hpp"
 #include "arc/seq.hpp"
+#include "arc/sim.hpp"
 #include "arc/sketch.hpp"
 #include "arc/soc/target.hpp"
 #include "arc/spsc.hpp"

@@ -1,0 +1,256 @@
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdio>
+#include <span>
+#include <type_traits>
+
+#include "arc/result.hpp"
+
+namespace arc::sim {
+
+struct QuietTrace {
+    static void drive(int, bool) noexcept {}
+    static void sense(int, bool) noexcept {}
+};
+
+struct StdoutTrace {
+    static void drive(const int pin, const bool level) noexcept
+    {
+        std::printf("arc-sim drive pin=%d level=%u\n", pin, level ? 1U : 0U);
+    }
+
+    static void sense(const int pin, const bool level) noexcept
+    {
+        std::printf("arc-sim sense pin=%d level=%u\n", pin, level ? 1U : 0U);
+    }
+};
+
+template <typename T, std::size_t Capacity>
+struct Fifo {
+    static_assert(Capacity > 0U,
+                  "[ARC ERROR] arc::sim::Fifo needs storage. Action: set Capacity to the fixed sample count.");
+    static_assert(std::is_trivially_copyable_v<T>,
+                  "[ARC ERROR] arc::sim::Fifo payload must be trivially copyable. Action: use flat host samples.");
+
+    std::array<T, Capacity> items{};
+    std::size_t head{};
+    std::size_t tail{};
+    std::size_t used{};
+
+    [[nodiscard]] static consteval std::size_t cap() noexcept
+    {
+        return Capacity;
+    }
+
+    [[nodiscard]] constexpr std::size_t size() const noexcept
+    {
+        return used;
+    }
+
+    [[nodiscard]] constexpr bool empty() const noexcept
+    {
+        return used == 0U;
+    }
+
+    [[nodiscard]] constexpr bool full() const noexcept
+    {
+        return used == Capacity;
+    }
+
+    constexpr void clear() noexcept
+    {
+        head = 0U;
+        tail = 0U;
+        used = 0U;
+    }
+
+    [[nodiscard]] constexpr bool try_push(const T& value) noexcept
+    {
+        if (full()) {
+            return false;
+        }
+        items[head] = value;
+        head = next(head);
+        ++used;
+        return true;
+    }
+
+    [[nodiscard]] constexpr std::size_t push(const std::span<const T> values) noexcept
+    {
+        if (!valid(values)) {
+            return 0U;
+        }
+
+        std::size_t count{};
+        for (const auto& value : values) {
+            if (!try_push(value)) {
+                break;
+            }
+            ++count;
+        }
+        return count;
+    }
+
+    [[nodiscard]] constexpr bool try_pop(T& out) noexcept
+    {
+        if (empty()) {
+            return false;
+        }
+        out = items[tail];
+        tail = next(tail);
+        --used;
+        return true;
+    }
+
+    [[nodiscard]] constexpr std::size_t pop(const std::span<T> out) noexcept
+    {
+        if (!valid(out)) {
+            return 0U;
+        }
+
+        std::size_t count{};
+        for (auto& value : out) {
+            if (!try_pop(value)) {
+                break;
+            }
+            ++count;
+        }
+        return count;
+    }
+
+private:
+    [[nodiscard]] static constexpr std::size_t next(const std::size_t index) noexcept
+    {
+        return index + 1U == Capacity ? 0U : index + 1U;
+    }
+
+    template <typename U>
+    [[nodiscard]] static constexpr bool valid(const std::span<U> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
+    }
+};
+
+template <int Pin, typename Trace = QuietTrace>
+struct Drive {
+    static inline bool configured{};
+    static inline bool level{};
+
+    [[nodiscard]] static consteval int pin() noexcept
+    {
+        return Pin;
+    }
+
+    static void out() noexcept
+    {
+        configured = true;
+    }
+
+    template <bool Level>
+    static void write() noexcept
+    {
+        set(Level);
+    }
+
+    static void hi() noexcept
+    {
+        set(true);
+    }
+
+    static void on() noexcept
+    {
+        hi();
+    }
+
+    static void lo() noexcept
+    {
+        set(false);
+    }
+
+    static void off() noexcept
+    {
+        lo();
+    }
+
+    static void toggle() noexcept
+    {
+        set(!level);
+    }
+
+    [[nodiscard]] static bool high() noexcept
+    {
+        return level;
+    }
+
+private:
+    static void set(const bool next_level) noexcept
+    {
+        level = next_level;
+        if constexpr (requires { Trace::drive(Pin, next_level); }) {
+            Trace::drive(Pin, next_level);
+        }
+    }
+};
+
+template <int Pin, std::size_t Samples = 16U, typename Trace = QuietTrace>
+struct Sense {
+    static inline bool configured{};
+    static inline bool level{};
+    static inline Fifo<bool, Samples> samples{};
+
+    [[nodiscard]] static consteval int pin() noexcept
+    {
+        return Pin;
+    }
+
+    static void in() noexcept
+    {
+        configured = true;
+    }
+
+    [[nodiscard]] static Status feed(const bool value) noexcept
+    {
+        if (!samples.try_push(value)) {
+            return Status{fail(ESP_ERR_NO_MEM)};
+        }
+        return ok();
+    }
+
+    [[nodiscard]] static std::size_t feed(const std::span<const bool> values) noexcept
+    {
+        return samples.push(values);
+    }
+
+    [[nodiscard]] static bool tick() noexcept
+    {
+        bool next{};
+        if (!samples.try_pop(next)) {
+            return false;
+        }
+        level = next;
+        if constexpr (requires { Trace::sense(Pin, next); }) {
+            Trace::sense(Pin, next);
+        }
+        return true;
+    }
+
+    [[nodiscard]] static bool high() noexcept
+    {
+        return level;
+    }
+
+    [[nodiscard]] static bool low() noexcept
+    {
+        return !level;
+    }
+
+    static void clear() noexcept
+    {
+        level = false;
+        samples.clear();
+    }
+};
+
+}  // namespace arc::sim
