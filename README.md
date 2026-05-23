@@ -493,7 +493,7 @@ Arc no longer needs to drag every hardware driver into every app.
 - `components/arc` now exports only the shared core headers and dependencies.
 - `arc.hpp` only pulls feature headers when the matching ESP-IDF headers are visible through the current target's `REQUIRES`.
 - `cmake/arc-deps.cmake` gives a terse way to declare only the Arc features a target actually uses.
-- `components/arc/profiles.json` is the source-of-truth profile manifest, and `tools/profile-manifest-check.py` keeps it synchronized with `cmake/arc-deps.cmake` while preventing substrate profiles from importing domain profile roots.
+- `components/arc/profiles.json` is the source-of-truth profile manifest, and `tools/profile-manifest-check.py` keeps it synchronized with `cmake/arc-deps.cmake` while preventing substrate profiles from importing domain profile roots. It can emit human or JSON profile-boundary evidence with `--format report` or `--format json`.
 - `tools/profile-export.py` can materialize a profile header closure such as `core`, `memory`, `net_codecs`, `math`, `crypto`, `robotics`, or `sandbox` into `dump/profiles/<profile>` or an external component directory with a header-only ESP-IDF component stub and the profile's ESP-IDF `REQUIRES`. Existing output is refreshed only when it is empty or marked as an Arc profile export.
 
 Use this pattern in `main/CMakeLists.txt` or any example `main/CMakeLists.txt`:

@@ -46,7 +46,9 @@ versioned as explicit profile packages instead of being treated as mandatory
 framework weight. `components/arc/profiles.json` is the checked profile contract;
 the repo check rejects drift between that manifest, export roots, and CMake
 requirements, and it prevents small substrate profiles from importing domain
-profile roots.
+profile roots. Use `tools/profile-manifest-check.py --format report` when a
+reviewer needs the profile/header/dependency map in plain text, or
+`--format json` when release tooling needs the same boundary evidence.
 
 ## Silicon-Facing Policy
 

@@ -104,6 +104,9 @@ that are easy to confuse with firmware build failures:
 
 Fix the named policy first. Do not mask a policy failure by weakening the docs
 or removing an evidence path.
+Use `./tools/profile-manifest-check.py --format report` when a reviewer needs
+the profile/header/ESP-IDF requirement map in plain text, or `--format json`
+when release tooling needs the same structure.
 Use `./tools/safety-case-check.py --format report` when a reviewer needs the
 claim list, evidence paths, required commands, and non-claims in plain text, or
 `--format json` when a release or CI artifact needs the same structure.

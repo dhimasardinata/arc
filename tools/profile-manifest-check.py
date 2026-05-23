@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -18,6 +19,7 @@ INCLUDE_RE = re.compile(r'^\s*#\s*include\s+"(arc/[^"]+)"')
 FEATURE_RE = re.compile(r'^(?:if|elseif)\(feature STREQUAL "([^"]+)"\)$')
 APPEND_RE = re.compile(r"^list\(APPEND result ([^)]+)\)$")
 PROFILE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+OUTPUT_FORMATS = ("text", "report", "json")
 
 
 def die(message: str) -> int:
@@ -122,15 +124,93 @@ def validate_profiles(profiles: dict[str, dict[str, Any]]) -> list[str]:
     return problems
 
 
-def main() -> int:
+def profile_report(profiles: dict[str, dict[str, Any]], problems: list[str]) -> dict[str, Any]:
+    cmake = cmake_requires(CMAKE_DEPS.read_text(encoding="utf-8"))
+    entries: list[dict[str, Any]] = []
+    for name, spec in sorted(profiles.items()):
+        kind = spec.get("kind") if isinstance(spec, dict) else None
+        header = spec.get("header") if isinstance(spec, dict) else None
+        requires = spec.get("requires") if isinstance(spec, dict) else None
+        header_count: int | None = None
+        if isinstance(header, str) and header.startswith("arc/") and header.endswith(".hpp"):
+            try:
+                header_count = len(closure(header))
+            except FileNotFoundError:
+                header_count = None
+        entries.append(
+            {
+                "name": name,
+                "kind": kind,
+                "header": header,
+                "headers": header_count,
+                "requires": list(requires) if isinstance(requires, list) else [],
+                "cmake_requires": list(cmake.get(name, ())),
+            }
+        )
+
+    return {
+        "ok": not problems,
+        "profiles": entries,
+        "summary": {
+            "profiles": len(entries),
+            "substrate": sum(1 for entry in entries if entry["kind"] == "substrate"),
+            "domain": sum(1 for entry in entries if entry["kind"] == "domain"),
+            "requires": sum(len(entry["requires"]) for entry in entries),
+            "problems": len(problems),
+        },
+        "problems": problems,
+    }
+
+
+def print_report(profiles: dict[str, dict[str, Any]], problems: list[str]) -> None:
+    payload = profile_report(profiles, problems)
+    summary = payload["summary"]
+    print("arc profile manifest report")
+    print(f"- profiles: {summary['profiles']}")
+    print(f"- substrate profiles: {summary['substrate']}")
+    print(f"- domain profiles: {summary['domain']}")
+    print(f"- ESP-IDF requirements: {summary['requires']}")
+    print(f"- problems: {summary['problems']}")
+    print("- profiles:")
+    for profile in payload["profiles"]:
+        headers = profile["headers"] if profile["headers"] is not None else "unknown"
+        requires = ", ".join(profile["requires"]) if profile["requires"] else "none"
+        print(f"  - {profile['name']} ({profile['kind']})")
+        print(f"    header: {profile['header']}")
+        print(f"    headers: {headers}")
+        print(f"    requires: {requires}")
+    if payload["problems"]:
+        print("- problems:")
+        for problem in payload["problems"]:
+            print(f"  - {problem}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Check Arc profile manifest and CMake dependency drift")
+    parser.add_argument(
+        "--format",
+        choices=OUTPUT_FORMATS,
+        default="text",
+        help="output style: text status, human profile report, or JSON profile evidence",
+    )
+    args = parser.parse_args(argv)
+
     try:
         profiles = load_profiles()
         problems = validate_profiles(profiles)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return die(str(exc))
+    if args.format == "json":
+        print(json.dumps(profile_report(profiles, problems), indent=2, sort_keys=True))
+    elif args.format == "report":
+        print_report(profiles, problems)
+
     if problems:
-        return die("\n".join(problems))
-    print(f"arc profile manifest check: OK ({len(profiles)} profiles)")
+        if args.format == "text":
+            print("\n".join(problems), file=sys.stderr)
+        return die("profile manifest is not synchronized")
+    if args.format == "text":
+        print(f"arc profile manifest check: OK ({len(profiles)} profiles)")
     return 0
 
 
