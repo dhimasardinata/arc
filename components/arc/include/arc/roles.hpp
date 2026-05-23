@@ -35,10 +35,15 @@ using ClientEndpoint = decltype(std::declval<Lane&>().client());
 template <typename Lane>
 using ServerEndpoint = decltype(std::declval<Lane&>().server());
 
+template <typename T>
+concept RoleEndpointResult = requires(const std::remove_cvref_t<T>& endpoint) {
+    { static_cast<bool>(endpoint) } -> std::same_as<bool>;
+} && (requires { std::remove_cvref_t<T>::cap(); } || requires { std::remove_cvref_t<T>::producers(); } || requires { &std::remove_cvref_t<T>::call; } || requires { &std::remove_cvref_t<T>::recv; });
+
 template <typename Result, typename... Endpoint>
 inline constexpr bool scoped_role_result =
     std::is_void_v<Result> ||
-    (!std::is_reference_v<Result> && !std::is_pointer_v<Result> &&
+    (!std::is_reference_v<Result> && !std::is_pointer_v<Result> && !RoleEndpointResult<Result> &&
      (!std::same_as<std::remove_cvref_t<Result>, std::remove_cvref_t<Endpoint>> && ...));
 
 template <typename Fn, typename... Args>
@@ -53,9 +58,7 @@ consteval void require_scoped_role_result()
 }  // namespace detail
 
 template <typename Endpoint>
-concept RoleEndpoint = requires(const Endpoint& endpoint) {
-    { static_cast<bool>(endpoint) } -> std::same_as<bool>;
-};
+concept RoleEndpoint = detail::RoleEndpointResult<Endpoint>;
 
 template <typename Endpoint, typename Payload>
 concept PushRole = RoleEndpoint<Endpoint> && requires(Endpoint& endpoint, const Payload& payload) {

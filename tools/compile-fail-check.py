@@ -18,6 +18,7 @@ PREFIX = """
 #include "arc/borrow.hpp"
 #include "arc/proof.hpp"
 #include "arc/roles.hpp"
+#include "arc/rpc.hpp"
 #include "arc/spsc.hpp"
 
 namespace {
@@ -463,6 +464,20 @@ void probe()
         must_contain="scoped role callback cannot return an endpoint",
     ),
     Case(
+        name="scoped_role_returns_other_endpoint",
+        source="""
+void probe()
+{
+    arc::Roles<arc::Spsc<int, 4>> roles{};
+    auto consumer = roles.consumer();
+    (void)roles.with_producer([&](auto&) {
+        return std::move(consumer);
+    });
+}
+""",
+        must_contain="scoped role callback cannot return an endpoint",
+    ),
+    Case(
         name="scoped_split_returns_endpoint",
         source="""
 void probe()
@@ -470,6 +485,24 @@ void probe()
     arc::Roles<arc::Spsc<int, 4>> roles{};
     (void)roles.with_split([](auto& producer, auto&) {
         return std::move(producer);
+    });
+}
+""",
+        must_contain="scoped role callback cannot return an endpoint",
+    ),
+    Case(
+        name="scoped_rpc_returns_other_endpoint",
+        source="""
+enum class Op : std::uint8_t {
+    set,
+};
+
+void probe()
+{
+    arc::Roles<arc::RpcLane<Op, State, State, 4>> roles{};
+    auto server = roles.server();
+    (void)roles.with_client([&](auto&) {
+        return std::move(server);
     });
 }
 """,

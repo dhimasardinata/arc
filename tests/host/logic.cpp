@@ -1150,6 +1150,7 @@ void test_spsc()
     using RoleSpsc = arc::Roles<arc::Spsc<int, 4>>;
     static_assert(!std::is_copy_constructible_v<SpscInt::Producer>);
     static_assert(!std::is_copy_constructible_v<SpscInt::Consumer>);
+    static_assert(!arc::RoleEndpoint<bool>);
     static_assert(arc::RoleEndpoint<SpscInt::Producer>);
     static_assert(arc::RoleEndpoint<SpscInt::Consumer>);
     static_assert(arc::PushRole<SpscInt::Producer, int>);

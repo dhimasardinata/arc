@@ -211,7 +211,8 @@ The `with_producer`, `with_consumer`, `with_split`, `with_client`, and
 return `void` or an ordinary copied value; returning an endpoint, reference, or
 raw pointer fails the build. `PushRole`, `PopRole`, `RpcClientRole`, and
 `RpcServerRole` let template boundaries accept only the endpoint side they
-actually use.
+actually use. The scoped callback check rejects captured endpoint values too,
+so a producer callback cannot smuggle out a consumer endpoint.
 
 ## Static Plane Launch
 
