@@ -48,6 +48,25 @@ class TopologyCheckTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("unresolved: CONFIG_LED", result.stdout)
 
+    def test_accepts_cpp_and_esp_idf_pin_literals(self) -> None:
+        result = self.run_tool("using Pins = arc::Pins<GPIO_NUM_4, GPIO_NUM_NC, 0x0CU, 1'3, 016>;\n")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("arc::Pins<4, -1, 12, 13, 14>", result.stdout)
+
+    def test_rejects_duplicate_esp_idf_pin_literals(self) -> None:
+        result = self.run_tool("using Pins = arc::Pins<GPIO_NUM_4, 4>;\n")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("duplicate GPIO4", result.stderr)
+
+    def test_strict_unresolved_tokens_fail(self) -> None:
+        result = self.run_tool("using Pins = arc::Pins<CONFIG_LED, 4>;\n", "--strict-unresolved")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unresolved pin token 'CONFIG_LED'", result.stderr)
+        self.assertIn("GPIO_NUM_<n>", result.stderr)
+
     def test_report_format_groups_pins_for_humans(self) -> None:
         result = self.run_tool("struct Board { using pins = arc::Pins<4, -1, CONFIG_LED>; };\n", "--format", "report")
 

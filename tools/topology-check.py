@@ -11,7 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PINS_RE = re.compile(r"\barc::Pins\s*<(?P<body>[^>]*)>", re.MULTILINE | re.DOTALL)
-INT_RE = re.compile(r"^[+-]?\d+$")
+GPIO_NUM_RE = re.compile(r"^GPIO_NUM_(?P<pin>\d+|NC)$")
+INT_SUFFIX_RE = re.compile(r"(ull|llu|ul|lu|u|ll|l)$", re.IGNORECASE)
 OUTPUT_FORMATS = ("text", "report", "dot", "mermaid")
 
 
@@ -47,6 +48,52 @@ def line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
+def parse_integer_token(token: str) -> int | None:
+    cleaned = token.replace("'", "")
+    if not cleaned:
+        return None
+
+    sign = 1
+    if cleaned[0] in ("+", "-"):
+        sign = -1 if cleaned[0] == "-" else 1
+        cleaned = cleaned[1:]
+    if not cleaned:
+        return None
+    cleaned = INT_SUFFIX_RE.sub("", cleaned)
+    if not cleaned or not cleaned[0].isdigit():
+        return None
+
+    if cleaned.startswith(("0x", "0X")):
+        base = 16
+        digits = cleaned[2:]
+    elif cleaned.startswith(("0b", "0B")):
+        base = 2
+        digits = cleaned[2:]
+    elif cleaned != "0" and cleaned.startswith("0"):
+        base = 8
+        digits = cleaned[1:]
+    else:
+        base = 10
+        digits = cleaned
+
+    try:
+        return sign * int(digits, base)
+    except ValueError:
+        return None
+
+
+def parse_pin_token(token: str) -> int | None:
+    pin = parse_integer_token(token)
+    if pin is not None:
+        return pin
+
+    match = GPIO_NUM_RE.fullmatch(token.replace("'", ""))
+    if match is None:
+        return None
+    pin = match.group("pin")
+    return -1 if pin == "NC" else int(pin, 10)
+
+
 def parse_pack(path: Path, text: str) -> list[Pack]:
     packs: list[Pack] = []
     for match in PINS_RE.finditer(text):
@@ -58,10 +105,11 @@ def parse_pack(path: Path, text: str) -> list[Pack]:
         for token in tokens:
             if not token:
                 continue
-            if INT_RE.fullmatch(token):
-                pins.append(int(token, 10))
-            else:
+            pin = parse_pin_token(token)
+            if pin is None:
                 unresolved.append(token)
+            else:
+                pins.append(pin)
         packs.append(Pack(path=path, line=line_of(text, match.start()), pins=tuple(pins), unresolved=tuple(unresolved)))
     return packs
 
@@ -94,6 +142,13 @@ def check_pack(pack: Pack, max_pin: int) -> list[str]:
             )
         seen[pin] = index
     return problems
+
+
+def check_unresolved(pack: Pack) -> list[str]:
+    return [
+        f"{display(pack.path)}:{pack.line}: unresolved pin token {token!r}; use an integer literal, GPIO_NUM_NC, or GPIO_NUM_<n>"
+        for token in pack.unresolved
+    ]
 
 
 def dot_escape(value: str) -> str:
@@ -187,10 +242,15 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--max-pin", type=int, default=48, help="highest valid ESP32-S3 GPIO number")
     parser.add_argument("--quiet", action="store_true", help="only print problems and the final status line")
     parser.add_argument(
+        "--strict-unresolved",
+        action="store_true",
+        help="fail when arc::Pins contains tokens the host checker cannot reduce",
+    )
+    parser.add_argument(
         "--format",
         choices=OUTPUT_FORMATS,
         default="text",
-        help="output style when not quiet: text list, beginner report, or Graphviz DOT",
+        help="output style when not quiet: text list, beginner report, Graphviz DOT, or Mermaid",
     )
     args = parser.parse_args(argv)
 
@@ -206,6 +266,8 @@ def main(argv: list[str]) -> int:
     problems: list[str] = []
     for pack in packs:
         problems.extend(check_pack(pack, args.max_pin))
+        if args.strict_unresolved:
+            problems.extend(check_unresolved(pack))
     if not args.quiet:
         if args.format == "report":
             print_report(packs)
