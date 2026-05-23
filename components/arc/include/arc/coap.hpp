@@ -169,6 +169,9 @@ struct Coap {
         if (!payload.empty()) {
             std::memmove(out.data() + bytes - payload.size(), payload.data(), payload.size());
         }
+        if (!token.empty()) {
+            std::memmove(out.data() + 4U, token.data(), token.size());
+        }
 
         auto pos = std::size_t{0U};
         out[pos++] = static_cast<std::uint8_t>((1U << 6U) |
@@ -178,7 +181,6 @@ struct Coap {
         pos += write_u16(out, pos, id);
 
         if (!token.empty()) {
-            std::memcpy(out.data() + pos, token.data(), token.size());
             pos += token.size();
         }
 

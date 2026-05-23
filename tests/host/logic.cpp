@@ -2003,6 +2003,19 @@ void test_coap()
     expect(parsed->id == 0x1234U, "CoAP request id");
     expect(parsed->token.size() == token.size(), "CoAP token size");
     expect(std::memcmp(parsed->token.data(), token.data(), token.size()) == 0, "CoAP token");
+    std::array<std::uint8_t, 32> in_place_token_buf{0xdeU, 0xadU};
+    const auto in_place_token_request = arc::net::Coap::message(
+        std::span(in_place_token_buf),
+        arc::net::CoapType::confirmable,
+        static_cast<std::uint8_t>(arc::net::CoapCode::get),
+        0x5678U,
+        std::span(in_place_token_buf).first(token.size()));
+    expect(in_place_token_request.has_value(), "CoAP in-place token encodes");
+    const auto in_place_token_parsed = arc::net::Coap::parse(*in_place_token_request);
+    expect(in_place_token_parsed.has_value() &&
+               in_place_token_parsed->token.size() == token.size() &&
+               std::memcmp(in_place_token_parsed->token.data(), token.data(), token.size()) == 0,
+           "CoAP preserves in-place token");
 
     std::size_t offset = 0U;
     std::uint16_t number = 0U;
