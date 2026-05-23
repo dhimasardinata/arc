@@ -26,6 +26,7 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("go run tools/arc-audit.go -root . -all", text)
         self.assertIn("./tools/arc-prove.sh", text)
         self.assertIn("./tools/topology-check.py --quiet", text)
+        self.assertIn("python3 tools/compile-fail-check.py", text)
         self.assertIn("./tools/use-after-move-check.sh", text)
         self.assertIn("./tools/safety-case-check.py", text)
         self.assertIn("./tools/profile-manifest-check.py", text)
@@ -76,6 +77,12 @@ class CheckRepoToolTest(unittest.TestCase):
 
         self.assertIn("topology source gate", text)
         self.assertIn("tools/topology-check.py", text)
+
+    def test_repo_policy_runs_compile_fail_contract_gate(self) -> None:
+        text = (ROOT / "tools" / "check-repo.sh").read_text(encoding="utf-8")
+
+        self.assertIn("negative compile contract gate", text)
+        self.assertIn("tools/compile-fail-check.py", text)
 
     def test_queue_static_asserts_include_actionable_arc_errors(self) -> None:
         text = "\n".join(

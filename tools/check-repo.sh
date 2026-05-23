@@ -71,6 +71,7 @@ fi
 ./tools/tool-tests.sh || die "tool tests failed"
 ./tools/profile-manifest-check.py || die "profile manifest check failed"
 ./tools/topology-check.py --quiet || die "topology check failed"
+python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
 ./tools/arc-prove.sh || die "formal spec check failed"
 ./tools/use-after-move-check.sh || die "use-after-move check failed"
 ./tools/safety-case-check.py || die "safety-case evidence check failed"
@@ -239,6 +240,9 @@ if ! grep -qE '\./tools/arc-prove\.sh' tools/check-repo.sh; then
 fi
 if ! grep -qE '\./tools/topology-check\.py --quiet' tools/check-repo.sh; then
     die "repo check must run the topology source gate"
+fi
+if ! grep -qE 'python3 tools/compile-fail-check\.py' tools/check-repo.sh; then
+    die "repo check must run the negative compile contract gate"
 fi
 if ! grep -qE '\./tools/use-after-move-check\.sh' tools/check-repo.sh; then
     die "repo check must run the use-after-move lint gate"
