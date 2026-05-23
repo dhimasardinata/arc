@@ -1585,6 +1585,47 @@ void test_mqtt()
     expect((*connect)[0] == 0x10U, "MQTT connect type");
     expect((*connect)[2] == 0x00U && (*connect)[3] == 0x04U, "MQTT protocol length");
     expect((*connect)[4] == 'M' && (*connect)[7] == 'T', "MQTT protocol name");
+    std::array<std::uint8_t, 128> in_place_connect_buf{
+        'a',
+        'r',
+        'c',
+        '-',
+        'c',
+        'l',
+        'i',
+        'e',
+        'n',
+        't',
+        '\0',
+        'u',
+        's',
+        'e',
+        'r',
+        '\0',
+        'p',
+        'a',
+        's',
+        's',
+        '\0',
+    };
+    const auto in_place_connect = arc::net::Mqtt::connect(
+        std::span(in_place_connect_buf),
+        {
+            .client = reinterpret_cast<const char*>(in_place_connect_buf.data()),
+            .user = reinterpret_cast<const char*>(in_place_connect_buf.data() + 11U),
+            .pass = reinterpret_cast<const char*>(in_place_connect_buf.data() + 16U),
+            .keep_alive = 60U,
+            .clean = true,
+        });
+    expect(in_place_connect.has_value() &&
+               in_place_connect->size() == 36U &&
+               (*in_place_connect)[14] == 'a' &&
+               (*in_place_connect)[23] == 't' &&
+               (*in_place_connect)[26] == 'u' &&
+               (*in_place_connect)[29] == 'r' &&
+               (*in_place_connect)[32] == 'p' &&
+               (*in_place_connect)[35] == 's',
+           "MQTT connect preserves in-place strings");
 
     const std::array<std::uint8_t, 5> payload{1U, 2U, 3U, 4U, 5U};
     const auto publish = arc::net::Mqtt::publish(

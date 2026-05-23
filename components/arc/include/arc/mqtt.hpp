@@ -132,13 +132,38 @@ struct Mqtt {
             (cfg.user != nullptr ? 2U + *user : 0U) +
             (cfg.pass != nullptr ? 2U + *pass : 0U);
 
+        const auto header = header_bytes(remaining);
+        if (!valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (out.size() < header + remaining) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        auto staged = header + remaining;
+        if (cfg.pass != nullptr) {
+            staged -= *pass;
+            std::memmove(out.data() + staged, cfg.pass, *pass);
+            staged -= 2U;
+            write_u16(out, staged, *pass);
+        }
+        if (cfg.user != nullptr) {
+            staged -= *user;
+            std::memmove(out.data() + staged, cfg.user, *user);
+            staged -= 2U;
+            write_u16(out, staged, *user);
+        }
+        staged -= *client;
+        std::memmove(out.data() + staged, cfg.client, *client);
+        staged -= 2U;
+        write_u16(out, staged, *client);
+
         auto packet = begin(out, static_cast<std::uint8_t>(MqttType::connect), 0U, remaining);
         if (!packet) {
             return fail(packet.error());
         }
 
         auto frame = *packet;
-        auto pos = header_bytes(remaining);
+        auto pos = header;
 
         pos += write_string(frame, pos, "MQTT");
         frame[pos++] = 4U;
@@ -155,15 +180,7 @@ struct Mqtt {
         }
         frame[pos++] = flags;
         pos += write_u16(frame, pos, cfg.keep_alive);
-        pos += write_string(frame, pos, cfg.client);
-
-        if (cfg.user != nullptr) {
-            pos += write_string(frame, pos, cfg.user);
-        }
-        if (cfg.pass != nullptr) {
-            pos += write_string(frame, pos, cfg.pass);
-        }
-        return frame.first(pos);
+        return frame.first(header + remaining);
     }
 
     [[nodiscard]] static Result<std::span<const std::uint8_t>> publish(
