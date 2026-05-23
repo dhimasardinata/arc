@@ -14,13 +14,18 @@ constinit ControlState control_state{};
 constinit ControlState telemetry_state{};
 
 using ControlCell = arc::StaticRef<&control_state, arc::Core::core1>;
-using ControlRead = decltype(ControlCell::read<arc::Core::core1>());
-using ControlWrite = decltype(ControlCell::write<arc::Core::core1>());
+using ControlRead = ControlCell::Read;
+using ControlWrite = ControlCell::Write;
 using TelemetryCell = arc::StaticRef<&telemetry_state, arc::Core::core1>;
-using TelemetryRead = decltype(TelemetryCell::read<arc::Core::core1>());
+using TelemetryRead = TelemetryCell::Read;
 using TelemetryInputs = arc::LoanPack<ControlRead, TelemetryRead>;
 
+static_assert(ControlCell::can_write<arc::Core::core1>());
+static_assert(!ControlCell::can_write<arc::Core::core0>());
 static_assert(arc::StaticLoanType<ControlRead>);
+static_assert(arc::StaticWritable<ControlCell, arc::Core::core1>);
+static_assert(!arc::StaticWritable<ControlCell, arc::Core::core0>);
+static_assert(arc::LoanWritable<ControlWrite, arc::Core::core1>);
 static_assert(arc::loans_ok<ControlRead, ControlRead>());
 static_assert(arc::loans_ok<ControlWrite, TelemetryRead>());
 static_assert(!arc::loans_ok<ControlRead, ControlWrite>());

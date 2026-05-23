@@ -1403,9 +1403,11 @@ around as a raw pointer or reference.
 
 - `StaticRef<&state, Core::core1>::read<Core::core1>()` returns a copyable readonly loan.
 - `StaticRef<&state, Core::core1>::write<Core::core1>()` returns a move-only mutable loan.
+- `StaticRef::Read`, `StaticRef::Write`, `can_read<Core>()`, and `can_write<Core>()` keep common compile-contracts short enough for examples and static assertions.
 - `LoanPack<Loans...>` rejects packs where one static object has a mutable loan plus any other loan.
 - `LoanPack::contains<Loan>()`, `reads<&object>()`, and `writes<&object>()` make task-boundary requirements testable.
 - `HasLoan`, `HasStaticRead`, and `HasStaticWrite` let function templates require a loan pack before accepting a task contract.
+- `StaticReadable`, `StaticWritable`, `LoanReadable`, and `LoanWritable` let templates check whether a static owner or loan can be used from a specific core.
 - `loans_ok<Loans...>()` lets compile-contract tests check the same alias rule without intentionally failing the build.
 - Access from the wrong core owner is absent from the overload set.
 - `write<...>()` is absent for const storage, so readonly global state cannot be accidentally made mutable.

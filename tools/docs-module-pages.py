@@ -178,6 +178,10 @@ SPECIAL_LANDMARKS = {
         "HasLoan",
         "HasStaticRead",
         "HasStaticWrite",
+        "StaticReadable",
+        "StaticWritable",
+        "LoanReadable",
+        "LoanWritable",
     ],
     "arc/detail/quant.hpp": ["mul_sat", "add_sat", "round_shift_s64"],
     "arc/migrator.hpp": [

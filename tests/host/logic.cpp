@@ -945,15 +945,6 @@ concept HasCoreMsg = requires(const T& local) { local.template msg<Access, To>()
 template <typename T, arc::Core Access>
 concept HasMsgGet = requires(const T& msg) { msg.template get<Access>(); };
 
-template <typename T, arc::Core Access>
-concept HasStaticRead = requires { T::template read<Access>(); };
-
-template <typename T, arc::Core Access>
-concept HasStaticWrite = requires { T::template write<Access>(); };
-
-template <typename T, arc::Core Access>
-concept HasLoanGet = requires(T& loan) { loan.template get<Access>(); };
-
 struct FlowPacket {
     std::uint32_t seq{};
 };
@@ -1169,6 +1160,14 @@ void test_static_borrow()
 
     static_assert(Cell::owner == arc::Core::core1);
     static_assert(Cell::object == &borrow_fixture);
+    static_assert(std::same_as<typename Cell::Read, Read>);
+    static_assert(std::same_as<typename Cell::Write, Write>);
+    static_assert(Cell::writable);
+    static_assert(Cell::can_read<arc::Core::core1>());
+    static_assert(Cell::can_write<arc::Core::core1>());
+    static_assert(!Cell::can_read<arc::Core::core0>());
+    static_assert(!Cell::can_write<arc::Core::core0>());
+    static_assert(!ConstCell::writable);
     static_assert(Read::mode == arc::BorrowMode::read);
     static_assert(Write::mode == arc::BorrowMode::mut);
     static_assert(arc::StaticLoanType<Read>);
@@ -1187,14 +1186,17 @@ void test_static_borrow()
     static_assert(arc::HasStaticWrite<WritePack, &other_borrow_fixture>);
     static_assert(std::is_copy_constructible_v<Read>);
     static_assert(!std::is_copy_constructible_v<Write>);
-    static_assert(HasStaticRead<Cell, arc::Core::core1>);
-    static_assert(!HasStaticRead<Cell, arc::Core::core0>);
-    static_assert(HasStaticWrite<Cell, arc::Core::core1>);
-    static_assert(!HasStaticWrite<Cell, arc::Core::core0>);
-    static_assert(HasLoanGet<Read, arc::Core::core1>);
-    static_assert(!HasLoanGet<Read, arc::Core::core0>);
-    static_assert(HasStaticRead<ConstCell, arc::Core::core0>);
-    static_assert(!HasStaticWrite<ConstCell, arc::Core::core0>);
+    static_assert(arc::StaticReadable<Cell, arc::Core::core1>);
+    static_assert(!arc::StaticReadable<Cell, arc::Core::core0>);
+    static_assert(arc::StaticWritable<Cell, arc::Core::core1>);
+    static_assert(!arc::StaticWritable<Cell, arc::Core::core0>);
+    static_assert(arc::LoanReadable<Read, arc::Core::core1>);
+    static_assert(!arc::LoanReadable<Read, arc::Core::core0>);
+    static_assert(arc::LoanWritable<Write, arc::Core::core1>);
+    static_assert(!arc::LoanWritable<Write, arc::Core::core0>);
+    static_assert(!arc::LoanWritable<Read, arc::Core::core1>);
+    static_assert(arc::StaticReadable<ConstCell, arc::Core::core0>);
+    static_assert(!arc::StaticWritable<ConstCell, arc::Core::core0>);
 
     borrow_fixture.value = 7U;
     {

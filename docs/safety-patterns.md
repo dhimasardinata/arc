@@ -35,10 +35,14 @@ struct ControlState {
 constinit ControlState control_state{};
 
 using ControlCell = arc::StaticRef<&control_state, arc::Core::core1>;
-using ControlRead = decltype(ControlCell::read<arc::Core::core1>());
-using ControlWrite = decltype(ControlCell::write<arc::Core::core1>());
+using ControlRead = ControlCell::Read;
+using ControlWrite = ControlCell::Write;
 
+static_assert(ControlCell::can_write<arc::Core::core1>());
+static_assert(!ControlCell::can_write<arc::Core::core0>());
 static_assert(arc::StaticLoanType<ControlRead>);
+static_assert(arc::StaticWritable<ControlCell, arc::Core::core1>);
+static_assert(!arc::StaticWritable<ControlCell, arc::Core::core0>);
 static_assert(arc::loans_ok<ControlRead, ControlRead>());
 static_assert(!arc::loans_ok<ControlRead, ControlWrite>());
 ```

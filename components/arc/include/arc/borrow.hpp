@@ -208,12 +208,27 @@ struct StaticRef {
 
     using raw_type = std::remove_reference_t<decltype(*Object)>;
     using value_type = std::remove_cv_t<raw_type>;
+    using Read = StaticLoan<Object, Owner, BorrowMode::read>;
+    using Write = StaticLoan<Object, Owner, BorrowMode::mut>;
 
     static_assert(!std::is_volatile_v<raw_type>,
                   "[ARC ERROR] arc::StaticRef cannot wrap volatile storage. Action: expose volatile access through a board policy.");
 
     static constexpr Core owner = Owner;
     static constexpr auto object = Object;
+    static constexpr bool writable = !std::is_const_v<raw_type>;
+
+    template <Core Access = Owner>
+    [[nodiscard]] static consteval bool can_read() noexcept
+    {
+        return CoreAccess<Access, Owner>;
+    }
+
+    template <Core Access = Owner>
+    [[nodiscard]] static consteval bool can_write() noexcept
+    {
+        return writable && CoreAccess<Access, Owner>;
+    }
 
     template <Core Access = Owner>
         requires CoreAccess<Access, Owner>
@@ -235,6 +250,26 @@ concept StaticRefType = requires {
     typename T::value_type;
     T::object;
     { T::owner } -> std::convertible_to<Core>;
+};
+
+template <typename T, Core Access>
+concept StaticReadable = StaticRefType<T> && requires {
+    T::template read<Access>();
+};
+
+template <typename T, Core Access>
+concept StaticWritable = StaticRefType<T> && requires {
+    T::template write<Access>();
+};
+
+template <typename T, Core Access>
+concept LoanReadable = StaticLoanType<T> && requires(const T& loan) {
+    loan.template get<Access>();
+};
+
+template <typename T, Core Access>
+concept LoanWritable = StaticLoanType<T> && requires(T& loan) {
+    { loan.template get<Access>() } -> std::same_as<typename T::value_type&>;
 };
 
 }  // namespace arc
