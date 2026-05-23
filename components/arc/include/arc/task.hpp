@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -24,6 +25,9 @@ enum class CoreRole : std::uint8_t {
     ctrl,
     det,
 };
+
+template <Core Access, Core Owner>
+concept CoreOwner = Access == Owner;
 
 template <typename Target = soc::Target>
 struct CoreMap {
@@ -53,6 +57,102 @@ concept StaticTaskState =
     Object != nullptr &&
     std::same_as<StaticObject<Object>, T> &&
     !std::is_const_v<std::remove_pointer_t<decltype(Object)>>;
+
+template <typename T, Core Owner>
+class CoreLocal;
+
+template <typename T, Core From, Core To>
+class CoreMsg {
+    static_assert(From != Core::any, "CoreMsg source must be a concrete core");
+    static_assert(To != Core::any, "CoreMsg destination must be a concrete core");
+
+public:
+    using value_type = T;
+    static constexpr Core from = From;
+    static constexpr Core to = To;
+
+    template <Core Access>
+        requires CoreOwner<Access, To>
+    [[nodiscard]] constexpr const T& get() const& noexcept
+    {
+        return value_;
+    }
+
+private:
+    template <typename, Core>
+    friend class CoreLocal;
+
+    constexpr explicit CoreMsg(const T& value) noexcept(noexcept(T(value)))
+        requires std::copy_constructible<T>
+        : value_(value)
+    {}
+
+    T value_;
+};
+
+template <typename T, Core Owner>
+class CoreLocal {
+    static_assert(Owner != Core::any, "CoreLocal owner must be a concrete core");
+
+public:
+    using value_type = T;
+    static constexpr Core owner = Owner;
+
+    constexpr CoreLocal() noexcept(std::is_nothrow_default_constructible_v<T>)
+        requires std::default_initializable<T>
+    = default;
+
+    constexpr explicit CoreLocal(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires std::move_constructible<T>
+        : value_(std::move(value))
+    {}
+
+    template <Core Access>
+        requires CoreOwner<Access, Owner>
+    [[nodiscard]] constexpr T& get() & noexcept
+    {
+        return value_;
+    }
+
+    template <Core Access>
+        requires CoreOwner<Access, Owner>
+    [[nodiscard]] constexpr const T& get() const& noexcept
+    {
+        return value_;
+    }
+
+    template <Core Access>
+        requires CoreOwner<Access, Owner>
+    [[nodiscard]] constexpr T&& get() && noexcept
+    {
+        return std::move(value_);
+    }
+
+    template <Core Access>
+        requires CoreOwner<Access, Owner> && std::assignable_from<T&, T>
+    constexpr void set(T value) noexcept(noexcept(std::declval<T&>() = std::move(value)))
+    {
+        value_ = std::move(value);
+    }
+
+    template <Core Access, Core To>
+        requires CoreOwner<Access, Owner> && (To != Core::any) && std::copy_constructible<T>
+    [[nodiscard]] constexpr CoreMsg<T, Owner, To> msg() const noexcept(noexcept(CoreMsg<T, Owner, To>{value_}))
+    {
+        return CoreMsg<T, Owner, To>{value_};
+    }
+
+    template <Core Access, Core From>
+        requires CoreOwner<Access, Owner> && std::assignable_from<T&, const T&>
+    constexpr void accept(const CoreMsg<T, From, Owner>& msg) noexcept(
+        noexcept(std::declval<T&>() = msg.template get<Owner>()))
+    {
+        value_ = msg.template get<Owner>();
+    }
+
+private:
+    T value_{};
+};
 
 template <std::size_t StackBytes, std::size_t RequiredBytes = stack::task_floor>
 struct TaskMem {

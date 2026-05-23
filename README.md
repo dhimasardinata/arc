@@ -315,7 +315,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 | Area | Headers | Primary types |
 | --- | --- | --- |
 | Profile umbrellas | `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/math.hpp`, `arc.hpp` | Subset entry points for substrate, coherency/DMA, no-heap codecs, DSP/math, and the compatibility umbrella |
-| Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/flow.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Flow`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
+| Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/flow.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::CoreLocal`, `arc::CoreMsg`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Flow`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp`, `arc/roles.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit`, `arc::Roles` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/hotpatch.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/pipeline.hpp`, `arc/mmu_span.hpp`, `arc/distributed_mmu.hpp`, `arc/place.hpp`, `arc/prefetch.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::HotPatch`, `arc::HotPatchImage`, `arc::HotPatchDetour`, `arc::DmaChain`, `arc::DmaEndpoint`, `arc::Pipeline`, `arc::Dma2dWindow`, `arc::bind_rows`, `arc::MmuSpan`, `arc::mmu::DistributedSpan`, `arc::mmu::DistributedPager`, `arc::Copy`, `arc::prefetch` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp`, `arc/rpc.hpp`, `arc/rtc_ring.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem`, `arc::RpcLane`, `arc::RtcRing` |
@@ -1303,6 +1303,17 @@ Compile-time stack sizing helpers for Arc tasks.
 - `arc::Plane`, `arc::App`, and `arc::Tight` publish `stack_required` so tests can assert the expected budget.
 
 Arc's component interface enables GCC `-Werror=stack-usage=2048` and `-Werror=frame-larger-than=1024` for C++ consumers by default. Set `ARC_ENFORCE_STACK_LIMITS=OFF` only for deliberate interop with components that cannot meet Arc's stack policy. The C++ interface also defaults consumers to `gnu++26` and `-mtext-section-literals`; set `ARC_ENFORCE_CONSUMER_CXX26=OFF` or `ARC_ENFORCE_CONSUMER_TEXT_LITERALS=OFF` only when a downstream component owns that compiler policy.
+
+### `arc::CoreLocal<T, Core>` and `arc::CoreMsg<T, From, To>`
+
+Compile-time core ownership tags for state that must not be casually shared across the AMP boundary.
+
+- `CoreLocal<T, Core::core1>` stores the value privately and only exposes `get<Core::core1>()`, `set<Core::core1>(...)`, and `msg<Core::core1, To>()`.
+- Access from the wrong core is absent from the overload set, so misuse fails during template checking instead of becoming a runtime convention.
+- `CoreMsg<T, From, To>` carries a copied payload across a queue or mailbox type; only the destination core can call `get<To>()`.
+- `accept<Owner>(msg)` applies an addressed message to the destination local slot.
+
+Use this for small ownership-sensitive control or telemetry records where `Spsc`, `SeqReg`, or another lane carries the transfer and the value itself should still remember which core may touch it.
 
 ### `arc::Link<Event, Control, Capacity>`
 

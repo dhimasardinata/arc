@@ -285,6 +285,17 @@ Compile-time stack sizing helpers for Arc tasks.
 
 Arc's component interface enables GCC `-Werror=stack-usage=2048` and `-Werror=frame-larger-than=1024` for C++ consumers by default. Set `ARC_ENFORCE_STACK_LIMITS=OFF` only for deliberate interop with components that cannot meet Arc's stack policy. The C++ interface also defaults consumers to `gnu++26` and `-mtext-section-literals`; set `ARC_ENFORCE_CONSUMER_CXX26=OFF` or `ARC_ENFORCE_CONSUMER_TEXT_LITERALS=OFF` only when a downstream component owns that compiler policy.
 
+### `arc::CoreLocal<T, Core>` and `arc::CoreMsg<T, From, To>`
+
+Compile-time core ownership tags for state that must not be casually shared across the AMP boundary.
+
+- `CoreLocal<T, Core::core1>` stores the value privately and only exposes `get<Core::core1>()`, `set<Core::core1>(...)`, and `msg<Core::core1, To>()`.
+- Access from the wrong core is absent from the overload set, so misuse fails during template checking instead of becoming a runtime convention.
+- `CoreMsg<T, From, To>` carries a copied payload across a queue or mailbox type; only the destination core can call `get<To>()`.
+- `accept<Owner>(msg)` applies an addressed message to the destination local slot.
+
+Use this for small ownership-sensitive control or telemetry records where `Spsc`, `SeqReg`, or another lane carries the transfer and the value itself should still remember which core may touch it.
+
 ### `arc::Link<Event, Control, Capacity>`
 
 Shared state for asymmetric programs.

@@ -898,6 +898,15 @@ concept HasDmaView = requires(T& buffer) { buffer.view(); };
 template <typename T>
 concept HasDmaIndex = requires(T& buffer) { buffer[0]; };
 
+template <typename T, arc::Core Access>
+concept HasCoreGet = requires(T& local) { local.template get<Access>(); };
+
+template <typename T, arc::Core Access, arc::Core To>
+concept HasCoreMsg = requires(const T& local) { local.template msg<Access, To>(); };
+
+template <typename T, arc::Core Access>
+concept HasMsgGet = requires(const T& msg) { msg.template get<Access>(); };
+
 struct FlowPacket {
     std::uint32_t seq{};
 };
@@ -1062,6 +1071,34 @@ void test_spsc()
     auto role_endpoints = role_only.split();
     expect(role_endpoints.producer.try_push(14), "Roles SPSC producer endpoint push");
     expect(role_endpoints.consumer.try_pop(value) && value == 14, "Roles SPSC consumer endpoint pop");
+}
+
+void test_core_local()
+{
+    using Core1Counter = arc::CoreLocal<std::uint32_t, arc::Core::core1>;
+    static_assert(Core1Counter::owner == arc::Core::core1);
+    static_assert(arc::CoreOwner<arc::Core::core1, Core1Counter::owner>);
+    static_assert(HasCoreGet<Core1Counter, arc::Core::core1>);
+    static_assert(!HasCoreGet<Core1Counter, arc::Core::core0>);
+    static_assert(HasCoreMsg<Core1Counter, arc::Core::core1, arc::Core::core0>);
+    static_assert(!HasCoreMsg<Core1Counter, arc::Core::core0, arc::Core::core0>);
+
+    Core1Counter counter{41U};
+    expect(counter.get<arc::Core::core1>() == 41U, "CoreLocal owner reads local state");
+    counter.set<arc::Core::core1>(42U);
+    expect(counter.get<arc::Core::core1>() == 42U, "CoreLocal owner writes local state");
+
+    const auto msg = counter.msg<arc::Core::core1, arc::Core::core0>();
+    using Msg = decltype(msg);
+    static_assert(Msg::from == arc::Core::core1);
+    static_assert(Msg::to == arc::Core::core0);
+    static_assert(HasMsgGet<Msg, arc::Core::core0>);
+    static_assert(!HasMsgGet<Msg, arc::Core::core1>);
+    expect(msg.get<arc::Core::core0>() == 42U, "CoreMsg destination reads payload");
+
+    arc::CoreLocal<std::uint32_t, arc::Core::core0> mirror{};
+    mirror.accept<arc::Core::core0>(msg);
+    expect(mirror.get<arc::Core::core0>() == 42U, "CoreLocal accepts addressed message");
 }
 
 void test_checked_spsc()
@@ -8106,6 +8143,7 @@ int main()
     test_flow();
     test_any_io();
     test_spsc();
+    test_core_local();
     test_checked_spsc();
     test_mpsc_single();
     test_compact_mpsc();
