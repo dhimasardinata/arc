@@ -230,4 +230,11 @@ struct StaticRef {
     }
 };
 
+template <typename T>
+concept StaticRefType = requires {
+    typename T::value_type;
+    T::object;
+    { T::owner } -> std::convertible_to<Core>;
+};
+
 }  // namespace arc

@@ -10,6 +10,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 
+#include "arc/borrow.hpp"
 #include "arc/task.hpp"
 
 namespace arc {
@@ -180,6 +181,30 @@ private:
 
         __atomic_store_n(&launch.parked, 1U, __ATOMIC_RELEASE);
         park_task();
+    }
+};
+
+template <typename Workload,
+          StaticRefType StateRef,
+          std::size_t StackBytes,
+          Core Bind = StateRef::owner == Core::any ? CoreMap<>::det : StateRef::owner,
+          UBaseType_t Pri = static_cast<UBaseType_t>(configMAX_PRIORITIES - 2)>
+struct StaticPlane {
+    using State = typename StateRef::value_type;
+    using Bound = Plane<Workload, StackBytes, State, Bind, Pri>;
+
+    static_assert(StateRef::owner == Core::any || StateRef::owner == Bind,
+                  "[ARC ERROR] arc::StaticPlane owner mismatch. Action: keep StaticRef owner and plane core aligned.");
+    static_assert(!std::is_const_v<std::remove_pointer_t<decltype(StateRef::object)>>,
+                  "[ARC ERROR] arc::StaticPlane needs mutable static state. Action: use StaticRef over non-const storage.");
+
+    static constexpr Core core = Bind;
+    static constexpr std::size_t stack_bytes = Bound::stack_bytes;
+    static constexpr std::size_t stack_required = Bound::stack_required;
+
+    static void boot(const char* tag, const char* name = "rt")
+    {
+        Bound::template boot<StateRef::object>(tag, name);
     }
 };
 

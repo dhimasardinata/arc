@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Plane`, `Launch`.
+Source landmarks: `Plane`, `StaticPlane`, `BareWork`, `BoundWork`.
 
 ## Start From Zero
 

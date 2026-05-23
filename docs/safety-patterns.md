@@ -101,6 +101,27 @@ static_assert(decltype(msg)::to == arc::Core::core0);
 The destination core can read the message. The source core cannot read it
 through the destination-only accessor.
 
+## Static Plane Launch
+
+When a workload owns static state, bind the task to the same `StaticRef` instead
+of repeating the state type and object address in separate places.
+
+```cpp
+#include "arc/plane.hpp"
+
+struct ControlLoop {
+    static void setup(ControlState&) {}
+    static void run(ControlState&) noexcept {}
+};
+
+using ControlPlane = arc::StaticPlane<ControlLoop, ControlCell, 2048>;
+static_assert(ControlPlane::core == arc::Core::core1);
+static_assert(requires { ControlPlane::boot("control"); });
+```
+
+`StaticPlane` still boots through the same static-address contract as
+`Plane<...>::boot<&state>()`; it only removes duplicated type plumbing.
+
 ## Proof Metadata
 
 Attach small proof metadata to workloads when release tooling or review needs a

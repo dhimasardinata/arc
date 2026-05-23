@@ -80,12 +80,17 @@ struct MockWave {
 };
 
 using BoundPlane = arc::Plane<Bound, 2048, Shared>;
+using SharedCell = arc::StaticRef<&shared, arc::Core::core1>;
+using StaticBoundPlane = arc::StaticPlane<Bound, SharedCell, 2048>;
 using BarePlane = arc::Plane<Bare, 2048>;
 using BudgetedPlane = arc::Plane<Budgeted, Budgeted::stack_bytes>;
 using App = arc::App<Loop, arc::stack::required<Loop>()>;
 
 static_assert(requires { BarePlane::boot("arc"); });
 static_assert(requires { BoundPlane::template boot<&shared>("arc"); });
+static_assert(requires { StaticBoundPlane::boot("arc"); });
+static_assert(StaticBoundPlane::core == arc::Core::core1);
+static_assert(StaticBoundPlane::stack_required == BoundPlane::stack_required);
 static_assert(BudgetedPlane::stack_required == Budgeted::stack_bytes);
 static_assert(App::stack_required == arc::stack::task_floor);
 static_assert(arc::TaskMem<2048>::required == arc::stack::task_floor);

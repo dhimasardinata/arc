@@ -2391,7 +2391,7 @@ Single-word latest-wins lane.
 - use for control words or pace values
 - `T` must fit in 32 bits and be trivially copyable
 
-### `arc::Plane<Work, StackBytes, State, Core>`
+### `arc::Plane<Work, StackBytes, State, Core>` and `arc::StaticPlane`
 
 Pinned static task for a bound workload.
 
@@ -2405,7 +2405,7 @@ or:
 
 Use this when you want explicit stateful realtime workers instead of the simpler `Sketch`.
 
-Bound workloads boot as `Plane<...>::boot<&shared>(tag)` so the shared cross-core state is named at compile time and cannot accidentally come from a temporary or stack object.
+Bound workloads boot as `Plane<...>::boot<&shared>(tag)` so the shared cross-core state is named at compile time and cannot accidentally come from a temporary or stack object. `StaticPlane<Work, StaticRef<&shared, Core>, StackBytes>` is the ergonomic form when the state owner is already declared as a `StaticRef`.
 
 If `Work` or `State` declares `static constexpr std::size_t stack_bytes`, `Plane` uses the larger declaration as its compile-time stack requirement. This makes undersized Core 0/Core 1 task stacks a build error instead of a runtime watchdog or stack canary failure.
 
