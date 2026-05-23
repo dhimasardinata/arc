@@ -11,6 +11,12 @@
 
 namespace arc::isp {
 
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
 enum class Bayer : std::uint8_t {
     rggb,
     bggr,
@@ -45,18 +51,6 @@ enum class Color : std::uint8_t {
 }
 
 struct Debayer {
-private:
-    [[nodiscard]] static constexpr Result<std::size_t> pixels(
-        const std::size_t width,
-        const std::size_t height) noexcept
-    {
-        if (width == 0U || height == 0U || width > std::numeric_limits<std::size_t>::max() / height) {
-            return fail(ESP_ERR_INVALID_ARG);
-        }
-        return width * height;
-    }
-
-public:
     [[nodiscard]] static Result<std::size_t> to_rgb565(
         const std::span<const std::uint8_t> raw,
         const std::size_t width,
@@ -64,8 +58,13 @@ public:
         const std::span<std::uint16_t> out,
         const Bayer pattern = Bayer::rggb) noexcept
     {
-        const auto total = pixels(width, height);
-        if (!total || raw.size() < *total || out.size() < *total) {
+        if (width == 0U || height == 0U || width > std::numeric_limits<std::size_t>::max() / height ||
+            !valid_span(raw) || !valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        const auto total = width * height;
+        if (raw.size() < total || out.size() < total) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -109,7 +108,7 @@ public:
                     static_cast<std::uint8_t>(nb == 0U ? 0U : b / nb));
             }
         }
-        return *total;
+        return total;
     }
 };
 
@@ -133,6 +132,9 @@ struct AecAwb {
     [[nodiscard]] static ImageStats measure_rgb565(const std::span<const std::uint16_t> pixels) noexcept
     {
         ImageStats stats{};
+        if (!valid_span(pixels)) {
+            return stats;
+        }
         for (const auto pixel : pixels) {
             const auto r = static_cast<std::uint32_t>((pixel >> 11U) & 0x1fU) << 3U;
             const auto g = static_cast<std::uint32_t>((pixel >> 5U) & 0x3fU) << 2U;

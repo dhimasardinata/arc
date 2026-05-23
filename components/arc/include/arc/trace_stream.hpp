@@ -20,8 +20,11 @@ struct TraceStream {
         LogLane<LaneCapacity>& lane,
         const char* const name = "arc") noexcept
     {
+        if (name == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         auto comma = started;
-        auto count = std::size_t{};
         if (!started) {
             const auto begin = TraceEventWriter::json_begin(std::span(scratch));
             if (!begin) {
@@ -34,32 +37,58 @@ struct TraceStream {
             started = true;
         }
 
-        const auto drained = lane.drain([&](const LogEvent& event) noexcept {
-            if (failed != ESP_OK) {
-                return;
-            }
+        if (failed != ESP_OK) {
+            return failed;
+        }
+
+        LogEvent event{};
+        auto count = std::size_t{};
+        while (count < LogLane<LaneCapacity>::cap() && lane.peek(event)) {
             const auto encoded = TraceEventWriter::json_event(std::span(scratch), event, comma, name);
             if (!encoded) {
                 failed = encoded.error();
-                return;
+                return failed;
             }
-            failed = sink.write(*encoded);
+            const auto err = sink.write(*encoded);
+            if (err != ESP_OK) {
+                failed = err;
+                return failed;
+            }
+            static_cast<void>(lane.drop());
             comma = true;
             ++count;
-        });
-        static_cast<void>(drained);
-        return failed == ESP_OK ? ESP_OK : failed;
+        }
+        return ESP_OK;
     }
 
     [[nodiscard]] esp_err_t finish() noexcept
     {
+        if (failed != ESP_OK) {
+            return failed;
+        }
+
+        if (!started) {
+            const auto begin = TraceEventWriter::json_begin(std::span(scratch));
+            if (!begin) {
+                return begin.error();
+            }
+            const auto err = sink.write(*begin);
+            if (err != ESP_OK) {
+                return err;
+            }
+            started = true;
+        }
+
         const auto end = TraceEventWriter::json_end(std::span(scratch));
         if (!end) {
             return end.error();
         }
-        started = false;
-        failed = ESP_OK;
-        return sink.write(*end);
+        const auto err = sink.write(*end);
+        if (err == ESP_OK) {
+            started = false;
+            failed = ESP_OK;
+        }
+        return err;
     }
 
     Sink sink{};

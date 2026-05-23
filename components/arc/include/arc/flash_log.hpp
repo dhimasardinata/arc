@@ -28,7 +28,7 @@ struct FlashLog {
     {
         Record record{};
         std::size_t count{};
-        while (count < max && queue.try_pop(record)) {
+        while (count < max && queue.peek(record)) {
             const auto bytes = std::span<const std::uint8_t>{
                 reinterpret_cast<const std::uint8_t*>(&record),
                 sizeof(record),
@@ -37,6 +37,7 @@ struct FlashLog {
             if (err != ESP_OK) {
                 return err;
             }
+            static_cast<void>(queue.drop());
             ++count;
         }
         return ESP_OK;

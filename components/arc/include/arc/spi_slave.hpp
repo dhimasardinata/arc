@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 
@@ -169,7 +170,7 @@ struct SpiSlave {
     {
         Transaction trans{};
         trans.flags = flags;
-        trans.length = bytes * 8U;
+        trans.length = bit_length(bytes);
         trans.tx_buffer = tx;
         trans.rx_buffer = rx;
         trans.user = const_cast<void*>(user);
@@ -407,6 +408,13 @@ struct SpiSlave {
         return MaxBytes;
     }
 
+    [[nodiscard]] static constexpr bool bytes_fit(const std::size_t bytes) noexcept
+    {
+        return bytes != 0U &&
+            bytes <= static_cast<std::size_t>(MaxBytes) &&
+            bytes <= std::numeric_limits<std::size_t>::max() / 8U;
+    }
+
     [[nodiscard]] static bool enabled() noexcept
     {
         return state.enabled;
@@ -454,6 +462,11 @@ private:
 
     constinit static inline State state{false, 0U};
     constinit static inline std::uint32_t ticket_cookie{};
+
+    [[nodiscard]] static constexpr std::size_t bit_length(const std::size_t bytes) noexcept
+    {
+        return bytes_fit(bytes) ? bytes * 8U : 0U;
+    }
 
     [[nodiscard]] static bool invalid(const Transaction& trans) noexcept
     {

@@ -111,6 +111,10 @@ struct Text {
 
     [[nodiscard]] bool u64(std::uint64_t value) noexcept
     {
+        if (out_.data() == nullptr) {
+            return false;
+        }
+
         char digits[20]{};
         std::size_t count{};
         do {
@@ -153,7 +157,7 @@ struct Text {
 
     [[nodiscard]] bool hex(std::uint64_t value, const std::uint8_t width = 0U) noexcept
     {
-        if (width > 16U) {
+        if (width > 16U || out_.data() == nullptr) {
             return false;
         }
 
@@ -247,6 +251,17 @@ struct Hex {
 
 namespace detail {
 
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
+[[nodiscard]] constexpr bool valid_text(const std::string_view value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
 template <typename T>
 concept TextArg = std::same_as<std::remove_cvref_t<T>, std::string_view> ||
     std::same_as<std::remove_cvref_t<T>, Hex> ||
@@ -336,6 +351,10 @@ template <typename... Args>
     const std::string_view format,
     const Args&... args) noexcept
 {
+    if (!detail::valid_span(storage) || !detail::valid_text(format)) {
+        return fail(ESP_ERR_INVALID_ARG);
+    }
+
     Text out{storage};
     std::size_t arg{};
     std::size_t i{};

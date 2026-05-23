@@ -39,6 +39,38 @@ template <typename T>
     return value < lo ? lo : (value > hi ? hi : value);
 }
 
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
+template <typename T>
+[[nodiscard]] bool finite_value(const T value) noexcept
+{
+    if constexpr (std::is_floating_point_v<T>) {
+        return std::isfinite(value);
+    } else {
+        return true;
+    }
+}
+
+template <typename T>
+[[nodiscard]] constexpr T magnitude(const T value) noexcept
+{
+    if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
+        if (value >= T{}) {
+            return value;
+        }
+        using Unsigned = std::make_unsigned_t<T>;
+        const auto mag = static_cast<Unsigned>(-(value + T{1})) + Unsigned{1};
+        const auto max = static_cast<Unsigned>(std::numeric_limits<T>::max());
+        return mag > max ? std::numeric_limits<T>::max() : static_cast<T>(mag);
+    } else {
+        return value < T{} ? -value : value;
+    }
+}
+
 template <typename T>
 [[nodiscard]] constexpr AlphaBeta<T> clarke(const Phase3<T> phase) noexcept
 {
@@ -201,6 +233,9 @@ struct DspAccel {
         const std::span<const float> lhs,
         const std::span<const float> rhs) noexcept
     {
+        if (!valid_span(lhs) || !valid_span(rhs)) {
+            return 0.0F;
+        }
         const auto count = lhs.size() < rhs.size() ? lhs.size() : rhs.size();
         return Backend::dot_f32(lhs.data(), rhs.data(), count);
     }
@@ -210,6 +245,9 @@ struct DspAccel {
         const std::span<const float> in,
         const float gain) noexcept
     {
+        if (!valid_span(acc) || !valid_span(in) || !std::isfinite(gain)) {
+            return;
+        }
         const auto count = acc.size() < in.size() ? acc.size() : in.size();
         Backend::mac_f32(acc.data(), in.data(), gain, count);
     }
@@ -275,7 +313,7 @@ template <typename T>
 {
     T top{};
     for (std::size_t i = 0; i < count; ++i) {
-        const auto value = in[i] < T{} ? -in[i] : in[i];
+        const auto value = magnitude(in[i]);
         top = value > top ? value : top;
     }
     return top;
@@ -503,11 +541,12 @@ struct Beamform {
         const DelaySumPlan& plan,
         const std::span<T> out) noexcept
     {
-        if (out.empty()) {
+        if (out.empty() || !arc::dsp::valid_span(out) || !finite_value(plan.scale)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         for (std::size_t channel = 0; channel < Channels; ++channel) {
-            if (inputs[channel].empty() || plan.delay_samples[channel] >= inputs[channel].size()) {
+            if (inputs[channel].empty() || !arc::dsp::valid_span(inputs[channel]) ||
+                plan.delay_samples[channel] >= inputs[channel].size() || !finite_value(plan.gain[channel])) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
         }
@@ -533,7 +572,8 @@ struct Beamform {
         const std::size_t max_lag) noexcept
     {
         constexpr auto max_scan_lag = static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max() - 1);
-        if (reference.empty() || delayed.empty() || max_lag == 0U || max_lag > max_scan_lag) {
+        if (reference.empty() || delayed.empty() || !arc::dsp::valid_span(reference) || !arc::dsp::valid_span(delayed) ||
+            max_lag == 0U || max_lag > max_scan_lag) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -554,7 +594,7 @@ struct Beamform {
             if (count == 0U) {
                 continue;
             }
-            const auto score = acc < T{} ? -acc : acc;
+            const auto score = magnitude(acc);
             if (!best_ready || score > best.confidence) {
                 best = {
                     .lag_samples = lag,
@@ -577,8 +617,11 @@ struct Beamform {
         const float sound_mps = 343.0F) noexcept
     {
         if (reference.size() != delayed.size() || scratch.size() < reference.size() ||
+            !arc::dsp::valid_span(reference) || !arc::dsp::valid_span(delayed) || !arc::dsp::valid_span(scratch) ||
             !simd::is_pow2(reference.size()) || max_lag == 0U ||
-            sample_hz <= 0.0F || mic_spacing_m <= 0.0F || sound_mps <= 0.0F) {
+            !std::isfinite(sample_hz) || sample_hz <= 0.0F ||
+            !std::isfinite(mic_spacing_m) || mic_spacing_m <= 0.0F ||
+            !std::isfinite(sound_mps) || sound_mps <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -689,13 +732,21 @@ struct Aec {
         const Config config = {}) noexcept
     {
         const auto count = out.size() < far_end.size() ? (out.size() < microphone.size() ? out.size() : microphone.size()) : (far_end.size() < microphone.size() ? far_end.size() : microphone.size());
-        if (count == 0U) {
+        if (count == 0U || !arc::dsp::valid_span(out) || !arc::dsp::valid_span(far_end) || !arc::dsp::valid_span(microphone) ||
+            !valid_config(config)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         for (std::size_t i = 0; i < count; ++i) {
             out[i] = step(state, far_end[i], microphone[i], config);
         }
         return count;
+    }
+
+private:
+    [[nodiscard]] static bool valid_config(const Config config) noexcept
+    {
+        return finite_value(config.mu) && finite_value(config.epsilon) &&
+            finite_value(config.leak) && config.epsilon > T{};
     }
 };
 

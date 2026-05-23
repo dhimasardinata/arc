@@ -35,12 +35,15 @@ struct MotionPlan {
         std::uint32_t major{};
         for (std::size_t axis = 0; axis < Axes; ++axis) {
             const auto value = segment.delta[axis];
-            distance[axis] = static_cast<std::uint32_t>(value < 0 ? -value : value);
+            distance[axis] = magnitude(value);
             major = distance[axis] > major ? distance[axis] : major;
         }
 
         if (major == 0U) {
             return out.first(0);
+        }
+        if (out.data() == nullptr) {
+            return fail(ESP_ERR_INVALID_ARG);
         }
         if (out.size() < major) {
             return fail(ESP_ERR_NO_MEM);
@@ -59,6 +62,12 @@ struct MotionPlan {
             out[step] = MotionStep<Axes>{.mask = mask, .ticks = segment.ticks_step};
         }
         return out.first(major);
+    }
+
+private:
+    [[nodiscard]] static constexpr std::uint32_t magnitude(const std::int32_t value) noexcept
+    {
+        return value < 0 ? static_cast<std::uint32_t>(-(value + 1)) + 1U : static_cast<std::uint32_t>(value);
     }
 };
 

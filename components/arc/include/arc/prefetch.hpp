@@ -22,14 +22,18 @@ template <typename T, std::size_t Extent>
     requires std::is_trivially_copyable_v<T>
 IRAM_ATTR [[gnu::always_inline]] inline void prefetch(const std::span<T, Extent> data) noexcept
 {
-    prefetch(data.data());
+    if (data.data() != nullptr) {
+        prefetch(data.data());
+    }
 }
 
 template <typename T, std::size_t Extent>
     requires std::is_trivially_copyable_v<T>
 IRAM_ATTR [[gnu::always_inline]] inline void prefetch_write(const std::span<T, Extent> data) noexcept
 {
-    prefetch_write(data.data());
+    if (data.data() != nullptr) {
+        prefetch_write(data.data());
+    }
 }
 
 }  // namespace arc

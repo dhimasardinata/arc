@@ -43,7 +43,8 @@ struct FlexRoute {
             return false;
         }
         const auto lo = sample.expected_hz > sample.tolerance_hz ? sample.expected_hz - sample.tolerance_hz : 0U;
-        const auto hi = sample.expected_hz + sample.tolerance_hz;
+        const auto room = UINT32_MAX - sample.expected_hz;
+        const auto hi = sample.tolerance_hz > room ? UINT32_MAX : sample.expected_hz + sample.tolerance_hz;
         return sample.measured_hz < lo || sample.measured_hz > hi;
     }
 

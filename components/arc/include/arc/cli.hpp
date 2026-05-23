@@ -56,6 +56,9 @@ struct Cli {
 
     [[nodiscard]] Status parse(const std::span<const char> line) const noexcept
     {
+        if (!valid_span(line)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
         std::array<std::string_view, max_args() + 1U> tokens{};
         const auto count = tokenize(line, tokens);
         if (count == 0U) {
@@ -65,6 +68,12 @@ struct Cli {
     }
 
 private:
+    template <typename T, std::size_t Extent>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
+    }
+
     [[nodiscard]] static constexpr std::size_t max_args() noexcept
     {
         std::size_t out{};

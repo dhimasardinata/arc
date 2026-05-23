@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "esp_attr.h"
 #include "esp_check.h"
@@ -404,6 +405,9 @@ struct Rgb<RgbLines<DataPins...>,
     {
         boot();
         if (count == 0U) {
+            return {};
+        }
+        if (count > (std::numeric_limits<std::size_t>::max() / sizeof(T))) {
             return {};
         }
 

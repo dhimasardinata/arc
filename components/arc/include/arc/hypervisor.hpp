@@ -10,6 +10,16 @@
 
 namespace arc::vm {
 
+namespace detail {
+
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool hypervisor_valid_span(const std::span<T, Extent> data) noexcept
+{
+    return data.empty() || data.data() != nullptr;
+}
+
+}  // namespace detail
+
 enum class TrapKind : std::uint8_t {
     memory,
     peripheral,
@@ -51,6 +61,10 @@ struct Hypervisor {
     [[nodiscard]] static bool valid(const Partition& partition) noexcept
     {
         return !partition.code.empty() && !partition.ram.empty() &&
+            detail::hypervisor_valid_span(partition.code) &&
+            detail::hypervisor_valid_span(partition.ram) &&
+            detail::hypervisor_valid_span(partition.trusted_peripherals) &&
+            detail::hypervisor_valid_span(partition.untrusted_peripherals) &&
             partition.trusted_core != partition.untrusted_core;
     }
 

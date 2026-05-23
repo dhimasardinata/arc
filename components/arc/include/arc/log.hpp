@@ -62,14 +62,32 @@ struct LogLane {
         return lane_.try_pop(event);
     }
 
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool peek(LogEvent& event) noexcept
+    {
+        return lane_.peek(event);
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool drop() noexcept
+    {
+        return lane_.drop();
+    }
+
     template <typename Fn>
     [[nodiscard]] inline std::size_t drain(Fn&& fn, const std::size_t max = Capacity - 1U) noexcept(noexcept(fn(std::declval<const LogEvent&>())))
     {
         LogEvent event{};
         std::size_t count{};
         while (count < max && lane_.try_pop(event)) {
-            fn(event);
-            ++count;
+            if constexpr (std::is_same_v<std::invoke_result_t<Fn&, const LogEvent&>, bool>) {
+                const auto keep_going = fn(event);
+                ++count;
+                if (!keep_going) {
+                    break;
+                }
+            } else {
+                fn(event);
+                ++count;
+            }
         }
         return count;
     }

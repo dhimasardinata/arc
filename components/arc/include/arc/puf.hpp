@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/dsp.hpp"
@@ -17,6 +18,12 @@
 
 namespace arc::crypto {
 
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool puf_valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
 struct PufStats {
     std::size_t raw_bits{};
     std::size_t stable_bits{};
@@ -28,7 +35,7 @@ struct Puf {
         const std::span<const std::byte> sram,
         const std::span<std::uint8_t> raw) noexcept
     {
-        if (sram.empty() || raw.size() < sram.size()) {
+        if (sram.empty() || !puf_valid_span(sram) || !puf_valid_span(raw) || raw.size() < sram.size()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         for (std::size_t i = 0U; i < sram.size(); ++i) {
@@ -43,7 +50,7 @@ struct Puf {
         typename dsp::Biquad<std::int32_t>::State& filter,
         const typename dsp::Biquad<std::int32_t>::Coeffs coeffs = {.b0 = 1}) noexcept
     {
-        if (out.empty()) {
+        if (out.empty() || out.data() == nullptr) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -53,7 +60,7 @@ struct Puf {
                 return fail(raw.error());
             }
             const auto filtered = dsp::Biquad<std::int32_t>::step(filter, coeffs, static_cast<std::int32_t>(*raw));
-            out[i] = static_cast<std::uint16_t>(filtered < 0 ? -filtered : filtered);
+            out[i] = magnitude_u16(filtered);
         }
         return out.size();
     }
@@ -62,6 +69,10 @@ struct Puf {
         const std::span<const std::uint8_t> raw,
         const std::span<std::uint8_t> stable) noexcept
     {
+        if (!puf_valid_span(raw) || !puf_valid_span(stable)) {
+            return {};
+        }
+
         for (auto& byte : stable) {
             byte = 0U;
         }
@@ -90,7 +101,7 @@ struct Puf {
     [[nodiscard]] static Result<std::array<std::uint8_t, 32>> derive_key(
         const std::span<const std::uint8_t> stable) noexcept
     {
-        if (stable.empty()) {
+        if (stable.empty() || stable.data() == nullptr) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         return Sha::template sum<SHA2_256>(stable);
@@ -101,13 +112,23 @@ struct Puf {
     [[nodiscard]] static Result<std::array<std::uint8_t, 32>> derive_with(
         const std::span<const std::uint8_t> stable) noexcept
     {
-        if (stable.empty()) {
+        if (stable.empty() || stable.data() == nullptr) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         return Hash::sha256(stable);
     }
 
 private:
+    [[nodiscard]] static constexpr std::uint16_t magnitude_u16(const std::int32_t value) noexcept
+    {
+        const auto mag = value < 0
+            ? static_cast<std::uint32_t>(-(value + 1)) + 1U
+            : static_cast<std::uint32_t>(value);
+        return mag > std::numeric_limits<std::uint16_t>::max()
+            ? std::numeric_limits<std::uint16_t>::max()
+            : static_cast<std::uint16_t>(mag);
+    }
+
     [[nodiscard]] static bool bit_at(
         const std::span<const std::uint8_t> bytes,
         const std::size_t bit) noexcept

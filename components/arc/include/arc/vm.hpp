@@ -1,9 +1,11 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 #include <type_traits>
 
@@ -11,6 +13,16 @@
 #include "arc/tee.hpp"
 
 namespace arc::vm {
+
+namespace detail {
+
+template <typename T>
+[[nodiscard]] constexpr bool valid_span(const std::span<T> data) noexcept
+{
+    return data.empty() || data.data() != nullptr;
+}
+
+}  // namespace detail
 
 enum class BpfOp : std::uint8_t {
     exit = 0x00U,
@@ -106,6 +118,10 @@ struct BpfSandbox {
         const std::span<std::uint8_t> buffer,
         const PmsAccess untrusted = PmsAccess::read) noexcept
     {
+        if (!detail::valid_span(buffer)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
         const auto region = world(buffer, untrusted);
         return status(WorldGuard<Policy>::configure(std::span<const WorldRegion>{&region, 1U}));
     }
@@ -123,7 +139,8 @@ struct BPF {
         const std::span<const std::uint8_t> bytes,
         const std::span<BpfInsn> out) noexcept
     {
-        if (bytes.empty() || (bytes.size() % instruction_bytes) != 0U) {
+        if (bytes.empty() || !detail::valid_span(bytes) || !detail::valid_span(out) ||
+            (bytes.size() % instruction_bytes) != 0U) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         const auto count = bytes.size() / instruction_bytes;
@@ -140,7 +157,8 @@ struct BPF {
         const std::span<const std::int64_t> args = {},
         const BpfLimits limits = {}) noexcept
     {
-        if (program.empty() || limits.max_steps == 0U || args.size() + 1U > Registers) {
+        if (program.empty() || limits.max_steps == 0U || args.size() >= Registers ||
+            !detail::valid_span(program) || !detail::valid_span(memory) || !detail::valid_span(args)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -173,38 +191,38 @@ struct BPF {
                     ++pc;
                     break;
                 case BpfOp::add_imm:
-                    regs[insn.dst()] += insn.imm;
+                    regs[insn.dst()] = wrap_add(regs[insn.dst()], insn.imm);
                     ++pc;
                     break;
                 case BpfOp::add_reg:
-                    regs[insn.dst()] += regs[insn.src()];
+                    regs[insn.dst()] = wrap_add(regs[insn.dst()], regs[insn.src()]);
                     ++pc;
                     break;
                 case BpfOp::sub_imm:
-                    regs[insn.dst()] -= insn.imm;
+                    regs[insn.dst()] = wrap_sub(regs[insn.dst()], insn.imm);
                     ++pc;
                     break;
                 case BpfOp::sub_reg:
-                    regs[insn.dst()] -= regs[insn.src()];
+                    regs[insn.dst()] = wrap_sub(regs[insn.dst()], regs[insn.src()]);
                     ++pc;
                     break;
                 case BpfOp::mul_imm:
-                    regs[insn.dst()] *= insn.imm;
+                    regs[insn.dst()] = wrap_mul(regs[insn.dst()], insn.imm);
                     ++pc;
                     break;
                 case BpfOp::mul_reg:
-                    regs[insn.dst()] *= regs[insn.src()];
+                    regs[insn.dst()] = wrap_mul(regs[insn.dst()], regs[insn.src()]);
                     ++pc;
                     break;
                 case BpfOp::div_imm:
-                    if (insn.imm == 0) {
+                    if (insn.imm == 0 || div_overflows(regs[insn.dst()], insn.imm)) {
                         return fail(ESP_ERR_INVALID_ARG);
                     }
                     regs[insn.dst()] /= insn.imm;
                     ++pc;
                     break;
                 case BpfOp::div_reg:
-                    if (regs[insn.src()] == 0) {
+                    if (regs[insn.src()] == 0 || div_overflows(regs[insn.dst()], regs[insn.src()])) {
                         return fail(ESP_ERR_INVALID_ARG);
                     }
                     regs[insn.dst()] /= regs[insn.src()];
@@ -238,7 +256,7 @@ struct BPF {
                     if (insn.imm < 0 || insn.imm >= 63) {
                         return fail(ESP_ERR_INVALID_ARG);
                     }
-                    regs[insn.dst()] <<= insn.imm;
+                    regs[insn.dst()] = from_bits(bits(regs[insn.dst()]) << static_cast<unsigned>(insn.imm));
                     ++pc;
                     break;
                 case BpfOp::rsh_imm:
@@ -249,7 +267,11 @@ struct BPF {
                     ++pc;
                     break;
                 case BpfOp::load32: {
-                    const auto read = read_u32(memory, address(insn, insn.src()));
+                    const auto source = address(insn, insn.src());
+                    if (!source) {
+                        return fail(source.error());
+                    }
+                    const auto read = read_u32(memory, *source);
                     if (!read) {
                         return fail(read.error());
                     }
@@ -261,7 +283,9 @@ struct BPF {
                     if (!limits.writable_memory) {
                         return fail(ESP_ERR_INVALID_STATE);
                     }
-                    if (const auto written = write_u32(memory, address(insn, insn.dst()), static_cast<std::uint32_t>(regs[insn.src()])); !written) {
+                    if (const auto target = address(insn, insn.dst()); !target) {
+                        return fail(target.error());
+                    } else if (const auto written = write_u32(memory, *target, static_cast<std::uint32_t>(regs[insn.src()])); !written) {
                         return fail(written.error());
                     }
                     ++pc;
@@ -292,11 +316,78 @@ struct BPF {
     }
 
 private:
-    [[nodiscard]] std::int64_t address(
+    [[nodiscard]] static constexpr std::uint64_t bits(const std::int64_t value) noexcept
+    {
+        return std::bit_cast<std::uint64_t>(value);
+    }
+
+    [[nodiscard]] static constexpr std::int64_t from_bits(const std::uint64_t value) noexcept
+    {
+        return std::bit_cast<std::int64_t>(value);
+    }
+
+    [[nodiscard]] static constexpr std::int64_t wrap_add(
+        const std::int64_t lhs,
+        const std::int64_t rhs) noexcept
+    {
+        return from_bits(bits(lhs) + bits(rhs));
+    }
+
+    [[nodiscard]] static constexpr std::int64_t wrap_sub(
+        const std::int64_t lhs,
+        const std::int64_t rhs) noexcept
+    {
+        return from_bits(bits(lhs) - bits(rhs));
+    }
+
+    [[nodiscard]] static constexpr std::int64_t wrap_mul(
+        const std::int64_t lhs,
+        const std::int64_t rhs) noexcept
+    {
+        return from_bits(bits(lhs) * bits(rhs));
+    }
+
+    [[nodiscard]] static constexpr bool div_overflows(
+        const std::int64_t lhs,
+        const std::int64_t rhs) noexcept
+    {
+        return lhs == std::numeric_limits<std::int64_t>::min() && rhs == -1;
+    }
+
+    [[nodiscard]] static constexpr bool add_checked(
+        const std::int64_t lhs,
+        const std::int64_t rhs,
+        std::int64_t& out) noexcept
+    {
+        if (rhs > 0 && lhs > std::numeric_limits<std::int64_t>::max() - rhs) {
+            return false;
+        }
+        if (rhs < 0) {
+            if (rhs == std::numeric_limits<std::int64_t>::min()) {
+                if (lhs < 0) {
+                    return false;
+                }
+            } else if (lhs < std::numeric_limits<std::int64_t>::min() - rhs) {
+                return false;
+            }
+        }
+        out = lhs + rhs;
+        return true;
+    }
+
+    [[nodiscard]] Result<std::int64_t> address(
         const BpfInsn insn,
         const std::uint8_t reg) const noexcept
     {
-        return regs[reg] + insn.offset + insn.imm;
+        std::int64_t with_offset{};
+        if (!add_checked(regs[reg], insn.offset, with_offset)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        std::int64_t out{};
+        if (!add_checked(with_offset, insn.imm, out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return out;
     }
 
     [[nodiscard]] static constexpr std::int64_t jump(
@@ -310,11 +401,13 @@ private:
         const std::span<const std::uint8_t> memory,
         const std::int64_t address) noexcept
     {
-        if (address < 0 || static_cast<std::uint64_t>(address) + sizeof(std::uint32_t) > memory.size()) {
+        const auto offset = static_cast<std::uint64_t>(address);
+        if (address < 0 || offset > memory.size() || memory.size() - static_cast<std::size_t>(offset) < sizeof(std::uint32_t)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
+        const auto index = static_cast<std::size_t>(offset);
         std::uint32_t value{};
-        std::memcpy(&value, memory.data() + address, sizeof(value));
+        std::memcpy(&value, memory.data() + index, sizeof(value));
         return value;
     }
 
@@ -323,10 +416,12 @@ private:
         const std::int64_t address,
         const std::uint32_t value) noexcept
     {
-        if (address < 0 || static_cast<std::uint64_t>(address) + sizeof(std::uint32_t) > memory.size()) {
+        const auto offset = static_cast<std::uint64_t>(address);
+        if (address < 0 || offset > memory.size() || memory.size() - static_cast<std::size_t>(offset) < sizeof(std::uint32_t)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
-        std::memcpy(memory.data() + address, &value, sizeof(value));
+        const auto index = static_cast<std::size_t>(offset);
+        std::memcpy(memory.data() + index, &value, sizeof(value));
         return ok();
     }
 };

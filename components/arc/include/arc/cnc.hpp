@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <string_view>
 #include <system_error>
@@ -65,7 +66,9 @@ struct Kinematics {
         const std::array<float, 3> xyz_mm,
         const DeltaConfig config = {}) noexcept
     {
-        if (config.arm_mm <= 0.0F || config.radius_mm <= 0.0F || config.steps_mm <= 0.0F) {
+        if (!finite(config.arm_mm) || !finite(config.radius_mm) || !finite(config.steps_mm) ||
+            config.arm_mm <= 0.0F || config.radius_mm <= 0.0F || config.steps_mm <= 0.0F ||
+            !finite(xyz_mm[0]) || !finite(xyz_mm[1]) || !finite(xyz_mm[2])) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         constexpr std::array<float, 3> tower_x{1.0F, -0.5F, -0.5F};
@@ -101,14 +104,34 @@ struct Kinematics {
 
     [[nodiscard]] static std::int32_t round_i32(const float value) noexcept
     {
+        if (!finite(value)) {
+            return value < 0.0F ? std::numeric_limits<std::int32_t>::min()
+                : value > 0.0F  ? std::numeric_limits<std::int32_t>::max()
+                                : 0;
+        }
+        const auto widened = static_cast<double>(value);
+        constexpr auto hi = static_cast<double>(std::numeric_limits<std::int32_t>::max()) - 0.5;
+        constexpr auto lo = static_cast<double>(std::numeric_limits<std::int32_t>::min()) + 0.5;
+        if (widened >= hi) {
+            return std::numeric_limits<std::int32_t>::max();
+        }
+        if (widened <= lo) {
+            return std::numeric_limits<std::int32_t>::min();
+        }
         return static_cast<std::int32_t>(value >= 0.0F ? value + 0.5F : value - 0.5F);
+    }
+
+private:
+    [[nodiscard]] static bool finite(const float value) noexcept
+    {
+        return std::isfinite(value);
     }
 };
 
 struct GCode {
     [[nodiscard]] static Result<GCodeBlock> parse_line(const std::span<const char> line) noexcept
     {
-        if (line.empty()) {
+        if (line.empty() || !valid_span(line)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         GCodeBlock out{};
@@ -126,10 +149,13 @@ struct GCode {
             }
             float value{};
             const auto parsed = std::from_chars(line.data() + start, line.data() + i, value);
-            if (parsed.ec != std::errc{}) {
+            if (parsed.ec != std::errc{} || !finite(value)) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
             if (word == 'G') {
+                if (!fits_i32(value)) {
+                    return fail(ESP_ERR_INVALID_ARG);
+                }
                 apply_g(out, static_cast<int>(value));
             } else if (word == 'M') {
                 out.command = Command::spindle;
@@ -137,6 +163,9 @@ struct GCode {
                 out.feed = value;
                 out.has_feed = true;
             } else if (word == 'N') {
+                if (!fits_u32(value)) {
+                    return fail(ESP_ERR_INVALID_ARG);
+                }
                 out.line = static_cast<std::uint32_t>(value);
             } else {
                 const auto axis = axis_index(word);
@@ -182,6 +211,31 @@ struct GCode {
     }
 
 private:
+    template <typename T, std::size_t Extent>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
+    }
+
+    [[nodiscard]] static bool finite(const float value) noexcept
+    {
+        return std::isfinite(value);
+    }
+
+    [[nodiscard]] static bool fits_i32(const float value) noexcept
+    {
+        const auto widened = static_cast<double>(value);
+        return widened >= static_cast<double>(std::numeric_limits<int>::min()) &&
+            widened <= static_cast<double>(std::numeric_limits<int>::max());
+    }
+
+    [[nodiscard]] static bool fits_u32(const float value) noexcept
+    {
+        const auto widened = static_cast<double>(value);
+        return widened >= 0.0 &&
+            widened <= static_cast<double>(std::numeric_limits<std::uint32_t>::max());
+    }
+
     [[nodiscard]] static constexpr bool is_space(const char c) noexcept
     {
         return c == ' ' || c == '\t' || c == '\r' || c == '\n';

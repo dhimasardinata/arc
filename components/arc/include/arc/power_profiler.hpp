@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/result.hpp"
@@ -44,7 +46,11 @@ struct Profiler {
         const std::span<PowerSample> out,
         const ProfilerConfig config = {}) noexcept
     {
-        if (config.sample_hz == 0U || config.milliamps_per_lsb <= 0.0F || out.empty()) {
+        if (config.sample_hz == 0U || !std::isfinite(config.milliamps_per_lsb) ||
+            config.milliamps_per_lsb <= 0.0F || out.empty() ||
+            (current_lsb.size() != 0U && current_lsb.data() == nullptr) ||
+            (pcs.size() != 0U && pcs.data() == nullptr) ||
+            out.data() == nullptr) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         const auto count = min(current_lsb.size(), min(pcs.size(), out.size()));
@@ -52,9 +58,12 @@ struct Profiler {
             return fail(ESP_ERR_INVALID_ARG);
         }
         const auto tick_step = 1'000'000U / config.sample_hz;
+        if (!ticks_fit(count, tick_step)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         for (std::size_t i = 0U; i < count; ++i) {
             out[i] = {
-                .tick = static_cast<std::uint32_t>(i) * tick_step,
+                .tick = tick_at(i, tick_step),
                 .pc = pcs[i],
                 .milliamps = scale_current(current_lsb[i], config.milliamps_per_lsb),
             };
@@ -87,16 +96,34 @@ private:
         return lhs < rhs ? lhs : rhs;
     }
 
+    [[nodiscard]] static constexpr bool ticks_fit(
+        const std::size_t count,
+        const std::uint32_t step) noexcept
+    {
+        return count == 0U || step == 0U ||
+            (count - 1U) <= (std::numeric_limits<std::uint32_t>::max() / step);
+    }
+
+    [[nodiscard]] static constexpr std::uint32_t tick_at(
+        const std::size_t index,
+        const std::uint32_t step) noexcept
+    {
+        return static_cast<std::uint32_t>(index) * step;
+    }
+
     [[nodiscard]] static std::uint16_t scale_current(
         const std::uint16_t value,
         const float scale) noexcept
     {
-        const auto milliamps = static_cast<float>(value) * scale;
+        const auto milliamps = static_cast<double>(value) * static_cast<double>(scale);
+        if (!std::isfinite(milliamps)) {
+            return 65535U;
+        }
         if (milliamps <= 0.0F) {
             return 0U;
         }
-        if (milliamps >= 65535.0F) {
-            return 65535U;
+        if (milliamps >= static_cast<double>(std::numeric_limits<std::uint16_t>::max())) {
+            return std::numeric_limits<std::uint16_t>::max();
         }
         return static_cast<std::uint16_t>(milliamps);
     }

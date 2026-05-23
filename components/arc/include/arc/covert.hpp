@@ -3,11 +3,22 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/result.hpp"
 
 namespace arc::covert {
+
+namespace detail {
+
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool covert_valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
+}  // namespace detail
 
 struct FskConfig {
     std::uint32_t mark_hz{};
@@ -49,6 +60,11 @@ struct Fsk {
         };
     }
 
+    [[nodiscard]] static constexpr bool fits(const std::size_t bytes, const std::size_t symbols) noexcept
+    {
+        return bytes <= std::numeric_limits<std::size_t>::max() / 8U && symbols >= bytes * 8U;
+    }
+
     template <std::size_t Symbols>
     [[nodiscard]] static Status plan(
         const std::span<FskSymbol, Symbols> out,
@@ -56,7 +72,8 @@ struct Fsk {
         const FskConfig config,
         const bool msb_first = true) noexcept
     {
-        if (!valid(config) || out.size() < bytes.size() * 8U) {
+        if (!valid(config) || !detail::covert_valid_span(out) || !detail::covert_valid_span(bytes) ||
+            !fits(bytes.size(), out.size())) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 
@@ -87,6 +104,9 @@ struct EmTx {
     template <std::size_t Symbols>
     [[nodiscard]] static Status symbols(const std::span<const FskSymbol, Symbols> symbols) noexcept
     {
+        if (!detail::covert_valid_span(symbols)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
         for (const auto sym : symbols) {
             auto sent = emit(sym);
             if (!sent) {

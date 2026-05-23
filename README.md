@@ -1340,7 +1340,7 @@ Bounded lock-free lane for one producer and one consumer.
 - `arc::Roles<arc::Spsc<T, Capacity>>` owns the lane privately and exposes only role endpoints, so direct queue mutation is not part of the wrapper's compile-time API.
 - `push(span)` and `pop(span)` batch contiguous transfers, wrapping at most once, so burst handoff avoids per-element index publication.
 - `size()` and `space()` expose the current ring occupancy and producer room.
-- `drain(scratch, fn, max)` batches consumer work without heap allocation.
+- `drain(scratch, fn, max)` batches consumer work without heap allocation; a bool-return callback stops the batch when it returns `false`.
 - `cap()` exposes the usable capacity; the backing ring keeps one slot empty.
 - `bytes()` exposes the queue object footprint.
 - Payloads stay trivially copyable and the backing ring size remains a power of two.
@@ -1356,7 +1356,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 - `try_push(event)` can be called by multiple producer tasks.
 - `try_pop(event)` is single-consumer and fits Core 0 drain loops.
 - `producer()`, `consumer()`, and `split()` return role endpoints; producer handles may be copied across producers, while the consumer handle is move-only.
-- `drain(scratch, fn, max)` batches consumer work without heap allocation.
+- `drain(scratch, fn, max)` batches consumer work without heap allocation; a bool-return callback stops the batch when it returns `false`.
 - `cap()` exposes the power-of-two static capacity.
 - `cell_align()`, `cell_bytes()`, and `bytes()` expose the queue's RAM geometry.
 - Sequence checks use explicit 32-bit modular deltas, so wrap is handled on the queue clock instead of pointer-width signed math.
@@ -1385,7 +1385,7 @@ Static fan-in made from one SPSC lane per producer and one round-robin consumer.
 - `try_pop(producer, event)` also reports which lane produced the event.
 - `pop(span)` batches consumer-side fan-in when producer identity is not needed per item.
 - `size<Producer>()` and `space<Producer>()` expose per-lane occupancy and producer room.
-- `drain(scratch, fn, max)` accepts either `fn(event)` or `fn(producer, event)`.
+- `drain(scratch, fn, max)` accepts either `fn(event)` or `fn(producer, event)`; a bool-return callback stops the batch when it returns `false`.
 - `cap()` is the usable per-producer lane capacity, `producers()` is the static lane count, and `bytes()` exposes the full object footprint.
 
 Use this when producer identity is static and tail latency matters more than one global FIFO order.
@@ -2016,7 +2016,7 @@ Lock-free binary event lane for realtime observability.
 
 - `push(id, payload, aux)` records cycle tick, event ID, and two 32-bit payload words without formatting or UART work.
 - `pop(event)` lets Core 0 drain one event.
-- `drain(fn, max)` drains a bounded batch into a formatter, socket, file, or test hook.
+- `drain(fn, max)` drains a bounded batch into a formatter, socket, file, or test hook; a bool-return callback stops the batch when it returns `false`.
 - `dropped()` reports overflow count when the producer outruns the consumer.
 - `arc::log_id("name")` creates stable non-zero 32-bit event IDs at compile time.
 

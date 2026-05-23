@@ -27,7 +27,8 @@ struct BlackBox {
         const std::span<const std::uint8_t, DigestBytes> previous_root,
         const std::span<const std::uint8_t> die_key) noexcept
     {
-        if (payload.empty() || die_key.empty() || payload.size() > std::numeric_limits<std::uint32_t>::max()) {
+        if (payload.empty() || die_key.empty() || payload.data() == nullptr || die_key.data() == nullptr ||
+            previous_root.data() == nullptr || payload.size() > std::numeric_limits<std::uint32_t>::max()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -55,17 +56,22 @@ struct BlackBox {
         const BlackBoxNode<DigestBytes>& node,
         const std::span<const std::uint8_t> payload) noexcept
     {
-        if (payload.size() != node.payload_bytes) {
+        if (payload.size() != node.payload_bytes || (!payload.empty() && payload.data() == nullptr)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         const auto header = std::span<const std::uint8_t>{
             reinterpret_cast<const std::uint8_t*>(&node),
             sizeof(node),
         };
+        constexpr auto max_offset = std::numeric_limits<std::uint32_t>::max();
+        if (sizeof(node) > max_offset || offset > max_offset - sizeof(node)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+        const auto payload_offset = static_cast<std::uint32_t>(offset + sizeof(node));
         if (const auto err = StoragePolicy::write_encrypted(offset, header); err != ESP_OK) {
             return Status{fail(err)};
         }
-        return status(StoragePolicy::write_encrypted(offset + sizeof(node), payload));
+        return status(StoragePolicy::write_encrypted(payload_offset, payload));
     }
 };
 

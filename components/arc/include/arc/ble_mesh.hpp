@@ -33,7 +33,7 @@ struct Mesh {
         const MeshModel model,
         const std::span<const std::uint8_t> payload) noexcept
     {
-        if (address.group == 0U || model.model == 0U || payload.empty()) {
+        if (address.group == 0U || model.model == 0U || payload.empty() || payload.data() == nullptr) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         return status(Policy::mesh_publish(address, model, payload));

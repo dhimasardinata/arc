@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <limits>
 #include <type_traits>
 
 namespace arc::stack {
@@ -15,7 +16,40 @@ inline constexpr std::size_t frame_limit = 1024U;
     const std::size_t bytes,
     const std::size_t align = alignof(std::max_align_t)) noexcept
 {
-    return (bytes + align - 1U) & ~(align - 1U);
+    if (align == 0U) {
+        return std::numeric_limits<std::size_t>::max();
+    }
+
+    const auto rem = bytes % align;
+    if (rem == 0U) {
+        return bytes;
+    }
+
+    const auto add = align - rem;
+    return bytes > std::numeric_limits<std::size_t>::max() - add
+        ? std::numeric_limits<std::size_t>::max()
+        : bytes + add;
+}
+
+[[nodiscard]] constexpr std::size_t add_sat(
+    const std::size_t lhs,
+    const std::size_t rhs) noexcept
+{
+    return lhs > std::numeric_limits<std::size_t>::max() - rhs
+        ? std::numeric_limits<std::size_t>::max()
+        : lhs + rhs;
+}
+
+[[nodiscard]] constexpr std::size_t mul_sat(
+    const std::size_t lhs,
+    const std::size_t rhs) noexcept
+{
+    if (lhs == 0U || rhs == 0U) {
+        return 0U;
+    }
+    return lhs > std::numeric_limits<std::size_t>::max() / rhs
+        ? std::numeric_limits<std::size_t>::max()
+        : lhs * rhs;
 }
 
 template <std::size_t LocalBytes = 0U,
@@ -24,19 +58,24 @@ template <std::size_t LocalBytes = 0U,
           std::size_t MarginBytes = safety_margin>
 [[nodiscard]] consteval std::size_t budget() noexcept
 {
-    return round_up(LocalBytes + CalleeBytes + RuntimeBytes + MarginBytes);
+    auto bytes = add_sat(LocalBytes, CalleeBytes);
+    bytes = add_sat(bytes, RuntimeBytes);
+    bytes = add_sat(bytes, MarginBytes);
+    return round_up(bytes);
 }
 
 template <typename T, std::size_t Count = 1U>
 [[nodiscard]] consteval std::size_t storage() noexcept
 {
-    return sizeof(T) * Count;
+    return mul_sat(sizeof(T), Count);
 }
 
 template <typename... T>
 [[nodiscard]] consteval std::size_t objects() noexcept
 {
-    return (std::size_t{} + ... + sizeof(T));
+    auto bytes = std::size_t{};
+    ((bytes = add_sat(bytes, sizeof(T))), ...);
+    return bytes;
 }
 
 template <typename T>

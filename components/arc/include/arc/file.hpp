@@ -62,8 +62,11 @@ struct File {
 
     [[nodiscard]] Result<std::size_t> read(void* const data, const std::size_t bytes) noexcept
     {
-        if (raw_ == nullptr || data == nullptr) {
+        if (raw_ == nullptr || (data == nullptr && bytes != 0U)) {
             return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (bytes == 0U) {
+            return 0U;
         }
 
         const auto got = std::fread(data, 1U, bytes, raw_);
@@ -83,8 +86,11 @@ struct File {
 
     [[nodiscard]] Result<std::size_t> write(const void* const data, const std::size_t bytes) noexcept
     {
-        if (raw_ == nullptr || data == nullptr) {
+        if (raw_ == nullptr || (data == nullptr && bytes != 0U)) {
             return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (bytes == 0U) {
+            return 0U;
         }
 
         const auto sent = std::fwrite(data, 1U, bytes, raw_);

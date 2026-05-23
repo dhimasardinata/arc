@@ -5,6 +5,8 @@
 #include <span>
 #include <utility>
 
+#include "esp_err.h"
+
 #if __has_include("soc/soc_caps.h")
 #include "soc/soc_caps.h"
 #endif
@@ -91,6 +93,11 @@ struct Paillier {
         const Public& key,
         const std::span<const Integer> ciphertexts)
     {
+        if (!ciphertexts.empty() && ciphertexts.data() == nullptr) {
+            using Result = decltype(ciphertexts[0].clone());
+            return fail<Result>(ESP_ERR_INVALID_ARG);
+        }
+
         auto acc = ciphertexts.empty() ? key.g.exp_mod(Integer{0}, key.n2) : ciphertexts[0].clone();
         using Result = decltype(acc);
         if (!acc) {

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 #include <type_traits>
 
@@ -45,7 +46,7 @@ struct Ws {
         std::span<char> out,
         const std::span<const std::uint8_t> nonce) noexcept
     {
-        if (nonce.size() != 16U) {
+        if (nonce.size() != 16U || nonce.data() == nullptr) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         return base64(out, nonce);
@@ -79,13 +80,16 @@ struct Ws {
         const bool rsv2 = false,
         const bool rsv3 = false) noexcept
     {
-        if ((bytes != 0U && data == nullptr) || !valid_opcode(opcode) ||
+        if ((out.size() != 0U && out.data() == nullptr) ||
+            (bytes != 0U && data == nullptr) ||
+            bytes > max_payload_bytes() ||
+            !valid_opcode(opcode) ||
             (control(opcode) && (!fin || bytes > 125U))) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
         const auto header = header_bytes(bytes, mask != 0U);
-        if (out.size() < header + bytes) {
+        if (out.size() < header || bytes > out.size() - header) {
             return fail(ESP_ERR_NO_MEM);
         }
 
@@ -163,7 +167,9 @@ struct Ws {
         const std::span<const std::uint8_t> reason = {},
         const std::uint32_t mask = 0U) noexcept
     {
-        if (reason.size() > 123U) {
+        if (reason.size() > 123U ||
+            (reason.size() != 0U && reason.data() == nullptr) ||
+            (code != 0U && !valid_close_code(code))) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -187,7 +193,7 @@ struct Ws {
         const std::span<const std::uint8_t> frame,
         const std::span<std::uint8_t> scratch = {}) noexcept
     {
-        if (frame.size() < 2U) {
+        if (!valid_span(frame) || !valid_span(scratch) || frame.size() < 2U) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -195,22 +201,26 @@ struct Ws {
         const auto byte1 = frame[1];
         const auto fin = (byte0 & 0x80U) != 0U;
         const auto masked = (byte1 & 0x80U) != 0U;
+        const auto length_code = static_cast<std::uint8_t>(byte1 & 0x7fU);
         auto pos = std::size_t{2U};
-        auto bytes = std::uint64_t{static_cast<std::uint64_t>(byte1 & 0x7fU)};
+        auto bytes = std::uint64_t{length_code};
 
-        if (bytes == 126U) {
+        if (length_code == 126U) {
             if (frame.size() < pos + 2U) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
             bytes = read_u16(frame, pos);
             pos += 2U;
-        } else if (bytes == 127U) {
+            if (bytes < 126U) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+        } else if (length_code == 127U) {
             if (frame.size() < pos + 8U) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
             bytes = read_u64(frame, pos);
             pos += 8U;
-            if ((bytes >> 63U) != 0U) {
+            if ((bytes >> 63U) != 0U || bytes <= 0xffffU) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
         }
@@ -248,6 +258,9 @@ struct Ws {
         } else {
             payload = frame.subspan(pos, static_cast<std::size_t>(bytes));
         }
+        if (opcode == WsOpcode::close && !valid_close_payload(payload)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
 
         return WsFrame{
             .opcode = opcode,
@@ -267,11 +280,11 @@ struct Ws {
         if (frame.opcode != WsOpcode::close) {
             return fail(ESP_ERR_INVALID_ARG);
         }
+        if (!valid_close_payload(frame.payload)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         if (frame.payload.empty()) {
             return WsClose{};
-        }
-        if (frame.payload.size() < 2U) {
-            return fail(ESP_ERR_INVALID_ARG);
         }
         return WsClose{
             .code = read_u16(frame.payload, 0U),
@@ -420,6 +433,37 @@ private:
         return false;
     }
 
+    [[nodiscard]] static constexpr std::size_t max_payload_bytes() noexcept
+    {
+        constexpr auto protocol_max = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+        if constexpr (std::numeric_limits<std::size_t>::max() < protocol_max) {
+            return std::numeric_limits<std::size_t>::max();
+        } else {
+            return static_cast<std::size_t>(protocol_max);
+        }
+    }
+
+    [[nodiscard]] static constexpr bool valid_close_code(const std::uint16_t code) noexcept
+    {
+        return code >= 1000U &&
+            code <= 4999U &&
+            code != 1004U &&
+            code != 1005U &&
+            code != 1006U &&
+            code != 1015U;
+    }
+
+    [[nodiscard]] static bool valid_close_payload(const std::span<const std::uint8_t> payload) noexcept
+    {
+        if (payload.empty()) {
+            return true;
+        }
+        if (payload.size() < 2U) {
+            return false;
+        }
+        return valid_close_code(read_u16(payload, 0U));
+    }
+
     [[nodiscard]] static constexpr std::size_t header_bytes(
         const std::size_t bytes,
         const bool masked) noexcept
@@ -478,14 +522,23 @@ private:
         std::span<char> out,
         const std::span<const std::uint8_t> data) noexcept
     {
-        const auto need = ((data.size() + 2U) / 3U) * 4U;
+        if (!valid_span(out) || !valid_span(data)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        const auto groups = (data.size() / 3U) + (data.size() % 3U != 0U ? 1U : 0U);
+        if (groups > std::numeric_limits<std::size_t>::max() / 4U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        const auto need = groups * 4U;
         if (out.size() < need) {
             return fail(ESP_ERR_NO_MEM);
         }
 
         auto pos = std::size_t{0U};
         auto i = std::size_t{0U};
-        while (i + 3U <= data.size()) {
+        while (data.size() - i >= 3U) {
             const auto chunk =
                 (static_cast<std::uint32_t>(data[i + 0U]) << 16U) |
                 (static_cast<std::uint32_t>(data[i + 1U]) << 8U) |
@@ -515,6 +568,12 @@ private:
         }
 
         return std::span<const char>{out.data(), pos};
+    }
+
+    template <typename T, std::size_t Extent>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
     }
 
     [[nodiscard]] static std::uint16_t read_u16(

@@ -41,7 +41,7 @@ struct Fabric {
         const std::uint32_t dst) noexcept
     {
         for (const auto route : table.routes) {
-            if (route.dst == dst && route.next_hop != 0U) {
+            if (route.dst != 0U && route.dst == dst && route.next_hop != 0U) {
                 return route;
             }
         }
@@ -55,7 +55,8 @@ struct Fabric {
         const std::span<const std::uint8_t> payload,
         const std::uint8_t ttl) noexcept
     {
-        if (src == 0U || dst == 0U || ttl == 0U || payload.size() > MaxBytes) {
+        if (src == 0U || dst == 0U || ttl == 0U || payload.size() > MaxBytes ||
+            (!payload.empty() && payload.data() == nullptr)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         FabricPacket<MaxBytes> packet{.src = src, .dst = dst, .ttl = ttl, .bytes = payload.size()};
@@ -72,7 +73,7 @@ struct Fabric {
         const SwarmSchedule<Nodes>& schedule,
         const std::uint64_t now_us) noexcept
     {
-        if (packet.ttl == 0U) {
+        if (!valid_packet(packet)) {
             return Status{fail(ESP_ERR_INVALID_STATE)};
         }
         auto route = lookup(table, packet.dst);
@@ -84,6 +85,13 @@ struct Fabric {
         }
         --packet.ttl;
         return status(Policy::send(route->next_hop, std::span<const std::uint8_t>{packet.payload.data(), packet.bytes}));
+    }
+
+    template <std::size_t MaxBytes>
+    [[nodiscard]] static constexpr bool valid_packet(
+        const FabricPacket<MaxBytes>& packet) noexcept
+    {
+        return packet.src != 0U && packet.dst != 0U && packet.ttl != 0U && packet.bytes <= MaxBytes;
     }
 };
 

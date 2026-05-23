@@ -33,11 +33,12 @@ struct Cloak {
         CloakStats stats{};
         auto noise = rng<Policy>();
         const auto stalls = (noise & plan.stall_mask) + 1U;
+        const auto has_dummy = !dummy.empty() && dummy.data() != nullptr;
         for (std::uint32_t i = 0U; i < stalls; ++i) {
             pause();
             ++stats.stalls;
         }
-        for (std::uint32_t i = 0U; i < plan.dummy_reads && !dummy.empty(); ++i) {
+        for (std::uint32_t i = 0U; i < plan.dummy_reads && has_dummy; ++i) {
             prefetch(dummy.data() + ((i + noise) % dummy.size()));
             ++stats.dummy_reads;
         }

@@ -51,6 +51,11 @@ template <i2s_slot_mode_t Slots>
 }
 #endif
 
+[[nodiscard]] constexpr bool i2s_valid_buffer(const void* const data, const std::size_t bytes) noexcept
+{
+    return bytes == 0U || data != nullptr;
+}
+
 template <int Bclk,
           int Ws,
           int Dout = static_cast<int>(I2S_GPIO_UNUSED),
@@ -214,6 +219,9 @@ struct I2s {
         std::size_t* const loaded) noexcept
         requires(Enabled)
     {
+        if (!i2s_valid_buffer(src, size) || loaded == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
         boot();
         return i2s_channel_preload_data(state.tx, src, size, loaded);
     }
@@ -247,6 +255,9 @@ struct I2s {
         const std::uint32_t timeout_ms = 1000U) noexcept
         requires(Enabled)
     {
+        if (!i2s_valid_buffer(src, size) || wrote == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
         boot();
         return i2s_channel_write(state.tx, src, size, wrote, timeout_ms);
     }
@@ -283,6 +294,9 @@ struct I2s {
         const std::uint32_t timeout_ms = 1000U) noexcept
         requires(Enabled)
     {
+        if (!i2s_valid_buffer(dst, size) || got == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
         boot();
         return i2s_channel_read(state.rx, dst, size, got, timeout_ms);
     }
@@ -701,6 +715,9 @@ struct I2sTdm {
         std::size_t* const loaded) noexcept
         requires(Enabled)
     {
+        if (!i2s_valid_buffer(src, size) || loaded == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
         boot();
         return i2s_channel_preload_data(state.tx, src, size, loaded);
     }
@@ -734,6 +751,9 @@ struct I2sTdm {
         const std::uint32_t timeout_ms = 1000U) noexcept
         requires(Enabled)
     {
+        if (!i2s_valid_buffer(src, size) || wrote == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
         boot();
         return i2s_channel_write(state.tx, src, size, wrote, timeout_ms);
     }
@@ -770,6 +790,9 @@ struct I2sTdm {
         const std::uint32_t timeout_ms = 1000U) noexcept
         requires(Enabled)
     {
+        if (!i2s_valid_buffer(dst, size) || got == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
         boot();
         return i2s_channel_read(state.rx, dst, size, got, timeout_ms);
     }
@@ -1180,6 +1203,9 @@ struct I2sPdm {
         std::size_t* const loaded) noexcept
         requires(Enabled)
     {
+        if (!i2s_valid_buffer(src, size) || loaded == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
         boot();
         return i2s_channel_preload_data(state.tx, src, size, loaded);
     }
@@ -1213,6 +1239,9 @@ struct I2sPdm {
         const std::uint32_t timeout_ms = 1000U) noexcept
         requires(Enabled)
     {
+        if (!i2s_valid_buffer(src, size) || wrote == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
         boot();
         return i2s_channel_write(state.tx, src, size, wrote, timeout_ms);
     }
@@ -1249,6 +1278,9 @@ struct I2sPdm {
         const std::uint32_t timeout_ms = 1000U) noexcept
         requires(Enabled)
     {
+        if (!i2s_valid_buffer(dst, size) || got == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
         boot();
         return i2s_channel_read(state.rx, dst, size, got, timeout_ms);
     }

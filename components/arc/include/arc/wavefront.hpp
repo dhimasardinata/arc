@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/result.hpp"
@@ -69,11 +70,12 @@ struct Wavefront {
         const std::size_t frames,
         const WavefrontConfig config = {}) noexcept
     {
-        if (frames == 0U || interleaved.size() < frames * Channels ||
+        if (frames == 0U || !frames_fit<Channels>(frames, interleaved.size()) ||
             config.sample_hz == 0U || config.carrier_hz == 0U) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
+        const auto samples = frames * Channels;
         constexpr auto two_pi = 6.28318530717958647692F;
         const auto step = two_pi * static_cast<float>(config.carrier_hz) / static_cast<float>(config.sample_hz);
         for (std::size_t frame = 0U; frame < frames; ++frame) {
@@ -89,7 +91,7 @@ struct Wavefront {
                 }
             }
         }
-        return frames * Channels;
+        return samples;
     }
 
     template <typename I2sTdm, std::size_t Extent>
@@ -101,6 +103,13 @@ struct Wavefront {
     }
 
 private:
+    template <std::size_t Channels>
+    [[nodiscard]] static constexpr bool frames_fit(const std::size_t frames, const std::size_t available) noexcept
+    {
+        return frames <= std::numeric_limits<std::size_t>::max() / Channels &&
+            available >= frames * Channels;
+    }
+
     [[nodiscard]] static constexpr std::int16_t clamp_s16(const float value) noexcept
     {
         return value > 32767.0F ? 32767 : (value < -32768.0F ? -32768 : static_cast<std::int16_t>(value));

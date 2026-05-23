@@ -1,9 +1,11 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 
 #include "arc/acoustic_slam.hpp"
@@ -13,6 +15,29 @@
 #include "arc/vslam.hpp"
 
 namespace arc::swarm {
+
+namespace detail {
+
+[[nodiscard]] consteval std::size_t hyper_cells(
+    const std::size_t x,
+    const std::size_t y,
+    const std::size_t z,
+    const std::size_t pitch,
+    const std::size_t yaw,
+    const std::size_t roll) noexcept
+{
+    std::size_t out{1U};
+    const std::array dims{x, y, z, pitch, yaw, roll};
+    for (const auto dim : dims) {
+        if (dim == 0U || out > (std::numeric_limits<std::size_t>::max() / dim)) {
+            return 0U;
+        }
+        out *= dim;
+    }
+    return out;
+}
+
+}  // namespace detail
 
 struct Pose6 {
     float x_mm{};
@@ -47,7 +72,12 @@ template <std::size_t X, std::size_t Y, std::size_t Z, std::size_t Pitch, std::s
 struct HyperMatrix {
     static_assert(X > 0U && Y > 0U && Z > 0U && Pitch > 0U && Yaw > 0U && Roll > 0U,
                   "HyperMatrix dimensions must be non-zero");
-    inline constexpr static std::size_t cells = X * Y * Z * Pitch * Yaw * Roll;
+    inline constexpr static std::size_t cells = detail::hyper_cells(X, Y, Z, Pitch, Yaw, Roll);
+    static_assert(cells != 0U, "HyperMatrix dimensions overflow size_t");
+    static_assert(cells <= ((std::numeric_limits<std::size_t>::max() - sizeof(HyperMatrixHeader)) / sizeof(float)),
+                  "HyperMatrix RDMA payload size overflows size_t");
+    static_assert(cells <= std::numeric_limits<std::uint32_t>::max(),
+                  "HyperMatrix cell count must fit wire metadata");
 
     std::array<Pose6, cells> state{};
     std::array<float, cells> probability{};
@@ -58,7 +88,8 @@ struct HyperMatrix {
         HyperMatrix out{};
         constexpr auto prior = 1.0F / static_cast<float>(cells);
         for (std::size_t i = 0U; i < cells; ++i) {
-            out.state[i] = grid[i];
+            const auto pose = grid.data() != nullptr ? grid[i] : Pose6{};
+            out.state[i] = valid_pose(pose) ? pose : Pose6{};
             out.probability[i] = prior;
         }
         return out;
@@ -66,7 +97,8 @@ struct HyperMatrix {
 
     [[nodiscard]] Status observe(const HyperObservation observation) noexcept
     {
-        if (observation.variance <= 0.0F) {
+        if (!std::isfinite(observation.variance) || observation.variance <= 0.0F ||
+            !valid_pose(observation.pose)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 
@@ -76,9 +108,12 @@ struct HyperMatrix {
             const auto d = distance6(state[i], observation.pose);
             const auto likelihood = weight / (observation.variance + d);
             probability[i] = (probability[i] * 0.25F) + likelihood;
+            if (!std::isfinite(probability[i])) {
+                return Status{fail(ESP_ERR_INVALID_STATE)};
+            }
             total += probability[i];
         }
-        if (total <= 0.0F) {
+        if (!std::isfinite(total) || total <= 0.0F) {
             return Status{fail(ESP_ERR_INVALID_STATE)};
         }
         for (auto& value : probability) {
@@ -97,6 +132,9 @@ struct HyperMatrix {
         auto total = 0.0F;
         for (std::size_t i = 0U; i < cells; ++i) {
             const auto p = probability[i];
+            if (!valid_pose(state[i]) || !std::isfinite(p) || p < 0.0F) {
+                return fail(ESP_ERR_INVALID_STATE);
+            }
             out.x_mm += state[i].x_mm * p;
             out.y_mm += state[i].y_mm * p;
             out.z_mm += state[i].z_mm * p;
@@ -106,7 +144,7 @@ struct HyperMatrix {
             out.time_us += static_cast<std::int64_t>(static_cast<float>(state[i].time_us) * p);
             total += p;
         }
-        if (total <= 0.0F) {
+        if (!std::isfinite(total) || total <= 0.0F || !valid_pose(out)) {
             return fail(ESP_ERR_INVALID_STATE);
         }
         return out;
@@ -191,6 +229,13 @@ struct HyperMatrix {
     }
 
 private:
+    [[nodiscard]] static bool valid_pose(const Pose6 pose) noexcept
+    {
+        return std::isfinite(pose.x_mm) && std::isfinite(pose.y_mm) &&
+            std::isfinite(pose.z_mm) && std::isfinite(pose.pitch_rad) &&
+            std::isfinite(pose.yaw_rad) && std::isfinite(pose.roll_rad);
+    }
+
     [[nodiscard]] static constexpr float modality_weight(const SpatialModality modality) noexcept
     {
         switch (modality) {

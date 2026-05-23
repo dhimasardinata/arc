@@ -15,6 +15,10 @@ namespace arc {
 struct TraceEventWriter {
     [[nodiscard]] static Result<std::span<const char>> json_begin(std::span<char> out) noexcept
     {
+        if (!detail::valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
         Text text{out};
         if (!text.append("{\"traceEvents\":[")) {
             return fail(ESP_ERR_NO_MEM);
@@ -24,6 +28,10 @@ struct TraceEventWriter {
 
     [[nodiscard]] static Result<std::span<const char>> json_end(std::span<char> out) noexcept
     {
+        if (!detail::valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
         Text text{out};
         if (!text.append("]}")) {
             return fail(ESP_ERR_NO_MEM);
@@ -37,7 +45,7 @@ struct TraceEventWriter {
         const bool comma = false,
         const char* const name = "arc") noexcept
     {
-        if (name == nullptr) {
+        if (!detail::valid_span(out) || name == nullptr) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 

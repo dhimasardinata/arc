@@ -4,12 +4,19 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 
 #include "arc/result.hpp"
 
 namespace arc::hls {
+
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
 
 enum class Interface : std::uint8_t {
     none,
@@ -53,6 +60,9 @@ template <typename T, std::size_t Taps>
 {
     static_assert(Taps > 0U, "HLS FIR needs fixed taps");
     static_assert(std::is_arithmetic_v<T>, "HLS FIR scalar must be arithmetic");
+    if (!valid_span(coeffs) || !valid_span(samples)) {
+        return fail(ESP_ERR_INVALID_ARG);
+    }
     T acc{};
     StaticLoop<Taps>::run([&](const std::size_t i) noexcept {
         acc += coeffs[i] * samples[i];
@@ -67,6 +77,9 @@ template <typename T, std::size_t Inputs>
 {
     static_assert(Inputs > 0U, "HLS dot needs fixed inputs");
     static_assert(std::is_arithmetic_v<T>, "HLS dot scalar must be arithmetic");
+    if (!valid_span(lhs) || !valid_span(rhs)) {
+        return fail(ESP_ERR_INVALID_ARG);
+    }
     T acc{};
     StaticLoop<Inputs>::run([&](const std::size_t i) noexcept {
         acc += lhs[i] * rhs[i];
@@ -76,6 +89,12 @@ template <typename T, std::size_t Inputs>
 
 template <std::size_t Inputs, std::size_t Outputs>
 struct DenseSpec {
+    static_assert(Inputs <= std::numeric_limits<std::uint32_t>::max(), "HLS dense input count is stored in uint32_t");
+    static_assert(Outputs <= std::numeric_limits<std::uint32_t>::max(), "HLS dense output count is stored in uint32_t");
+    static_assert(
+        Outputs == 0U || Inputs <= std::numeric_limits<std::uint32_t>::max() / Outputs,
+        "HLS dense latency metadata is stored in uint32_t");
+
     [[nodiscard]] static constexpr KernelSpec hls_spec() noexcept
     {
         return {

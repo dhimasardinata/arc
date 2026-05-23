@@ -20,11 +20,25 @@ struct TaskArena {
         const std::size_t size,
         const std::size_t alignment) noexcept
     {
+        if (data == nullptr || alignment == 0U || (alignment & (alignment - 1U)) != 0U || used > bytes) {
+            return nullptr;
+        }
         const auto base = reinterpret_cast<std::uintptr_t>(data);
+        constexpr auto max_addr = ~std::uintptr_t{};
+        if (used > max_addr - base) {
+            return nullptr;
+        }
         const auto current = base + used;
-        const auto aligned = (current + alignment - 1U) & ~(alignment - 1U);
+        const auto align_mask = static_cast<std::uintptr_t>(alignment - 1U);
+        if (current > max_addr - align_mask) {
+            return nullptr;
+        }
+        const auto aligned = (current + align_mask) & ~align_mask;
+        if (size > max_addr - aligned) {
+            return nullptr;
+        }
         const auto end = aligned + size;
-        if (data == nullptr || end < aligned || end - base > bytes) {
+        if (end < base || end - base > bytes) {
             return nullptr;
         }
         used = end - base;

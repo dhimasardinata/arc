@@ -85,10 +85,10 @@ struct Space {
             if (app.total != 0U) {
                 const auto apps = pct(app.total, chip);
                 ESP_LOGI(tag,
-                         "app area slots=%u total=%uB (%u KiB, %u.%02u%% chip)",
+                         "app area slots=%u total=%lluB (%llu KiB, %u.%02u%% chip)",
                          app.count,
-                         app.total,
-                         kib(app.total),
+                         static_cast<unsigned long long>(app.total),
+                         static_cast<unsigned long long>(kib64(app.total)),
                          apps.whole,
                          apps.frac);
             }
@@ -121,7 +121,7 @@ struct Space {
         static_cast<void>(esp_flash_get_size(nullptr, &chip));
 
         std::uint64_t total = 0;
-        std::uint32_t top = 0;
+        std::uint64_t top = 0;
         std::uint32_t count = 0;
 
         for (auto it = esp_partition_find(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, nullptr);
@@ -129,8 +129,8 @@ struct Space {
              it = esp_partition_next(it)) {
             const auto* const part = esp_partition_get(it);
             if (part != nullptr) {
-                const auto end = static_cast<std::uint32_t>(part->address + part->size);
-                total += static_cast<std::uint32_t>(part->size);
+                const auto end = static_cast<std::uint64_t>(part->address) + part->size;
+                total += part->size;
                 top = end > top ? end : top;
                 ++count;
 
@@ -146,25 +146,28 @@ struct Space {
         }
 
         if (chip == 0U) {
-            ESP_LOGI(
-                tag, "partitions count=%u total=%lluB top=0x%08x", count, static_cast<unsigned long long>(total), top);
+            ESP_LOGI(tag,
+                     "partitions count=%u total=%lluB top=0x%llx",
+                     count,
+                     static_cast<unsigned long long>(total),
+                     static_cast<unsigned long long>(top));
             return;
         }
 
-        const auto used = pct(static_cast<std::uint32_t>(total), chip);
+        const auto used = pct(total, chip);
         const auto filled = pct(top, chip);
-        const auto free = chip > top ? chip - top : 0U;
+        const auto free = static_cast<std::uint64_t>(chip) > top ? static_cast<std::uint64_t>(chip) - top : 0ULL;
         ESP_LOGI(tag,
-                 "partitions count=%u total=%lluB (%u.%02u%% chip) top=0x%08x (%u.%02u%% chip) tail_free=%uB (%u KiB)",
+                 "partitions count=%u total=%lluB (%u.%02u%% chip) top=0x%llx (%u.%02u%% chip) tail_free=%lluB (%llu KiB)",
                  count,
                  static_cast<unsigned long long>(total),
                  used.whole,
                  used.frac,
-                 top,
+                 static_cast<unsigned long long>(top),
                  filled.whole,
                  filled.frac,
-                 free,
-                 kib(free));
+                 static_cast<unsigned long long>(free),
+                 static_cast<unsigned long long>(kib64(free)));
     }
 
     static void all(const char* tag = "arc-space", const char* title = nullptr) noexcept
@@ -181,7 +184,7 @@ private:
     };
 
     struct AppArea {
-        std::uint32_t total;
+        std::uint64_t total;
         std::uint32_t count;
     };
 
@@ -195,7 +198,12 @@ private:
         return bytes / (1024U * 1024U);
     }
 
-    [[nodiscard]] static Percent pct(const std::uint32_t value, const std::uint32_t total) noexcept
+    [[nodiscard]] static constexpr std::uint64_t kib64(const std::uint64_t bytes) noexcept
+    {
+        return bytes / 1024ULL;
+    }
+
+    [[nodiscard]] static Percent pct(const std::uint64_t value, const std::uint64_t total) noexcept
     {
         if (total == 0U) {
             return {};
@@ -230,7 +238,7 @@ private:
                 continue;
             }
 
-            area.total += static_cast<std::uint32_t>(part->size);
+            area.total += part->size;
             ++area.count;
         }
         return area;

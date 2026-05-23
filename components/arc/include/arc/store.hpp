@@ -59,8 +59,17 @@ struct StoreText {
 
     [[nodiscard]] constexpr esp_err_t set(const std::string_view value) noexcept
     {
+        if (!value.empty() && value.data() == nullptr) {
+            return ESP_ERR_INVALID_ARG;
+        }
         if (value.size() > cap()) {
             return ESP_ERR_NVS_INVALID_LENGTH;
+        }
+
+        for (const char byte : value) {
+            if (byte == '\0') {
+                return ESP_ERR_INVALID_ARG;
+            }
         }
 
         for (std::size_t i = 0U; i < value.size(); ++i) {
@@ -242,7 +251,7 @@ struct Store {
         const std::span<char, Extent> out,
         std::size_t* chars = nullptr) noexcept
     {
-        if (out.empty()) {
+        if (out.empty() || out.data() == nullptr) {
             return ESP_ERR_INVALID_ARG;
         }
 

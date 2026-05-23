@@ -105,6 +105,9 @@ struct Ota {
         if (!session.open()) {
             return ESP_ERR_INVALID_STATE;
         }
+        if (data == nullptr && size != 0U) {
+            return ESP_ERR_INVALID_ARG;
+        }
         return esp_ota_write(session.raw, data, size);
     }
 
@@ -116,6 +119,9 @@ struct Ota {
     {
         if (!session.open()) {
             return ESP_ERR_INVALID_STATE;
+        }
+        if (data == nullptr && size != 0U) {
+            return ESP_ERR_INVALID_ARG;
         }
         return esp_ota_write_with_offset(session.raw, data, size, offset);
     }
@@ -130,13 +136,14 @@ struct Ota {
 
         const auto* const slot = session.slot;
         const auto handle = session.raw;
-        session.slot = nullptr;
-        session.raw = 0;
 
         auto err = esp_ota_end(handle);
         if (err != ESP_OK) {
             return err;
         }
+
+        session.slot = nullptr;
+        session.raw = 0;
 
         if (activate && slot != nullptr) {
             err = esp_ota_set_boot_partition(slot);

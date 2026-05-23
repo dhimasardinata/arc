@@ -98,7 +98,7 @@ struct HotPatch {
         const std::span<const std::uint8_t> payload,
         const std::size_t entry_offset = 0U) noexcept
     {
-        if (payload.empty() || entry_offset >= payload.size()) {
+        if (payload.empty() || payload.data() == nullptr || entry_offset >= payload.size()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 

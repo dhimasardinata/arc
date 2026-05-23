@@ -49,7 +49,7 @@ struct Jit {
         const std::span<std::uint32_t> out,
         const JitConfig config = {}) noexcept
     {
-        if (program.empty() || out.size() < program.size()) {
+        if (program.empty() || program.data() == nullptr || out.data() == nullptr || out.size() < program.size()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 

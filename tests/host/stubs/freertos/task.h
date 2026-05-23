@@ -29,6 +29,12 @@ inline TaskHandle_t xTaskGetCurrentTaskHandle() noexcept
     return reinterpret_cast<TaskHandle_t>(1);
 }
 
+inline TickType_t xTaskGetTickCount() noexcept
+{
+    static TickType_t tick{};
+    return ++tick;
+}
+
 inline BaseType_t xPortInIsrContext() noexcept
 {
     return 0;

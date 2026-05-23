@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -28,7 +29,7 @@ struct WasmCursor {
 
     [[nodiscard]] Result<std::uint8_t> u8() noexcept
     {
-        if (pos >= bytes.size()) {
+        if (pos >= bytes.size() || bytes.data() == nullptr) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         return bytes[pos++];
@@ -43,6 +44,9 @@ struct WasmCursor {
             if (!byte) {
                 return fail(byte.error());
             }
+            if (i == 4U && (*byte & 0xf0U) != 0U) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
             value |= static_cast<std::uint32_t>(*byte & 0x7fU) << shift;
             if ((*byte & 0x80U) == 0U) {
                 return value;
@@ -54,7 +58,7 @@ struct WasmCursor {
 
     [[nodiscard]] Result<std::int32_t> sleb() noexcept
     {
-        std::int32_t value{};
+        std::uint32_t value{};
         auto shift = 0U;
         std::uint8_t byte{};
         for (auto i = 0U; i < 5U; ++i) {
@@ -63,13 +67,13 @@ struct WasmCursor {
                 return fail(next.error());
             }
             byte = *next;
-            value |= static_cast<std::int32_t>(byte & 0x7fU) << shift;
+            value |= static_cast<std::uint32_t>(byte & 0x7fU) << shift;
             shift += 7U;
             if ((byte & 0x80U) == 0U) {
                 if (shift < 32U && (byte & 0x40U) != 0U) {
-                    value |= -(1 << shift);
+                    value |= ~std::uint32_t{} << shift;
                 }
-                return value;
+                return std::bit_cast<std::int32_t>(value);
             }
         }
         return fail(ESP_ERR_INVALID_ARG);
@@ -91,6 +95,9 @@ struct WasmSandbox {
     template <typename Policy>
     [[nodiscard]] static Status protect(const std::span<const std::uint32_t> image) noexcept
     {
+        if (image.empty() || image.data() == nullptr) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
         const auto region = executable(image);
         return status(WorldGuard<Policy>::configure(std::span<const WorldRegion>{&region, 1U}));
     }
@@ -103,7 +110,7 @@ struct WasmAot {
         const std::span<std::uint32_t> out,
         const WasmAotConfig config = {}) noexcept
     {
-        if (wasm.empty() || out.empty() || config.max_ops == 0U) {
+        if (wasm.empty() || out.empty() || wasm.data() == nullptr || out.data() == nullptr || config.max_ops == 0U) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 

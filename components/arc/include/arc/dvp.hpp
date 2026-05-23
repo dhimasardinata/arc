@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "esp_cam_ctlr.h"
 #include "esp_cam_ctlr_dvp.h"
@@ -220,6 +221,9 @@ struct Dvp<DvpLines<DataPins...>,
         }
 
         if (count == 0U) {
+            return {};
+        }
+        if (count > (std::numeric_limits<std::size_t>::max() / sizeof(T))) {
             return {};
         }
 

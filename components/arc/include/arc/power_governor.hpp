@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 
@@ -53,15 +54,15 @@ struct Governor {
             typename dsp::Kalman<T, 1, 1>::R r{};
             typename dsp::Kalman<T, 1, 1>::Measure z{};
             a(0, 0) = T{1};
-            q(0, 0) = static_cast<T>(config.process_noise);
+            q(0, 0) = noise_or(config.process_noise, T{1});
             h(0, 0) = T{1};
-            r(0, 0) = static_cast<T>(config.measurement_noise);
+            r(0, 0) = noise_or(config.measurement_noise, T{4});
             z(0, 0) = static_cast<T>(observed);
             slack_filter.predict(a, q);
             slack_filter.correct_diagonal(h, r, z);
         }
 
-        const auto predicted = static_cast<std::int32_t>(slack_filter.x(0, 0));
+        const auto predicted = clamp_i32(slack_filter.x(0, 0));
         const auto enough = deadlines.samples >= config.min_samples;
         const auto risk = predicted <= config.guard_cycles || deadlines.max_overrun > 0;
         const auto action = !enough ? GovernorAction::hold : risk ? GovernorAction::boost
@@ -104,6 +105,30 @@ struct Governor {
     }
 
 private:
+    [[nodiscard]] static T noise_or(
+        const float value,
+        const T fallback) noexcept
+    {
+        return std::isfinite(value) && value >= 0.0F ? static_cast<T>(value) : fallback;
+    }
+
+    [[nodiscard]] static std::int32_t clamp_i32(const T value) noexcept
+    {
+        const auto widened = static_cast<double>(value);
+        if (!std::isfinite(widened)) {
+            return widened < 0.0 ? std::numeric_limits<std::int32_t>::min()
+                : widened > 0.0  ? std::numeric_limits<std::int32_t>::max()
+                                 : 0;
+        }
+        if (widened >= static_cast<double>(std::numeric_limits<std::int32_t>::max())) {
+            return std::numeric_limits<std::int32_t>::max();
+        }
+        if (widened <= static_cast<double>(std::numeric_limits<std::int32_t>::min())) {
+            return std::numeric_limits<std::int32_t>::min();
+        }
+        return static_cast<std::int32_t>(widened);
+    }
+
     [[nodiscard]] static constexpr std::int32_t slack(
         const esp_cpu_cycle_count_t elapsed,
         const esp_cpu_cycle_count_t budget) noexcept

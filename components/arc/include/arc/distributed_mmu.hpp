@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 
@@ -39,14 +40,26 @@ struct DistributedSpan {
     std::uint16_t node{};
     std::uint32_t line_bytes{32U};
 
+    [[nodiscard]] constexpr bool bytes_fit() const noexcept
+    {
+        return count <= (std::numeric_limits<std::size_t>::max() / sizeof(T));
+    }
+
     [[nodiscard]] constexpr std::size_t bytes() const noexcept
     {
-        return count * sizeof(T);
+        return bytes_fit() ? count * sizeof(T) : std::numeric_limits<std::size_t>::max();
+    }
+
+    [[nodiscard]] constexpr bool range_fit() const noexcept
+    {
+        constexpr auto max_address = std::numeric_limits<std::uintptr_t>::max();
+        const auto total = bytes();
+        return bytes_fit() && total <= max_address && base <= (max_address - static_cast<std::uintptr_t>(total));
     }
 
     [[nodiscard]] constexpr bool contains(const std::uintptr_t address) const noexcept
     {
-        return address >= base && address < base + bytes();
+        return range_fit() && address >= base && (address - base) < bytes();
     }
 
     [[nodiscard]] constexpr Result<RemoteLineRequest> fault(const std::uintptr_t address) const noexcept

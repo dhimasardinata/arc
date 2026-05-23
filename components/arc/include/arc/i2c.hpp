@@ -209,6 +209,10 @@ struct I2c {
         const std::size_t bytes,
         const int timeout_ms = 1000) noexcept
     {
+        if (data == nullptr && bytes != 0U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         const auto err = init();
         if (err != ESP_OK) {
             return err;
@@ -225,6 +229,10 @@ struct I2c {
         const std::size_t bytes,
         const int timeout_ms = 1000) noexcept
     {
+        if (data == nullptr && bytes != 0U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         const auto err = init();
         if (err != ESP_OK) {
             return err;
@@ -243,6 +251,10 @@ struct I2c {
         const std::size_t rx_bytes,
         const int timeout_ms = 1000) noexcept
     {
+        if ((tx == nullptr && tx_bytes != 0U) || (rx == nullptr && rx_bytes != 0U)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         const auto err = init();
         if (err != ESP_OK) {
             return err;

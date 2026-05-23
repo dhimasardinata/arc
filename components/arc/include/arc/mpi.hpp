@@ -6,6 +6,7 @@
 #include <span>
 #include <utility>
 
+#include "esp_err.h"
 #include "mbedtls/bignum.h"
 #include "soc/soc_caps.h"
 
@@ -129,6 +130,9 @@ public:
             }
             return out;
         }
+        if (!valid_span(bytes)) {
+            return mpi_fail(ESP_ERR_INVALID_ARG);
+        }
 
         if (const auto err = mbedtls_mpi_read_binary(&out.value_, bytes.data(), bytes.size_bytes()); err != 0) {
             return mpi_fail(err);
@@ -144,6 +148,9 @@ public:
                 return mpi_fail(err);
             }
             return out;
+        }
+        if (!valid_span(bytes)) {
+            return mpi_fail(ESP_ERR_INVALID_ARG);
         }
 
         if (const auto err = mbedtls_mpi_read_binary_le(&out.value_, bytes.data(), bytes.size_bytes()); err != 0) {
@@ -174,11 +181,17 @@ public:
 
     [[nodiscard]] int write_be(const std::span<std::uint8_t> out) const noexcept
     {
+        if (!valid_span(out)) {
+            return ESP_ERR_INVALID_ARG;
+        }
         return mbedtls_mpi_write_binary(&value_, out.data(), out.size_bytes());
     }
 
     [[nodiscard]] int write_le(const std::span<std::uint8_t> out) const noexcept
     {
+        if (!valid_span(out)) {
+            return ESP_ERR_INVALID_ARG;
+        }
         return mbedtls_mpi_write_binary_le(&value_, out.data(), out.size_bytes());
     }
 
@@ -271,6 +284,12 @@ public:
     }
 
 private:
+    template <typename T, std::size_t Extent>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
+    }
+
     mbedtls_mpi value_{};
 };
 

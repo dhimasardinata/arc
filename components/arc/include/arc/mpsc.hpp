@@ -127,6 +127,16 @@ struct MpscImpl {
             return lane_ != nullptr && lane_->try_pop(value);
         }
 
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool peek(T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->peek(value);
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool drop() noexcept
+        {
+            return lane_ != nullptr && lane_->drop();
+        }
+
         template <typename U, std::size_t Extent>
             requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
         [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t pop(
@@ -222,7 +232,7 @@ struct MpscImpl {
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(
         const std::span<U, Extent> data) noexcept
     {
-        if (data.empty()) {
+        if (data.empty() || data.data() == nullptr) {
             return 0U;
         }
 
@@ -284,12 +294,43 @@ struct MpscImpl {
         return true;
     }
 
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool peek(T& value) noexcept
+    {
+        const auto tail = load_relaxed(&tail_);
+        auto& cell = buffer_[tail & kMask];
+        const auto seq = load_acquire(&cell.seq);
+        const auto diff = delta(seq, tail + 1U);
+
+        if (diff != 0) {
+            return false;
+        }
+
+        value = cell.value;
+        return true;
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool drop() noexcept
+    {
+        const auto tail = load_relaxed(&tail_);
+        auto& cell = buffer_[tail & kMask];
+        const auto seq = load_acquire(&cell.seq);
+        const auto diff = delta(seq, tail + 1U);
+
+        if (diff != 0) {
+            return false;
+        }
+
+        store_relaxed(&tail_, tail + 1U);
+        store_release(&cell.seq, tail + static_cast<std::uint32_t>(Capacity));
+        return true;
+    }
+
     template <typename U, std::size_t Extent>
         requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t pop(
         const std::span<U, Extent> out) noexcept
     {
-        if (out.empty()) {
+        if (out.empty() || out.data() == nullptr) {
             return 0U;
         }
 
@@ -349,8 +390,16 @@ struct MpscImpl {
     {
         std::size_t count{};
         while (count < max && try_pop(value)) {
-            fn(value);
-            ++count;
+            if constexpr (std::is_same_v<std::invoke_result_t<Fn&, T&>, bool>) {
+                const auto keep_going = fn(value);
+                ++count;
+                if (!keep_going) {
+                    break;
+                }
+            } else {
+                fn(value);
+                ++count;
+            }
         }
         return count;
     }
@@ -520,6 +569,16 @@ struct Audit<detail::MpscImpl<T, Capacity, CellAlign>> {
             return lane_ != nullptr && lane_->try_pop(value);
         }
 
+        [[nodiscard]] inline bool peek(T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->peek(value);
+        }
+
+        [[nodiscard]] inline bool drop() noexcept
+        {
+            return lane_ != nullptr && lane_->drop();
+        }
+
         template <typename U, std::size_t Extent>
             requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
         [[nodiscard]] inline std::size_t pop(const std::span<U, Extent> out) noexcept
@@ -591,6 +650,18 @@ struct Audit<detail::MpscImpl<T, Capacity, CellAlign>> {
         return lane_.try_pop(value);
     }
 
+    [[nodiscard]] inline bool peek(T& value) noexcept
+    {
+        consumer_.assert_single("arc::Audit<Mpsc> peek must stay single-consumer");
+        return lane_.peek(value);
+    }
+
+    [[nodiscard]] inline bool drop() noexcept
+    {
+        consumer_.assert_single("arc::Audit<Mpsc> drop must stay single-consumer");
+        return lane_.drop();
+    }
+
     template <typename U, std::size_t Extent>
         requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
     [[nodiscard]] inline std::size_t pop(const std::span<U, Extent> out) noexcept
@@ -632,8 +703,16 @@ struct Audit<detail::MpscImpl<T, Capacity, CellAlign>> {
     {
         std::size_t count{};
         while (count < max && try_pop(value)) {
-            fn(value);
-            ++count;
+            if constexpr (std::is_same_v<std::invoke_result_t<Fn&, T&>, bool>) {
+                const auto keep_going = fn(value);
+                ++count;
+                if (!keep_going) {
+                    break;
+                }
+            } else {
+                fn(value);
+                ++count;
+            }
         }
         return count;
     }

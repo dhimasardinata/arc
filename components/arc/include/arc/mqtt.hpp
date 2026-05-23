@@ -178,13 +178,19 @@ struct Mqtt {
         if (!topic) {
             return fail(topic.error());
         }
+        if (*topic == 0U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
 
         const auto qos = static_cast<std::uint8_t>(cfg.qos);
         if (qos > 2U || (qos != 0U && cfg.packet == 0U)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
-        const std::size_t remaining = 2U + *topic + (qos != 0U ? 2U : 0U) + cfg.bytes;
+        std::size_t remaining = 2U + *topic + (qos != 0U ? 2U : 0U);
+        if (!add_remaining(remaining, cfg.bytes)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         std::uint8_t flags = static_cast<std::uint8_t>(qos << 1U);
         if (cfg.dup) {
             flags |= 0x08U;
@@ -239,7 +245,7 @@ struct Mqtt {
         const std::uint16_t packet,
         const std::span<const MqttSubscription> topics) noexcept
     {
-        if (packet == 0U || topics.empty()) {
+        if (packet == 0U || topics.empty() || topics.data() == nullptr) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -252,7 +258,12 @@ struct Mqtt {
             if (!bytes) {
                 return fail(bytes.error());
             }
-            remaining += 2U + *bytes + 1U;
+            if (*bytes == 0U) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            if (!add_remaining(remaining, 2U + *bytes + 1U)) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
         }
 
         auto frame = begin(out, static_cast<std::uint8_t>(MqttType::subscribe), 0x02U, remaining);
@@ -284,7 +295,7 @@ struct Mqtt {
 
     [[nodiscard]] static Result<MqttPacket> parse(const std::span<const std::uint8_t> frame) noexcept
     {
-        if (frame.size() < 2U) {
+        if (!valid_span(frame) || frame.size() < 2U) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -318,7 +329,9 @@ struct Mqtt {
 
     [[nodiscard]] static Result<MqttPublishView> view(const MqttPacket& packet) noexcept
     {
-        if (packet.type != MqttType::publish || packet.body.size() < 2U) {
+        if (packet.type != MqttType::publish ||
+            packet.body.size() < 2U ||
+            (packet.body.size() != 0U && packet.body.data() == nullptr)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -327,12 +340,15 @@ struct Mqtt {
         if (!topic) {
             return fail(topic.error());
         }
+        if (topic->empty()) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         pos += 2U + topic->size();
 
         const auto qos = packet.qos();
         std::uint16_t id = 0U;
         if (qos != MqttQos::at_most) {
-            if (packet.body.size() < pos + 2U) {
+            if (pos > packet.body.size() || packet.body.size() - pos < 2U) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
             id = read_u16(packet.body, pos);
@@ -351,7 +367,7 @@ struct Mqtt {
 
     [[nodiscard]] static Result<MqttConnAck> connack(const MqttPacket& packet) noexcept
     {
-        if (packet.type != MqttType::connack || packet.body.size() != 2U) {
+        if (packet.type != MqttType::connack || packet.body.size() != 2U || !valid_span(packet.body)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         return MqttConnAck{
@@ -362,7 +378,7 @@ struct Mqtt {
 
     [[nodiscard]] static Result<MqttSubAck> suback(const MqttPacket& packet) noexcept
     {
-        if (packet.type != MqttType::suback || packet.body.size() < 3U) {
+        if (packet.type != MqttType::suback || packet.body.size() < 3U || !valid_span(packet.body)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         return MqttSubAck{
@@ -373,7 +389,7 @@ struct Mqtt {
 
     [[nodiscard]] static bool match(const char* filter, const char* topic) noexcept
     {
-        if (filter == nullptr || topic == nullptr) {
+        if (filter == nullptr || topic == nullptr || filter[0] == '\0' || topic[0] == '\0') {
             return false;
         }
         if (topic[0] == '$' && filter[0] != '$') {
@@ -440,7 +456,7 @@ private:
         const std::uint8_t flags,
         const std::size_t remaining) noexcept
     {
-        if (remaining > max_remaining()) {
+        if (!valid_span(out) || remaining > max_remaining()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -457,6 +473,23 @@ private:
     [[nodiscard]] static constexpr std::size_t max_remaining() noexcept
     {
         return 268435455U;
+    }
+
+    template <typename T, std::size_t Extent>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
+    }
+
+    [[nodiscard]] static constexpr bool add_remaining(
+        std::size_t& remaining,
+        const std::size_t bytes) noexcept
+    {
+        if (remaining > max_remaining() || bytes > max_remaining() - remaining) {
+            return false;
+        }
+        remaining += bytes;
+        return true;
     }
 
     [[nodiscard]] static constexpr bool valid_header(
@@ -580,15 +613,16 @@ private:
         const std::span<const std::uint8_t> in,
         const std::size_t pos) noexcept
     {
-        if (in.size() < pos + 2U) {
+        if (pos > in.size() || in.size() - pos < 2U) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
         const auto bytes = read_u16(in, pos);
-        if (in.size() < pos + 2U + bytes) {
+        const auto begin = pos + 2U;
+        if (bytes > in.size() - begin) {
             return fail(ESP_ERR_INVALID_ARG);
         }
-        return in.subspan(pos + 2U, bytes);
+        return in.subspan(begin, bytes);
     }
 };
 

@@ -42,7 +42,7 @@ struct CoreMap {
 
 [[nodiscard]] consteval std::size_t words(const std::size_t bytes) noexcept
 {
-    return (bytes + sizeof(StackType_t) - 1U) / sizeof(StackType_t);
+    return bytes == 0U ? 0U : ((bytes - 1U) / sizeof(StackType_t)) + 1U;
 }
 
 template <auto* Object>

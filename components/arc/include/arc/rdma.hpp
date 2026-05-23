@@ -41,6 +41,13 @@ struct Rdma {
             (window.base & (window.alignment - 1U)) == 0U;
     }
 
+    [[nodiscard]] static constexpr bool range_fit(const RdmaWindow window) noexcept
+    {
+        constexpr auto max_address = std::numeric_limits<std::uintptr_t>::max();
+        return window.bytes <= max_address &&
+            window.base <= (max_address - static_cast<std::uintptr_t>(window.bytes));
+    }
+
     template <std::size_t MaxBytes>
     [[nodiscard]] static Result<RdmaFrame<MaxBytes>> write(
         const RdmaWindow remote,
@@ -50,7 +57,8 @@ struct Rdma {
     {
         if (src == 0U || remote.node == 0U || bytes.empty() || bytes.size() > MaxBytes ||
             bytes.size() > std::numeric_limits<std::uint16_t>::max() ||
-            !aligned(remote) || offset > remote.bytes || bytes.size() > remote.bytes - offset) {
+            bytes.data() == nullptr ||
+            !aligned(remote) || !range_fit(remote) || offset > remote.bytes || bytes.size() > remote.bytes - offset) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -73,9 +81,10 @@ struct Rdma {
         const RdmaWindow local,
         const RdmaFrame<MaxBytes>& frame) noexcept
     {
-        if (frame.header.dst != local.node || frame.header.bytes > MaxBytes ||
+        if (local.node == 0U || frame.header.src == 0U || frame.header.bytes == 0U ||
+            frame.header.dst != local.node || frame.header.bytes > MaxBytes ||
             frame.header.offset > local.bytes || frame.header.bytes > local.bytes - frame.header.offset ||
-            !aligned(local)) {
+            !aligned(local) || !range_fit(local)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         const auto dst = local.base + frame.header.offset;

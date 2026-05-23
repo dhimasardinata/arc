@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 #include <type_traits>
 
@@ -125,7 +126,14 @@ struct Coap {
         const std::span<const CoapOption> options = {},
         const std::span<const std::uint8_t> payload = {}) noexcept
     {
-        if (token.size() > 8U) {
+        if (!valid_span(out) ||
+            token.size() > 8U ||
+            !valid_span(token) ||
+            !valid_span(options) ||
+            !valid_span(payload)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (empty_code(code) && (!token.empty() || !options.empty() || !payload.empty())) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -143,12 +151,17 @@ struct Coap {
                 return fail(ESP_ERR_INVALID_ARG);
             }
 
-            bytes += 1U + delta_bytes + length_bytes + option.value.size();
+            if (!add_bytes(bytes, 1U) ||
+                !add_bytes(bytes, delta_bytes) ||
+                !add_bytes(bytes, length_bytes) ||
+                !add_bytes(bytes, option.value.size())) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
             previous = option.number;
         }
 
-        if (!payload.empty()) {
-            bytes += 1U + payload.size();
+        if (!payload.empty() && (!add_bytes(bytes, 1U) || !add_bytes(bytes, payload.size()))) {
+            return fail(ESP_ERR_INVALID_ARG);
         }
         if (out.size() < bytes) {
             return fail(ESP_ERR_NO_MEM);
@@ -204,7 +217,7 @@ struct Coap {
 
     [[nodiscard]] static Result<CoapMessage> parse(const std::span<const std::uint8_t> frame) noexcept
     {
-        if (frame.size() < 4U) {
+        if (!valid_span(frame) || frame.size() < 4U) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -234,6 +247,9 @@ struct Coap {
             }
             payload = frame.subspan(options_end + 1U);
         }
+        if (empty_code(frame[1]) && (token_len != 0U || options_end != options_begin || !payload.empty())) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
 
         return CoapMessage{
             .type = static_cast<CoapType>((frame[0] >> 4U) & 0x03U),
@@ -251,6 +267,9 @@ struct Coap {
         std::size_t& offset,
         std::uint16_t& number) noexcept
     {
+        if (!valid_span(options)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         if (offset >= options.size()) {
             return fail(ESP_ERR_NOT_FOUND);
         }
@@ -269,7 +288,7 @@ struct Coap {
         if (!length) {
             return fail(length.error());
         }
-        if (options.size() < pos + *length) {
+        if (pos > options.size() || *length > options.size() - pos) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -288,6 +307,26 @@ struct Coap {
     }
 
 private:
+    template <typename T, std::size_t Extent>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
+    }
+
+    [[nodiscard]] static constexpr bool add_bytes(std::size_t& total, const std::size_t bytes) noexcept
+    {
+        if (bytes > std::numeric_limits<std::size_t>::max() - total) {
+            return false;
+        }
+        total += bytes;
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool empty_code(const std::uint8_t code) noexcept
+    {
+        return code == static_cast<std::uint8_t>(CoapCode::empty);
+    }
+
     [[nodiscard]] static constexpr std::size_t extended_bytes(const std::size_t value) noexcept
     {
         return value < 13U ? 0U : value < 269U ? 1U
@@ -344,13 +383,13 @@ private:
             return static_cast<std::size_t>(nibble);
         }
         if (nibble == 13U) {
-            if (in.size() < pos + 1U) {
+            if (pos >= in.size()) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
             return static_cast<std::size_t>(13U + in[pos++]);
         }
         if (nibble == 14U) {
-            if (in.size() < pos + 2U) {
+            if (pos > in.size() || in.size() - pos < 2U) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
             const auto value = static_cast<std::size_t>(269U + read_u16(in, pos));

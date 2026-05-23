@@ -11,6 +11,16 @@
 
 namespace arc::usb {
 
+namespace detail {
+
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool fifo_valid_span(const std::span<T, Extent> data) noexcept
+{
+    return data.empty() || data.data() != nullptr;
+}
+
+}  // namespace detail
+
 enum class DescriptorType : std::uint8_t {
     device = 1U,
     configuration = 2U,
@@ -370,6 +380,9 @@ template <FifoLane Lane>
 struct Fifo {
     [[nodiscard]] static Status write(Lane& lane, const std::span<const std::uint8_t> data) noexcept
     {
+        if (!detail::fifo_valid_span(data)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
         for (const auto byte : data) {
             if (!lane.try_push(byte)) {
                 return Status{fail(ESP_ERR_NO_MEM)};
@@ -380,6 +393,9 @@ struct Fifo {
 
     [[nodiscard]] static Result<std::size_t> read(Lane& lane, const std::span<std::uint8_t> out) noexcept
     {
+        if (!detail::fifo_valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         std::size_t count{};
         for (auto& byte : out) {
             if (!lane.try_pop(byte)) {

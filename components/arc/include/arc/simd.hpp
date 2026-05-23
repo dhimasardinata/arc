@@ -20,6 +20,12 @@ using uint8x16_t = std::uint8_t __attribute__((vector_size(16)));
 inline constexpr std::size_t int8x16_lanes = 16U;
 inline constexpr std::size_t int16x8_lanes = 8U;
 
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
 template <typename V>
 [[nodiscard]] inline V load_unaligned(const void* const ptr) noexcept
 {
@@ -98,6 +104,9 @@ namespace pie {
     std::int32_t acc = 0) noexcept
 {
     const auto count = lhs.size() < rhs.size() ? lhs.size() : rhs.size();
+    if (count != 0U && (!valid_span(lhs) || !valid_span(rhs))) {
+        return acc;
+    }
     std::size_t i{};
     for (; i + int8x16_lanes <= count; i += int8x16_lanes) {
         acc = mac_s8x16(
@@ -155,7 +164,7 @@ struct Rgb565 {
         const std::span<const std::uint8_t> yuv,
         const std::span<std::uint16_t> rgb) noexcept
     {
-        if ((yuv.size() % 4U) != 0U) {
+        if ((yuv.size() % 4U) != 0U || !valid_span(yuv) || !valid_span(rgb)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -206,6 +215,9 @@ struct ComplexF32 {
 
 inline void bit_reverse(const std::span<ComplexF32> data) noexcept
 {
+    if (!valid_span(data)) {
+        return;
+    }
     std::size_t j{};
     for (std::size_t i = 1; i < data.size(); ++i) {
         auto bit = data.size() >> 1U;
@@ -226,7 +238,7 @@ inline void bit_reverse(const std::span<ComplexF32> data) noexcept
     const std::span<ComplexF32> data,
     const bool inverse = false) noexcept
 {
-    if (!is_pow2(data.size())) {
+    if (!valid_span(data) || !is_pow2(data.size())) {
         return Status{fail(ESP_ERR_INVALID_ARG)};
     }
 

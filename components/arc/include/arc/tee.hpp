@@ -12,6 +12,16 @@
 
 namespace arc {
 
+namespace detail {
+
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool tee_valid_span(const std::span<T, Extent> data) noexcept
+{
+    return data.empty() || data.data() != nullptr;
+}
+
+}  // namespace detail
+
 enum class World : std::uint32_t {
     trusted = 0U,
     untrusted = 1U,
@@ -81,6 +91,11 @@ struct WorldGuard {
 
     [[nodiscard]] static Status apply(const TeePlan& plan) noexcept
     {
+        if (!detail::tee_valid_span(plan.regions) ||
+            !detail::tee_valid_span(plan.trusted_peripherals) ||
+            !detail::tee_valid_span(plan.untrusted_peripherals)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
         if (const auto err = configure(plan.regions); err != ESP_OK) {
             return Status{fail(err)};
         }

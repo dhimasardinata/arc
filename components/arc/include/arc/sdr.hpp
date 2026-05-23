@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/dma_chain.hpp"
@@ -31,6 +32,12 @@ struct TxStats {
     std::uint32_t sample_hz{};
 };
 
+template <typename T>
+[[nodiscard]] constexpr bool valid_span(const std::span<T> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
 struct PulseSynth {
     [[nodiscard]] static constexpr bool valid(const TxConfig config) noexcept
     {
@@ -39,13 +46,18 @@ struct PulseSynth {
             config.carrier_hz < (config.sample_hz / 2U);
     }
 
+    [[nodiscard]] static constexpr bool fits(const std::size_t bytes, const std::size_t words) noexcept
+    {
+        return bytes <= std::numeric_limits<std::size_t>::max() / 8U && words >= bytes * 8U;
+    }
+
     [[nodiscard]] static Result<TxStats> ook(
         const std::span<std::uint16_t> out,
         const std::span<const std::uint8_t> bytes,
         const TxConfig config,
         const bool msb_first = true) noexcept
     {
-        if (!valid(config) || out.size() < bytes.size() * 8U) {
+        if (!valid(config) || !valid_span(out) || !valid_span(bytes) || !fits(bytes.size(), out.size())) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -64,7 +76,8 @@ struct PulseSynth {
         const std::span<const std::int16_t> audio,
         const TxConfig config) noexcept
     {
-        if (!valid(config) || config.deviation_hz == 0U || out.size() < audio.size()) {
+        if (!valid(config) || config.deviation_hz == 0U ||
+            !valid_span(out) || !valid_span(audio) || out.size() < audio.size()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -75,7 +88,8 @@ struct PulseSynth {
                 static_cast<std::int64_t>(config.carrier_hz) + signed_dev,
                 1,
                 static_cast<std::int64_t>((config.sample_hz / 2U) - 1U));
-            phase = (phase + static_cast<std::uint32_t>(hz)) % config.sample_hz;
+            phase = static_cast<std::uint32_t>(
+                (static_cast<std::uint64_t>(phase) + static_cast<std::uint64_t>(hz)) % config.sample_hz);
             out[i] = phase < (config.sample_hz / 2U) ? config.one_word : config.zero_word;
         }
         return TxStats{.words = audio.size(), .carrier_hz = config.carrier_hz, .sample_hz = config.sample_hz};
@@ -86,15 +100,18 @@ struct PulseSynth {
         const std::span<const std::uint16_t> envelope_permille,
         const TxConfig config) noexcept
     {
-        if (!valid(config) || out.size() < envelope_permille.size()) {
+        if (!valid(config) ||
+            !valid_span(out) || !valid_span(envelope_permille) || out.size() < envelope_permille.size()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
         auto phase = std::uint32_t{};
         for (std::size_t i = 0U; i < envelope_permille.size(); ++i) {
-            phase = (phase + config.carrier_hz) % config.sample_hz;
+            phase = static_cast<std::uint32_t>(
+                (static_cast<std::uint64_t>(phase) + config.carrier_hz) % config.sample_hz);
             const auto duty = dsp::clamp<std::uint32_t>(envelope_permille[i], 0U, 1000U);
-            out[i] = ((phase * 1000U) / config.sample_hz) < duty ? config.one_word : config.zero_word;
+            const auto phase_permille = (static_cast<std::uint64_t>(phase) * 1000ULL) / config.sample_hz;
+            out[i] = phase_permille < duty ? config.one_word : config.zero_word;
         }
         return TxStats{.words = envelope_permille.size(), .carrier_hz = config.carrier_hz, .sample_hz = config.sample_hz};
     }
@@ -126,7 +143,7 @@ struct Tx {
         const TxConfig config,
         const std::span<const std::uint16_t> words) noexcept
     {
-        if (!PulseSynth::valid(config) || words.empty()) {
+        if (!PulseSynth::valid(config) || words.empty() || words.data() == nullptr) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         return status(Policy::cam_start(config, words));

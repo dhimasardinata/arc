@@ -11,11 +11,25 @@
 
 namespace arc {
 
+namespace detail {
+
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool perfetto_valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
+}  // namespace detail
+
 struct PerfettoWriter {
     [[nodiscard]] static Result<std::span<const std::uint8_t>> event(
         std::span<std::uint8_t> out,
         const LogEvent event) noexcept
     {
+        if (!detail::perfetto_valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
         std::size_t pos{};
         if (!varint(out, pos, 0x08U) || !varint(out, pos, event.tick) ||
             !varint(out, pos, 0x10U) || !varint(out, pos, event.id) ||

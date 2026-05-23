@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 
 #include "arc/power_governor.hpp"
@@ -30,6 +31,8 @@ struct MigrationDecision {
 template <std::size_t MaxBytes>
 struct MigrationFrame {
     static_assert(MaxBytes > 0U, "migration frame needs payload storage");
+    static_assert(MaxBytes <= std::numeric_limits<std::uint32_t>::max(),
+                  "migration frame byte count must fit wire metadata");
 
     std::uint32_t process_id{};
     std::uint32_t instruction_pointer{};
@@ -72,7 +75,8 @@ struct Migrator {
         const std::uint32_t process_id,
         const WasmSnapshot state) noexcept
     {
-        if (process_id == 0U || state.linear_memory.empty() || state.linear_memory.size() > MaxBytes) {
+        if (process_id == 0U || state.linear_memory.empty() || state.linear_memory.data() == nullptr ||
+            state.linear_memory.size() > MaxBytes) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         MigrationFrame<MaxBytes> frame{
@@ -91,7 +95,7 @@ struct Migrator {
         const std::uint16_t peer,
         const MigrationFrame<MaxBytes>& frame) noexcept
     {
-        if (peer == 0U || frame.process_id == 0U || frame.memory_bytes == 0U || frame.memory_bytes > MaxBytes) {
+        if (peer == 0U || !valid_frame(frame)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         return status(Policy::send(peer, bytes(frame)));
@@ -102,8 +106,7 @@ struct Migrator {
         const MigrationFrame<MaxBytes>& frame,
         const std::span<std::uint8_t> linear_memory) noexcept
     {
-        if (frame.process_id == 0U || frame.memory_bytes == 0U || frame.memory_bytes > MaxBytes ||
-            linear_memory.size() < frame.memory_bytes) {
+        if (!valid_frame(frame) || linear_memory.data() == nullptr || linear_memory.size() < frame.memory_bytes) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         std::memcpy(linear_memory.data(), frame.memory.data(), frame.memory_bytes);
@@ -115,9 +118,19 @@ struct Migrator {
     }
 
     template <std::size_t MaxBytes>
+    [[nodiscard]] static constexpr bool valid_frame(
+        const MigrationFrame<MaxBytes>& frame) noexcept
+    {
+        return frame.process_id != 0U && frame.memory_bytes != 0U && frame.memory_bytes <= MaxBytes;
+    }
+
+    template <std::size_t MaxBytes>
     [[nodiscard]] static std::span<const std::uint8_t> bytes(
         const MigrationFrame<MaxBytes>& frame) noexcept
     {
+        if (!valid_frame(frame)) {
+            return {};
+        }
         const auto header = offsetof(MigrationFrame<MaxBytes>, memory);
         return {
             reinterpret_cast<const std::uint8_t*>(&frame),

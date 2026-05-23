@@ -34,7 +34,7 @@ struct Thread {
         const ThreadPeer& peer,
         const std::span<const std::uint8_t> payload) noexcept
     {
-        if (peer.rloc16 == 0U || payload.empty()) {
+        if (peer.rloc16 == 0U || payload.empty() || payload.data() == nullptr) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         return status(Policy::thread_send(peer, payload));

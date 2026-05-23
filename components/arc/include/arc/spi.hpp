@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <type_traits>
 
@@ -212,6 +213,13 @@ struct Spi {
     inline constexpr static std::uint32_t quad = SPI_TRANS_MODE_QIO;
     inline constexpr static std::uint32_t octal = SPI_TRANS_MODE_OCT;
 
+    [[nodiscard]] static constexpr bool bytes_fit(const std::size_t bytes) noexcept
+    {
+        return bytes != 0U &&
+            bytes <= static_cast<std::size_t>(Bus::max_bytes()) &&
+            bytes <= std::numeric_limits<std::size_t>::max() / 8U;
+    }
+
     struct TicketBase {
         std::uint32_t done{ticket_invalid};
         spi_transaction_t trans{};
@@ -335,8 +343,9 @@ struct Spi {
     {
         spi_transaction_t trans{};
         trans.flags = flags;
-        trans.length = bytes * 8U;
-        trans.rxlength = rx == nullptr ? 0U : bytes * 8U;
+        const auto bits = bit_length(bytes);
+        trans.length = bits;
+        trans.rxlength = rx == nullptr ? 0U : bits;
         trans.override_freq_hz = static_cast<decltype(trans.override_freq_hz)>(hz);
         trans.user = nullptr;
         trans.tx_buffer = tx;
@@ -350,6 +359,10 @@ struct Spi {
         const std::uint32_t hz = 0U,
         const std::uint32_t flags = 0U) noexcept
     {
+        if (tx == nullptr || !bytes_fit(bytes)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         const auto ready = init();
         if (ready != ESP_OK) {
             return ready;
@@ -365,14 +378,16 @@ struct Spi {
         const std::uint32_t hz = 0U,
         const std::uint32_t flags = 0U) noexcept
     {
+        if (rx == nullptr || !bytes_fit(bytes)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         const auto ready = init();
         if (ready != ESP_OK) {
             return ready;
         }
 
         auto trans = job(nullptr, rx, bytes, hz, flags);
-        trans.rxlength = bytes * 8U;
-        trans.length = bytes * 8U;
         return spi_device_transmit(state.dev, &trans);
     }
 
@@ -383,6 +398,10 @@ struct Spi {
         const std::uint32_t hz = 0U,
         const std::uint32_t flags = 0U) noexcept
     {
+        if ((tx == nullptr && rx == nullptr) || !bytes_fit(bytes)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         const auto ready = init();
         if (ready != ESP_OK) {
             return ready;
@@ -399,6 +418,10 @@ struct Spi {
         const std::uint32_t hz = 0U,
         const std::uint32_t flags = 0U) noexcept
     {
+        if ((tx == nullptr && rx == nullptr) || !bytes_fit(bytes)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         const auto ready = init();
         if (ready != ESP_OK) {
             return ready;
@@ -412,6 +435,10 @@ struct Spi {
         spi_transaction_t& trans,
         const TickType_t wait = portMAX_DELAY) noexcept
     {
+        if (invalid(trans)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         const auto ready = init();
         if (ready != ESP_OK) {
             return ready;
@@ -675,6 +702,20 @@ private:
         return &ticket_cookie;
     }
 
+    [[nodiscard]] static constexpr std::size_t bit_length(const std::size_t bytes) noexcept
+    {
+        return bytes_fit(bytes) ? bytes * 8U : 0U;
+    }
+
+    [[nodiscard]] static bool invalid(const spi_transaction_t& trans) noexcept
+    {
+        if (trans.length == 0U || (trans.tx_buffer == nullptr && trans.rx_buffer == nullptr)) {
+            return true;
+        }
+        const auto bytes = (trans.length + 7U) / 8U;
+        return bytes > static_cast<std::size_t>(Bus::max_bytes());
+    }
+
     [[nodiscard]] static bool mark_done(spi_transaction_t* const trans) noexcept
     {
         if (trans == nullptr || trans->user != ticket_marker()) {
@@ -695,7 +736,7 @@ private:
         const std::size_t bytes,
         const TickType_t wait) noexcept
     {
-        if (bytes == 0U || (tx == nullptr && rx == nullptr)) {
+        if ((tx == nullptr && rx == nullptr) || !bytes_fit(bytes)) {
             return ESP_ERR_INVALID_ARG;
         }
 

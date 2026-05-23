@@ -12,6 +12,12 @@
 
 namespace arc::crypto {
 
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
 struct Kyber512Params {
     static constexpr std::size_t k = 2U;
     static constexpr std::size_t n = 256U;
@@ -111,6 +117,9 @@ struct Kyber {
         const std::span<const std::int16_t, n> lhs,
         const std::span<const std::int16_t, n> rhs) noexcept
     {
+        if (!valid_span(out) || !valid_span(lhs) || !valid_span(rhs)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
         auto i = std::size_t{};
         for (; i + simd::int16x8_lanes <= n; i += simd::int16x8_lanes) {
             const auto l = simd::load_s16x8(lhs.data() + i);
@@ -133,7 +142,8 @@ struct Kyber {
         const std::span<std::uint8_t> ciphertext,
         const std::span<std::uint8_t> shared) noexcept
     {
-        if (public_key.size() < public_key_bytes || coins.empty() ||
+        if (!valid_span(public_key) || !valid_span(coins) || !valid_span(ciphertext) || !valid_span(shared) ||
+            public_key.size() < public_key_bytes || coins.empty() ||
             ciphertext.size() < ciphertext_bytes ||
             shared.size() < shared_bytes) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
@@ -153,7 +163,8 @@ struct Kyber {
         const std::span<std::uint8_t> public_key,
         const std::span<std::uint8_t> secret_key) noexcept
     {
-        if (seed.empty() ||
+        if (!valid_span(seed) || !valid_span(public_key) || !valid_span(secret_key) ||
+            seed.empty() ||
             public_key.size() < public_key_bytes ||
             secret_key.size() < secret_key_bytes) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
@@ -174,7 +185,8 @@ struct Kyber {
         const std::span<const std::uint8_t> ciphertext,
         const std::span<std::uint8_t> shared) noexcept
     {
-        if (secret_key.size() < secret_key_bytes ||
+        if (!valid_span(secret_key) || !valid_span(ciphertext) || !valid_span(shared) ||
+            secret_key.size() < secret_key_bytes ||
             ciphertext.size() < ciphertext_bytes ||
             shared.size() < shared_bytes) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
@@ -227,7 +239,7 @@ private:
         const std::int16_t primitive_root,
         const bool inverse) noexcept
     {
-        if (primitive_root == 0) {
+        if (!valid_span(poly) || primitive_root == 0) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 

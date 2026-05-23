@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 
 #include "arc/ml.hpp"
@@ -17,6 +18,16 @@
 #endif
 
 namespace arc::net {
+
+namespace detail {
+
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool csi_valid_span(const std::span<T, Extent> data) noexcept
+{
+    return data.empty() || data.data() != nullptr;
+}
+
+}  // namespace detail
 
 struct CsiConfig {
     bool lltf{true};
@@ -44,6 +55,7 @@ struct CsiBin {
 template <std::size_t Subcarriers>
 struct CsiFrame {
     static_assert(Subcarriers > 0U, "CSI frame needs at least one subcarrier");
+    static_assert(Subcarriers <= std::numeric_limits<std::uint16_t>::max(), "CSI frame metadata stores subcarrier count in uint16_t");
 
     CsiMeta meta{};
     std::array<CsiBin, Subcarriers> bins{};
@@ -89,7 +101,7 @@ struct Csi {
         const CsiMeta meta,
         const std::span<const std::int8_t> raw_iq) noexcept
     {
-        if (raw_iq.empty() || (raw_iq.size() % 2U) != 0U) {
+        if (raw_iq.empty() || (raw_iq.size() % 2U) != 0U || !detail::csi_valid_span(raw_iq)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -164,7 +176,7 @@ struct Csi {
         const CsiFrame<Subcarriers>& frame,
         const std::span<float, Features> out) noexcept
     {
-        if (out.size() < 3U) {
+        if (out.size() < 3U || !detail::csi_valid_span(out)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         const auto s = stats(frame);
@@ -184,17 +196,40 @@ struct Csi {
         const float scale,
         const std::int32_t zero = 0) noexcept
     {
-        if (scale <= 0.0F) {
+        if (!std::isfinite(scale) || scale <= 0.0F ||
+            (Features != 0U && (features.data() == nullptr || out.data() == nullptr))) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         for (std::size_t i = 0; i < Features; ++i) {
-            const auto value = static_cast<std::int32_t>(std::lround(features[i] / scale)) + zero;
-            out[i] = ml::saturate_s8(value);
+            const auto value = quantized_s8(features[i], scale, zero);
+            if (!value) {
+                return Status{fail(value.error())};
+            }
+            out[i] = *value;
         }
         return ok();
     }
 
 private:
+    [[nodiscard]] static Result<std::int8_t> quantized_s8(
+        const float feature,
+        const float scale,
+        const std::int32_t zero) noexcept
+    {
+        if (!std::isfinite(feature)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        const auto rounded = std::round(static_cast<double>(feature) / static_cast<double>(scale));
+        const auto shifted = rounded + static_cast<double>(zero);
+        if (shifted >= static_cast<double>(std::numeric_limits<std::int8_t>::max())) {
+            return std::numeric_limits<std::int8_t>::max();
+        }
+        if (shifted <= static_cast<double>(std::numeric_limits<std::int8_t>::min())) {
+            return std::numeric_limits<std::int8_t>::min();
+        }
+        return static_cast<std::int8_t>(shifted);
+    }
+
     [[nodiscard]] static float unwrap(float value) noexcept
     {
         constexpr auto pi = 3.14159265358979323846F;

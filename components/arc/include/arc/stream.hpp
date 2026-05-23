@@ -20,6 +20,21 @@ namespace arc::net {
 template <typename T>
 concept StreamBytes = std::is_trivially_copyable_v<std::remove_cv_t<T>>;
 
+namespace detail {
+
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
+[[nodiscard]] constexpr bool valid_text(const std::string_view value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
+}  // namespace detail
+
 template <typename T>
 concept ByteStream = requires(T& stream, const void* in, void* out, std::size_t bytes) {
     { stream.send_all(in, bytes) } -> std::same_as<Status>;
@@ -54,6 +69,9 @@ struct AnyStream {
         if (send_fn == nullptr || ctx == nullptr || (data == nullptr && bytes != 0U)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
+        if (bytes == 0U) {
+            return ok();
+        }
         return send_fn(ctx, data, bytes);
     }
 
@@ -61,6 +79,9 @@ struct AnyStream {
     {
         if (recv_fn == nullptr || ctx == nullptr || (data == nullptr && bytes != 0U)) {
             return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (bytes == 0U) {
+            return 0U;
         }
         return recv_fn(ctx, data, bytes);
     }
@@ -174,15 +195,18 @@ struct Stream {
         if ((data == nullptr && bytes != 0U) || bytes > 0xffffU) {
             return fail(ESP_ERR_INVALID_ARG);
         }
+        if (!detail::valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         if (out.size() < bytes + 2U) {
             return fail(ESP_ERR_NO_MEM);
         }
 
+        if (bytes != 0U) {
+            std::memmove(out.data() + 2U, data, bytes);
+        }
         out[0] = static_cast<std::uint8_t>(bytes >> 8U);
         out[1] = static_cast<std::uint8_t>(bytes);
-        if (bytes != 0U) {
-            std::memcpy(out.data() + 2U, data, bytes);
-        }
         return out.first(bytes + 2U);
     }
 
@@ -198,6 +222,10 @@ struct Stream {
     template <ByteStream Io>
     [[nodiscard]] static Result<std::size_t> read_frame16(Io& io, void* const data, const std::size_t cap) noexcept
     {
+        if (data == nullptr && cap != 0U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
         std::array<std::uint8_t, 2> header{};
         auto read = read_exact(io, header.data(), header.size());
         if (!read) {
@@ -236,13 +264,20 @@ struct Rtp {
         const std::uint8_t payload_type = 96U,
         const bool marker = false) noexcept
     {
-        if (out.size() < header_bytes + payload.size()) {
-            return fail(ESP_ERR_NO_MEM);
-        }
         if (payload_type > 0x7fU) {
             return fail(ESP_ERR_INVALID_ARG);
         }
+        if (!detail::valid_span(out) || !detail::valid_span(payload)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (out.size() < header_bytes || payload.size() > out.size() - header_bytes) {
+            return fail(ESP_ERR_NO_MEM);
+        }
 
+        const auto bytes = header_bytes + payload.size();
+        if (!payload.empty()) {
+            std::memmove(out.data() + header_bytes, payload.data(), payload.size());
+        }
         out[0] = 0x80U;
         out[1] = static_cast<std::uint8_t>((marker ? 0x80U : 0U) | payload_type);
         out[2] = static_cast<std::uint8_t>(sequence >> 8U);
@@ -255,10 +290,7 @@ struct Rtp {
         out[9] = static_cast<std::uint8_t>(ssrc >> 16U);
         out[10] = static_cast<std::uint8_t>(ssrc >> 8U);
         out[11] = static_cast<std::uint8_t>(ssrc);
-        if (!payload.empty()) {
-            std::memcpy(out.data() + header_bytes, payload.data(), payload.size());
-        }
-        return out.first(header_bytes + payload.size());
+        return out.first(bytes);
     }
 
     template <ByteStream Io>
@@ -271,6 +303,10 @@ struct Rtp {
         const std::uint8_t payload_type = 96U,
         const bool marker = false) noexcept
     {
+        if (!detail::valid_span(payload)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+
         std::array<std::uint8_t, header_bytes> header{};
         auto framed = packet(
             std::span(header),
@@ -297,6 +333,9 @@ struct Mjpeg {
         const std::span<const std::uint8_t> jpeg,
         const std::string_view boundary = "arc") noexcept
     {
+        if (!detail::valid_span(out) || !detail::valid_span(jpeg) || !detail::valid_text(boundary)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         if (boundary.empty() || boundary.size() > 64U) {
             return fail(ESP_ERR_INVALID_ARG);
         }
@@ -327,7 +366,7 @@ struct Mjpeg {
             !append("\r\n\r\n")) {
             return fail(ESP_ERR_NO_MEM);
         }
-        if (remaining < jpeg.size() + 2U) {
+        if (jpeg.size() > remaining || remaining - jpeg.size() < 2U) {
             return fail(ESP_ERR_NO_MEM);
         }
         if (!jpeg.empty()) {
@@ -347,6 +386,10 @@ struct Mjpeg {
         const std::span<const std::uint8_t> jpeg,
         const std::string_view boundary = "arc") noexcept
     {
+        if (!detail::valid_span(jpeg) || !detail::valid_text(boundary) || boundary.empty() || boundary.size() > 64U) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+
         std::array<std::uint8_t, 128> header{};
         auto* cursor = header.data();
         auto remaining = header.size();

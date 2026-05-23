@@ -128,6 +128,9 @@ struct DistributedRcu {
         const Frame& next,
         const std::int64_t local_rx_us) noexcept
     {
+        if (next.node_id == 0U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         auto* const slot = find_slot(next.node_id);
         if (slot == nullptr) {
             return fail(ESP_ERR_NOT_FOUND);
@@ -190,7 +193,7 @@ struct DistributedRcu {
 
     [[nodiscard]] static Result<Frame> parse(const std::span<const std::uint8_t> data) noexcept
     {
-        if (data.size() != sizeof(Frame)) {
+        if (!valid_span(data) || data.size() != sizeof(Frame)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         Frame out{};
@@ -199,6 +202,12 @@ struct DistributedRcu {
     }
 
 private:
+    template <typename Byte>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<Byte> data) noexcept
+    {
+        return data.empty() || data.data() != nullptr;
+    }
+
     [[nodiscard]] RemoteSlot* find(const std::uint32_t node_id) noexcept
     {
         for (auto& slot : remotes) {

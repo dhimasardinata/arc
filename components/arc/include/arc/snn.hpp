@@ -28,7 +28,8 @@ struct Snn {
         const std::span<const std::int8_t, Inputs> spikes,
         const std::span<std::uint8_t, Neurons> out_spikes) noexcept
     {
-        if (weights.size() != Inputs * Neurons) {
+        if (weights.size() != Inputs * Neurons ||
+            weights.data() == nullptr || spikes.data() == nullptr || out_spikes.data() == nullptr) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 

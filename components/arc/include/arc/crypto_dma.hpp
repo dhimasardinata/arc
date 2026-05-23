@@ -125,6 +125,9 @@ struct CryptoDma {
         if (job.input == nullptr || job.bytes == 0U) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
+        if (!valid_span(job.iv) || !valid_span(job.aad) || !valid_span(job.tag)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
         if (job.mode != CryptoDmaMode::sha256 && job.output == nullptr) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
@@ -143,6 +146,13 @@ struct CryptoDma {
     [[nodiscard]] static bool done() noexcept
     {
         return Policy::done();
+    }
+
+private:
+    template <typename T, std::size_t Extent>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
     }
 };
 

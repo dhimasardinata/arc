@@ -175,7 +175,7 @@ struct Can {
         const bool remote = false) noexcept
     {
         Frame out{};
-        const auto size = std::min(payload.size(), out.data.size());
+        const auto size = payload.data() == nullptr ? 0U : std::min(payload.size(), out.data.size());
         out.header.id = id & (ext ? TWAI_EXT_ID_MASK : TWAI_STD_ID_MASK);
         out.header.dlc = static_cast<std::uint16_t>(size);
         out.header.ide = ext ? 1U : 0U;

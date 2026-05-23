@@ -8,6 +8,16 @@
 
 namespace arc::usb {
 
+namespace detail {
+
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool host_valid_span(const std::span<T, Extent> data) noexcept
+{
+    return data.empty() || data.data() != nullptr;
+}
+
+}  // namespace detail
+
 struct HostConfig {
     std::uint8_t port{1U};
     std::uint16_t max_packet{64U};
@@ -49,7 +59,8 @@ struct Host {
     [[nodiscard]] static Result<std::size_t> submit(const HostTransfer transfer) noexcept
     {
         if (transfer.address == 0U || transfer.endpoint == 0U ||
-            (transfer.tx.empty() && transfer.rx.empty())) {
+            (transfer.tx.empty() && transfer.rx.empty()) ||
+            !detail::host_valid_span(transfer.tx) || !detail::host_valid_span(transfer.rx)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         return Policy::host_submit(transfer);

@@ -171,6 +171,10 @@ struct HttpServer {
         std::span<const char> in,
         std::span<HttpHeaderView> headers) noexcept
     {
+        if (!valid_span(in) || !valid_span(headers)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
         const auto head_end = headers_end(in);
         if (head_end == npos) {
             return fail(ESP_ERR_INVALID_ARG);
@@ -219,10 +223,15 @@ struct HttpServer {
             if (colon == npos || colon == 0U) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
+            const auto name = line.first(colon);
+            const auto value = line.subspan(colon + 1U);
+            if (!valid_header_name(name) || !valid_header_value(value)) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
 
             headers[count++] = {
-                .name = trim(line.first(colon)),
-                .value = trim(line.subspan(colon + 1U)),
+                .name = name,
+                .value = trim(value),
             };
             pos = next + 2U;
         }
@@ -241,36 +250,49 @@ struct HttpServer {
 
     [[nodiscard]] static Result<std::size_t> content_length(const HttpRequestView& req) noexcept
     {
-        const auto* const header = find_header(req, "content-length");
-        if (header == nullptr) {
-            return std::size_t{0U};
-        }
-
-        auto value = std::size_t{0U};
-        if (header->value.empty()) {
+        if (!valid_span(req.headers)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
-        for (const auto ch : header->value) {
-            if (ch < '0' || ch > '9') {
+
+        const auto wanted = std::span<const char>{"content-length", 14U};
+        auto seen = false;
+        auto expected = std::size_t{0U};
+        for (const auto& header : req.headers) {
+            if (!valid_span(header.name) || !valid_span(header.value)) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
-            const auto digit = static_cast<std::size_t>(ch - '0');
-            if (value > ((static_cast<std::size_t>(-1) - digit) / 10U)) {
+            if (!ascii_iequal(header.name, wanted)) {
+                continue;
+            }
+
+            const auto value = parse_content_length(header.value);
+            if (!value) {
+                return fail(value.error());
+            }
+            if (seen && *value != expected) {
                 return fail(ESP_ERR_INVALID_ARG);
             }
-            value = (value * 10U) + digit;
+            seen = true;
+            expected = *value;
         }
-        return value;
+
+        return seen ? expected : std::size_t{0U};
     }
 
     [[nodiscard]] static constexpr std::span<const char> path(const HttpRequestView& req) noexcept
     {
+        if (!valid_span(req.target)) {
+            return {};
+        }
         const auto split = find_char(req.target, '?', 0U);
         return split == npos ? req.target : req.target.first(split);
     }
 
     [[nodiscard]] static constexpr std::span<const char> query(const HttpRequestView& req) noexcept
     {
+        if (!valid_span(req.target)) {
+            return {};
+        }
         const auto split = find_char(req.target, '?', 0U);
         if (split == npos || split + 1U >= req.target.size()) {
             return {};
@@ -332,12 +354,12 @@ struct HttpServer {
         const HttpRequestView& req,
         const char* name) noexcept
     {
-        if (name == nullptr) {
+        if (name == nullptr || !valid_span(req.headers)) {
             return nullptr;
         }
         const auto wanted = std::span<const char>{name, std::strlen(name)};
         for (const auto& header : req.headers) {
-            if (ascii_iequal(header.name, wanted)) {
+            if (valid_span(header.name) && ascii_iequal(header.name, wanted)) {
                 return &header;
             }
         }
@@ -358,7 +380,7 @@ struct HttpServer {
         const std::span<char> out,
         const std::span<const JsonField> fields) noexcept
     {
-        if (!valid_fields(fields)) {
+        if (!valid_span(out) || !valid_fields(fields)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -388,10 +410,10 @@ struct HttpServer {
         if (!head) {
             return fail(head.error());
         }
-        const auto total = head->size() + body->size();
-        if (out.size() < total) {
+        if (body->size() > out.size() || head->size() > out.size() - body->size()) {
             return fail(ESP_ERR_NO_MEM);
         }
+        const auto total = head->size() + body->size();
         std::memmove(out.data() + head->size(), out.data(), body->size());
         std::memcpy(out.data(), head->data(), head->size());
         return out.first(total);
@@ -407,15 +429,23 @@ private:
         const std::span<const char> body,
         const char* const content_type) noexcept
     {
-        auto head = emit_header(out, status, reason, content_type, body.size());
+        if (!valid_span(out) || !valid_span(body) || !valid_response(status, reason, content_type)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        const auto head_bytes = header_bytes(status, reason, content_type, body.size());
+        if (head_bytes > out.size() || body.size() > out.size() - head_bytes) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        if (!body.empty()) {
+            std::memmove(out.data() + head_bytes, body.data(), body.size());
+        }
+
+        auto head = emit_header(out.first(head_bytes), status, reason, content_type, body.size());
         if (!head) {
             return fail(head.error());
         }
-        Text text{out.subspan(head->size())};
-        if (!text.append(body)) {
-            return fail(ESP_ERR_NO_MEM);
-        }
-        return out.first(head->size() + text.size());
+        return out.first(head->size() + body.size());
     }
 
     [[nodiscard]] static Result<std::span<const char>> emit_header(
@@ -444,7 +474,140 @@ private:
         const char* const reason,
         const char* const content_type) noexcept
     {
-        return reason != nullptr && content_type != nullptr && status >= 100 && status <= 999;
+        return status >= 100 &&
+            status <= 999 &&
+            valid_header_cstr(reason, true) &&
+            valid_header_cstr(content_type, false);
+    }
+
+    [[nodiscard]] static constexpr std::size_t decimal_digits(std::size_t value) noexcept
+    {
+        auto digits = std::size_t{1U};
+        while (value >= 10U) {
+            value /= 10U;
+            ++digits;
+        }
+        return digits;
+    }
+
+    [[nodiscard]] static constexpr std::size_t cstr_size(const char* const value) noexcept
+    {
+        auto out = std::size_t{};
+        while (value[out] != '\0') {
+            ++out;
+        }
+        return out;
+    }
+
+    [[nodiscard]] static constexpr std::size_t header_bytes(
+        const int status,
+        const char* const reason,
+        const char* const content_type,
+        const std::size_t body_size) noexcept
+    {
+        return (sizeof("HTTP/1.1 ") - 1U) +
+            decimal_digits(static_cast<std::size_t>(status)) +
+            (sizeof(" ") - 1U) +
+            cstr_size(reason) +
+            (sizeof("\r\nContent-Type: ") - 1U) +
+            cstr_size(content_type) +
+            (sizeof("\r\nContent-Length: ") - 1U) +
+            decimal_digits(body_size) +
+            (sizeof("\r\nConnection: close\r\n\r\n") - 1U);
+    }
+
+    [[nodiscard]] static constexpr bool header_name_char(const char ch) noexcept
+    {
+        return (ch >= '0' && ch <= '9') ||
+            (ch >= 'A' && ch <= 'Z') ||
+            (ch >= 'a' && ch <= 'z') ||
+            ch == '!' ||
+            ch == '#' ||
+            ch == '$' ||
+            ch == '%' ||
+            ch == '&' ||
+            ch == '\'' ||
+            ch == '*' ||
+            ch == '+' ||
+            ch == '-' ||
+            ch == '.' ||
+            ch == '^' ||
+            ch == '_' ||
+            ch == '`' ||
+            ch == '|' ||
+            ch == '~';
+    }
+
+    [[nodiscard]] static constexpr bool valid_header_name(const std::span<const char> value) noexcept
+    {
+        if (!valid_span(value) || value.empty()) {
+            return false;
+        }
+        for (const auto ch : value) {
+            if (!header_name_char(ch)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool valid_header_value(const std::span<const char> value) noexcept
+    {
+        if (!valid_span(value)) {
+            return false;
+        }
+        for (const auto ch : value) {
+            const auto byte = static_cast<unsigned char>(ch);
+            if (byte != '\t' && (byte < 0x20U || byte == 0x7fU)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]] static constexpr bool valid_header_cstr(
+        const char* const value,
+        const bool allow_empty) noexcept
+    {
+        if (value == nullptr) {
+            return false;
+        }
+        auto used = std::size_t{0U};
+        while (value[used] != '\0') {
+            const auto byte = static_cast<unsigned char>(value[used]);
+            if (byte != '\t' && (byte < 0x20U || byte == 0x7fU)) {
+                return false;
+            }
+            ++used;
+        }
+        return allow_empty || used != 0U;
+    }
+
+    [[nodiscard]] static Result<std::size_t> parse_content_length(
+        const std::span<const char> value) noexcept
+    {
+        if (!valid_span(value) || value.empty()) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        auto out = std::size_t{0U};
+        for (const auto ch : value) {
+            if (ch < '0' || ch > '9') {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            const auto digit = static_cast<std::size_t>(ch - '0');
+            if (out > ((static_cast<std::size_t>(-1) - digit) / 10U)) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            out = (out * 10U) + digit;
+        }
+        return out;
+    }
+
+    template <typename T>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
     }
 
     [[nodiscard]] static bool valid_text(const std::string_view value) noexcept
@@ -531,7 +694,13 @@ private:
         std::size_t from,
         std::size_t limit) noexcept
     {
-        for (std::size_t i = from; i + 1U < limit; ++i) {
+        if (limit > value.size()) {
+            limit = value.size();
+        }
+        if (limit < 2U || from >= limit - 1U) {
+            return npos;
+        }
+        for (std::size_t i = from; i < limit - 1U; ++i) {
             if (value[i] == '\r' && value[i + 1U] == '\n') {
                 return i;
             }
@@ -541,7 +710,10 @@ private:
 
     [[nodiscard]] static constexpr std::size_t headers_end(std::span<const char> value) noexcept
     {
-        for (std::size_t i = 0; i + 3U < value.size(); ++i) {
+        if (value.size() < 4U) {
+            return npos;
+        }
+        for (std::size_t i = 0; i < value.size() - 3U; ++i) {
             if (value[i] == '\r' && value[i + 1U] == '\n' && value[i + 2U] == '\r' && value[i + 3U] == '\n') {
                 return i;
             }

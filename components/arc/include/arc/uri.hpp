@@ -55,7 +55,7 @@ struct Uri {
 
     [[nodiscard]] static Result<UriView> parse(const std::span<const char> in) noexcept
     {
-        if (!valid_text(in)) {
+        if (!valid_span(in) || !valid_text(in)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -107,7 +107,7 @@ struct Uri {
         const std::span<const char> query,
         std::size_t& offset) noexcept
     {
-        if (offset > query.size()) {
+        if (!valid_span(query) || offset > query.size()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         while (offset < query.size() && query[offset] == '&') {
@@ -140,7 +140,7 @@ struct Uri {
 
     [[nodiscard]] static bool scheme_is(const UriView& uri, const char* const scheme) noexcept
     {
-        if (scheme == nullptr) {
+        if (scheme == nullptr || !valid_span(uri.scheme)) {
             return false;
         }
 
@@ -163,6 +163,9 @@ struct Uri {
         const UriView& uri,
         const std::uint16_t fallback = 0U) noexcept
     {
+        if (!valid_span(uri.port)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         if (uri.port.empty()) {
             if (fallback == 0U) {
                 return fail(ESP_ERR_INVALID_ARG);
@@ -196,16 +199,16 @@ struct Uri {
         const std::span<char> out,
         const UriView& uri) noexcept
     {
-        if (uri.host.empty() || !valid_endpoint_host(uri.host)) {
+        if (!valid_span(out) || uri.host.empty() || !valid_endpoint_host(uri.host)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         auto used = std::size_t{0U};
         for (std::size_t i = 0U; i < uri.host.size(); ++i) {
-            if (used + 1U >= out.size()) {
+            if (used >= out.size() || out.size() - used < 2U) {
                 return fail(ESP_ERR_NO_MEM);
             }
             if (uri.host[i] == '%') {
-                if (i + 2U >= uri.host.size()) {
+                if (uri.host.size() - i < 3U) {
                     return fail(ESP_ERR_INVALID_ARG);
                 }
                 const auto hi = hex(uri.host[i + 1U]);
@@ -233,7 +236,7 @@ struct Uri {
         const std::span<char> out,
         const UriView& uri) noexcept
     {
-        if (!valid_path(uri.path) || (uri.has_query && !valid_query(uri.query))) {
+        if (!valid_span(out) || !valid_path(uri.path) || (uri.has_query && !valid_query(uri.query))) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         auto used = std::size_t{0U};
@@ -269,13 +272,17 @@ struct Uri {
         const std::span<const char> in,
         const bool plus_space = false) noexcept
     {
+        if (!valid_span(out) || !valid_span(in)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
         auto used = std::size_t{0U};
         for (std::size_t i = 0U; i < in.size(); ++i) {
             if (used >= out.size()) {
                 return fail(ESP_ERR_NO_MEM);
             }
             if (in[i] == '%') {
-                if (i + 2U >= in.size()) {
+                if (in.size() - i < 3U) {
                     return fail(ESP_ERR_INVALID_ARG);
                 }
                 const auto hi = hex(in[i + 1U]);
@@ -308,6 +315,10 @@ struct Uri {
         const std::span<const char> in,
         const bool space_plus = false) noexcept
     {
+        if (!valid_span(out) || !valid_span(in)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
         auto used = std::size_t{0U};
         for (const char ch : in) {
             const auto byte = static_cast<std::uint8_t>(ch);
@@ -320,7 +331,7 @@ struct Uri {
                     return fail(ESP_ERR_NO_MEM);
                 }
             } else {
-                if (used + 3U > out.size()) {
+                if (used > out.size() || out.size() - used < 3U) {
                     return fail(ESP_ERR_NO_MEM);
                 }
                 out[used++] = '%';
@@ -333,6 +344,12 @@ struct Uri {
 
 private:
     static constexpr std::size_t npos = static_cast<std::size_t>(-1);
+
+    template <typename T>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
+    }
 
     [[nodiscard]] static bool split_authority(UriView& out) noexcept
     {
@@ -387,10 +404,13 @@ private:
 
     [[nodiscard]] static bool valid_userinfo(const std::span<const char> text) noexcept
     {
+        if (!valid_span(text)) {
+            return false;
+        }
         for (std::size_t i = 0U; i < text.size(); ++i) {
             const auto ch = text[i];
             if (ch == '%') {
-                if (i + 2U >= text.size()) {
+                if (text.size() - i < 3U) {
                     return false;
                 }
                 const auto hi = hex(text[i + 1U]);
@@ -414,7 +434,7 @@ private:
 
     [[nodiscard]] static bool valid_host(const std::span<const char> text) noexcept
     {
-        if (text.empty()) {
+        if (text.empty() || !valid_span(text)) {
             return false;
         }
         for (std::size_t i = 0U; i < text.size(); ++i) {
@@ -422,7 +442,7 @@ private:
             if (unreserved(static_cast<std::uint8_t>(ch)) || subdelim(ch)) {
                 continue;
             }
-            if (ch == '%' && i + 2U < text.size() && hex(text[i + 1U]) >= 0 && hex(text[i + 2U]) >= 0) {
+            if (ch == '%' && text.size() - i >= 3U && hex(text[i + 1U]) >= 0 && hex(text[i + 2U]) >= 0) {
                 i += 2U;
                 continue;
             }
@@ -433,12 +453,12 @@ private:
 
     [[nodiscard]] static bool valid_endpoint_host(const std::span<const char> text) noexcept
     {
-        if (text.empty() || (contains(text, ':') && !valid_lit(text))) {
+        if (text.empty() || !valid_span(text) || (contains(text, ':') && !valid_lit(text))) {
             return false;
         }
         for (std::size_t i = 0U; i < text.size(); ++i) {
             if (text[i] == '%') {
-                if (i + 2U >= text.size()) {
+                if (text.size() - i < 3U) {
                     return false;
                 }
                 const auto hi = hex(text[i + 1U]);
@@ -486,7 +506,7 @@ private:
     {
         for (std::size_t i = 0U; i < text.size(); ++i) {
             if (text[i] == '%') {
-                if (i + 2U >= text.size() || text[i + 1U] != '2' || text[i + 2U] != '5') {
+                if (text.size() - i < 3U || text[i + 1U] != '2' || text[i + 2U] != '5') {
                     return false;
                 }
                 return valid_v6_addr(text.first(i)) && valid_zone(text.subspan(i + 3U));
@@ -608,14 +628,14 @@ private:
 
     [[nodiscard]] static bool valid_zone(const std::span<const char> text) noexcept
     {
-        if (text.empty()) {
+        if (text.empty() || !valid_span(text)) {
             return false;
         }
         for (std::size_t i = 0U; i < text.size(); ++i) {
             if (unreserved(static_cast<std::uint8_t>(text[i])) || subdelim(text[i]) || text[i] == ':') {
                 continue;
             }
-            if (text[i] == '%' && i + 2U < text.size() && hex(text[i + 1U]) >= 0 && hex(text[i + 2U]) >= 0) {
+            if (text[i] == '%' && text.size() - i >= 3U && hex(text[i + 1U]) >= 0 && hex(text[i + 2U]) >= 0) {
                 i += 2U;
                 continue;
             }
@@ -664,6 +684,9 @@ private:
 
     [[nodiscard]] static bool valid_text(const std::span<const char> text) noexcept
     {
+        if (!valid_span(text)) {
+            return false;
+        }
         for (std::size_t i = 0U; i < text.size(); ++i) {
             const auto ch = text[i];
             const auto byte = static_cast<std::uint8_t>(ch);
@@ -671,7 +694,7 @@ private:
                 return false;
             }
             if (ch == '%') {
-                if (i + 2U >= text.size() || hex(text[i + 1U]) < 0 || hex(text[i + 2U]) < 0) {
+                if (text.size() - i < 3U || hex(text[i + 1U]) < 0 || hex(text[i + 2U]) < 0) {
                     return false;
                 }
                 i += 2U;
@@ -699,9 +722,12 @@ private:
         const std::span<const char> text,
         const bool allow_question) noexcept
     {
+        if (!valid_span(text)) {
+            return false;
+        }
         for (std::size_t i = 0U; i < text.size(); ++i) {
             if (text[i] == '%') {
-                if (i + 2U >= text.size() || hex(text[i + 1U]) < 0 || hex(text[i + 2U]) < 0) {
+                if (text.size() - i < 3U || hex(text[i + 1U]) < 0 || hex(text[i + 2U]) < 0) {
                     return false;
                 }
                 i += 2U;
@@ -742,7 +768,7 @@ private:
     [[nodiscard]] static bool starts(const std::span<const char> text, const std::size_t pos, const char* prefix) noexcept
     {
         const auto len = std::strlen(prefix);
-        if (pos + len > text.size()) {
+        if (pos > text.size() || len > text.size() - pos) {
             return false;
         }
         for (std::size_t i = 0U; i < len; ++i) {

@@ -41,6 +41,12 @@ using UnsignedWireT = std::make_unsigned_t<WireTypeT<T>>;
 
 namespace detail {
 
+template <typename T, std::size_t Extent>
+[[nodiscard]] static constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
 template <Endian Order, typename Field>
 static void write_scalar(
     const std::span<std::uint8_t> out,
@@ -90,6 +96,9 @@ struct Schema {
         const std::span<std::uint8_t> out,
         Values... values) noexcept
     {
+        if (!detail::valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         if (out.size() < bytes) {
             return fail(ESP_ERR_NO_MEM);
         }
@@ -106,7 +115,7 @@ struct Schema {
         Out&... out) noexcept
     {
         static_assert((std::is_assignable_v<Out&, Fields> && ...), "pack read outputs must accept schema fields");
-        if (in.size() < bytes) {
+        if (!detail::valid_span(in) || in.size() < bytes) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 
@@ -148,6 +157,9 @@ struct Struct {
         const std::span<std::uint8_t> out,
         const Object& value) noexcept
     {
+        if (!detail::valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         if (out.size() < bytes) {
             return fail(ESP_ERR_NO_MEM);
         }
@@ -162,7 +174,7 @@ struct Struct {
         const std::span<const std::uint8_t> in,
         Object& out) noexcept
     {
-        if (in.size() < bytes) {
+        if (!detail::valid_span(in) || in.size() < bytes) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 
@@ -214,7 +226,7 @@ struct Overlay<Struct<Object, Fields...>, Order> {
 
     [[nodiscard]] bool valid() const noexcept
     {
-        return bytes.size() >= Struct<Object, Fields...>::bytes;
+        return detail::valid_span(bytes) && bytes.size() >= Struct<Object, Fields...>::bytes;
     }
 
     template <auto Member>

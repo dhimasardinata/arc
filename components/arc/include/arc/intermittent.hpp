@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "arc/place.hpp"
@@ -67,7 +68,14 @@ struct Intermittent {
         const std::span<const std::byte> stack,
         const std::span<const std::byte> rcu_state = {}) noexcept
     {
-        if (stack.size() + rcu_state.size() > checkpoint.image.size()) {
+        if (!valid_span(stack) || !valid_span(rcu_state)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+        if (stack.size() > checkpoint.image.size() || rcu_state.size() > checkpoint.image.size() - stack.size()) {
+            return Status{fail(ESP_ERR_NO_MEM)};
+        }
+        const auto total = stack.size() + rcu_state.size();
+        if (total > std::numeric_limits<std::uint32_t>::max()) {
             return Status{fail(ESP_ERR_NO_MEM)};
         }
 
@@ -76,7 +84,7 @@ struct Intermittent {
         copy_fast(out.subspan(stack.size(), rcu_state.size()), rcu_state);
 
         checkpoint.frame = frame;
-        checkpoint.frame.bytes = static_cast<std::uint32_t>(stack.size() + rcu_state.size());
+        checkpoint.frame.bytes = static_cast<std::uint32_t>(total);
         checkpoint.frame.generation += 1U;
         checkpoint.frame.crc = crc(std::span<const std::byte>{checkpoint.image}.first(checkpoint.frame.bytes), checkpoint.frame);
         return ok();
@@ -125,6 +133,11 @@ private:
         for (; i < src.size(); ++i) {
             dst[i] = src[i];
         }
+    }
+
+    [[nodiscard]] static constexpr bool valid_span(const std::span<const std::byte> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
     }
 
     [[nodiscard]] static std::uint32_t crc(

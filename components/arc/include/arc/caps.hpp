@@ -143,7 +143,12 @@ public:
 
     [[nodiscard]] constexpr std::size_t bytes() const noexcept
     {
-        return size_ * sizeof(T);
+        return bytes_fit() ? size_ * sizeof(T) : std::numeric_limits<std::size_t>::max();
+    }
+
+    [[nodiscard]] constexpr bool bytes_fit() const noexcept
+    {
+        return size_ <= (std::numeric_limits<std::size_t>::max() / sizeof(T));
     }
 
     [[nodiscard]] constexpr std::size_t storage_bytes() const noexcept

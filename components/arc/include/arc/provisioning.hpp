@@ -9,6 +9,15 @@
 
 namespace arc {
 
+namespace detail {
+
+[[nodiscard]] constexpr bool provisioning_valid_span(const std::span<const std::uint8_t> data) noexcept
+{
+    return data.empty() || data.data() != nullptr;
+}
+
+}  // namespace detail
+
 enum class ProvisioningState : std::uint8_t {
     idle,
     hello,
@@ -24,7 +33,7 @@ struct Provisioning {
 
     [[nodiscard]] esp_err_t begin(std::span<const std::uint8_t> nonce) noexcept
     {
-        if (nonce.empty() || nonce.size() > session_nonce.size()) {
+        if (nonce.empty() || nonce.size() > session_nonce.size() || !detail::provisioning_valid_span(nonce)) {
             state = ProvisioningState::failed;
             return ESP_ERR_INVALID_ARG;
         }
@@ -36,9 +45,13 @@ struct Provisioning {
 
     [[nodiscard]] esp_err_t keys(std::span<const std::uint8_t> peer_key) noexcept
     {
-        if (state != ProvisioningState::hello || peer_key.empty() || peer_key.size() > public_key.size()) {
+        if (state != ProvisioningState::hello) {
             state = ProvisioningState::failed;
             return ESP_ERR_INVALID_STATE;
+        }
+        if (peer_key.empty() || peer_key.size() > public_key.size() || !detail::provisioning_valid_span(peer_key)) {
+            state = ProvisioningState::failed;
+            return ESP_ERR_INVALID_ARG;
         }
         key_size = peer_key.size();
         copy(public_key, peer_key);
@@ -51,8 +64,13 @@ struct Provisioning {
         std::span<const std::uint8_t> pass_in,
         std::span<const std::uint8_t> cert_in = {}) noexcept
     {
-        if (state != ProvisioningState::keys || ssid_in.empty() || ssid_in.size() > ssid.size() ||
-            pass_in.size() > pass.size() || cert_in.size() > cert.size()) {
+        if (state != ProvisioningState::keys) {
+            state = ProvisioningState::failed;
+            return ESP_ERR_INVALID_STATE;
+        }
+        if (ssid_in.empty() || ssid_in.size() > ssid.size() || pass_in.size() > pass.size() ||
+            cert_in.size() > cert.size() || !detail::provisioning_valid_span(ssid_in) ||
+            !detail::provisioning_valid_span(pass_in) || !detail::provisioning_valid_span(cert_in)) {
             state = ProvisioningState::failed;
             return ESP_ERR_INVALID_ARG;
         }

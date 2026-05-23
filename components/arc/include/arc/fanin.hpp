@@ -149,11 +149,28 @@ struct Fanin {
             return fan_ != nullptr && fan_->try_pop(value);
         }
 
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool peek(T& value) noexcept
+        {
+            return fan_ != nullptr && fan_->peek(value);
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool drop() noexcept
+        {
+            return fan_ != nullptr && fan_->drop();
+        }
+
         [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(
             std::size_t& producer,
             T& value) noexcept
         {
             return fan_ != nullptr && fan_->try_pop(producer, value);
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool peek(
+            std::size_t& producer,
+            T& value) noexcept
+        {
+            return fan_ != nullptr && fan_->peek(producer, value);
         }
 
         template <typename U, std::size_t Extent>
@@ -251,6 +268,26 @@ struct Fanin {
         return try_pop(producer, value);
     }
 
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool peek(T& value) noexcept
+    {
+        std::size_t producer{};
+        return peek(producer, value);
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool drop() noexcept
+    {
+        const auto start = cursor_;
+        for (std::size_t offset = 0; offset < Producers; ++offset) {
+            const auto index = wrap(start + offset);
+            if (lanes_[index].drop()) {
+                cursor_ = wrap(index + 1U);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(
         std::size_t& producer,
         T& value) noexcept
@@ -261,6 +298,22 @@ struct Fanin {
             if (lanes_[index].try_pop(value)) {
                 producer = index;
                 cursor_ = wrap(index + 1U);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool peek(
+        std::size_t& producer,
+        T& value) noexcept
+    {
+        const auto start = cursor_;
+        for (std::size_t offset = 0; offset < Producers; ++offset) {
+            const auto index = wrap(start + offset);
+            if (lanes_[index].peek(value)) {
+                producer = index;
                 return true;
             }
         }
@@ -327,8 +380,11 @@ struct Fanin {
         std::size_t count{};
         std::size_t producer{};
         while (count < max && try_pop(producer, value)) {
-            call(fn, producer, value);
+            const auto keep_going = call(fn, producer, value);
             ++count;
+            if (!keep_going) {
+                break;
+            }
         }
         return count;
     }
@@ -340,13 +396,23 @@ private:
     }
 
     template <typename Fn>
-    static void call(Fn&& fn, const std::size_t producer, T& value) noexcept
+    [[nodiscard]] static bool call(Fn&& fn, const std::size_t producer, T& value) noexcept
     {
         if constexpr (requires { fn(producer, value); }) {
-            fn(producer, value);
+            if constexpr (std::is_same_v<std::invoke_result_t<Fn&, std::size_t, T&>, bool>) {
+                return fn(producer, value);
+            } else {
+                fn(producer, value);
+                return true;
+            }
         } else {
             static_cast<void>(producer);
-            fn(value);
+            if constexpr (std::is_same_v<std::invoke_result_t<Fn&, T&>, bool>) {
+                return fn(value);
+            } else {
+                fn(value);
+                return true;
+            }
         }
     }
 
@@ -467,11 +533,28 @@ struct Audit<Fanin<T, Capacity, Producers>> {
             return fan_ != nullptr && fan_->try_pop(value);
         }
 
+        [[nodiscard]] inline bool peek(T& value) noexcept
+        {
+            return fan_ != nullptr && fan_->peek(value);
+        }
+
+        [[nodiscard]] inline bool drop() noexcept
+        {
+            return fan_ != nullptr && fan_->drop();
+        }
+
         [[nodiscard]] inline bool try_pop(
             std::size_t& producer,
             T& value) noexcept
         {
             return fan_ != nullptr && fan_->try_pop(producer, value);
+        }
+
+        [[nodiscard]] inline bool peek(
+            std::size_t& producer,
+            T& value) noexcept
+        {
+            return fan_ != nullptr && fan_->peek(producer, value);
         }
 
         template <typename U, std::size_t Extent>
@@ -561,12 +644,32 @@ struct Audit<Fanin<T, Capacity, Producers>> {
         return fan_.try_pop(value);
     }
 
+    [[nodiscard]] inline bool peek(T& value) noexcept
+    {
+        consumer_.assert_single("arc::Audit<Fanin> peek must stay single-consumer");
+        return fan_.peek(value);
+    }
+
+    [[nodiscard]] inline bool drop() noexcept
+    {
+        consumer_.assert_single("arc::Audit<Fanin> drop must stay single-consumer");
+        return fan_.drop();
+    }
+
     [[nodiscard]] inline bool try_pop(
         std::size_t& producer,
         T& value) noexcept
     {
         consumer_.assert_single("arc::Audit<Fanin> pop must stay single-consumer");
         return fan_.try_pop(producer, value);
+    }
+
+    [[nodiscard]] inline bool peek(
+        std::size_t& producer,
+        T& value) noexcept
+    {
+        consumer_.assert_single("arc::Audit<Fanin> peek must stay single-consumer");
+        return fan_.peek(producer, value);
     }
 
     template <typename U, std::size_t Extent>
@@ -606,12 +709,24 @@ struct Audit<Fanin<T, Capacity, Producers>> {
         std::size_t count{};
         std::size_t producer{};
         while (count < max && try_pop(producer, value)) {
+            auto keep_going = true;
             if constexpr (requires { fn(producer, value); }) {
-                fn(producer, value);
+                if constexpr (std::is_same_v<std::invoke_result_t<Fn&, std::size_t, T&>, bool>) {
+                    keep_going = fn(producer, value);
+                } else {
+                    fn(producer, value);
+                }
             } else {
-                fn(value);
+                if constexpr (std::is_same_v<std::invoke_result_t<Fn&, T&>, bool>) {
+                    keep_going = fn(value);
+                } else {
+                    fn(value);
+                }
             }
             ++count;
+            if (!keep_going) {
+                break;
+            }
         }
         return count;
     }

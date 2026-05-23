@@ -15,6 +15,12 @@ namespace arc::vision {
 
 namespace detail {
 
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool vslam_valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
 [[nodiscard]] constexpr Result<std::size_t> vslam_pixels(
     const std::size_t width,
     const std::size_t height) noexcept
@@ -56,7 +62,7 @@ struct VSlam {
     [[nodiscard]] static Result<std::span<std::uint8_t>> capture_gray(
         const std::span<std::uint8_t> frame) noexcept
     {
-        if (frame.empty()) {
+        if (frame.empty() || !detail::vslam_valid_span(frame)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         const auto err = Camera::capture_gray(frame);
@@ -73,8 +79,13 @@ struct VSlam {
         const std::span<Corner> out,
         const std::uint8_t threshold = 20U) noexcept
     {
+        if (width > std::numeric_limits<std::uint16_t>::max() ||
+            height > std::numeric_limits<std::uint16_t>::max()) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         const auto total = detail::vslam_pixels(width, height);
-        if (!total || width < 7U || height < 7U || gray.size() < *total || out.empty()) {
+        if (!total || width < 7U || height < 7U || !detail::vslam_valid_span(gray) ||
+            !detail::vslam_valid_span(out) || gray.size() < *total || out.empty()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -113,7 +124,11 @@ struct VSlam {
         const float focal_px = 160.0F) noexcept
     {
         const auto count = min(previous.size(), min(current.size(), tracks));
-        if (count == 0U || focal_px <= 0.0F) {
+        if (count == 0U || !detail::vslam_valid_span(previous) || !detail::vslam_valid_span(current) ||
+            focal_px <= 0.0F) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (count > std::numeric_limits<std::uint32_t>::max()) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 

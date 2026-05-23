@@ -31,6 +31,10 @@ struct Spsc {
         "[ARC ERROR] arc::Spsc capacity must be a power of two. "
         "Action: choose 2, 4, 8, 16, and remember usable capacity is Capacity - 1.");
     static_assert(
+        Capacity <= (std::size_t{1} << 31U),
+        "[ARC ERROR] arc::Spsc capacity is too large for the 32-bit ring arithmetic. "
+        "Action: reduce the queue depth below 2^31.");
+    static_assert(
         std::is_trivially_copyable_v<T>,
         "[ARC ERROR] arc::Spsc payload must be trivially copyable. "
         "Action: use flat structs, integers, enums, or std::array; keep strings, vectors, owning pointers, and virtual objects outside the queue payload.");
@@ -131,6 +135,16 @@ struct Spsc {
             return lane_ != nullptr && lane_->try_pop(value);
         }
 
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool peek(T& value) noexcept
+        {
+            return lane_ != nullptr && lane_->peek(value);
+        }
+
+        [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool drop() noexcept
+        {
+            return lane_ != nullptr && lane_->drop();
+        }
+
         template <typename U, std::size_t Extent>
             requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
         [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t pop(
@@ -212,6 +226,9 @@ struct Spsc {
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(
         const std::span<U, Extent> data) noexcept
     {
+        if (data.empty() || data.data() == nullptr) {
+            return 0U;
+        }
         const auto head = load_relaxed(&head_);
         auto room = writable(head, shadow_tail_);
         if (room < data.size()) {
@@ -243,11 +260,43 @@ struct Spsc {
         return true;
     }
 
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool peek(T& value) noexcept
+    {
+        const auto tail = load_relaxed(&tail_);
+        if (tail == shadow_head_) {
+            shadow_head_ = load_acquire(&head_);
+            if (tail == shadow_head_) {
+                return false;
+            }
+        }
+
+        assume(tail < Capacity);
+        value = buffer_[tail];
+        return true;
+    }
+
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool drop() noexcept
+    {
+        const auto tail = load_relaxed(&tail_);
+        if (tail == shadow_head_) {
+            shadow_head_ = load_acquire(&head_);
+            if (tail == shadow_head_) {
+                return false;
+            }
+        }
+
+        store_release(&tail_, increment(tail));
+        return true;
+    }
+
     template <typename U, std::size_t Extent>
         requires(std::is_same_v<std::remove_cv_t<U>, T> && !std::is_const_v<U>)
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t pop(
         const std::span<U, Extent> out) noexcept
     {
+        if (out.empty() || out.data() == nullptr) {
+            return 0U;
+        }
         const auto tail = load_relaxed(&tail_);
         auto count = readable(shadow_head_, tail);
         if (count < out.size()) {
@@ -296,8 +345,16 @@ struct Spsc {
     {
         std::size_t count{};
         while (count < max && try_pop(value)) {
-            fn(value);
-            ++count;
+            if constexpr (std::is_same_v<std::invoke_result_t<Fn&, T&>, bool>) {
+                const auto keep_going = fn(value);
+                ++count;
+                if (!keep_going) {
+                    break;
+                }
+            } else {
+                fn(value);
+                ++count;
+            }
         }
         return count;
     }
@@ -554,6 +611,18 @@ struct Audit<Spsc<T, Capacity>> {
     {
         consumer_.assert_single("arc::Audit<Spsc> pop must stay single-consumer");
         return lane_.try_pop(value);
+    }
+
+    [[nodiscard]] inline bool peek(T& value) noexcept
+    {
+        consumer_.assert_single("arc::Audit<Spsc> peek must stay single-consumer");
+        return lane_.peek(value);
+    }
+
+    [[nodiscard]] inline bool drop() noexcept
+    {
+        consumer_.assert_single("arc::Audit<Spsc> drop must stay single-consumer");
+        return lane_.drop();
     }
 
     template <typename U, std::size_t Extent>

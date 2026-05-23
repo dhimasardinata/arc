@@ -16,6 +16,12 @@
 
 namespace arc::ml {
 
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+{
+    return value.empty() || value.data() != nullptr;
+}
+
 [[nodiscard]] constexpr std::int8_t saturate_s8(const std::int64_t value) noexcept
 {
     if (value > std::numeric_limits<std::int8_t>::max()) {
@@ -40,7 +46,7 @@ namespace arc::ml {
 template <typename T, std::size_t Count>
 [[nodiscard]] Result<std::span<const T, Count>> mapped_weights(const MmuSpan<T>& mapped) noexcept
 {
-    if (mapped.size() < Count) {
+    if (mapped.size() < Count || (Count != 0U && mapped.data() == nullptr)) {
         return fail(ESP_ERR_INVALID_ARG);
     }
     return std::span<const T, Count>{mapped.data(), Count};
@@ -112,6 +118,9 @@ template <typename T, std::size_t N>
     const std::span<const T, N> lhs,
     const std::span<const T, N> rhs) noexcept
 {
+    if (!valid_span(lhs) || !valid_span(rhs)) {
+        return {};
+    }
     T acc{};
     for (std::size_t i = 0; i < N; ++i) {
         acc = static_cast<T>(acc + (lhs[i] * rhs[i]));
@@ -130,7 +139,8 @@ struct Dense {
         const std::span<const T, In> input,
         const std::span<T, Out> output) const noexcept
     {
-        if (weights.size() != In * Out || bias.size() != Out) {
+        if (weights.size() != In * Out || bias.size() != Out ||
+            !valid_span(weights) || !valid_span(bias) || !valid_span(input) || !valid_span(output)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 
@@ -162,7 +172,8 @@ struct QuantDenseS8 {
         const std::span<const std::int8_t, In> input,
         const std::span<std::int8_t, Out> output) const noexcept
     {
-        if (weights.size() != In * Out || bias.size() != Out || shift >= 31U) {
+        if (weights.size() != In * Out || bias.size() != Out || shift >= 31U ||
+            !valid_span(weights) || !valid_span(bias) || !valid_span(input) || !valid_span(output)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 
@@ -215,7 +226,8 @@ struct Conv2dS8 {
         const std::span<const std::int8_t, input_size> input,
         const std::span<std::int8_t, output_size> output) const noexcept
     {
-        if (weights.size() != weight_size || bias.size() != OutC || shift >= 31U) {
+        if (weights.size() != weight_size || bias.size() != OutC || shift >= 31U ||
+            !valid_span(weights) || !valid_span(bias) || !valid_span(input) || !valid_span(output)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 
@@ -289,7 +301,8 @@ struct DepthwiseConv2dS8 {
         const std::span<const std::int8_t, input_size> input,
         const std::span<std::int8_t, output_size> output) const noexcept
     {
-        if (weights.size() != weight_size || bias.size() != out_c || shift >= 31U) {
+        if (weights.size() != weight_size || bias.size() != out_c || shift >= 31U ||
+            !valid_span(weights) || !valid_span(bias) || !valid_span(input) || !valid_span(output)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
 
@@ -349,6 +362,9 @@ struct MaxPool2d {
         const std::span<const T, input_size> input,
         const std::span<T, output_size> output) noexcept
     {
+        if (!valid_span(input) || !valid_span(output)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
         for (std::size_t oy = 0; oy < out_h; ++oy) {
             for (std::size_t ox = 0; ox < out_w; ++ox) {
                 for (std::size_t channel = 0; channel < Channels; ++channel) {
@@ -371,6 +387,9 @@ struct MaxPool2d {
 template <typename T, std::size_t N>
 void relu(const std::span<T, N> values) noexcept
 {
+    if (!valid_span(values)) {
+        return;
+    }
     for (auto& value : values) {
         if (value < T{}) {
             value = T{};
@@ -382,6 +401,9 @@ template <typename T, std::size_t N>
 [[nodiscard]] std::size_t argmax(const std::span<const T, N> values) noexcept
 {
     static_assert(N > 0U, "argmax needs at least one value");
+    if (!valid_span(values)) {
+        return {};
+    }
     auto best = std::size_t{};
     for (std::size_t i = 1; i < N; ++i) {
         if (values[i] > values[best]) {

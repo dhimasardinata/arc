@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "driver/rmt_common.h"
 #include "driver/rmt_encoder.h"
@@ -92,6 +93,10 @@ struct Burst {
         const bool nonblocking = true,
         const bool eot = false) noexcept
     {
+        if (symbols == nullptr || count == 0U || !bytes_fit(count)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+
         init();
 
         if (!state.enabled) {
@@ -145,6 +150,11 @@ private:
     };
 
     constinit static inline State state{};
+
+    [[nodiscard]] static constexpr bool bytes_fit(const std::size_t count) noexcept
+    {
+        return count <= (std::numeric_limits<std::size_t>::max() / sizeof(rmt_symbol_word_t));
+    }
 
     [[gnu::cold]] static void init()
     {

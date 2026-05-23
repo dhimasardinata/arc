@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "esp_err.h"
@@ -15,6 +16,7 @@ namespace arc::net {
 template <std::size_t Mtu = 1536U>
 struct EthernetFrame {
     static_assert(Mtu >= 64U, "Ethernet MTU must fit a minimum frame");
+    static_assert(Mtu <= std::numeric_limits<std::uint16_t>::max(), "Ethernet MTU must fit frame size metadata");
 
     std::array<std::uint8_t, Mtu> bytes{};
     std::uint16_t size{};
@@ -31,7 +33,7 @@ struct EthernetRing {
 
     [[nodiscard]] bool push(std::span<const std::uint8_t> frame) noexcept
     {
-        if (frame.size() > Mtu) {
+        if (frame.size() > Mtu || (!frame.empty() && frame.data() == nullptr)) {
             return false;
         }
         Frame out{};

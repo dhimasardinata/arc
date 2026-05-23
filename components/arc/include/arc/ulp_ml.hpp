@@ -95,7 +95,7 @@ struct AudioSignature {
         const std::span<std::int8_t, Bins> out,
         const std::int32_t scale = 256) noexcept
     {
-        if (scale <= 0) {
+        if (scale <= 0 || samples.data() == nullptr || out.data() == nullptr) {
             return false;
         }
         constexpr auto bin_samples = Samples / Bins;

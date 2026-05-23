@@ -324,6 +324,9 @@ struct AnyI2c {
         if (send_fn == nullptr || (data == nullptr && bytes != 0U)) {
             return ESP_ERR_INVALID_ARG;
         }
+        if (bytes == 0U) {
+            return ESP_OK;
+        }
         return send_fn(ctx, data, bytes, timeout_ms);
     }
 
@@ -334,6 +337,9 @@ struct AnyI2c {
     {
         if (recv_fn == nullptr || (data == nullptr && bytes != 0U)) {
             return ESP_ERR_INVALID_ARG;
+        }
+        if (bytes == 0U) {
+            return ESP_OK;
         }
         return recv_fn(ctx, data, bytes, timeout_ms);
     }
@@ -349,6 +355,9 @@ struct AnyI2c {
             (tx == nullptr && tx_bytes != 0U) ||
             (rx == nullptr && rx_bytes != 0U)) {
             return ESP_ERR_INVALID_ARG;
+        }
+        if (tx_bytes == 0U && rx_bytes == 0U) {
+            return ESP_OK;
         }
         return xfer_fn(ctx, tx, tx_bytes, rx, rx_bytes, timeout_ms);
     }
@@ -493,6 +502,9 @@ struct AnySpi {
         if (send_fn == nullptr || (data == nullptr && bytes != 0U)) {
             return ESP_ERR_INVALID_ARG;
         }
+        if (bytes == 0U) {
+            return ESP_OK;
+        }
         return send_fn(ctx, data, bytes, hz, flags);
     }
 
@@ -504,6 +516,9 @@ struct AnySpi {
     {
         if (recv_fn == nullptr || (data == nullptr && bytes != 0U)) {
             return ESP_ERR_INVALID_ARG;
+        }
+        if (bytes == 0U) {
+            return ESP_OK;
         }
         return recv_fn(ctx, data, bytes, hz, flags);
     }
@@ -519,6 +534,9 @@ struct AnySpi {
             (tx == nullptr && bytes != 0U) ||
             (rx == nullptr && bytes != 0U)) {
             return ESP_ERR_INVALID_ARG;
+        }
+        if (bytes == 0U) {
+            return ESP_OK;
         }
         return xfer_fn(ctx, tx, rx, bytes, hz, flags);
     }
@@ -683,6 +701,9 @@ struct AnyUart {
         if (write_fn == nullptr || (data == nullptr && bytes != 0U)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
+        if (bytes == 0U) {
+            return 0U;
+        }
         return write_fn(ctx, data, bytes);
     }
 
@@ -693,6 +714,9 @@ struct AnyUart {
     {
         if (read_fn == nullptr || (data == nullptr && bytes != 0U)) {
             return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (bytes == 0U) {
+            return 0U;
         }
         return read_fn(ctx, data, bytes, timeout_ms);
     }

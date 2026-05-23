@@ -44,8 +44,8 @@ struct AcousticSlam {
     {
         return config.start_hz != 0U &&
             config.stop_hz != 0U &&
-            config.sample_hz > (config.start_hz * 2U) &&
-            config.sample_hz > (config.stop_hz * 2U) &&
+            below_nyquist(config.start_hz, config.sample_hz) &&
+            below_nyquist(config.stop_hz, config.sample_hz) &&
             config.amplitude > 0;
     }
 
@@ -53,7 +53,7 @@ struct AcousticSlam {
         const std::span<std::int16_t> out,
         const ChirpConfig config = {}) noexcept
     {
-        if (out.empty() || !chirp_valid(config)) {
+        if (out.empty() || out.data() == nullptr || !chirp_valid(config)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -77,7 +77,8 @@ struct AcousticSlam {
         const float sound_mmps = 343'000.0F) noexcept
     {
         constexpr auto max_scan_lag = static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max() - 1);
-        if (reference.empty() || delayed.empty() || sample_hz == 0U || max_lag > max_scan_lag || sound_mmps <= 0.0F) {
+        if (reference.empty() || delayed.empty() || reference.data() == nullptr || delayed.data() == nullptr ||
+            sample_hz == 0U || max_lag > max_scan_lag || !std::isfinite(sound_mmps) || sound_mmps <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -126,7 +127,9 @@ struct AcousticSlam {
         const float sample_hz,
         const float sound_mmps = 343'000.0F) noexcept
     {
-        if (sample_hz <= 0.0F || sound_mmps <= 0.0F) {
+        if (!valid_span(reference) || !valid_span(delayed) || !valid_span(scratch) ||
+            !std::isfinite(sample_hz) || sample_hz <= 0.0F ||
+            !std::isfinite(sound_mmps) || sound_mmps <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -155,7 +158,7 @@ struct AcousticSlam {
         const std::int64_t remote_tx_us,
         const float sound_mmps = 343'000.0F) noexcept
     {
-        if (sound_mmps <= 0.0F) {
+        if (!std::isfinite(sound_mmps) || sound_mmps <= 0.0F) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         const auto tx_local = clock.to_local(remote_tx_us);
@@ -172,6 +175,9 @@ struct AcousticSlam {
         const std::span<const float, Anchors> ranges_mm) noexcept
     {
         static_assert(Anchors >= 4U, "3D acoustic SLAM needs at least four anchors");
+        if (!valid_geometry(anchors, ranges_mm)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
 
         double ata[3][3]{};
         double atb[3]{};
@@ -209,6 +215,10 @@ struct AcousticSlam {
         const Position3 measurement,
         const float noise_mm = 25.0F) noexcept
     {
+        if (!finite(measurement) || !std::isfinite(noise_mm) || noise_mm <= 0.0F) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+
         dsp::Kalman<float, 6, 3>::H h{};
         dsp::Kalman<float, 6, 3>::R r{};
         dsp::Kalman<float, 6, 3>::Measure z{};
@@ -232,6 +242,37 @@ struct AcousticSlam {
     }
 
 private:
+    [[nodiscard]] static constexpr bool below_nyquist(
+        const std::uint32_t hz,
+        const std::uint32_t sample_hz) noexcept
+    {
+        return sample_hz > 1U && hz <= (sample_hz - 1U) / 2U;
+    }
+
+    template <typename T>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
+    }
+
+    [[nodiscard]] static bool finite(const Position3 value) noexcept
+    {
+        return std::isfinite(value.x_mm) && std::isfinite(value.y_mm) && std::isfinite(value.z_mm);
+    }
+
+    template <std::size_t Anchors>
+    [[nodiscard]] static bool valid_geometry(
+        const std::span<const AcousticAnchor, Anchors> anchors,
+        const std::span<const float, Anchors> ranges_mm) noexcept
+    {
+        for (std::size_t i = 0U; i < Anchors; ++i) {
+            if (!finite(anchors[i].position) || !std::isfinite(ranges_mm[i]) || ranges_mm[i] < 0.0F) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     [[nodiscard]] static Result<Position3> solve3(
         double a[3][3],
         double b[3]) noexcept

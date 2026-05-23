@@ -108,8 +108,12 @@ struct Http {
 
     [[nodiscard]] esp_err_t body(const void* const data, const std::size_t bytes) noexcept
     {
-        if (handle_ == nullptr || data == nullptr || bytes > static_cast<std::size_t>(INT_MAX)) {
+        if (handle_ == nullptr || (data == nullptr && bytes != 0U) ||
+            bytes > static_cast<std::size_t>(INT_MAX)) {
             return ESP_ERR_INVALID_ARG;
+        }
+        if (bytes == 0U) {
+            return ESP_OK;
         }
         return esp_http_client_set_post_field(
             handle_,
@@ -155,8 +159,12 @@ struct Http {
 
     [[nodiscard]] Result<std::size_t> write(const void* const data, const std::size_t bytes) noexcept
     {
-        if (handle_ == nullptr || data == nullptr || bytes > static_cast<std::size_t>(INT_MAX)) {
+        if (handle_ == nullptr || (data == nullptr && bytes != 0U) ||
+            bytes > static_cast<std::size_t>(INT_MAX)) {
             return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (bytes == 0U) {
+            return 0U;
         }
 
         const auto sent = esp_http_client_write(
@@ -178,8 +186,12 @@ struct Http {
 
     [[nodiscard]] Result<std::size_t> read(void* const data, const std::size_t bytes) noexcept
     {
-        if (handle_ == nullptr || data == nullptr || bytes > static_cast<std::size_t>(INT_MAX)) {
+        if (handle_ == nullptr || (data == nullptr && bytes != 0U) ||
+            bytes > static_cast<std::size_t>(INT_MAX)) {
             return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (bytes == 0U) {
+            return 0U;
         }
 
         const auto got = esp_http_client_read(

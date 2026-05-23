@@ -77,6 +77,9 @@ struct MmuSpan {
         if (!mapped) {
             return fail(mapped.error());
         }
+        if (mapped->address == nullptr || mapped->bytes < request.bytes || (mapped->bytes % sizeof(T)) != 0U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
 
         const auto* ptr = static_cast<const T*>(mapped->address);
         return ok(MmuSpan{

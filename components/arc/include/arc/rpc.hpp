@@ -194,22 +194,27 @@ struct RpcLane {
         const std::uint32_t serial,
         Reply& out) noexcept
     {
+        Reply next{};
+        if (!replies.peek(next)) {
+            return false;
+        }
+
+        if (next.serial == serial) {
+            if (!replies.drop()) {
+                return false;
+            }
+            out = next;
+            return true;
+        }
+
         if (deferred.space() == 0U) {
             return false;
         }
 
-        Reply next{};
-        if (!replies.try_pop(next)) {
+        if (!replies.drop() || !deferred.try_push(next)) {
             return false;
         }
-        if (next.serial != serial) {
-            if (!deferred.try_push(next)) {
-                return false;
-            }
-            return false;
-        }
-        out = next;
-        return true;
+        return false;
     }
 
     [[nodiscard]] bool poll_deferred(Reply& out) noexcept

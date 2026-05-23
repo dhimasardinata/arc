@@ -19,15 +19,29 @@ template <typename Crypto, typename Writer>
 struct SecureUpdate {
     [[nodiscard]] esp_err_t begin(const std::size_t image_size = 0U) noexcept
     {
-        return writer.begin(image_size);
+        if (active_) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        const auto err = writer.begin(image_size);
+        if (err == ESP_OK) {
+            active_ = true;
+        }
+        return err;
     }
 
     [[nodiscard]] esp_err_t write(
         const SecureUpdateChunk& chunk,
         std::span<std::uint8_t> plaintext) noexcept
     {
+        if (!valid_span(chunk.ciphertext) || !valid_span(chunk.nonce) || !valid_span(chunk.aad) ||
+            !valid_span(chunk.tag) || !valid_span(plaintext)) {
+            return ESP_ERR_INVALID_ARG;
+        }
         if (plaintext.size() < chunk.ciphertext.size()) {
             return ESP_ERR_NO_MEM;
+        }
+        if (!active_) {
+            return ESP_ERR_INVALID_STATE;
         }
 
         const auto err = crypto.open(
@@ -44,15 +58,35 @@ struct SecureUpdate {
 
     [[nodiscard]] esp_err_t finish(std::span<const std::uint8_t> signature) noexcept
     {
+        if (!valid_span(signature)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        if (!active_) {
+            return ESP_ERR_INVALID_STATE;
+        }
+
         const auto err = crypto.verify(signature);
         if (err != ESP_OK) {
             return err;
         }
-        return writer.finish();
+        const auto done = writer.finish();
+        if (done == ESP_OK) {
+            active_ = false;
+        }
+        return done;
     }
 
     Crypto crypto{};
     Writer writer{};
+
+private:
+    bool active_{};
+
+    template <typename T, std::size_t Extent>
+    [[nodiscard]] static constexpr bool valid_span(const std::span<T, Extent> value) noexcept
+    {
+        return value.empty() || value.data() != nullptr;
+    }
 };
 
 }  // namespace arc

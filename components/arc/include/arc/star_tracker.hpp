@@ -14,6 +14,12 @@ namespace arc::vision {
 
 namespace detail {
 
+template <typename T, std::size_t Extent>
+[[nodiscard]] constexpr bool star_valid_span(const std::span<T, Extent> data) noexcept
+{
+    return data.empty() || data.data() != nullptr;
+}
+
 [[nodiscard]] constexpr Result<std::size_t> star_pixels(
     const std::size_t width,
     const std::size_t height) noexcept
@@ -54,7 +60,7 @@ struct StarTracker {
         const std::span<std::uint8_t> mask,
         const std::uint8_t cutoff) noexcept
     {
-        if (mask.size() < gray.size()) {
+        if (mask.size() < gray.size() || !detail::star_valid_span(gray) || !detail::star_valid_span(mask)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -83,8 +89,12 @@ struct StarTracker {
         const std::uint8_t cutoff,
         const std::span<StarPoint> out) noexcept
     {
+        if (width > max_dimension || height > max_dimension) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
         const auto total = detail::star_pixels(width, height);
-        if (!total || width < 3U || height < 3U || gray.size() < *total || out.empty()) {
+        if (!total || width < 3U || height < 3U || gray.size() < *total || out.empty() ||
+            !detail::star_valid_span(gray) || !detail::star_valid_span(out)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -133,7 +143,8 @@ struct StarTracker {
         const std::span<const StarTriangle> catalog,
         const std::uint16_t tolerance_q8 = 16U) noexcept
     {
-        if (observed.size() < 3U || catalog.empty()) {
+        if (observed.size() < 3U || catalog.empty() ||
+            !detail::star_valid_span(observed) || !detail::star_valid_span(catalog)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
@@ -180,6 +191,8 @@ struct StarTracker {
     }
 
 private:
+    static constexpr std::size_t max_dimension = (std::numeric_limits<std::uint16_t>::max() / 16U) + 1U;
+
     [[nodiscard]] static constexpr bool near(
         const std::uint16_t lhs,
         const std::uint16_t rhs,

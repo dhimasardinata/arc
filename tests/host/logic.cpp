@@ -23,12 +23,14 @@
 #include "arc/bare_core.hpp"
 #include "arc/ble_mesh.hpp"
 #include "arc/blackbox.hpp"
+#include "arc/burst.hpp"
 #include "arc/caps.hpp"
 #include "arc/cert_bundle.hpp"
 #include "arc/chaos.hpp"
 #include "arc/cli.hpp"
 #include "arc/claim.hpp"
 #include "arc/concepts.hpp"
+#include "arc/coro.hpp"
 #include "arc/covert.hpp"
 #include "arc/csi.hpp"
 #include "arc/crypto_dma.hpp"
@@ -82,6 +84,7 @@
 #include "arc/net_codecs.hpp"
 #include "arc/netrpc.hpp"
 #include "arc/nvs_crypto.hpp"
+#include "arc/ota.hpp"
 #include "arc/paillier.hpp"
 #include "arc/pack.hpp"
 #include "arc/perfetto.hpp"
@@ -102,16 +105,20 @@
 #include "arc/rtos.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
+#include "arc/spi.hpp"
+#include "arc/spi_slave.hpp"
 #include "arc/stream.hpp"
 #include "arc/secure_update.hpp"
 #include "arc/sdr.hpp"
 #include "arc/simd.hpp"
 #include "arc/sdio_slave.hpp"
 #include "arc/snn.hpp"
+#include "arc/stack.hpp"
 #include "arc/store.hpp"
 #include "arc/secure_boot.hpp"
 #include "arc/star_tracker.hpp"
 #include "arc/swarm.hpp"
+#include "arc/task.hpp"
 #include "arc/tdma.hpp"
 #include "arc/tee.hpp"
 #include "arc/thread.hpp"
@@ -164,6 +171,28 @@ static_assert(arc::rtos::milliseconds(std::chrono::microseconds{1500}) == 2U);
 static_assert(arc::rtos::milliseconds(std::chrono::milliseconds{-1}) == 0U);
 static_assert(arc::rtos::ticks_ms(2U) == 2U);
 static_assert(arc::rtos::ticks(std::chrono::microseconds{1500}) == 2U);
+static_assert(arc::stack::round_up(std::numeric_limits<std::size_t>::max() - 3U, 8U) ==
+              std::numeric_limits<std::size_t>::max());
+static_assert(arc::stack::budget<std::numeric_limits<std::size_t>::max(), 1U, 0U, 0U>() ==
+              std::numeric_limits<std::size_t>::max());
+static_assert(arc::stack::storage<std::uint16_t,
+                                  (std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t)) + 1U>() ==
+              std::numeric_limits<std::size_t>::max());
+static_assert(arc::stack::objects<std::uint8_t, std::uint16_t, std::uint32_t>() == 7U);
+static_assert(arc::words(0U) == 0U);
+static_assert(arc::words(std::numeric_limits<std::size_t>::max()) ==
+              ((std::numeric_limits<std::size_t>::max() - 1U) / sizeof(StackType_t)) + 1U);
+static_assert(arc::Burst<1, 1'000'000>::symbol(2U, true, 3U, false).val == 0x00038002U);
+static_assert(arc::covert::Fsk::fits(1U, 8U));
+static_assert(!arc::covert::Fsk::fits((std::numeric_limits<std::size_t>::max() / 8U) + 1U,
+                                      std::numeric_limits<std::size_t>::max()));
+static_assert(arc::optical::LiFi::fits(1U, 8U));
+static_assert(!arc::optical::LiFi::fits((std::numeric_limits<std::size_t>::max() / 8U) + 1U,
+                                        std::numeric_limits<std::size_t>::max()));
+static_assert(arc::sdr::PulseSynth::fits(1U, 8U));
+static_assert(!arc::sdr::PulseSynth::fits((std::numeric_limits<std::size_t>::max() / 8U) + 1U,
+                                          std::numeric_limits<std::size_t>::max()));
+static_assert(sizeof(arc::net::EthernetFrame<std::numeric_limits<std::uint16_t>::max()>::size) == sizeof(std::uint16_t));
 static_assert(sizeof(decltype(arc::claim_token<1, 2, 3>())) == sizeof(std::uint64_t));
 static_assert(arc::claim_token<1, 2, 3>() != arc::claim_token<1, 2, 4>());
 static_assert(arc::claim_proof<1, 2, 3>() != arc::claim_proof<1, 2, 4>());
@@ -433,6 +462,45 @@ struct MockMmuPolicy {
     {
         unmapped = region.handle == 7U;
     }
+};
+
+struct NullMmuPolicy {
+    [[nodiscard]] static arc::Result<arc::MmuRegion> map(const arc::MmuMapRequest& request) noexcept
+    {
+        return arc::ok(arc::MmuRegion{
+            .address = nullptr,
+            .bytes = request.bytes,
+            .handle = 8U,
+        });
+    }
+
+    static void unmap(const arc::MmuRegion&) noexcept {}
+};
+
+struct ShortMmuPolicy {
+    [[nodiscard]] static arc::Result<arc::MmuRegion> map(const arc::MmuMapRequest& request) noexcept
+    {
+        return arc::ok(arc::MmuRegion{
+            .address = MockMmuPolicy::flash.data(),
+            .bytes = request.bytes - sizeof(std::uint32_t),
+            .handle = 9U,
+        });
+    }
+
+    static void unmap(const arc::MmuRegion&) noexcept {}
+};
+
+struct OddMmuPolicy {
+    [[nodiscard]] static arc::Result<arc::MmuRegion> map(const arc::MmuMapRequest& request) noexcept
+    {
+        return arc::ok(arc::MmuRegion{
+            .address = MockMmuPolicy::flash.data(),
+            .bytes = request.bytes + 1U,
+            .handle = 10U,
+        });
+    }
+
+    static void unmap(const arc::MmuRegion&) noexcept {}
 };
 
 struct MockInterruptPolicy {
@@ -724,10 +792,21 @@ void test_any_io()
     expect(static_cast<bool>(i2c), "static AnyI2c binds");
     const std::array<std::uint8_t, 3> tx{0x10U, 0x20U, 0x30U};
     std::array<std::uint8_t, 3> rx{};
+    MockStaticI2c::sent = 99U;
+    expect(i2c.send(nullptr, 0U, 76) == ESP_OK && MockStaticI2c::sent == 99U,
+           "AnyI2c empty send is no-op");
     expect(i2c.send(std::span(tx), 77) == ESP_OK, "AnyI2c span send");
     expect(MockStaticI2c::sent == tx.size() && MockStaticI2c::timeout == 77, "AnyI2c send thunks");
+    MockStaticI2c::received = 99U;
+    expect(i2c.recv(nullptr, 0U, 78) == ESP_OK && MockStaticI2c::received == 99U,
+           "AnyI2c empty recv is no-op");
     expect(i2c.recv(std::span(rx), 78) == ESP_OK, "AnyI2c span recv");
     expect(rx[0] == 0x5A && rx[2] == 0x5A && MockStaticI2c::received == rx.size(), "AnyI2c recv thunks");
+    MockStaticI2c::xfer_tx = 99U;
+    MockStaticI2c::xfer_rx = 99U;
+    expect(i2c.xfer(nullptr, 0U, nullptr, 0U, 79) == ESP_OK && MockStaticI2c::xfer_tx == 99U &&
+               MockStaticI2c::xfer_rx == 99U,
+           "AnyI2c empty xfer is no-op");
     expect(i2c.xfer(std::span(tx), std::span(rx), 79) == ESP_OK, "AnyI2c span xfer");
     expect(rx[0] == 0xEFU && rx[2] == 0xCFU, "AnyI2c xfer transforms");
     expect(MockStaticI2c::xfer_tx == tx.size() && MockStaticI2c::xfer_rx == rx.size(), "AnyI2c xfer lengths");
@@ -735,19 +814,35 @@ void test_any_io()
     MockSpi mock;
     const auto spi = arc::AnySpi::bind(mock);
     expect(static_cast<bool>(spi), "object AnySpi binds");
+    mock.sent = 99U;
+    expect(spi.send(nullptr, 0U, 500'000U, 1U) == ESP_OK && mock.sent == 99U,
+           "AnySpi empty send is no-op");
     expect(spi.send(std::span(tx), 1'000'000U, 3U) == ESP_OK, "AnySpi span send");
     expect(mock.sent == tx.size() && mock.hz == 1'000'000U && mock.flags == 3U, "AnySpi send thunks");
+    mock.received = 99U;
+    expect(spi.recv(nullptr, 0U, 1'500'000U, 2U) == ESP_OK && mock.received == 99U,
+           "AnySpi empty recv is no-op");
     rx = {};
     expect(spi.xfer(std::span(tx), std::span(rx), 2'000'000U, 4U) == ESP_OK, "AnySpi span xfer");
     expect(rx == tx && mock.xfer_bytes == tx.size() && mock.hz == 2'000'000U, "AnySpi xfer copies");
+    mock.xfer_bytes = 99U;
+    expect(spi.xfer(nullptr, nullptr, 0U, 3'000'000U, 5U) == ESP_OK && mock.xfer_bytes == 99U,
+           "AnySpi empty xfer is no-op");
     expect(spi.xfer(std::span(tx), std::span(rx).first(2U)) == ESP_ERR_INVALID_ARG, "AnySpi rejects mismatched spans");
 
     MockUart uart_mock;
     const auto uart = arc::AnyUart::bind(uart_mock);
     expect(static_cast<bool>(uart), "object AnyUart binds");
+    uart_mock.wrote = 99U;
+    const auto empty_write = uart.write(nullptr, 0U);
+    expect(empty_write.has_value() && *empty_write == 0U && uart_mock.wrote == 99U,
+           "AnyUart empty write is no-op");
     const auto wrote = uart.write(std::span(tx));
     expect(wrote.has_value() && *wrote == tx.size() && uart_mock.wrote == tx.size(), "AnyUart writes");
     std::array<std::uint8_t, 4> serial_rx{};
+    const auto empty_read = uart.read(nullptr, 0U, 41U);
+    expect(empty_read.has_value() && *empty_read == 0U && uart_mock.read_pos == 0U,
+           "AnyUart empty read is no-op");
     const auto got = uart.read(std::span(serial_rx), 42U);
     expect(got.has_value() && *got == serial_rx.size(), "AnyUart reads");
     expect(serial_rx[0] == 0xA0U && serial_rx[3] == 0xA3U && uart_mock.timeout == 42U, "AnyUart read thunks");
@@ -909,22 +1004,37 @@ void test_spsc()
     expect(!queue.try_push(4), "SPSC full rejects");
 
     int value{};
-    expect(queue.try_pop(value) && value == 1, "SPSC pop 1");
-    expect(queue.try_pop(value) && value == 2, "SPSC pop 2");
+    expect(queue.peek(value) && value == 1 && queue.size() == 3U, "SPSC peek keeps front queued");
+    expect(queue.drop() && queue.size() == 2U, "SPSC drop removes peeked front");
     expect(queue.try_push(4), "SPSC wrap push");
+    expect(queue.try_pop(value) && value == 2, "SPSC pop 2 after drop");
     expect(queue.try_pop(value) && value == 3, "SPSC pop 3");
     expect(queue.try_pop(value) && value == 4, "SPSC pop 4");
-    expect(!queue.try_pop(value), "SPSC empty rejects");
+    expect(!queue.try_pop(value) && !queue.peek(value) && !queue.drop(), "SPSC empty rejects");
 
     const std::array more{5, 6, 7, 8};
+    expect(queue.push(std::span<const int>{static_cast<const int*>(nullptr), 1U}) == 0U,
+           "SPSC batch push rejects null span");
     expect(queue.push(std::span(more)) == 3U, "SPSC batch push caps at space");
     expect(queue.size() == 3U, "SPSC batch size");
     expect(queue.space() == 0U, "SPSC batch full space");
 
     std::array<int, 4> out{};
+    expect(queue.pop(std::span<int>{static_cast<int*>(nullptr), 1U}) == 0U,
+           "SPSC batch pop rejects null span");
     expect(queue.pop(std::span(out)) == 3U, "SPSC batch pop available");
     expect(out[0] == 5 && out[1] == 6 && out[2] == 7, "SPSC batch order");
     expect(queue.empty(), "SPSC batch drains empty");
+
+    expect(queue.push(std::span(more).first(3U)) == 3U, "SPSC drain stop seed");
+    std::size_t drain_visits{};
+    const auto stopped = queue.drain(value, [&](const int item) noexcept {
+        ++drain_visits;
+        return item != 6;
+    });
+    expect(stopped == 2U && drain_visits == 2U && queue.size() == 1U,
+           "SPSC drain stops on false callback");
+    expect(queue.try_pop(value) && value == 7, "SPSC drain leaves later entries queued");
 
     expect(queue.try_push(9), "SPSC wrap seed");
     int wrap{};
@@ -1006,18 +1116,24 @@ void test_mpsc_single()
     expect(!queue.try_push(11), "MPSC full rejects");
 
     int value{};
-    expect(queue.try_pop(value) && value == 7, "MPSC pop 7");
+    expect(queue.peek(value) && value == 7, "MPSC peek 7");
+    expect(queue.drop(), "MPSC drop 7");
+    expect(queue.peek(value) && value == 8, "MPSC peek 8 after drop");
     expect(queue.try_pop(value) && value == 8, "MPSC pop 8");
     expect(queue.try_push(11), "MPSC wrap push");
     expect(queue.try_pop(value) && value == 9, "MPSC pop 9");
     expect(queue.try_pop(value) && value == 10, "MPSC pop 10");
     expect(queue.try_pop(value) && value == 11, "MPSC pop 11");
-    expect(!queue.try_pop(value), "MPSC empty rejects");
+    expect(!queue.try_pop(value) && !queue.peek(value) && !queue.drop(), "MPSC empty rejects");
 
     const std::array more{16, 17, 18, 19, 20};
+    expect(queue.push(std::span<const int>{static_cast<const int*>(nullptr), 1U}) == 0U,
+           "MPSC batch push rejects null span");
     expect(queue.push(std::span(more)) == 4U, "MPSC batch push caps at capacity");
     expect(queue.push(std::span(more).first(1U)) == 0U, "MPSC batch full rejects");
     std::array<int, 5> out{};
+    expect(queue.pop(std::span<int>{static_cast<int*>(nullptr), 1U}) == 0U,
+           "MPSC batch pop rejects null span");
     expect(queue.pop(std::span(out).first(2U)) == 2U, "MPSC batch partial pop count");
     expect(out[0] == 16 && out[1] == 17, "MPSC batch partial pop order");
     out = {};
@@ -1025,15 +1141,28 @@ void test_mpsc_single()
     expect(out[0] == 18 && out[1] == 19, "MPSC batch remainder pop order");
     expect(!queue.try_pop(value), "MPSC batch drains empty");
 
+    expect(queue.push(std::span(more).first(4U)) == 4U, "MPSC drain stop seed");
+    std::size_t drain_visits{};
+    const auto stopped = queue.drain(value, [&](const int item) noexcept {
+        ++drain_visits;
+        return item != 17;
+    });
+    out = {};
+    expect(stopped == 2U && drain_visits == 2U && queue.pop(std::span(out).first(2U)) == 2U &&
+               out[0] == 18 && out[1] == 19,
+           "MPSC drain stops on false callback");
+
     auto endpoints = queue.split();
     auto second_producer = endpoints.producer;
     expect(static_cast<bool>(endpoints.producer) && static_cast<bool>(endpoints.consumer),
            "MPSC role endpoints split");
     expect(endpoints.producer.try_push(12) && second_producer.try_push(13), "MPSC producer endpoints push");
-    expect(endpoints.consumer.try_pop(value) && value == 12, "MPSC consumer endpoint pop 12");
+    expect(endpoints.consumer.peek(value) && value == 12, "MPSC consumer endpoint peek 12");
+    expect(endpoints.consumer.drop(), "MPSC consumer endpoint drop 12");
     auto moved_consumer = std::move(endpoints.consumer);
     expect(!static_cast<bool>(endpoints.consumer) && static_cast<bool>(moved_consumer),
            "MPSC consumer endpoint is move-only");
+    expect(moved_consumer.peek(value) && value == 13, "MPSC moved consumer endpoint peek 13");
     expect(moved_consumer.try_pop(value) && value == 13, "MPSC moved consumer endpoint pop 13");
     expect(second_producer.push(std::span(more).first(3U)) == 3U, "MPSC producer endpoint batch push");
     out = {};
@@ -1045,7 +1174,9 @@ void test_mpsc_single()
     auto role_second_producer = role_only.producer();
     expect(role_endpoints.producer.try_push(14) && role_second_producer.try_push(15),
            "Roles MPSC producer endpoints push");
-    expect(role_endpoints.consumer.try_pop(value) && value == 14, "Roles MPSC consumer endpoint pop");
+    expect(role_endpoints.consumer.peek(value) && value == 14, "Roles MPSC consumer endpoint peek");
+    expect(role_endpoints.consumer.drop(), "Roles MPSC consumer endpoint drop");
+    expect(role_endpoints.consumer.try_pop(value) && value == 15, "Roles MPSC consumer endpoint pop");
 }
 
 void test_compact_mpsc()
@@ -1070,22 +1201,37 @@ void test_checked_mpsc()
     expect(queue.try_push(1), "Audit MPSC push 1");
 
     int value{};
+    expect(queue.peek(value) && value == 1, "Audit MPSC peek 1");
     expect(queue.try_pop(value) && value == 1, "Audit MPSC pop 1");
     const std::array more{4, 5, 6, 7, 8};
     expect(queue.push(std::span(more)) == 4U, "Audit MPSC batch push caps at capacity");
     std::array<int, 5> out{};
-    expect(queue.pop(std::span(out)) == 4U, "Audit MPSC batch pop count");
-    expect(out[0] == 4 && out[1] == 5 && out[2] == 6 && out[3] == 7, "Audit MPSC batch pop order");
+    expect(queue.peek(value) && value == 4, "Audit MPSC batch peek");
+    expect(queue.drop(), "Audit MPSC batch drop");
+    expect(queue.pop(std::span(out)) == 3U, "Audit MPSC batch pop count");
+    expect(out[0] == 5 && out[1] == 6 && out[2] == 7, "Audit MPSC batch pop order");
+    expect(queue.push(std::span(more).first(4U)) == 4U, "Audit MPSC drain stop seed");
+    std::size_t drain_visits{};
+    const auto stopped = queue.drain(value, [&](const int item) noexcept {
+        ++drain_visits;
+        return item != 5;
+    });
+    out = {};
+    expect(stopped == 2U && drain_visits == 2U && queue.pop(std::span(out).first(2U)) == 2U &&
+               out[0] == 6 && out[1] == 7,
+           "Audit MPSC drain stops on false callback");
 
     auto endpoints = queue.split();
     auto second_producer = endpoints.producer;
     expect(static_cast<bool>(endpoints.producer) && static_cast<bool>(endpoints.consumer),
            "Audit MPSC role endpoints split");
     expect(endpoints.producer.try_push(2) && second_producer.try_push(3), "Audit MPSC producer endpoints push");
-    expect(endpoints.consumer.try_pop(value) && value == 2, "Audit MPSC consumer endpoint pop");
+    expect(endpoints.consumer.peek(value) && value == 2, "Audit MPSC consumer endpoint peek");
+    expect(endpoints.consumer.drop(), "Audit MPSC consumer endpoint drop");
     auto moved_consumer = std::move(endpoints.consumer);
     expect(!static_cast<bool>(endpoints.consumer) && static_cast<bool>(moved_consumer),
            "Audit MPSC consumer endpoint is move-only");
+    expect(moved_consumer.peek(value) && value == 3, "Audit MPSC moved consumer endpoint peek");
     expect(moved_consumer.try_pop(value) && value == 3, "Audit MPSC moved consumer endpoint pop");
     expect(second_producer.push(std::span(more).subspan(1U, 3U)) == 3U, "Audit MPSC producer endpoint batch push");
     out = {};
@@ -1176,11 +1322,13 @@ void test_fanin()
 
     std::size_t producer{};
     int value{};
-    expect(fan.try_pop(producer, value) && producer == 0U && value == 10, "Fanin pop lane 0");
+    expect(fan.peek(producer, value) && producer == 0U && value == 10, "Fanin peek lane 0");
+    expect(fan.peek(value) && value == 10, "Fanin peek value only");
+    expect(fan.drop(), "Fanin drop lane 0");
     expect(fan.try_pop(producer, value) && producer == 1U && value == 20, "Fanin pop lane 1");
     expect(fan.try_pop(producer, value) && producer == 2U && value == 30, "Fanin pop lane 2");
     expect(fan.try_pop(producer, value) && producer == 0U && value == 11, "Fanin round-robin resume");
-    expect(!fan.try_pop(producer, value), "Fanin empty rejects");
+    expect(!fan.try_pop(producer, value) && !fan.peek(producer, value) && !fan.drop(), "Fanin empty rejects");
 
     auto lane1 = fan.producer<1>();
     auto lane2 = fan.producer<2>();
@@ -1191,7 +1339,9 @@ void test_fanin()
     // NOLINTNEXTLINE(bugprone-use-after-move): verifies moved-from endpoint state is inert.
     expect(!static_cast<bool>(lane1) && static_cast<bool>(moved_lane1), "Fanin producer endpoint is move-only");
     expect(moved_lane1.try_push(40) && lane2.try_push(50), "Fanin producer endpoints push");
-    expect(sink.try_pop(producer, value) && producer == 1U && value == 40, "Fanin consumer endpoint pop lane 1");
+    expect(sink.peek(producer, value) && producer == 1U && value == 40, "Fanin consumer endpoint peek lane 1");
+    expect(sink.peek(value) && value == 40, "Fanin consumer endpoint peek value only");
+    expect(sink.drop(), "Fanin consumer endpoint drop lane 1");
     expect(sink.try_pop(producer, value) && producer == 2U && value == 50, "Fanin consumer endpoint pop lane 2");
 
     expect(fan.try_push<0>(1), "Fanin batch lane 0 first");
@@ -1211,10 +1361,24 @@ void test_fanin()
     expect(fan.pop(std::span(out)) == 3U, "Fanin batch pushed pop count");
     expect(out[0] == 100 && out[1] == 101 && out[2] == 102, "Fanin batch pushed order");
 
+    expect(fan.push<0>(std::span(lane).first(3U)) == 3U, "Fanin drain stop seed");
+    std::size_t drain_visits{};
+    const auto stopped = fan.drain(value, [&](const std::size_t source, const int item) noexcept {
+        expect(source == 0U, "Fanin drain stop source");
+        ++drain_visits;
+        return item != 101;
+    });
+    expect(stopped == 2U && drain_visits == 2U && fan.size<0>() == 1U,
+           "Fanin drain stops on false callback");
+    expect(fan.try_pop(producer, value) && producer == 0U && value == 102,
+           "Fanin drain leaves later entries queued");
+
     arc::Roles<arc::Fanin<int, 4, 3>> role_only;
     auto role_lane = role_only.producer<2>();
     auto role_sink = role_only.consumer();
     expect(role_lane.try_push(200), "Roles Fanin producer endpoint push");
+    expect(role_sink.peek(producer, value) && producer == 2U && value == 200,
+           "Roles Fanin consumer endpoint peek");
     expect(role_sink.try_pop(producer, value) && producer == 2U && value == 200,
            "Roles Fanin consumer endpoint pop");
 }
@@ -1262,6 +1426,17 @@ void test_rpc_lane()
     expect(!moved_client.poll_match(8U, reply), "RPC client defers unmatched reply");
     expect(moved_client.poll_deferred(reply) && reply.serial == 9U, "RPC client deferred reply preserved");
 
+    arc::RpcLane<Op, Request, Reply, 4, 2> narrow_rpc;
+    auto narrow_client = narrow_rpc.client();
+    auto narrow_server = narrow_rpc.server();
+    expect(narrow_server.reply(9U, ESP_OK, Reply{.applied = 9U}), "RPC narrow out-of-order reply");
+    expect(!narrow_client.poll_match(8U, reply), "RPC narrow defers unmatched reply");
+    expect(narrow_server.reply(8U, ESP_OK, Reply{.applied = 8U}), "RPC narrow exact reply queues");
+    expect(narrow_client.poll_match(8U, reply) && reply.serial == 8U && reply.payload.applied == 8U,
+           "RPC poll_match accepts exact reply with full deferred queue");
+    expect(narrow_client.poll_deferred(reply) && reply.serial == 9U,
+           "RPC deferred queue keeps earlier unmatched reply");
+
     RoleRpc role_only;
     auto role_client = role_only.client();
     auto role_server = role_only.server();
@@ -1284,7 +1459,8 @@ void test_checked_fanin()
 
     std::size_t producer{};
     int value{};
-    expect(fan.try_pop(producer, value) && producer == 0U && value == 10, "Audit Fanin pop lane 0");
+    expect(fan.peek(producer, value) && producer == 0U && value == 10, "Audit Fanin peek lane 0");
+    expect(fan.drop(), "Audit Fanin drop lane 0");
     expect(fan.try_pop(producer, value) && producer == 1U && value == 20, "Audit Fanin pop lane 1");
 
     expect(fan.try_push<0>(30), "Audit Fanin batch lane 0");
@@ -1296,6 +1472,17 @@ void test_checked_fanin()
     expect(fan.push<0>(std::span(lane)) == 3U, "Audit Fanin batch push");
     expect(fan.size<0>() == 3U && fan.space<0>() == 0U, "Audit Fanin lane size and space");
     expect(fan.pop(std::span(out).first(2U)) == 2U && out[0] == 50 && out[1] == 51, "Audit Fanin partial batch pop");
+    expect(fan.pop(std::span(out).first(1U)) == 1U && out[0] == 52, "Audit Fanin partial batch remainder");
+    expect(fan.push<0>(std::span(lane)) == 3U, "Audit Fanin drain stop seed");
+    std::size_t drain_visits{};
+    const auto stopped = fan.drain(value, [&](const int item) noexcept {
+        ++drain_visits;
+        return item != 51;
+    });
+    expect(stopped == 2U && drain_visits == 2U && fan.size<0>() == 1U,
+           "Audit Fanin drain stops on false callback");
+    expect(fan.try_pop(producer, value) && producer == 0U && value == 52,
+           "Audit Fanin drain leaves later entries queued");
 
     arc::Audit<arc::Fanin<int, 4, 2>> checked_roles;
     auto role_producer = checked_roles.producer<1>();
@@ -1307,6 +1494,8 @@ void test_checked_fanin()
     expect(!static_cast<bool>(role_producer) && static_cast<bool>(moved_producer),
            "Audit Fanin producer endpoint is move-only");
     expect(moved_producer.try_push(60), "Audit Fanin producer endpoint push");
+    expect(role_consumer.peek(producer, value) && producer == 1U && value == 60,
+           "Audit Fanin consumer endpoint peek");
     expect(role_consumer.try_pop(producer, value) && producer == 1U && value == 60,
            "Audit Fanin consumer endpoint pop");
 }
@@ -1408,6 +1597,18 @@ void test_mqtt()
         true);
     expect(publish.has_value(), "MQTT publish encodes");
 
+    const std::uint8_t one = 0x5aU;
+    expect(!arc::net::Mqtt::publish(
+               buffer,
+               arc::net::MqttPublish{
+                   .topic = "arc/topic",
+                   .data = &one,
+                   .bytes = std::numeric_limits<std::size_t>::max(),
+               }),
+           "MQTT publish length overflow rejects");
+    expect(!arc::net::Mqtt::publish(buffer, "", std::span(payload)),
+           "MQTT publish rejects empty topic");
+
     const auto packet = arc::net::Mqtt::parse(*publish);
     expect(packet.has_value(), "MQTT publish parses");
     expect(packet->type == arc::net::MqttType::publish, "MQTT publish type");
@@ -1430,6 +1631,9 @@ void test_mqtt()
     expect(subscribe.has_value(), "MQTT subscribe encodes");
     expect((*subscribe)[0] == 0x82U, "MQTT subscribe flags");
     expect((*subscribe)[2] == 0x00U && (*subscribe)[3] == 0x09U, "MQTT subscribe packet id");
+    const std::array empty_filter{arc::net::MqttSubscription{.filter = "", .qos = arc::net::MqttQos::at_most}};
+    expect(!arc::net::Mqtt::subscribe(buffer, 10U, std::span(empty_filter)),
+           "MQTT subscribe rejects empty filter");
 
     const std::array<std::uint8_t, 4> connack_raw{0x20U, 0x02U, 0x01U, 0x00U};
     const auto connack_packet = arc::net::Mqtt::parse(connack_raw);
@@ -1458,6 +1662,8 @@ void test_mqtt()
     const auto ping = session.ping(buffer, 3010U);
     expect(ping.has_value() && (*ping)[0] == 0xC0U, "MQTT session ping frame");
     expect(session.awaiting_ping(), "MQTT session awaits pingresp");
+    expect(!arc::net::Mqtt::ping(std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), 2U}),
+           "MQTT rejects null output span");
     const std::array<std::uint8_t, 2> pingresp_raw{0xD0U, 0x00U};
     const auto pingresp = arc::net::Mqtt::parse(pingresp_raw);
     expect(pingresp.has_value(), "MQTT pingresp parses");
@@ -1486,9 +1692,35 @@ void test_mqtt()
     arc::net::AnyMqtt empty{};
     expect(!empty.ping(buffer) && !static_cast<bool>(empty), "AnyMqtt empty rejects");
 
+    const arc::net::MqttPacket huge_publish{
+        .type = arc::net::MqttType::publish,
+        .body = std::span<const std::uint8_t>{
+            static_cast<const std::uint8_t*>(nullptr),
+            std::numeric_limits<std::size_t>::max(),
+        },
+    };
+    expect(!arc::net::Mqtt::view(huge_publish), "MQTT publish view rejects null body");
+    expect(!arc::net::Mqtt::parse(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 2U}),
+           "MQTT parse rejects null frame span");
+    expect(!arc::net::Mqtt::connack(
+               {.type = arc::net::MqttType::connack,
+                .body = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 2U}}),
+           "MQTT connack rejects null body span");
+    expect(!arc::net::Mqtt::suback(
+               {.type = arc::net::MqttType::suback,
+                .body = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 3U}}),
+           "MQTT suback rejects null body span");
+    const std::array<std::uint8_t, 4> empty_topic_publish{0x30U, 0x02U, 0x00U, 0x00U};
+    const auto empty_topic_packet = arc::net::Mqtt::parse(empty_topic_publish);
+    expect(empty_topic_packet.has_value() && !arc::net::Mqtt::view(*empty_topic_packet),
+           "MQTT publish view rejects empty topic");
+
     expect(arc::net::Mqtt::match("arc/+/status", "arc/node/status"), "MQTT single wildcard");
     expect(arc::net::Mqtt::match("arc/#", "arc/node/status"), "MQTT multi wildcard");
     expect(arc::net::Mqtt::match("arc/#", "arc"), "MQTT parent wildcard root");
+    expect(!arc::net::Mqtt::match("", "arc") && !arc::net::Mqtt::match("arc/#", ""),
+           "MQTT match rejects empty filter or topic");
     expect(!arc::net::Mqtt::match("arc#", "arc"), "MQTT invalid hash placement");
     expect(!arc::net::Mqtt::match("arc+status", "arc/status"), "MQTT invalid plus placement");
     expect(!arc::net::Mqtt::match("arc/+/status", "arc/node/state"), "MQTT mismatch");
@@ -1770,13 +2002,56 @@ void test_coap()
     expect(ping_msg.has_value(), "CoAP ping parses");
     expect(ping_msg->type == arc::net::CoapType::confirmable, "CoAP ping type");
     expect(ping_msg->code == static_cast<std::uint8_t>(arc::net::CoapCode::empty), "CoAP ping code");
+    expect(!arc::net::Coap::ping(buffer, 0x40U, std::span(token)),
+           "CoAP empty ping rejects token");
 
     const auto reset = arc::net::Coap::reset(buffer, 0x40U);
     expect(reset.has_value(), "CoAP reset encodes");
+    expect(!arc::net::Coap::reset(buffer, 0x40U, std::span(token)),
+           "CoAP empty reset rejects token");
+    expect(!arc::net::Coap::message(
+               buffer,
+               arc::net::CoapType::confirmable,
+               static_cast<std::uint8_t>(arc::net::CoapCode::empty),
+               0x40U,
+               {},
+               std::span(options)),
+           "CoAP empty message rejects options");
+    expect(!arc::net::Coap::message(
+               buffer,
+               arc::net::CoapType::confirmable,
+               static_cast<std::uint8_t>(arc::net::CoapCode::empty),
+               0x40U,
+               {},
+               {},
+               std::span(body)),
+           "CoAP empty message rejects payload");
+    const std::array<std::uint8_t, 5> empty_with_token{0x41U, 0x00U, 0x12U, 0x34U, 0x00U};
+    expect(!arc::net::Coap::parse(empty_with_token), "CoAP empty parse rejects token");
+    const std::array<std::uint8_t, 5> empty_with_option{0x40U, 0x00U, 0x12U, 0x34U, 0x00U};
+    expect(!arc::net::Coap::parse(empty_with_option), "CoAP empty parse rejects options");
+    const std::array<std::uint8_t, 6> empty_with_payload{0x40U, 0x00U, 0x12U, 0x34U, 0xffU, 0x00U};
+    expect(!arc::net::Coap::parse(empty_with_payload), "CoAP empty parse rejects payload");
+    expect(!arc::net::Coap::message(
+               std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), buffer.size()},
+               arc::net::CoapType::confirmable,
+               1U,
+               1U),
+           "CoAP rejects null output span");
+    expect(!arc::net::Coap::parse(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 4U}),
+           "CoAP parse rejects null frame span");
+    std::size_t null_option_offset{};
+    std::uint16_t null_option_number{};
+    expect(!arc::net::Coap::next(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+               null_option_offset,
+               null_option_number),
+           "CoAP next rejects null options span");
 
     auto codec = arc::net::AnyCoap::arc();
     expect(static_cast<bool>(codec), "AnyCoap arc codec binds");
-    const auto any_ping = codec.ping(buffer, 0x41U, std::span(token));
+    const auto any_ping = codec.ping(buffer, 0x41U);
     expect(any_ping.has_value() && codec.parse(*any_ping).has_value(), "AnyCoap arc ping parses");
     CoapMock mock{};
     static_assert(arc::net::CoapAdapter<CoapMock>);
@@ -1799,6 +2074,16 @@ void test_coap()
     std::uint16_t overflow_number = 65530U;
     const auto overflow = arc::net::Coap::next(overflow_option, overflow_offset, overflow_number);
     expect(!overflow.has_value(), "CoAP option number overflow rejects");
+
+    expect(!arc::net::Coap::message(
+               buffer,
+               arc::net::CoapType::confirmable,
+               static_cast<std::uint8_t>(arc::net::CoapCode::get),
+               0x88U,
+               {},
+               {},
+               std::span<const std::uint8_t>{body.data(), std::numeric_limits<std::size_t>::max()}),
+           "CoAP payload length overflow rejects");
 }
 
 void test_uri()
@@ -2089,6 +2374,32 @@ void test_uri()
     constexpr char embedded_nul[] = {'h', 't', 't', 'p', ':', '/', '/', 'n', 'o', 'd', 'e', '\0', 'x'};
     expect(!arc::net::Uri::parse(std::span<const char>{embedded_nul, sizeof(embedded_nul)}),
            "URI embedded nul rejects");
+    expect(!arc::net::Uri::parse(std::span<const char>{static_cast<const char*>(nullptr), 1U}),
+           "URI null input span rejects");
+    std::size_t null_query_offset{};
+    expect(!arc::net::Uri::next(std::span<const char>{static_cast<const char*>(nullptr), 1U}, null_query_offset),
+           "URI query null span rejects");
+    expect(!arc::net::Uri::decode(
+               std::span(decoded),
+               std::span<const char>{static_cast<const char*>(nullptr), 1U}),
+           "URI decode null input span rejects");
+    expect(!arc::net::Uri::decode(
+               std::span<char>{static_cast<char*>(nullptr), 1U},
+               std::span<const char>{full, 1U}),
+           "URI decode null output span rejects");
+    expect(!arc::net::Uri::encode(
+               std::span(encoded),
+               std::span<const char>{static_cast<const char*>(nullptr), 1U}),
+           "URI encode null input span rejects");
+    expect(!arc::net::Uri::encode(
+               std::span<char>{static_cast<char*>(nullptr), 1U},
+               std::span<const char>{full, 1U}),
+           "URI encode null output span rejects");
+    const arc::net::UriView manual_null_path{
+        .path = std::span<const char>{static_cast<const char*>(nullptr), 1U},
+    };
+    expect(!arc::net::Uri::path_query(std::span(target), manual_null_path),
+           "URI path query null path span rejects");
     expect(!arc::net::Uri::parse("1bad://node/path"), "URI invalid scheme rejects");
 }
 
@@ -2118,12 +2429,20 @@ void test_http_client()
            "HTTP HTTPS client rejects unsafe URL reset");
     expect(client->url("https://node/next") == ESP_OK, "HTTP url forwards");
     const std::array<std::uint8_t, 3> body{1U, 2U, 3U};
+    expect(client->body(nullptr, 1U) == ESP_ERR_INVALID_ARG, "HTTP body rejects null non-empty");
+    expect(client->body(nullptr, 0U) == ESP_OK, "HTTP body accepts empty null");
     expect(client->body(std::span(body)) == ESP_OK, "HTTP body forwards");
     expect(client->perform() == ESP_OK, "HTTP perform forwards");
     expect(client->open() == ESP_OK, "HTTP open forwards");
     expect(client->fetch().has_value(), "HTTP fetch forwards");
     std::array<std::uint8_t, 4> scratch{};
+    expect(!client->write(nullptr, 1U).has_value(), "HTTP write rejects null non-empty");
+    const auto empty_write = client->write(nullptr, 0U);
+    expect(empty_write.has_value() && *empty_write == 0U, "HTTP write accepts empty null");
     expect(client->write(std::span(body)).has_value(), "HTTP write forwards");
+    expect(!client->read(nullptr, 1U).has_value(), "HTTP read rejects null non-empty");
+    const auto empty_read = client->read(nullptr, 0U);
+    expect(empty_read.has_value() && *empty_read == 0U, "HTTP read accepts empty null");
     expect(client->read(std::span(scratch)).has_value(), "HTTP read forwards");
     expect(client->status().has_value() && *client->status() == 200, "HTTP status forwards");
     expect(client->length().has_value(), "HTTP length forwards");
@@ -2312,8 +2631,71 @@ void test_invalid_codecs()
     expect(!arc::net::Ws::parse(reserved_ws_opcode), "WS reserved opcode rejects");
 
     std::array<std::uint8_t, 8> ws_buffer{};
+    std::array<char, 32> ws_text{};
+    const std::uint8_t ws_byte = 0x5aU;
+    const std::array<std::uint8_t, 16> ws_nonce{};
+    expect(!arc::net::Ws::frame(
+               std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), ws_buffer.size()},
+               arc::net::WsOpcode::binary,
+               &ws_byte,
+               1U),
+           "WS frame null output span rejects");
     expect(!arc::net::Ws::frame(ws_buffer, static_cast<arc::net::WsOpcode>(0x3U), nullptr, 0U),
            "WS reserved opcode encode rejects");
+    expect(!arc::net::Ws::frame(
+               ws_buffer,
+               arc::net::WsOpcode::binary,
+               &ws_byte,
+               std::numeric_limits<std::size_t>::max()),
+           "WS frame length overflow rejects");
+    expect(!arc::net::Ws::close(
+               ws_buffer,
+               1000U,
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}),
+           "WS close reason null span rejects");
+    expect(!arc::net::Ws::close(ws_buffer, 999U), "WS close low status rejects");
+    expect(!arc::net::Ws::close(ws_buffer, 1005U), "WS close reserved status rejects");
+    const std::array<std::uint8_t, 3> ws_close_one_byte{0x88U, 0x01U, 0x03U};
+    expect(!arc::net::Ws::parse(ws_close_one_byte), "WS close one-byte payload rejects");
+    const std::array<std::uint8_t, 4> ws_close_reserved_code{0x88U, 0x02U, 0x03U, 0xedU};
+    expect(!arc::net::Ws::parse(ws_close_reserved_code), "WS close reserved code parse rejects");
+    const arc::net::WsFrame ws_reserved_close{
+        .opcode = arc::net::WsOpcode::close,
+        .payload = std::span(ws_close_reserved_code).subspan(2U),
+    };
+    expect(!arc::net::Ws::close_view(ws_reserved_close), "WS close view reserved code rejects");
+    const std::array<std::uint8_t, 5> ws_short_extended{0x81U, 0x7eU, 0x00U, 0x01U, 'x'};
+    expect(!arc::net::Ws::parse(ws_short_extended), "WS non-minimal 16-bit length rejects");
+    const std::array<std::uint8_t, 11> ws_long_extended{
+        0x82U,
+        0x7fU,
+        0x00U,
+        0x00U,
+        0x00U,
+        0x00U,
+        0x00U,
+        0x00U,
+        0x00U,
+        0x01U,
+        0x5aU,
+    };
+    expect(!arc::net::Ws::parse(ws_long_extended), "WS non-minimal 64-bit length rejects");
+    expect(!arc::net::Ws::key(
+               ws_text,
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 16U}),
+           "WS key nonce null span rejects");
+    expect(!arc::net::Ws::key(
+               std::span<char>{static_cast<char*>(nullptr), ws_text.size()},
+               std::span<const std::uint8_t>{ws_nonce}),
+           "WS key output null span rejects");
+    expect(!arc::net::Ws::parse(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), reserved_ws_opcode.size()}),
+           "WS parse null frame span rejects");
+    const std::array<std::uint8_t, 6> masked_empty_ws{0x81U, 0x80U, 0x00U, 0x00U, 0x00U, 0x00U};
+    expect(!arc::net::Ws::parse(
+               masked_empty_ws,
+               std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), 1U}),
+           "WS parse null scratch span rejects");
 
     const std::array<std::uint8_t, 7> mqtt_reserved_qos{0x36U, 0x05U, 0x00U, 0x01U, 't', 0x00U, 0x01U};
     expect(!arc::net::Mqtt::parse(mqtt_reserved_qos), "MQTT reserved publish QoS rejects");
@@ -2348,6 +2730,31 @@ void test_http_server()
     expect(req->headers.size() == 3U, "HTTP header count");
     expect(req->body.size() == 7U, "HTTP body trims to content length");
     expect(std::memcmp(req->body.data(), "enabled", req->body.size()) == 0, "HTTP body view");
+
+    constexpr char duplicate_length_raw[] =
+        "POST /config HTTP/1.1\r\n"
+        "Content-Length: 7\r\n"
+        "content-length: 7\r\n"
+        "\r\n"
+        "enabled";
+    std::array<arc::net::HttpHeaderView, 4> duplicate_headers{};
+    const auto duplicate_length_req = arc::net::HttpServer::parse(
+        std::span<const char>{duplicate_length_raw, sizeof(duplicate_length_raw) - 1U},
+        std::span(duplicate_headers));
+    expect(duplicate_length_req.has_value() && duplicate_length_req->body.size() == 7U,
+           "HTTP duplicate matching content length parses");
+
+    constexpr char conflicting_length_raw[] =
+        "POST /config HTTP/1.1\r\n"
+        "Content-Length: 7\r\n"
+        "content-length: 8\r\n"
+        "\r\n"
+        "enabled";
+    std::array<arc::net::HttpHeaderView, 4> conflict_headers{};
+    expect(!arc::net::HttpServer::parse(
+               std::span<const char>{conflicting_length_raw, sizeof(conflicting_length_raw) - 1U},
+               std::span(conflict_headers)),
+           "HTTP conflicting content length rejects");
 
     const auto* const host = arc::net::HttpServer::find_header(*req, "host");
     expect(host != nullptr && std::memcmp(host->value.data(), "arc.local", host->value.size()) == 0, "HTTP host header");
@@ -2426,6 +2833,16 @@ void test_http_server()
         std::span<const char>{body, sizeof(body) - 1U});
     expect(encoded.has_value(), "HTTP response encodes");
     expect(std::memcmp(encoded->data(), "HTTP/1.1 200 OK\r\n", 17U) == 0, "HTTP response status");
+    std::array<char, 128> in_place_response{};
+    std::memcpy(in_place_response.data(), body, sizeof(body) - 1U);
+    const auto in_place = arc::net::HttpServer::text_response(
+        std::span(in_place_response),
+        200,
+        "OK",
+        std::span<const char>{in_place_response.data(), sizeof(body) - 1U});
+    expect(in_place.has_value() && in_place->size() >= sizeof(body) - 1U &&
+               std::memcmp(in_place->data() + in_place->size() - (sizeof(body) - 1U), body, sizeof(body) - 1U) == 0,
+           "HTTP response preserves in-place body span");
 
     const std::array<arc::net::JsonField, 6> json_fields{{
         {.name = "mode", .value = arc::net::Json::str("safe\"loop\n")},
@@ -2456,11 +2873,26 @@ void test_http_server()
 
     const std::array<arc::net::JsonField, 1> bad_json{{{.name = "bad", .value = arc::net::Json::raw("")}}};
     expect(!arc::net::HttpServer::json_body(std::span(json_body), std::span(bad_json)), "HTTP JSON raw empty rejects");
+    const auto null_json_body = arc::net::HttpServer::json_body(
+        std::span<char>{static_cast<char*>(nullptr), json_body.size()},
+        std::span(json_fields).first(1U));
+    expect(!null_json_body.has_value() && null_json_body.error() == ESP_ERR_INVALID_ARG,
+           "HTTP JSON body null output span rejects");
 
     std::array<arc::net::HttpHeaderView, 1> too_few{};
     expect(
         !arc::net::HttpServer::parse(std::span<const char>{raw, sizeof(raw) - 1U}, std::span(too_few)),
         "HTTP header capacity rejects");
+    expect(
+        !arc::net::HttpServer::parse(
+            std::span<const char>{static_cast<const char*>(nullptr), 1U},
+            std::span(headers)),
+        "HTTP parse null request span rejects");
+    expect(
+        !arc::net::HttpServer::parse(
+            std::span<const char>{raw, sizeof(raw) - 1U},
+            std::span<arc::net::HttpHeaderView>{static_cast<arc::net::HttpHeaderView*>(nullptr), 1U}),
+        "HTTP parse null header span rejects");
 
     constexpr char short_body[] = "POST /config HTTP/1.1\r\nContent-Length: 8\r\n\r\nenabled";
     expect(
@@ -2471,6 +2903,36 @@ void test_http_server()
     expect(
         !arc::net::HttpServer::parse(std::span<const char>{bad_header, sizeof(bad_header) - 1U}, std::span(headers)),
         "HTTP malformed header rejects");
+    constexpr char bad_header_space[] = "GET /config HTTP/1.1\r\nHost : arc.local\r\n\r\n";
+    expect(
+        !arc::net::HttpServer::parse(
+            std::span<const char>{bad_header_space, sizeof(bad_header_space) - 1U},
+            std::span(headers)),
+        "HTTP header whitespace before colon rejects");
+    constexpr char bad_header_name[] = "GET /config HTTP/1.1\r\nBad@Name: value\r\n\r\n";
+    expect(
+        !arc::net::HttpServer::parse(
+            std::span<const char>{bad_header_name, sizeof(bad_header_name) - 1U},
+            std::span(headers)),
+        "HTTP invalid header name rejects");
+    constexpr char bad_header_value[] = "GET /config HTTP/1.1\r\nX-Mode: bad\001value\r\n\r\n";
+    expect(
+        !arc::net::HttpServer::parse(
+            std::span<const char>{bad_header_value, sizeof(bad_header_value) - 1U},
+            std::span(headers)),
+        "HTTP invalid header value rejects");
+
+    std::array<arc::net::HttpHeaderView, 1> null_length_header{{
+        {
+            .name = std::span<const char>{"content-length", 14U},
+            .value = std::span<const char>{static_cast<const char*>(nullptr), 1U},
+        },
+    }};
+    const arc::net::HttpRequestView manual_bad_length{
+        .headers = std::span(null_length_header),
+    };
+    expect(!arc::net::HttpServer::content_length(manual_bad_length),
+           "HTTP content length null span rejects");
 
     std::array<char, 8> small_response{};
     expect(
@@ -2480,6 +2942,36 @@ void test_http_server()
             "OK",
             std::span<const char>{body, sizeof(body) - 1U}),
         "HTTP response buffer cap rejects");
+    expect(
+        !arc::net::HttpServer::text_response(
+            std::span(response),
+            200,
+            "OK",
+            std::span<const char>{static_cast<const char*>(nullptr), 1U}),
+        "HTTP response null body span rejects");
+    expect(
+        !arc::net::HttpServer::text_response(
+            std::span(response),
+            200,
+            "OK\r\nX-Injected: 1",
+            std::span<const char>{body, sizeof(body) - 1U}),
+        "HTTP response reason injection rejects");
+    expect(
+        !arc::net::HttpServer::text_response(
+            std::span(response),
+            200,
+            "OK",
+            std::span<const char>{body, sizeof(body) - 1U},
+            "text/plain\r\nX-Injected: 1"),
+        "HTTP response content type injection rejects");
+    expect(
+        !arc::net::HttpServer::text_response(
+            std::span(response),
+            200,
+            "OK",
+            std::span<const char>{body, sizeof(body) - 1U},
+            ""),
+        "HTTP response empty content type rejects");
     expect(
         !arc::net::HttpServer::json_response(std::span(small_response), 200, "OK", std::span(json_fields)),
         "HTTP JSON response buffer cap rejects");
@@ -2501,6 +2993,13 @@ void test_caps()
     expect(static_cast<bool>(plain), "plain cap buffer allocation succeeds");
     expect(plain.size() == 65U && plain.bytes() == 65U, "plain cap buffer preserves logical size");
     expect(heap_caps_last_calloc_bytes == 65U, "plain cap buffer allocation stays logical");
+    arc::CapsBuf<std::uint16_t> wrapped_view{
+        nullptr,
+        (std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t)) + 1U,
+        0U,
+    };
+    expect(!wrapped_view.bytes_fit() && wrapped_view.bytes() == std::numeric_limits<std::size_t>::max(),
+           "CapsBuf byte view saturates manual size overflow");
     heap_caps_last_calloc_bytes = 777U;
     auto overflow = arc::inbuf<std::uint16_t>(
         (std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t)) + 1U);
@@ -2576,6 +3075,9 @@ void test_dsp()
 
     const std::array<int, 5> wave{-2, 4, -7, 1, 3};
     expect(arc::dsp::peak(wave.data(), wave.size()) == 7, "DSP peak");
+    const std::array<int, 1> min_wave{std::numeric_limits<int>::min()};
+    expect(arc::dsp::peak(min_wave.data(), min_wave.size()) == std::numeric_limits<int>::max(),
+           "DSP peak saturates signed minimum magnitude");
 
     using Filter = arc::dsp::Fir<int, 3>;
     Filter::State state{};
@@ -2643,6 +3145,16 @@ void test_dsp()
     const std::array accel_rhs{3.0F, 4.0F};
     const auto accel = arc::dsp::DspAccel<>::dot_f32(std::span<const float>{accel_lhs}, std::span<const float>{accel_rhs});
     expect(accel == 11.0F, "DSP accel dot fallback");
+    expect(arc::dsp::DspAccel<>::dot_f32(
+               std::span<const float>{static_cast<const float*>(nullptr), 1U},
+               std::span<const float>{accel_rhs}) == 0.0F,
+           "DSP accel dot rejects null span");
+    std::array mac_acc{1.0F, 2.0F};
+    arc::dsp::DspAccel<>::mac_f32(std::span<float>{mac_acc}, std::span<const float>{accel_rhs}, 2.0F);
+    expect(mac_acc[0] == 7.0F && mac_acc[1] == 10.0F, "DSP accel MAC fallback");
+    const auto mac_before = mac_acc;
+    arc::dsp::DspAccel<>::mac_f32(std::span<float>{mac_acc}, std::span<const float>{accel_rhs}, std::numeric_limits<float>::infinity());
+    expect(mac_acc == mac_before, "DSP accel MAC rejects non-finite gain");
 
     using Beam = arc::dsp::Beamform<float, 2>;
     const std::array<float, 5> mic0{1.0F, 0.0F, 0.0F, 0.0F, 0.0F};
@@ -2654,9 +3166,30 @@ void test_dsp()
         {.delay_samples = {0U, 1U}, .gain = {1.0F, 1.0F}, .scale = 0.5F},
         std::span(beam_out));
     expect(beamed.has_value() && *beamed == beam_out.size() && beam_out[0] == 1.0F, "DSP Beamform delay sum");
+    expect(!Beam::delay_sum(
+               beam_inputs,
+               {.delay_samples = {0U, 1U}, .gain = {1.0F, 1.0F}, .scale = 0.5F},
+               std::span<float>{static_cast<float*>(nullptr), 1U}),
+           "DSP Beamform rejects null output span");
+    const Beam::Inputs null_beam_inputs{std::span<const float>{static_cast<const float*>(nullptr), 1U}, std::span<const float>{mic1}};
+    expect(!Beam::delay_sum(
+               null_beam_inputs,
+               {.delay_samples = {0U, 1U}, .gain = {1.0F, 1.0F}, .scale = 0.5F},
+               std::span(beam_out)),
+           "DSP Beamform rejects null input span");
+    expect(!Beam::delay_sum(
+               beam_inputs,
+               {.delay_samples = {0U, 1U}, .gain = {std::numeric_limits<float>::infinity(), 1.0F}, .scale = 0.5F},
+               std::span(beam_out)),
+           "DSP Beamform rejects non-finite gain");
 
     const auto lag = Beam::lag_xcorr(std::span<const float>{mic0}, std::span<const float>{mic1}, 2U);
     expect(lag.has_value() && lag->lag_samples == 1, "DSP Beamform xcorr lag");
+    expect(!Beam::lag_xcorr(
+               std::span<const float>{static_cast<const float*>(nullptr), 1U},
+               std::span<const float>{mic1},
+               2U),
+           "DSP Beamform rejects null xcorr span");
     expect(!Beam::lag_xcorr(
                std::span<const float>{mic0},
                std::span<const float>{mic1},
@@ -2678,6 +3211,22 @@ void test_dsp()
     std::array<arc::simd::ComplexF32, 4> gcc{};
     const auto estimate = Beam::gcc_phat(std::span(ref_fft), std::span(delayed_fft), std::span(gcc), 1U, 48'000.0F, 0.05F);
     expect(estimate.has_value() && estimate->confidence > 0.0F, "DSP Beamform GCC-PHAT estimate");
+    expect(!Beam::gcc_phat(
+               std::span(ref_fft),
+               std::span(delayed_fft),
+               std::span<arc::simd::ComplexF32>{static_cast<arc::simd::ComplexF32*>(nullptr), gcc.size()},
+               1U,
+               48'000.0F,
+               0.05F),
+           "DSP Beamform rejects null GCC scratch span");
+    expect(!Beam::gcc_phat(
+               std::span(ref_fft),
+               std::span(delayed_fft),
+               std::span(gcc),
+               1U,
+               48'000.0F,
+               std::numeric_limits<float>::quiet_NaN()),
+           "DSP Beamform rejects non-finite GCC geometry");
 
     using Echo = arc::dsp::Aec<float, 2>;
     Echo::State echo{};
@@ -2687,6 +3236,25 @@ void test_dsp()
     const auto cancelled = Echo::run(std::span(clean), echo, std::span<const float>{far}, std::span<const float>{mic});
     expect(cancelled.has_value() && *cancelled == clean.size(), "DSP AEC run");
     expect(echo.taps[0] > 0.0F, "DSP AEC adapts tap");
+    expect(!Echo::run(
+               std::span<float>{static_cast<float*>(nullptr), 1U},
+               echo,
+               std::span<const float>{far},
+               std::span<const float>{mic}),
+           "DSP AEC rejects null output span");
+    expect(!Echo::run(
+               std::span(clean),
+               echo,
+               std::span<const float>{static_cast<const float*>(nullptr), 1U},
+               std::span<const float>{mic}),
+           "DSP AEC rejects null input span");
+    expect(!Echo::run(
+               std::span(clean),
+               echo,
+               std::span<const float>{far},
+               std::span<const float>{mic},
+               {.mu = 0.25F, .epsilon = std::numeric_limits<float>::quiet_NaN(), .leak = 1.0F}),
+           "DSP AEC rejects invalid config");
 }
 
 void test_foc_motion_tdma()
@@ -2762,6 +3330,17 @@ void test_foc_motion_tdma()
         {.delta = {4, 2, 1}, .ticks_step = 10U});
     expect(plan.has_value() && plan->size() == 4U, "Motion line size");
     expect(steps[0].mask == 0x1U && steps[1].mask == 0x3U && steps[3].mask == 0x7U, "Motion Bresenham masks");
+    const auto null_motion_plan = arc::MotionPlan<3>::line(
+        std::span<arc::MotionStep<3>>{static_cast<arc::MotionStep<3>*>(nullptr), 4U},
+        {.delta = {4, 2, 1}, .ticks_step = 10U});
+    expect(!null_motion_plan.has_value() && null_motion_plan.error() == ESP_ERR_INVALID_ARG,
+           "Motion line rejects null output span");
+    std::array<arc::MotionStep<1>, 1> tiny_steps{};
+    const auto min_delta_plan = arc::MotionPlan<1>::line(
+        std::span(tiny_steps),
+        {.delta = {std::numeric_limits<std::int32_t>::min()}, .ticks_step = 1U});
+    expect(!min_delta_plan.has_value() && min_delta_plan.error() == ESP_ERR_NO_MEM,
+           "Motion line handles INT32_MIN distance without signed overflow");
 
     const auto active = arc::net::Tdma::window(1'225U, {.period_us = 4'000U, .slot_us = 1'000U, .guard_us = 50U, .slot = 1U});
     expect(active.active && active.start_us == 1050U && active.end_us == 1950U, "TDMA active window");
@@ -2810,10 +3389,26 @@ void test_ml_tensor()
     };
     expect(dense.eval(std::span<const float, 4>{input.values}, output.span()).has_value(), "ML dense eval");
     expect(output[0] == 6.5F && output[1] == 4.0F, "ML dense output");
+    expect(arc::ml::dot<float, 4>(
+               std::span<const float, 4>{static_cast<const float*>(nullptr), 4U},
+               std::span<const float, 4>{input.values}) == 0.0F,
+           "ML dot rejects null span");
+    expect(!dense.eval(
+               std::span<const float, 4>{static_cast<const float*>(nullptr), 4U},
+               output.span()),
+           "ML dense rejects null input span");
+    const arc::ml::Dense<4, 2> null_dense{
+        .weights = std::span<const float, 8>{static_cast<const float*>(nullptr), 8U},
+        .bias = std::span<const float, 2>{bias},
+    };
+    expect(!null_dense.eval(std::span<const float, 4>{input.values}, output.span()), "ML dense rejects null weights span");
 
     output[1] = -3.0F;
     arc::ml::relu(output.span());
     expect(output[1] == 0.0F && arc::ml::argmax(std::span<const float, 2>{output.values}) == 0U, "ML relu argmax");
+    arc::ml::relu(std::span<float, 2>{static_cast<float*>(nullptr), 2U});
+    expect(arc::ml::argmax(std::span<const float, 2>{static_cast<const float*>(nullptr), 2U}) == 0U,
+           "ML argmax rejects null span");
 
     const std::array<std::int8_t, 4> qw{1, 2, 3, 4};
     const std::array<std::int32_t, 1> qb{0};
@@ -2828,6 +3423,10 @@ void test_ml_tensor()
     expect(qdense.eval(std::span<const std::int8_t, 4>{qx}, std::span<std::int8_t, 1>{qy}).has_value(),
            "ML quant dense eval");
     expect(qy[0] == 10, "ML quant dense output");
+    expect(!qdense.eval(
+               std::span<const std::int8_t, 4>{static_cast<const std::int8_t*>(nullptr), 4U},
+               std::span<std::int8_t, 1>{qy}),
+           "ML quant dense rejects null input span");
     expect(arc::ml::quantize_s8(3, 1, 1, 0) == 2 && arc::ml::quantize_s8(-3, 1, 1, 0) == -2,
            "ML quantize rounds symmetrically");
     expect(arc::ml::quantize_s8(std::numeric_limits<std::int64_t>::max(), 2, 0, 0) == 127 &&
@@ -2842,6 +3441,13 @@ void test_simd_ml_pipeline()
     const std::array<std::int8_t, 16> lhs{1, 2, 3, 4, 5, 6, 7, 8, -1, -2, -3, -4, -5, -6, -7, -8};
     const std::array<std::int8_t, 16> rhs{1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1};
     expect(arc::simd::dot_s8(std::span(lhs), std::span(rhs)) == 72, "SIMD int8 dot");
+    expect(arc::simd::dot_s8(
+               std::span<const std::int8_t>{static_cast<const std::int8_t*>(nullptr), 16U},
+               std::span<const std::int8_t>{rhs},
+               0,
+               0,
+               7) == 7,
+           "SIMD int8 dot rejects null span");
     expect(arc::simd::pie::mac_s8(0, arc::simd::load_s8x16(lhs.data()), arc::simd::load_s8x16(rhs.data())) == 72,
            "PIE int8 MAC wrapper");
     expect(std::string_view{arc::simd::pie::MacS8x16::instruction} == "ee.mac.s8", "PIE int8 wrapper name");
@@ -2850,6 +3456,10 @@ void test_simd_ml_pipeline()
     std::array<std::uint16_t, 2> rgb{};
     const auto pixels = arc::simd::Rgb565::from_yuv422(std::span(white_yuv), std::span(rgb));
     expect(pixels.has_value() && *pixels == 2U && rgb[0] == 0xffffU && rgb[1] == 0xffffU, "YUV422 RGB565 conversion");
+    expect(!arc::simd::Rgb565::from_yuv422(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), white_yuv.size()},
+               std::span<std::uint16_t>{rgb}),
+           "YUV422 conversion rejects null input span");
 
     std::array<arc::simd::ComplexF32, 4> spectrum{
         arc::simd::ComplexF32{.re = 1.0F},
@@ -2859,6 +3469,9 @@ void test_simd_ml_pipeline()
     };
     expect(arc::simd::fft_radix2(std::span(spectrum)).has_value(), "SIMD FFT runs");
     expect(near(spectrum[0].re, 1.0F) && near(spectrum[1].re, 1.0F) && near(spectrum[2].re, 1.0F), "SIMD FFT impulse");
+    expect(!arc::simd::fft_radix2(
+               std::span<arc::simd::ComplexF32>{static_cast<arc::simd::ComplexF32*>(nullptr), spectrum.size()}),
+           "SIMD FFT rejects null span");
 
     const std::array<std::int8_t, 9> conv_in{1, 2, 3, 4, 5, 6, 7, 8, 9};
     const std::array<std::int8_t, 4> conv_w{1, 1, 1, 1};
@@ -2874,8 +3487,17 @@ void test_simd_ml_pipeline()
     };
     const auto mapped_weights = arc::ml::mapped_weights<std::int8_t, 4>(mapped_conv);
     expect(mapped_weights.has_value() && mapped_weights->data() == conv_w.data(), "ML MmuSpan mapped weights");
+    const arc::MmuSpan<std::int8_t> null_mapped_conv{
+        .region = {},
+        .values = std::span<const std::int8_t>{static_cast<const std::int8_t*>(nullptr), conv_w.size()},
+    };
+    expect(!arc::ml::mapped_weights<std::int8_t, 4>(null_mapped_conv), "ML MmuSpan rejects null mapped weights");
     expect(conv.eval(std::span<const std::int8_t, 9>{conv_in}, std::span(conv_out)).has_value(), "Conv2D S8 eval");
     expect(conv_out[0] == 12 && conv_out[1] == 16 && conv_out[2] == 24 && conv_out[3] == 28, "Conv2D S8 output");
+    expect(!conv.eval(
+               std::span<const std::int8_t, 9>{static_cast<const std::int8_t*>(nullptr), conv_in.size()},
+               std::span(conv_out)),
+           "Conv2D S8 rejects null input span");
 
     const std::array<std::int8_t, 8> depth_in{1, 2, 3, 4, 5, 6, 7, 8};
     const std::array<std::int8_t, 2> depth_w{1, 2};
@@ -2888,12 +3510,22 @@ void test_simd_ml_pipeline()
     expect(depth.eval(std::span<const std::int8_t, 8>{depth_in}, std::span(depth_out)).has_value(),
            "Depthwise Conv2D S8 eval");
     expect(depth_out[0] == 1 && depth_out[1] == 4 && depth_out[7] == 16, "Depthwise Conv2D S8 output");
+    expect(!depth.eval(
+               std::span<const std::int8_t, 8>{depth_in},
+               std::span<std::int8_t, arc::ml::DepthwiseConv2dS8<2, 2, 2, 1, 1>::output_size>{
+                   static_cast<std::int8_t*>(nullptr),
+                   depth_out.size()}),
+           "Depthwise Conv2D S8 rejects null output span");
 
     const std::array<std::int8_t, 4> pool_in{1, 4, 2, 3};
     std::array<std::int8_t, arc::ml::MaxPool2d<std::int8_t, 2, 2, 1, 2, 2>::output_size> pool_out{};
     expect(arc::ml::MaxPool2d<std::int8_t, 2, 2, 1, 2, 2>::eval(std::span(pool_in), std::span(pool_out)).has_value(),
            "MaxPool eval");
     expect(pool_out[0] == 4, "MaxPool output");
+    expect(!arc::ml::MaxPool2d<std::int8_t, 2, 2, 1, 2, 2>::eval(
+               std::span<const std::int8_t, 4>{static_cast<const std::int8_t*>(nullptr), pool_in.size()},
+               std::span(pool_out)),
+           "MaxPool rejects null input span");
 
     struct TinyGraph {
         using Context = std::uint32_t;
@@ -2952,6 +3584,8 @@ void test_csi_hotpatch()
 
     auto csi_frame = arc::net::Csi::frame<8>(meta, std::span<const std::int8_t>{raw_iq});
     expect(csi_frame.has_value() && csi_frame->used == 4U, "CSI frame parse");
+    expect(!arc::net::Csi::frame<8>(meta, std::span<const std::int8_t>{static_cast<const std::int8_t*>(nullptr), 2U}),
+           "CSI rejects null raw IQ span");
     const auto stats = arc::net::Csi::stats(*csi_frame);
     expect(stats.bins == 4U && near(stats.amplitude_mean, 5.0F), "CSI RF stats");
 
@@ -2962,9 +3596,25 @@ void test_csi_hotpatch()
 
     std::array<float, 3> features{};
     expect(arc::net::Csi::features(*csi_frame, std::span<float, 3>{features}).has_value(), "CSI feature vector");
+    expect(!arc::net::Csi::features(*csi_frame, std::span<float, 3>{static_cast<float*>(nullptr), 3U}),
+           "CSI rejects null feature output span");
     std::array<std::int8_t, 3> quantized{};
     expect(arc::net::Csi::quantize(std::span<const float, 3>{features}, std::span<std::int8_t, 3>{quantized}, 1.0F).has_value(),
            "CSI quantize RF tensor");
+    const std::array<float, 3> huge_features{1.0e30F, -1.0e30F, 0.49F};
+    expect(arc::net::Csi::quantize(std::span<const float, 3>{huge_features}, std::span<std::int8_t, 3>{quantized}, 1.0F).has_value() &&
+               quantized[0] == std::numeric_limits<std::int8_t>::max() &&
+               quantized[1] == std::numeric_limits<std::int8_t>::min() &&
+               quantized[2] == 0,
+           "CSI quantize saturates huge finite features");
+    const std::array<float, 3> nan_features{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F};
+    expect(!arc::net::Csi::quantize(std::span<const float, 3>{nan_features}, std::span<std::int8_t, 3>{quantized}, 1.0F),
+           "CSI quantize rejects non-finite features");
+    expect(!arc::net::Csi::quantize(
+               std::span<const float, 3>{features},
+               std::span<std::int8_t, 3>{quantized},
+               std::numeric_limits<float>::infinity()),
+           "CSI quantize rejects non-finite scale");
     const std::array<std::int8_t, 6> weights{1, 0, 0, -1, 0, 0};
     const std::array<std::int32_t, 2> bias{0, 0};
     std::array<std::int8_t, 2> logits{};
@@ -3003,6 +3653,11 @@ void test_csi_hotpatch()
         expect(image.has_value() && image->entry() == static_cast<std::uint8_t*>(image->block.memory) + 2U,
                "HotPatch executable payload load");
     }
+    expect(
+        !arc::HotPatch::load<PatchHeap>(
+            std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), payload.size()},
+            0U),
+        "HotPatch rejects null payload span");
 
     struct PatchPolicy {
         static esp_err_t lock_code(arc::CacheRegion) noexcept
@@ -3115,6 +3770,17 @@ void test_netrpc_pms_secure_update()
                .has_value(),
            "TEE plan apply");
     expect(tee_regions == 1U && tee_trusted_peripherals == 2U && tee_untrusted_peripherals == 1U, "TEE world split");
+    expect(!arc::WorldGuard<TeePolicy>::apply(
+               {.regions = std::span<const arc::WorldRegion>{static_cast<const arc::WorldRegion*>(nullptr), 1U}}),
+           "TEE rejects null region span");
+    expect(!arc::WorldGuard<TeePolicy>::apply(
+               {.regions = std::span<const arc::WorldRegion>{worlds},
+                .trusted_peripherals = std::span<const std::uint32_t>{static_cast<const std::uint32_t*>(nullptr), 1U}}),
+           "TEE rejects null trusted peripheral span");
+    expect(!arc::WorldGuard<TeePolicy>::apply(
+               {.regions = std::span<const arc::WorldRegion>{worlds},
+                .untrusted_peripherals = std::span<const std::uint32_t>{static_cast<const std::uint32_t*>(nullptr), 1U}}),
+           "TEE rejects null untrusted peripheral span");
 
     arc::TrustedObject<arc::TeeAsset::crypto, std::uint32_t> trusted_key{};
     trusted_key.get() = 0xCAFEU;
@@ -3160,11 +3826,69 @@ void test_netrpc_pms_secure_update()
     arc::SecureUpdate<Crypto, Writer> update{};
     std::array<std::uint8_t, 4> cipher{1, 2, 3, 4};
     std::array<std::uint8_t, 4> plain{};
+    expect(update.write({.ciphertext = cipher, .nonce = cipher, .aad = {}, .tag = cipher}, plain) ==
+               ESP_ERR_INVALID_STATE,
+           "SecureUpdate rejects write before begin");
+    expect(update.finish(cipher) == ESP_ERR_INVALID_STATE, "SecureUpdate rejects finish before begin");
     expect(update.begin(4U) == ESP_OK, "SecureUpdate begin");
+    expect(update.begin(4U) == ESP_ERR_INVALID_STATE, "SecureUpdate rejects duplicate begin");
     expect(update.write({.ciphertext = cipher, .nonce = cipher, .aad = {}, .tag = cipher}, plain) == ESP_OK,
            "SecureUpdate write");
     expect(update.finish(cipher) == ESP_OK && update.crypto.verified && update.writer.done, "SecureUpdate finish");
     expect(update.writer.bytes == 4U && plain[3] == 4U, "SecureUpdate plaintext write");
+    expect(update.write({.ciphertext = cipher, .nonce = cipher, .aad = {}, .tag = cipher}, plain) ==
+               ESP_ERR_INVALID_STATE,
+           "SecureUpdate rejects write after finish");
+    expect(update.finish(cipher) == ESP_ERR_INVALID_STATE, "SecureUpdate rejects duplicate finish");
+    expect(
+        update.write(
+            {
+                .ciphertext = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+                .nonce = cipher,
+                .aad = {},
+                .tag = cipher,
+            },
+            plain) == ESP_ERR_INVALID_ARG,
+        "SecureUpdate rejects null ciphertext span");
+    expect(
+        update.write(
+            {.ciphertext = cipher, .nonce = cipher, .aad = {}, .tag = cipher},
+            std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), cipher.size()}) == ESP_ERR_INVALID_ARG,
+        "SecureUpdate rejects null plaintext span");
+    expect(update.finish(std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}) ==
+               ESP_ERR_INVALID_ARG,
+           "SecureUpdate rejects null signature span");
+
+    esp_ota_stub_reset();
+    arc::Ota::Session ota{};
+    expect(arc::Ota::begin(ota, cipher.size(), &esp_ota_stub_next) == ESP_OK && ota.open(),
+           "Ota begins explicit update slot");
+    expect(arc::Ota::write(ota, nullptr, 1U) == ESP_ERR_INVALID_ARG && esp_ota_stub_written == 0U,
+           "Ota write rejects null non-empty payload");
+    expect(arc::Ota::write(ota, cipher.data(), cipher.size()) == ESP_OK &&
+               esp_ota_stub_written == cipher.size(),
+           "Ota write forwards valid payload");
+    expect(arc::Ota::write_at(ota, nullptr, 1U, 4U) == ESP_ERR_INVALID_ARG &&
+               esp_ota_stub_written_at == 0U,
+           "Ota write_at rejects null non-empty payload");
+    expect(arc::Ota::write_at(ota, cipher.data(), 2U, 4U) == ESP_OK &&
+               esp_ota_stub_written_at == 2U && esp_ota_stub_last_offset == 4U,
+           "Ota write_at forwards valid payload with offset");
+    esp_ota_stub_end_result = ESP_FAIL;
+    expect(arc::Ota::finish(ota) == ESP_FAIL && ota.open(),
+           "Ota finish keeps session open after end failure");
+    expect(arc::Ota::cancel(ota) == ESP_OK && !ota.open() && esp_ota_stub_aborted == 1U,
+           "Ota cancel aborts preserved failed session");
+
+    esp_ota_stub_reset();
+    arc::Ota::Session ota_done{};
+    esp_err_t ota_state_err{};
+    esp_ota_stub_state = ESP_OTA_IMG_PENDING_VERIFY;
+    expect(arc::Ota::begin(ota_done, cipher.size(), &esp_ota_stub_next) == ESP_OK &&
+               arc::Ota::finish(ota_done) == ESP_OK && !ota_done.open() &&
+               esp_ota_stub_boot_sets == 1U &&
+               arc::Ota::pending_verify(&ota_state_err) && ota_state_err == ESP_OK,
+           "Ota finish closes session and reports pending verify");
 }
 
 void test_matrix_kalman_storage_swarm()
@@ -3201,6 +3925,29 @@ void test_matrix_kalman_storage_swarm()
     arc::FlashLog<Record, 4, Sink> log{};
     expect(log.push({.seq = 1U, .value = 2U}), "FlashLog push");
     expect(log.flush() == ESP_OK && log.sink.bytes == sizeof(Record), "FlashLog flush");
+    struct FailingSink {
+        std::size_t bytes{};
+        bool fail{};
+        esp_err_t write(std::span<const std::uint8_t> data) noexcept
+        {
+            if (fail) {
+                return ESP_ERR_INVALID_STATE;
+            }
+            bytes += data.size();
+            return ESP_OK;
+        }
+    };
+    arc::FlashLog<Record, 4, FailingSink> failing_log{};
+    expect(failing_log.push({.seq = 3U, .value = 4U}) &&
+               (failing_log.sink.fail = true) &&
+               failing_log.flush() == ESP_ERR_INVALID_STATE &&
+               failing_log.queue.size() == 1U,
+           "FlashLog keeps record queued after sink failure");
+    failing_log.sink.fail = false;
+    expect(failing_log.flush() == ESP_OK &&
+               failing_log.queue.empty() &&
+               failing_log.sink.bytes == sizeof(Record),
+           "FlashLog retries queued record after sink recovery");
 
     const arc::net::SwarmSchedule<3> schedule{
         .node_ids = {10U, 20U, 30U},
@@ -3219,11 +3966,17 @@ void test_matrix_kalman_storage_swarm()
     const auto wire = Fleet::bytes(*frame);
     const auto decoded = Fleet::parse(wire);
     expect(decoded.has_value() && decoded->value.value == 42U, "DistributedRcu wire parse");
+    expect(!Fleet::parse(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), sizeof(Fleet::Frame)}),
+           "DistributedRcu parse rejects null wire span");
 
     Fleet slave{10U};
     expect(slave.assign(0U, 20U).has_value(), "DistributedRcu assign remote");
     const auto slot = slave.ingest(*decoded, schedule, 1'120);
     expect(slot.has_value() && *slot == 0U, "DistributedRcu ingest slot");
+    auto zero_node_frame = *decoded;
+    zero_node_frame.node_id = 0U;
+    expect(!slave.ingest(zero_node_frame, 1'130), "DistributedRcu ingest rejects zero node");
     const auto remote = slave.read_remote(20U);
     expect(remote.has_value() && (*remote)->value == 42U, "DistributedRcu remote RCU read");
     expect(slave.stale(20U, 1'400, 100), "DistributedRcu stale detection");
@@ -3261,10 +4014,51 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
     expect(stream.drain(lane, "core1") == ESP_OK, "TraceStream drain");
     expect(stream.finish() == ESP_OK, "TraceStream finish");
     expect(std::strstr(stream.sink.bytes.data(), "\"name\":\"core1\"") != nullptr, "TraceStream output");
+    expect(stream.drain(lane, nullptr) == ESP_ERR_INVALID_ARG, "TraceStream rejects null event name");
+    arc::TraceStream<192, TraceSink> empty_stream{};
+    expect(empty_stream.finish() == ESP_OK &&
+               std::string_view{empty_stream.sink.bytes.data(), empty_stream.sink.pos} == "{\"traceEvents\":[]}",
+           "TraceStream finish emits empty document");
+    struct FailingTraceSink {
+        std::array<char, 384> bytes{};
+        std::size_t pos{};
+        std::size_t writes{};
+        std::size_t fail_at{};
+        esp_err_t write(std::span<const char> data) noexcept
+        {
+            ++writes;
+            if (writes == fail_at) {
+                return ESP_ERR_INVALID_STATE;
+            }
+            if (bytes.size() - pos < data.size()) {
+                return ESP_ERR_NO_MEM;
+            }
+            std::memcpy(bytes.data() + pos, data.data(), data.size());
+            pos += data.size();
+            return ESP_OK;
+        }
+    };
+    arc::LogLane<4> failing_lane{};
+    expect(failing_lane.push(arc::log_id("trace.a"), 1U) &&
+               failing_lane.push(arc::log_id("trace.b"), 2U) &&
+               failing_lane.push(arc::log_id("trace.c"), 3U),
+           "TraceStream queues sink-failure case");
+    arc::TraceStream<192, FailingTraceSink> failing_stream{};
+    failing_stream.sink.fail_at = 3U;
+    expect(failing_stream.drain(failing_lane, "core1") == ESP_ERR_INVALID_STATE && failing_lane.size() == 2U,
+           "TraceStream keeps failed event queued");
+    expect(failing_stream.drain(failing_lane, "core1") == ESP_ERR_INVALID_STATE && failing_lane.size() == 2U,
+           "TraceStream preserves queued events while failed");
+    expect(failing_stream.finish() == ESP_ERR_INVALID_STATE && failing_stream.started && failing_lane.size() == 2U,
+           "TraceStream finish preserves failed stream state");
 
     std::array<std::uint8_t, 32> pf{};
     const auto perfetto = arc::PerfettoWriter::event(pf, {.tick = 300U, .id = 2U, .payload = 4U, .aux = 1U});
-    expect(perfetto.has_value() && perfetto->size() > 0U && pf[0] == 0x08U, "Perfetto binary event");
+    const auto null_perfetto = arc::PerfettoWriter::event(
+        std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), 8U},
+        {.tick = 1U});
+    expect(perfetto.has_value() && perfetto->size() > 0U && pf[0] == 0x08U && !null_perfetto.has_value(),
+           "Perfetto binary event");
 
     arc::Provisioning<32, 64, 128> provisioning{};
     const std::array<std::uint8_t, 4> nonce{1, 2, 3, 4};
@@ -3273,12 +4067,51 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
     expect(provisioning.begin(nonce) == ESP_OK, "Provisioning begin");
     expect(provisioning.keys(key) == ESP_OK, "Provisioning keys");
     expect(provisioning.credentials(ssid, key) == ESP_OK && provisioning.ready(), "Provisioning credentials");
+    arc::Provisioning<32, 64, 128> null_nonce_provisioning{};
+    expect(null_nonce_provisioning.begin(std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}) ==
+               ESP_ERR_INVALID_ARG,
+           "Provisioning rejects null nonce span");
+    arc::Provisioning<32, 64, 128> early_key_provisioning{};
+    expect(early_key_provisioning.keys(key) == ESP_ERR_INVALID_STATE,
+           "Provisioning rejects key before nonce");
+    arc::Provisioning<32, 64, 128> null_key_provisioning{};
+    expect(null_key_provisioning.begin(nonce) == ESP_OK &&
+               null_key_provisioning.keys(std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}) ==
+                   ESP_ERR_INVALID_ARG,
+           "Provisioning rejects null key span");
+    arc::Provisioning<32, 64, 128> early_credentials_provisioning{};
+    expect(early_credentials_provisioning.credentials(ssid, key) == ESP_ERR_INVALID_STATE,
+           "Provisioning rejects credentials before keys");
+    arc::Provisioning<32, 64, 128> null_credentials_provisioning{};
+    expect(null_credentials_provisioning.begin(nonce) == ESP_OK &&
+               null_credentials_provisioning.keys(key) == ESP_OK &&
+               null_credentials_provisioning.credentials(
+                   std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+                   key) == ESP_ERR_INVALID_ARG,
+           "Provisioning rejects null SSID span");
+    arc::Provisioning<32, 64, 128> null_pass_provisioning{};
+    expect(null_pass_provisioning.begin(nonce) == ESP_OK &&
+               null_pass_provisioning.keys(key) == ESP_OK &&
+               null_pass_provisioning.credentials(
+                   ssid,
+                   std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}) == ESP_ERR_INVALID_ARG,
+           "Provisioning rejects null password span");
+    arc::Provisioning<32, 64, 128> null_cert_provisioning{};
+    expect(null_cert_provisioning.begin(nonce) == ESP_OK &&
+               null_cert_provisioning.keys(key) == ESP_OK &&
+               null_cert_provisioning.credentials(
+                   ssid,
+                   key,
+                   std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}) == ESP_ERR_INVALID_ARG,
+           "Provisioning rejects null certificate span");
 
     arc::net::EthernetRing<128, 4> eth{};
     const std::array<std::uint8_t, 6> frame{0, 1, 2, 3, 4, 5};
     expect(eth.push(frame), "Ethernet frame push");
     arc::net::EthernetRing<128, 4>::Frame popped{};
-    expect(eth.pop(popped) && popped.size == frame.size() && popped.bytes[5] == 5U, "Ethernet frame pop");
+    const auto null_eth = eth.push(std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U});
+    expect(eth.pop(popped) && popped.size == frame.size() && popped.bytes[5] == 5U && !null_eth,
+           "Ethernet frame pop");
 
     struct SpiPolicy {
         static esp_err_t writev(const std::array<std::uint8_t, 3>& header, std::span<const std::uint8_t> frame) noexcept
@@ -3334,6 +4167,18 @@ void test_log_lane()
     });
     expect(drained == 3U, "LogLane drain count");
     expect(payload_sum == 24U, "LogLane payloads");
+
+    expect(lane.push(event, 1U) && lane.push(event, 2U) && lane.push(event, 3U),
+           "LogLane drain stop seed");
+    std::uint32_t stopped_payloads{};
+    const auto stopped = lane.drain([&](const arc::LogEvent& item) noexcept {
+        stopped_payloads += item.payload;
+        return item.payload != 2U;
+    });
+    expect(stopped == 2U && stopped_payloads == 3U && lane.size() == 1U,
+           "LogLane drain stops on false callback");
+    arc::LogEvent retained{};
+    expect(lane.pop(retained) && retained.payload == 3U, "LogLane drain leaves later events queued");
 }
 
 void test_text()
@@ -3368,6 +4213,9 @@ void test_text()
     arc::Text empty{};
     expect(empty.view().empty() && !empty.push('x'), "Text default storage is inert");
 
+    arc::Text null_text{std::span<char>{static_cast<char*>(nullptr), 16U}};
+    expect(!null_text.u64(42U) && !null_text.hex(0x2aU), "Text numeric writers reject null storage");
+
     std::array<char, 2> signed_small{};
     arc::Text negative{std::span(signed_small)};
     expect(!negative.i32(-123) && negative.empty(), "Text failed signed write rolls back");
@@ -3392,6 +4240,14 @@ void test_text()
     expect(!arc::format_to(std::span(fmt), "{} {}", 1), "format_to rejects missing arg");
     expect(!arc::format_to(std::span(fmt), "{}", 1, 2), "format_to rejects extra arg");
     expect(!arc::format_to(std::span(fmt), "{", 1), "format_to rejects malformed braces");
+    expect(!arc::format_to(
+               std::span<char>{static_cast<char*>(nullptr), fmt.size()},
+               "x"),
+           "format_to rejects null output span");
+    expect(!arc::format_to(
+               std::span(fmt),
+               std::string_view{static_cast<const char*>(nullptr), 1U}),
+           "format_to rejects null format view");
 }
 
 void test_trace_event()
@@ -3415,6 +4271,16 @@ void test_trace_event()
 
     std::array<char, 8> small{};
     expect(!arc::TraceEventWriter::json_event(std::span(small), event), "TraceEvent small buffer rejects");
+    expect(!arc::TraceEventWriter::json_begin(std::span<char>{static_cast<char*>(nullptr), 1U}),
+           "TraceEvent begin rejects null output span");
+    expect(!arc::TraceEventWriter::json_end(std::span<char>{static_cast<char*>(nullptr), 1U}),
+           "TraceEvent end rejects null output span");
+    expect(!arc::TraceEventWriter::json_event(
+               std::span<char>{static_cast<char*>(nullptr), out.size()},
+               event),
+           "TraceEvent event rejects null output span");
+    expect(!arc::TraceEventWriter::json_event(std::span(out), event, false, nullptr),
+           "TraceEvent event rejects null name");
 }
 
 void test_postmortem()
@@ -3529,6 +4395,18 @@ void test_pack()
     std::int32_t value{};
     expect(Telemetry::read(*encoded, kind, id, value).has_value(), "Pack decode");
     expect(kind == Kind::sample && id == 0x1234U && value == -2, "Pack roundtrip");
+    expect(!Telemetry::write(
+               std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), Telemetry::bytes},
+               Kind::sample,
+               0x1234U,
+               -2),
+           "Pack write rejects null output span");
+    expect(!Telemetry::read(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), Telemetry::bytes},
+               kind,
+               id,
+               value),
+           "Pack read rejects null input span");
 
     std::array<std::uint8_t, Telemetry::bytes> little{};
     expect(Telemetry::write<arc::pack::Endian::little>(little, Kind::sample, 0x1234U, -2).has_value(),
@@ -3554,6 +4432,20 @@ void test_pack()
     expect(arc::pack::deserialize<arc::pack::Endian::big, PlainWire>(*plain_encoded, decoded).has_value(),
            "Pack struct decode");
     expect(decoded.seq == plain.seq && decoded.temp == plain.temp, "Pack struct roundtrip");
+    expect(
+        !arc::pack::serialize<arc::pack::Endian::big, PlainWire>(
+            std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), PlainWire::bytes},
+            plain),
+        "Pack struct write rejects null output span");
+    expect(
+        !arc::pack::deserialize<arc::pack::Endian::big, PlainWire>(
+            std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), PlainWire::bytes},
+            decoded),
+        "Pack struct read rejects null input span");
+    const arc::pack::Overlay<PlainWire> null_overlay{
+        .bytes = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), PlainWire::bytes},
+    };
+    expect(!null_overlay.valid(), "Pack overlay rejects null byte span");
 
     using ReflectedWire = arc::pack::Reflect<ReflectedTelemetry>;
     static_assert(ReflectedWire::bytes == 6U);
@@ -3603,6 +4495,12 @@ void test_static_silicon_facades()
     expect(crypto_lease.has_value() && crypto_lease->active(), "CryptoDma lease submit");
     expect(crypto_lease->finish().has_value() && !crypto_lease->active(), "CryptoDma lease finish");
     expect(crypto_lease->finish().has_value(), "CryptoDma lease finish is idempotent");
+    auto null_iv_job = crypto_job;
+    null_iv_job.iv = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U};
+    expect(!arc::CryptoDma<MockCryptoDmaPolicy>::submit(null_iv_job), "CryptoDma rejects null IV span");
+    auto null_tag_job = crypto_job;
+    null_tag_job.tag = std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), 1U};
+    expect(!arc::CryptoDma<MockCryptoDmaPolicy>::lease(null_tag_job), "CryptoDma lease rejects null tag span");
     auto pending_crypto = arc::CryptoDma<PendingCryptoDmaPolicy>::lease(crypto_job);
     expect(pending_crypto.has_value(), "CryptoDma pending lease submit");
     expect(!pending_crypto->wait_for(2U) && pending_crypto->active(), "CryptoDma bounded wait reports unfinished job");
@@ -3615,6 +4513,15 @@ void test_static_silicon_facades()
     expect(mapped->size() == 3U && (*mapped)[1] == 0x20U, "MmuSpan view");
     mapped->unmap<MockMmuPolicy>();
     expect(MockMmuPolicy::unmapped, "MmuSpan unmap");
+    expect(!arc::MmuSpan<std::uint32_t>::map<NullMmuPolicy>(
+               {.source = 0U, .offset = 0U, .bytes = 3U * sizeof(std::uint32_t), .memory = 0U}),
+           "MmuSpan rejects null policy mapping");
+    expect(!arc::MmuSpan<std::uint32_t>::map<ShortMmuPolicy>(
+               {.source = 0U, .offset = 0U, .bytes = 3U * sizeof(std::uint32_t), .memory = 0U}),
+           "MmuSpan rejects undersized policy mapping");
+    expect(!arc::MmuSpan<std::uint32_t>::map<OddMmuPolicy>(
+               {.source = 0U, .offset = 0U, .bytes = 3U * sizeof(std::uint32_t), .memory = 0U}),
+           "MmuSpan rejects unaligned policy mapping");
 
     static auto handled = false;
     constexpr auto handler = [](void*) noexcept { handled = true; };
@@ -3685,6 +4592,13 @@ void test_probe_stats()
     cycles.add(10U);
     cycles.add(30U);
     expect(cycles.min == 10U && cycles.max == 30U && cycles.avg() == 20U, "CycleStats aggregate");
+    cycles.samples = std::numeric_limits<std::uint32_t>::max();
+    cycles.total = std::numeric_limits<std::uint64_t>::max() - 1U;
+    cycles.add(30U);
+    expect(cycles.samples == std::numeric_limits<std::uint32_t>::max() &&
+               cycles.total == std::numeric_limits<std::uint64_t>::max() &&
+               cycles.avg() == std::numeric_limits<esp_cpu_cycle_count_t>::max(),
+           "CycleStats saturates counter and total overflow");
     cycles.clear();
     expect(cycles.samples == 0U && cycles.max == 0U, "CycleStats clear");
 
@@ -3694,6 +4608,13 @@ void test_probe_stats()
     jitter.add(1);
     expect(jitter.min == -5 && jitter.max == 7, "JitterStats min/max");
     expect(jitter.avg_abs() == 4U && jitter.max_abs() == 7U, "JitterStats abs");
+    jitter.samples = std::numeric_limits<std::uint32_t>::max();
+    jitter.abs_total = std::numeric_limits<std::uint64_t>::max() - 1U;
+    jitter.add(std::numeric_limits<std::int32_t>::min());
+    expect(jitter.samples == std::numeric_limits<std::uint32_t>::max() &&
+               jitter.abs_total == std::numeric_limits<std::uint64_t>::max() &&
+               jitter.avg_abs() == std::numeric_limits<std::uint32_t>::max(),
+           "JitterStats saturates abs accumulation overflow");
     jitter.clear();
     expect(jitter.samples == 0U && jitter.avg_abs() == 0U, "JitterStats clear");
 
@@ -3702,6 +4623,16 @@ void test_probe_stats()
     deadline.add(130U, 100U);
     expect(deadline.min_slack == -30 && deadline.max_slack == 20, "DeadlineStats slack");
     expect(deadline.avg_slack() == -5 && deadline.overruns == 1U && deadline.max_overrun == 30, "DeadlineStats overrun");
+    deadline.samples = std::numeric_limits<std::uint32_t>::max();
+    deadline.overruns = std::numeric_limits<std::uint32_t>::max();
+    deadline.total_slack = std::numeric_limits<std::int64_t>::min() + 1;
+    deadline.add(std::numeric_limits<esp_cpu_cycle_count_t>::max(), 0U);
+    expect(deadline.samples == std::numeric_limits<std::uint32_t>::max() &&
+               deadline.overruns == std::numeric_limits<std::uint32_t>::max() &&
+               deadline.total_slack == std::numeric_limits<std::int64_t>::min() &&
+               deadline.max_overrun == std::numeric_limits<std::int32_t>::max() &&
+               deadline.avg_slack() == std::numeric_limits<std::int32_t>::min(),
+           "DeadlineStats saturates slack and overrun counters");
     deadline.clear();
     expect(deadline.samples == 0U && deadline.overruns == 0U, "DeadlineStats clear");
 
@@ -3711,6 +4642,15 @@ void test_probe_stats()
     stalls.add(UINT32_MAX, 0U, 0U);
     expect(stalls.samples == 3U && stalls.stalls == 2U && stalls.max == UINT32_MAX, "StallStats counts excess cycles");
     expect(stalls.avg() == ((25ULL + UINT32_MAX) / 2ULL), "StallStats averages stall excess");
+    stalls.samples = std::numeric_limits<std::uint32_t>::max();
+    stalls.stalls = std::numeric_limits<std::uint32_t>::max();
+    stalls.total = std::numeric_limits<std::uint64_t>::max() - 1U;
+    stalls.add(std::numeric_limits<esp_cpu_cycle_count_t>::max(), 0U, 0U);
+    expect(stalls.samples == std::numeric_limits<std::uint32_t>::max() &&
+               stalls.stalls == std::numeric_limits<std::uint32_t>::max() &&
+               stalls.total == std::numeric_limits<std::uint64_t>::max() &&
+               stalls.avg() == std::numeric_limits<esp_cpu_cycle_count_t>::max(),
+           "StallStats saturates stall counters and totals");
     stalls.clear();
     expect(stalls.samples == 0U && stalls.stalls == 0U && stalls.avg() == 0U, "StallStats clear");
 
@@ -3799,6 +4739,9 @@ void test_file()
         expect(file.has_value(), "File open write");
 
         auto handle = std::move(file).value();
+        expect(!handle.write(nullptr, 1U).has_value(), "File write rejects null non-empty");
+        const auto empty = handle.write(nullptr, 0U);
+        expect(empty.has_value() && empty.value() == 0U, "File write accepts empty null");
         const std::array<std::uint8_t, 4> payload{1U, 3U, 3U, 7U};
         const auto wrote = handle.write(payload.data(), payload.size());
         expect(wrote.has_value() && wrote.value() == payload.size(), "File write bytes");
@@ -3812,6 +4755,9 @@ void test_file()
 
         auto handle = std::move(file).value();
         std::array<std::uint8_t, 4> payload{};
+        expect(!handle.read(nullptr, 1U).has_value(), "File read rejects null non-empty");
+        const auto empty = handle.read(nullptr, 0U);
+        expect(empty.has_value() && empty.value() == 0U, "File read accepts empty null");
         const auto read = handle.read(payload.data(), payload.size());
         expect(read.has_value() && read.value() == payload.size(), "File read bytes");
         expect((payload == std::array<std::uint8_t, 4>{1U, 3U, 3U, 7U}), "File payload");
@@ -3854,6 +4800,14 @@ void test_store()
            "StoreText owns NUL-terminated fallback");
     expect(text.set("this-name-is-too-long") == ESP_ERR_NVS_INVALID_LENGTH && text.view() == "fallback",
            "StoreText rejects oversized text without mutation");
+    const std::array<char, 3> embedded_nul_text{'a', '\0', 'b'};
+    expect(text.set(std::string_view{embedded_nul_text.data(), embedded_nul_text.size()}) ==
+                   ESP_ERR_INVALID_ARG &&
+               text.view() == "fallback",
+           "StoreText rejects embedded NUL without mutation");
+    expect(text.set(std::string_view{static_cast<const char*>(nullptr), 1U}) == ESP_ERR_INVALID_ARG &&
+               text.view() == "fallback",
+           "StoreText rejects null non-empty string view");
 
     expect(arc::Store::save_text<16>("cfg", "name", "router.local") == ESP_OK, "Store saves string_view text");
     auto loaded = arc::Store::load_text<16>("cfg", "name", "fallback", &status);
@@ -3868,6 +4822,18 @@ void test_store()
            "Store load_text rejects oversized persisted value");
     expect(arc::Store::save_text<4>("cfg", "tiny", "too long") == ESP_ERR_NVS_INVALID_LENGTH,
            "Store save_text rejects oversized source");
+    expect(arc::Store::save_text<16>(
+               "cfg",
+               "nul",
+               std::string_view{embedded_nul_text.data(), embedded_nul_text.size()}) == ESP_ERR_INVALID_ARG,
+           "Store save_text rejects embedded NUL source");
+    std::size_t loaded_chars{};
+    expect(arc::Store::load_string(
+               "cfg",
+               "name",
+               std::span<char>{static_cast<char*>(nullptr), 16U},
+               &loaded_chars) == ESP_ERR_INVALID_ARG,
+           "Store load_string rejects null output span");
 }
 
 void test_stream()
@@ -3914,6 +4880,11 @@ void test_stream()
     expect(arc::net::Stream::write(erased, std::span(payload)).has_value(), "AnyStream write forwards");
     expect(io.tx_pos == 3U && io.tx[2] == 3U, "AnyStream write bytes");
     io.tx_pos = 0U;
+    expect(erased.send_all(nullptr, 0U).has_value() && io.tx_pos == 0U,
+           "AnyStream empty send is no-op");
+    const auto empty_recv = erased.recv(nullptr, 0U);
+    expect(empty_recv.has_value() && *empty_recv == 0U && io.rx_pos == 0U,
+           "AnyStream empty recv is no-op");
 
     expect(arc::net::Stream::write_frame16(io, std::span(payload)).has_value(), "Stream frame write");
     expect(io.tx_pos == 5U, "Stream frame bytes");
@@ -3925,6 +4896,22 @@ void test_stream()
     const auto coded = arc::net::Stream::frame16(std::span(encoded), std::span(payload));
     expect(coded.has_value() && coded->size() == 5U, "Stream frame encode");
     expect((*coded)[0] == 0U && (*coded)[1] == 3U && (*coded)[4] == 3U, "Stream frame encode layout");
+    std::array<std::uint8_t, 8> in_place_frame{1U, 2U, 3U};
+    const auto in_place_coded = arc::net::Stream::frame16(
+        std::span(in_place_frame),
+        std::span(in_place_frame).first(3U));
+    expect(in_place_coded.has_value() &&
+               (*in_place_coded)[0] == 0U &&
+               (*in_place_coded)[1] == 3U &&
+               (*in_place_coded)[2] == 1U &&
+               (*in_place_coded)[3] == 2U &&
+               (*in_place_coded)[4] == 3U,
+           "Stream frame preserves in-place payload");
+    expect(
+        !arc::net::Stream::frame16(
+            std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), encoded.size()},
+            std::span(payload)),
+        "Stream frame rejects null output span");
 
     io.rx = {0U, 3U, 7U, 8U, 9U};
     io.rx_len = 5U;
@@ -3940,6 +4927,15 @@ void test_stream()
     io.rx_pos = 0U;
     io.rx_len = 7U;
     expect(!arc::net::Stream::read_frame16(io, std::span(out)), "Stream oversized frame rejects");
+
+    io.rx = {0U, 1U, 0xaaU};
+    io.rx_pos = 0U;
+    io.rx_len = 3U;
+    expect(!arc::net::Stream::read_frame16(
+               io,
+               std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), 1U}) &&
+               io.rx_pos == 0U,
+           "Stream frame read rejects null output before consuming header");
 }
 
 void test_pipeline_usb_ulp()
@@ -4032,11 +5028,51 @@ void test_pipeline_usb_ulp()
     const auto rtp = arc::net::Rtp::packet(std::span(packet), std::span(payload), 7U, 0x01020304U, 0xaabbccddU, 97U, true);
     expect(rtp.has_value() && rtp->size() == 14U, "RTP packet size");
     expect(packet[1] == 0xe1U && packet[2] == 0U && packet[3] == 7U && packet[12] == 0xaaU, "RTP packet layout");
+    std::array<std::uint8_t, 32> in_place_rtp{0xaaU, 0x55U};
+    const auto in_place_rtp_packet =
+        arc::net::Rtp::packet(std::span(in_place_rtp), std::span(in_place_rtp).first(2U), 7U, 0x01020304U, 0xaabbccddU);
+    expect(in_place_rtp_packet.has_value() && (*in_place_rtp_packet)[12] == 0xaaU && (*in_place_rtp_packet)[13] == 0x55U,
+           "RTP packet preserves in-place payload");
+    expect(!arc::net::Rtp::packet(
+               std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), packet.size()},
+               std::span(payload),
+               7U,
+               0x01020304U,
+               0xaabbccddU),
+           "RTP packet rejects null output span");
+    expect(!arc::net::Rtp::packet(
+               std::span(packet),
+               std::span<const std::uint8_t>{
+                   payload.data(),
+                   std::numeric_limits<std::size_t>::max(),
+               },
+               7U,
+               0x01020304U,
+               0xaabbccddU),
+           "RTP packet length overflow rejects");
 
     std::array<std::uint8_t, 96> part{};
     const auto mjpeg = arc::net::Mjpeg::part(std::span(part), std::span(payload), "cam");
     expect(mjpeg.has_value() && mjpeg->size() > payload.size(), "MJPEG part");
     expect(part[0] == '-' && part[2] == 'c' && part[mjpeg->size() - 2U] == '\r', "MJPEG boundary layout");
+    expect(!arc::net::Mjpeg::part(
+               std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), part.size()},
+               std::span(payload),
+               "cam"),
+           "MJPEG part rejects null output span");
+    expect(!arc::net::Mjpeg::part(
+               std::span(part),
+               std::span(payload),
+               std::string_view{static_cast<const char*>(nullptr), 3U}),
+           "MJPEG part rejects null boundary view");
+    expect(!arc::net::Mjpeg::part(
+               std::span(part),
+               std::span<const std::uint8_t>{
+                   payload.data(),
+                   std::numeric_limits<std::size_t>::max(),
+               },
+               "cam"),
+           "MJPEG part length overflow rejects");
 
     constexpr auto bulk = arc::usb::Bulk<0x01U, 0x82U>::descriptors();
     static_assert(bulk.size() == 32U);
@@ -4053,6 +5089,14 @@ void test_pipeline_usb_ulp()
     std::array<std::uint8_t, 2> fifo_out{};
     const auto read = arc::usb::Fifo<decltype(fifo)>::read(fifo, std::span(fifo_out));
     expect(read.has_value() && *read == 2U && fifo_out == payload, "USB FIFO read");
+    expect(!arc::usb::Fifo<decltype(fifo)>::write(
+               fifo,
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}),
+           "USB FIFO rejects null write span");
+    expect(!arc::usb::Fifo<decltype(fifo)>::read(
+               fifo,
+               std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), 1U}),
+           "USB FIFO rejects null read span");
 
     struct UlpPolicy {
         static esp_err_t gpio_output(int pin) noexcept
@@ -4179,6 +5223,13 @@ void test_pru_isp_vision()
     std::array<std::uint16_t, 16> rgb{};
     const auto debayered = arc::isp::Debayer::to_rgb565(std::span(raw), 4U, 4U, std::span(rgb), arc::isp::Bayer::rggb);
     expect(debayered.has_value() && *debayered == rgb.size(), "ISP debayer RGB565");
+    const auto null_debayer = arc::isp::Debayer::to_rgb565(
+        std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), raw.size()},
+        4U,
+        4U,
+        std::span(rgb),
+        arc::isp::Bayer::rggb);
+    expect(!null_debayer && null_debayer.error() == ESP_ERR_INVALID_ARG, "ISP debayer rejects null raw span");
 
     std::array<std::uint8_t, 1> tiny_raw{};
     std::array<std::uint16_t, 1> tiny_rgb{};
@@ -4191,8 +5242,10 @@ void test_pru_isp_vision()
     expect(!oversized && oversized.error() == ESP_ERR_INVALID_ARG, "ISP rejects oversized frame");
 
     const auto stats = arc::isp::AecAwb::measure_rgb565(std::span(rgb));
+    const auto null_stats = arc::isp::AecAwb::measure_rgb565(
+        std::span<const std::uint16_t>{static_cast<const std::uint16_t*>(nullptr), 1U});
     const auto tuning = arc::isp::AecAwb::tune(stats);
-    expect(stats.pixels == rgb.size() && tuning.red_gain_q8 != 0U, "ISP AEC/AWB tuning");
+    expect(stats.pixels == rgb.size() && null_stats.pixels == 0U && tuning.red_gain_q8 != 0U, "ISP AEC/AWB tuning");
 
     const std::array<std::uint8_t, 16> gray{
         0U,
@@ -4216,6 +5269,19 @@ void test_pru_isp_vision()
     expect(arc::vision::Sobel::edges(std::span(gray), 4U, 4U, std::span(edges), 0U).has_value(),
            "Vision Sobel edges");
     expect(edges[5] != 0U || edges[6] != 0U, "Vision Sobel detects edge");
+    const auto null_edges_in = arc::vision::Sobel::edges(
+        std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), gray.size()},
+        4U,
+        4U,
+        edges,
+        0U);
+    const auto null_edges_out = arc::vision::Sobel::edges(
+        gray,
+        4U,
+        4U,
+        std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), edges.size()},
+        0U);
+    expect(!null_edges_in && !null_edges_out, "Vision Sobel rejects null spans");
 
     std::array<std::uint8_t, 4> tiny_gray{};
     std::array<std::uint8_t, 4> tiny_edges{};
@@ -4248,6 +5314,31 @@ void test_pru_isp_vision()
     };
     const auto flow = arc::vision::OpticalFlow::lucas_kanade(std::span(gray), std::span(shifted), 4U, 4U);
     expect(flow.has_value(), "Vision optical flow");
+    const auto null_flow_previous = arc::vision::OpticalFlow::lucas_kanade(
+        std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), gray.size()},
+        shifted,
+        4U,
+        4U);
+    const auto null_flow_current = arc::vision::OpticalFlow::lucas_kanade(
+        gray,
+        std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), shifted.size()},
+        4U,
+        4U);
+    expect(!null_flow_previous && !null_flow_current, "Vision optical flow rejects null spans");
+    static std::array<std::uint8_t, 32U * 32U> rich_texture{};
+    for (std::size_t y = 0U; y < 32U; ++y) {
+        for (std::size_t x = 0U; x < 32U; ++x) {
+            rich_texture[(y * 32U) + x] = static_cast<std::uint8_t>((x * 17U) + (y * 31U) + (x * y));
+        }
+    }
+    const auto rich_flow = arc::vision::OpticalFlow::lucas_kanade(
+        std::span<const std::uint8_t>{rich_texture},
+        std::span<const std::uint8_t>{rich_texture},
+        32U,
+        32U);
+    expect(rich_flow.has_value() && rich_flow->dx_q8 == 0 && rich_flow->dy_q8 == 0 &&
+               rich_flow->confidence == std::numeric_limits<std::uint32_t>::max(),
+           "Vision optical flow saturates large determinant confidence");
     const auto oversized_flow =
         arc::vision::OpticalFlow::lucas_kanade(std::span(tiny_gray), std::span(tiny_edges), huge_width, 3U);
     expect(!oversized_flow && oversized_flow.error() == ESP_ERR_INVALID_ARG,
@@ -4282,6 +5373,10 @@ void test_vm_bpf()
     std::array<Insn, 8> decoded{};
     const auto bytecode = arc::vm::BPF<>::decode(parsed->payload, std::span(decoded));
     expect(bytecode.has_value() && bytecode->size() == program.size(), "BPF decode binary block");
+    expect(!arc::vm::BPF<>::decode(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), sizeof(Insn)},
+               std::span(decoded)),
+           "BPF decode rejects null bytecode span");
 
     std::array<std::uint8_t, 8> memory{};
     arc::vm::BPF<> vm{};
@@ -4292,6 +5387,73 @@ void test_vm_bpf()
     expect(result.has_value() && result->value == 12 && stored == 12U, "BPF VM executes and stores");
     expect(!vm.run(*bytecode, std::span(memory), std::span<const std::int64_t>{args}, {.writable_memory = false}),
            "BPF VM rejects store into read-only memory");
+    const std::array add_wrap_program{
+        Insn::make(Op::mov_reg, 0U, 1U),
+        Insn::make(Op::add_imm, 0U, 0U, 0, 1),
+        Insn::make(Op::exit),
+    };
+    const std::array max_arg{std::numeric_limits<std::int64_t>::max()};
+    const auto add_wrap = vm.run(std::span<const Insn>{add_wrap_program}, {}, std::span<const std::int64_t>{max_arg});
+    expect(add_wrap.has_value() && add_wrap->value == std::numeric_limits<std::int64_t>::min(),
+           "BPF VM add uses defined 64-bit wrap");
+    const std::array sub_wrap_program{
+        Insn::make(Op::mov_reg, 0U, 1U),
+        Insn::make(Op::sub_imm, 0U, 0U, 0, 1),
+        Insn::make(Op::exit),
+    };
+    const std::array min_arg{std::numeric_limits<std::int64_t>::min()};
+    const auto sub_wrap = vm.run(std::span<const Insn>{sub_wrap_program}, {}, std::span<const std::int64_t>{min_arg});
+    expect(sub_wrap.has_value() && sub_wrap->value == std::numeric_limits<std::int64_t>::max(),
+           "BPF VM subtract uses defined 64-bit wrap");
+    const std::array mul_wrap_program{
+        Insn::make(Op::mov_reg, 0U, 1U),
+        Insn::make(Op::mul_imm, 0U, 0U, 0, 4),
+        Insn::make(Op::exit),
+    };
+    const std::array mul_arg{std::int64_t{1} << 62U};
+    const auto mul_wrap = vm.run(std::span<const Insn>{mul_wrap_program}, {}, std::span<const std::int64_t>{mul_arg});
+    expect(mul_wrap.has_value() && mul_wrap->value == 0, "BPF VM multiply uses defined 64-bit wrap");
+    const std::array lsh_program{
+        Insn::make(Op::mov_reg, 0U, 1U),
+        Insn::make(Op::lsh_imm, 0U, 0U, 0, 1),
+        Insn::make(Op::exit),
+    };
+    const std::array negative_arg{std::int64_t{-1}};
+    const auto lsh = vm.run(std::span<const Insn>{lsh_program}, {}, std::span<const std::int64_t>{negative_arg});
+    expect(lsh.has_value() && lsh->value == -2, "BPF VM left shift uses defined bit wrap");
+    const std::array div_overflow_program{
+        Insn::make(Op::mov_reg, 0U, 1U),
+        Insn::make(Op::div_imm, 0U, 0U, 0, -1),
+        Insn::make(Op::exit),
+    };
+    expect(!vm.run(std::span<const Insn>{div_overflow_program}, {}, std::span<const std::int64_t>{min_arg}),
+           "BPF VM rejects signed division overflow");
+    const std::array address_overflow_program{
+        Insn::make(Op::load32, 0U, 1U, 1, 0),
+        Insn::make(Op::exit),
+    };
+    expect(!vm.run(std::span<const Insn>{address_overflow_program}, std::span(memory), std::span<const std::int64_t>{max_arg}),
+           "BPF VM rejects checked address overflow");
+    expect(
+        !vm.run(
+            std::span<const Insn>{static_cast<const Insn*>(nullptr), 1U},
+            std::span(memory),
+            std::span<const std::int64_t>{args}),
+        "BPF VM rejects null program span");
+    expect(
+        !vm.run(
+            *bytecode,
+            std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), 8U},
+            std::span<const std::int64_t>{args}),
+        "BPF VM rejects null memory span");
+    expect(
+        !vm.run(
+            *bytecode,
+            std::span(memory),
+            std::span<const std::int64_t>{static_cast<const std::int64_t*>(nullptr), 1U}),
+        "BPF VM rejects null args span");
+    expect(!vm.run(*bytecode, std::span(memory), std::span<const std::int64_t>{args}, {.max_steps = 0U}),
+           "BPF VM rejects zero step limit");
 
     struct BpfPolicy {
         static esp_err_t configure(std::span<const arc::WorldRegion> regions) noexcept
@@ -4423,6 +5585,10 @@ void test_ulp_ml_paillier_covert()
     const std::array encrypted{*c3, *c4};
     const auto aggregate = arc::crypto::Paillier<ToyInt>::aggregate(key, std::span<const ToyInt>{encrypted});
     expect(aggregate.has_value() && aggregate->value == sum->value, "Paillier aggregate ciphertexts");
+    const auto null_aggregate = arc::crypto::Paillier<ToyInt>::aggregate(
+        key,
+        std::span<const ToyInt>{static_cast<const ToyInt*>(nullptr), 1U});
+    expect(!null_aggregate && null_aggregate.error() == ESP_ERR_INVALID_ARG, "Paillier aggregate rejects null span");
 
     struct PwmCarrier {
         static esp_err_t hz(const std::uint32_t value) noexcept
@@ -4458,13 +5624,28 @@ void test_ulp_ml_paillier_covert()
     expect(arc::covert::Fsk::plan(std::span<arc::covert::FskSymbol, 8>{symbols}, std::span<const std::uint8_t>{bits}, fsk).has_value(),
            "Covert FSK plan bytes");
     expect(symbols[0].mark && !symbols[1].mark && symbols[0].hz == fsk.mark_hz, "Covert FSK symbol mapping");
+    expect(!arc::covert::Fsk::plan(
+                std::span<arc::covert::FskSymbol, 8>{static_cast<arc::covert::FskSymbol*>(nullptr), symbols.size()},
+                bits,
+                fsk)
+                   .has_value() &&
+               !arc::covert::Fsk::plan(
+                    std::span<arc::covert::FskSymbol, 8>{symbols},
+                    std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), bits.size()},
+                    fsk)
+                    .has_value(),
+           "Covert FSK rejects null spans");
 
     expect(arc::covert::EmTx<PwmCarrier>::bit(true, fsk).has_value(), "Covert EM PWM mark");
     expect(covert_hz == fsk.mark_hz && covert_duty == fsk.duty_permille, "Covert EM PWM retune");
     expect(arc::covert::EmTx<SigmaCarrier>::bit(false, fsk).has_value(), "Covert EM Sigma space");
     expect(covert_density == fsk.space_density, "Covert Sigma density");
     expect(arc::covert::SonicTx<PwmCarrier>::bit(false, fsk).has_value(), "Covert sonic PWM space");
-    expect(covert_hz == fsk.space_hz, "Covert sonic frequency");
+    expect(covert_hz == fsk.space_hz &&
+               !arc::covert::EmTx<PwmCarrier>::symbols(
+                    std::span<const arc::covert::FskSymbol>{static_cast<const arc::covert::FskSymbol*>(nullptr), 1U})
+                    .has_value(),
+           "Covert sonic frequency");
 }
 
 void test_goal_wave_surfaces()
@@ -4478,6 +5659,8 @@ void test_goal_wave_surfaces()
     expect(Kem::ntt(std::span<std::int16_t, Kem::n>{poly}).has_value(), "Kyber NTT");
     expect(Kem::inverse_ntt(std::span<std::int16_t, Kem::n>{poly}).has_value(), "Kyber inverse NTT");
     expect(poly == original, "Kyber NTT roundtrip");
+    expect(!Kem::ntt(std::span<std::int16_t, Kem::n>{static_cast<std::int16_t*>(nullptr), Kem::n}),
+           "Kyber NTT rejects null polynomial span");
 
     Kem::Poly product{};
     expect(Kem::pointwise(
@@ -4487,6 +5670,11 @@ void test_goal_wave_surfaces()
                .has_value(),
            "Kyber SIMD pointwise product");
     expect(product[5] == Kem::mul(5, 5), "Kyber pointwise coefficient");
+    expect(!Kem::pointwise(
+               std::span<std::int16_t, Kem::n>{product},
+               std::span<const std::int16_t, Kem::n>{static_cast<const std::int16_t*>(nullptr), Kem::n},
+               std::span<const std::int16_t, Kem::n>{original}),
+           "Kyber pointwise rejects null input span");
 
     const std::array<std::uint8_t, 4> seed{1, 2, 3, 4};
     const std::array<std::uint8_t, 4> coins{9, 10, 11, 12};
@@ -4499,6 +5687,22 @@ void test_goal_wave_surfaces()
     expect(Kem::encapsulate(public_key, coins, ciphertext, shared).has_value(), "Kyber zero-alloc encapsulate");
     expect(Kem::decapsulate(secret_key, ciphertext, opened).has_value() && opened == shared, "Kyber zero-alloc decapsulate");
     expect(ciphertext[0] != ciphertext[1] && shared[0] != 0U, "Kyber KEM fills buffers");
+    expect(!Kem::keypair(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), seed.size()},
+               public_key,
+               secret_key),
+           "Kyber keypair rejects null seed span");
+    expect(!Kem::encapsulate(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), public_key.size()},
+               coins,
+               ciphertext,
+               shared),
+           "Kyber encapsulate rejects null public key span");
+    expect(!Kem::decapsulate(
+               secret_key,
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), ciphertext.size()},
+               opened),
+           "Kyber decapsulate rejects null ciphertext span");
 
     constexpr arc::sdr::TxConfig sdr_cfg{
         .sample_hz = 1'000'000U,
@@ -4511,9 +5715,35 @@ void test_goal_wave_surfaces()
     const std::array<std::int16_t, 4> audio{0, 16'000, -16'000, 0};
     const auto fm = arc::sdr::PulseSynth::fm(rf_words, audio, sdr_cfg);
     expect(fm.has_value() && fm->words == audio.size(), "SDR FM pulse synthesis");
+    expect(!arc::sdr::PulseSynth::fm(
+               std::span<std::uint16_t>{static_cast<std::uint16_t*>(nullptr), audio.size()},
+               audio,
+               sdr_cfg),
+           "SDR FM rejects null output span");
     const std::array<std::uint8_t, 1> ook_bits{0b1010'0000U};
     const auto ook = arc::sdr::PulseSynth::ook(rf_words, ook_bits, sdr_cfg);
     expect(ook.has_value() && rf_words[0] == sdr_cfg.one_word && rf_words[1] == 0U, "SDR OOK pulse synthesis");
+    expect(!arc::sdr::PulseSynth::ook(
+               rf_words,
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+               sdr_cfg),
+           "SDR OOK rejects null input span");
+    constexpr arc::sdr::TxConfig wide_sdr_cfg{
+        .sample_hz = 4'000'000'000U,
+        .carrier_hz = 1'900'000'000U,
+        .gpio = 4U,
+        .one_word = 0x10U,
+        .zero_word = 0x20U,
+    };
+    std::array<std::uint16_t, 1> wide_rf{};
+    const std::array<std::uint16_t, 1> low_envelope{100U};
+    const auto wide_am = arc::sdr::PulseSynth::am(wide_rf, low_envelope, wide_sdr_cfg);
+    expect(wide_am.has_value() && wide_rf[0] == wide_sdr_cfg.zero_word, "SDR AM uses wide phase scaling");
+    expect(!arc::sdr::PulseSynth::am(
+               wide_rf,
+               std::span<const std::uint16_t>{static_cast<const std::uint16_t*>(nullptr), 1U},
+               wide_sdr_cfg),
+           "SDR AM rejects null envelope span");
     arc::DmaChain<1> rf_dma{};
     expect(arc::sdr::bind_dma(rf_dma, std::span<std::uint16_t>{rf_words}).has_value() && rf_dma.head()->buffer == rf_words.data(),
            "SDR DMA bind");
@@ -4532,13 +5762,40 @@ void test_goal_wave_surfaces()
     expect(arc::sdr::Tx<SdrPolicy>::start(sdr_cfg, std::span<const std::uint16_t>{rf_words}).has_value() &&
                sdr_words == rf_words.size(),
            "SDR LCD_CAM policy start");
+    expect(!arc::sdr::Tx<SdrPolicy>::start(
+               sdr_cfg,
+               std::span<const std::uint16_t>{static_cast<const std::uint16_t*>(nullptr), 1U}),
+           "SDR LCD_CAM policy rejects null words span");
 
     std::array<std::int16_t, 64> chirp{};
     expect(arc::swarm::AcousticSlam::fmcw_chirp(chirp).has_value() && chirp[1] != 0, "Acoustic FMCW chirp");
+    constexpr arc::swarm::ChirpConfig wrapped_chirp{
+        .start_hz = 0x8000'0000U,
+        .stop_hz = 1U,
+        .sample_hz = 96'000U,
+        .amplitude = 1,
+    };
+    static_assert(!arc::swarm::AcousticSlam::chirp_valid(wrapped_chirp));
+    expect(!arc::swarm::AcousticSlam::fmcw_chirp(
+               std::span<std::int16_t>{static_cast<std::int16_t*>(nullptr), 1U}),
+           "Acoustic chirp rejects null output span");
     const std::array<std::int16_t, 6> ref{1, 2, 3, 4, 0, 0};
     const std::array<std::int16_t, 6> delayed{0, 1, 2, 3, 4, 0};
     const auto tdoa = arc::swarm::AcousticSlam::tdoa(ref, delayed, 1'000U, 3U);
     expect(tdoa.has_value() && tdoa->lag_samples == 1 && near(tdoa->delta_mm, 343.0F, 0.1F), "Acoustic TDoA");
+    expect(!arc::swarm::AcousticSlam::tdoa(
+               std::span<const std::int16_t>{static_cast<const std::int16_t*>(nullptr), 1U},
+               delayed,
+               1'000U,
+               3U),
+           "Acoustic TDoA rejects null reference span");
+    expect(!arc::swarm::AcousticSlam::tdoa(
+               ref,
+               delayed,
+               1'000U,
+               3U,
+               std::numeric_limits<float>::quiet_NaN()),
+           "Acoustic TDoA rejects non-finite sound speed");
     expect(!arc::swarm::AcousticSlam::tdoa(
                ref,
                delayed,
@@ -4552,6 +5809,13 @@ void test_goal_wave_surfaces()
     fft_delayed[2].re = 1.0F;
     const auto phat = arc::swarm::AcousticSlam::gcc_tdoa(fft_ref, fft_delayed, fft_scratch, 3U, 1'000.0F);
     expect(phat.has_value(), "Acoustic SIMD FFT GCC-PHAT");
+    expect(!arc::swarm::AcousticSlam::gcc_tdoa(
+               fft_ref,
+               fft_delayed,
+               fft_scratch,
+               3U,
+               std::numeric_limits<float>::infinity()),
+           "Acoustic GCC-PHAT rejects non-finite sample rate");
 
     const std::array<arc::swarm::AcousticAnchor, 4> anchors{
         arc::swarm::AcousticAnchor{.node_id = 1U, .position = {}},
@@ -4570,6 +5834,12 @@ void test_goal_wave_surfaces()
     const auto solved = arc::swarm::AcousticSlam::solve(std::span<const arc::swarm::AcousticAnchor, 4>{anchors}, std::span<const float, 4>{ranges});
     expect(solved.has_value() && near(solved->x_mm, target.x_mm, 0.5F) && near(solved->z_mm, target.z_mm, 0.5F),
            "Acoustic 3D trilateration");
+    auto invalid_ranges = ranges;
+    invalid_ranges[0] = std::numeric_limits<float>::quiet_NaN();
+    expect(!arc::swarm::AcousticSlam::solve(
+               std::span<const arc::swarm::AcousticAnchor, 4>{anchors},
+               std::span<const float, 4>{invalid_ranges}),
+           "Acoustic trilateration rejects non-finite ranges");
     const std::array<arc::swarm::AcousticAnchor, 4> far_anchors{
         arc::swarm::AcousticAnchor{.node_id = 1U, .position = {.x_mm = 1'000'000.0F, .y_mm = 1'000'000.0F, .z_mm = 1'000'000.0F}},
         arc::swarm::AcousticAnchor{.node_id = 2U, .position = {.x_mm = 1'005'000.0F, .y_mm = 1'000'000.0F, .z_mm = 1'000'000.0F}},
@@ -4594,6 +5864,11 @@ void test_goal_wave_surfaces()
            "Acoustic trilateration keeps precision with large coordinates");
     arc::dsp::Kalman<float, 6, 3> slam_filter{};
     expect(arc::swarm::AcousticSlam::correct_filter(slam_filter, *solved).has_value(), "Acoustic Kalman correction");
+    expect(!arc::swarm::AcousticSlam::correct_filter(
+               slam_filter,
+               *solved,
+               std::numeric_limits<float>::quiet_NaN()),
+           "Acoustic Kalman correction rejects invalid noise");
 
     struct HyperPolicy {
         static esp_err_t configure(const std::span<const arc::WorldRegion> regions) noexcept
@@ -4642,6 +5917,22 @@ void test_goal_wave_surfaces()
     expect(arc::vm::Hypervisor::apply<HyperPolicy>(partition).has_value() &&
                hypervisor_regions == 2U && hypervisor_traps == 1U,
            "Hypervisor partition apply");
+    expect(!arc::vm::Hypervisor::apply<HyperPolicy>({
+               .code = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+               .ram = guest_ram,
+           }),
+           "Hypervisor rejects null code span");
+    expect(!arc::vm::Hypervisor::apply<HyperPolicy>({
+               .code = guest_code,
+               .ram = std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), 1U},
+           }),
+           "Hypervisor rejects null RAM span");
+    expect(!arc::vm::Hypervisor::apply<HyperPolicy>({
+               .code = guest_code,
+               .ram = guest_ram,
+               .trusted_peripherals = std::span<const std::uint32_t>{static_cast<const std::uint32_t*>(nullptr), 1U},
+           }),
+           "Hypervisor rejects null trusted peripheral span");
     const auto trap = arc::vm::Hypervisor::trap<HyperPolicy>({
         .kind = arc::vm::TrapKind::peripheral,
         .address = 0x6000'0000U,
@@ -4732,6 +6023,22 @@ void test_resilient_edge_goal_surfaces()
                Intermittent::checkpoint.image[0] == std::byte{0x10} &&
                Intermittent::checkpoint.image[4] == std::byte{0x20},
            "Intermittent checkpoint image");
+    expect(!Intermittent::save(
+               {.pc = 0x1234U, .sp = 0x5678U},
+               std::span<const std::byte>{static_cast<const std::byte*>(nullptr), 1U},
+               rcu_state),
+           "Intermittent rejects null stack span");
+    expect(!Intermittent::save(
+               {.pc = 0x1234U, .sp = 0x5678U},
+               stack,
+               std::span<const std::byte>{static_cast<const std::byte*>(nullptr), 1U}),
+           "Intermittent rejects null RCU span");
+    const std::span<const std::byte> huge_stack{
+        static_cast<const std::byte*>(nullptr),
+        std::numeric_limits<std::size_t>::max(),
+    };
+    expect(!Intermittent::save({.pc = 0x1234U, .sp = 0x5678U}, huge_stack, rcu_state),
+           "Intermittent rejects checkpoint byte overflow");
     expect(Intermittent::resume<IntermittentPolicy>().has_value() && intermittent_restored,
            "Intermittent restore hook");
 
@@ -4740,11 +6047,24 @@ void test_resilient_edge_goal_surfaces()
     expect(arc::crypto::Puf::sample_sram(entropy_sram, raw_entropy).has_value() &&
                raw_entropy[0] == 0xA5U && raw_entropy[2] == 0x5AU,
            "PUF SRAM decay sample");
+    expect(!arc::crypto::Puf::sample_sram(
+               std::span<const std::byte>{static_cast<const std::byte*>(nullptr), 1U},
+               raw_entropy),
+           "PUF SRAM rejects null source span");
+    expect(!arc::crypto::Puf::sample_sram(
+               entropy_sram,
+               std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), entropy_sram.size()}),
+           "PUF SRAM rejects null output span");
     const std::array<std::uint8_t, 1> raw_pairs{0b0001'1011U};
     std::array<std::uint8_t, 1> stable_bits{};
     const auto puf_stats = arc::crypto::Puf::von_neumann(raw_pairs, stable_bits);
     expect(puf_stats.raw_bits == 8U && puf_stats.stable_bits == 2U && puf_stats.ones == 1U && stable_bits[0] == 0b10U,
            "PUF von Neumann extractor");
+    const auto null_puf_stats = arc::crypto::Puf::von_neumann(
+        std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+        stable_bits);
+    expect(null_puf_stats.raw_bits == 0U && null_puf_stats.stable_bits == 0U,
+           "PUF von Neumann rejects null raw span");
     struct PufAdc {
         static arc::Result<std::uint16_t> read() noexcept
         {
@@ -4758,6 +6078,21 @@ void test_resilient_edge_goal_surfaces()
     expect(arc::crypto::Puf::sample_adc<PufAdc>(adc_noise, puf_filter).has_value() &&
                adc_noise[0] != 0U && adc_noise[2] > adc_noise[0],
            "PUF ADC noise filter");
+    expect(!arc::crypto::Puf::sample_adc<PufAdc>(
+               std::span<std::uint16_t>{static_cast<std::uint16_t*>(nullptr), 1U},
+               puf_filter),
+           "PUF ADC rejects null output span");
+    struct PufAdcMin {
+        static arc::Result<std::int32_t> read() noexcept
+        {
+            return std::numeric_limits<std::int32_t>::min();
+        }
+    };
+    arc::dsp::Biquad<std::int32_t>::State puf_min_filter{};
+    std::array<std::uint16_t, 1> adc_min_noise{};
+    expect(arc::crypto::Puf::sample_adc<PufAdcMin>(adc_min_noise, puf_min_filter).has_value() &&
+               adc_min_noise[0] == std::numeric_limits<std::uint16_t>::max(),
+           "PUF ADC magnitude saturates signed minimum");
     struct PufHash {
         static arc::Result<std::array<std::uint8_t, 32>> sha256(const std::span<const std::uint8_t> stable) noexcept
         {
@@ -4770,6 +6105,9 @@ void test_resilient_edge_goal_surfaces()
     const auto puf_key = arc::crypto::Puf::derive_with<PufHash>(stable_bits);
     expect(puf_key.has_value() && (*puf_key)[0] == stable_bits.size() && (*puf_key)[31] == stable_bits[0],
            "PUF key derivation hook");
+    expect(!arc::crypto::Puf::derive_with<PufHash>(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}),
+           "PUF key derivation rejects null stable span");
 
     flexroute_gpio = 0U;
     flexroute_detached = 0U;
@@ -4806,6 +6144,14 @@ void test_resilient_edge_goal_surfaces()
     expect(healed.has_value() && healed->gpio == 18U && route_plan.active.gpio == 18U &&
                flexroute_detached == 4U && flexroute_gpio == 117U,
            "FlexRoute reroutes failed PWM");
+    expect(!arc::matrix::FlexRoute::failed(
+               {.expected_hz = std::numeric_limits<std::uint32_t>::max() - 5U,
+                .measured_hz = std::numeric_limits<std::uint32_t>::max(),
+                .tolerance_hz = 10U}),
+           "FlexRoute high threshold saturates on overflow");
+    expect(arc::matrix::FlexRoute::failed(
+               {.expected_hz = 100U, .measured_hz = 88U, .tolerance_hz = 10U}),
+           "FlexRoute low threshold still fails outside tolerance");
 
     std::array<arc::dsp::Transducer, 16> transducers{};
     for (std::size_t i = 0U; i < transducers.size(); ++i) {
@@ -4820,6 +6166,14 @@ void test_resilient_edge_goal_surfaces()
                arc::dsp::Wavefront::synthesize<16>(*wave_plan, wave_samples, 4U).has_value() &&
                wave_samples[1] != wave_samples[17],
            "Wavefront 16-channel synthesis");
+    const arc::dsp::WavefrontPlan<2> tiny_wave_plan{};
+    std::array<std::int16_t, 2> tiny_wave_samples{};
+    const auto overflowing_wave = arc::dsp::Wavefront::synthesize<2>(
+        tiny_wave_plan,
+        tiny_wave_samples,
+        (std::numeric_limits<std::size_t>::max() / 2U) + 1U);
+    expect(!overflowing_wave.has_value() && overflowing_wave.error() == ESP_ERR_INVALID_ARG,
+           "Wavefront rejects interleaved sample-count overflow");
     struct WaveTdm {
         static arc::Result<std::size_t> write(const std::span<std::int16_t> samples, const std::uint32_t) noexcept
         {
@@ -4839,10 +6193,42 @@ void test_resilient_edge_goal_surfaces()
     expect(arc::vision::StarTracker::threshold(stars_frame, stars_mask, 200U).value() == 3U &&
                stars_mask[6] == 255U,
            "StarTracker SIMD threshold");
+    expect(!arc::vision::StarTracker::threshold(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), stars_frame.size()},
+               stars_mask,
+               200U),
+           "StarTracker rejects null threshold input span");
+    expect(!arc::vision::StarTracker::threshold(
+               stars_frame,
+               std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), stars_mask.size()},
+               200U),
+           "StarTracker rejects null threshold output span");
     std::array<arc::vision::StarPoint, 4> stars{};
     const auto star_count = arc::vision::StarTracker::centroids(stars_frame, 5U, 5U, 200U, stars);
     expect(star_count.has_value() && *star_count == 3U && stars[0].x_q4 == 16U && stars[2].y_q4 == 48U,
            "StarTracker sub-pixel centroids");
+    expect(!arc::vision::StarTracker::centroids(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), stars_frame.size()},
+               5U,
+               5U,
+               200U,
+               stars),
+           "StarTracker rejects null centroid input span");
+    expect(!arc::vision::StarTracker::centroids(
+               stars_frame,
+               5U,
+               5U,
+               200U,
+               std::span<arc::vision::StarPoint>{static_cast<arc::vision::StarPoint*>(nullptr), stars.size()}),
+           "StarTracker rejects null centroid output span");
+    const auto too_wide_stars = arc::vision::StarTracker::centroids(
+        stars_frame,
+        (std::numeric_limits<std::uint16_t>::max() / 16U) + 2U,
+        5U,
+        200U,
+        stars);
+    expect(!too_wide_stars && too_wide_stars.error() == ESP_ERR_INVALID_ARG,
+           "StarTracker rejects q4 coordinate overflow");
     std::array<std::uint8_t, 4> tiny_stars_frame{};
     const auto oversized_stars = arc::vision::StarTracker::centroids(
         std::span(tiny_stars_frame),
@@ -4865,10 +6251,75 @@ void test_resilient_edge_goal_surfaces()
         mapped_catalog);
     expect(pose.has_value() && pose->matches == 1U && near(pose->yaw_rad, -0.2F),
            "StarTracker MMU catalog match");
+    expect(!arc::vision::StarTracker::match(
+               std::span<const arc::vision::StarPoint>{static_cast<const arc::vision::StarPoint*>(nullptr), 3U},
+               std::span<const arc::vision::StarTriangle>{catalog}),
+           "StarTracker rejects null observed span");
+    expect(!arc::vision::StarTracker::match(
+               std::span<const arc::vision::StarPoint>{stars.data(), *star_count},
+               std::span<const arc::vision::StarTriangle>{static_cast<const arc::vision::StarTriangle*>(nullptr), 1U}),
+           "StarTracker rejects null catalog span");
 }
 
 void test_current_goal_surfaces()
 {
+    using HostBurst = arc::Burst<1, 1'000'000>;
+    std::array<rmt_symbol_word_t, 2> burst_symbols{
+        HostBurst::symbol(1U, true, 1U, false),
+        HostBurst::symbol(2U, false, 2U, true),
+    };
+    arc_host_rmt_transmit_calls = 0;
+    arc_host_rmt_last_bytes = 0U;
+    expect(HostBurst::send(nullptr, 1U) == ESP_ERR_INVALID_ARG && arc_host_rmt_transmit_calls == 0,
+           "Burst send rejects null symbols before transmit");
+    expect(HostBurst::send(burst_symbols.data(), 0U) == ESP_ERR_INVALID_ARG && arc_host_rmt_transmit_calls == 0,
+           "Burst send rejects empty symbol spans before transmit");
+    expect(HostBurst::send(
+               burst_symbols.data(),
+               (std::numeric_limits<std::size_t>::max() / sizeof(rmt_symbol_word_t)) + 1U) == ESP_ERR_INVALID_ARG &&
+               arc_host_rmt_transmit_calls == 0,
+           "Burst send rejects byte-size overflow before transmit");
+    expect(HostBurst::send(burst_symbols) == ESP_OK && arc_host_rmt_transmit_calls == 1 &&
+               arc_host_rmt_last_bytes == burst_symbols.size() * sizeof(rmt_symbol_word_t),
+           "Burst send forwards checked symbol bytes");
+
+    using HostSpiBus = arc::SpiBus<SPI2_HOST, 1, 2, 3, 16>;
+    using HostSpi = arc::Spi<HostSpiBus, -1, 1'000'000U, 0, 1>;
+    static_assert(HostSpi::bytes_fit(16U));
+    static_assert(!HostSpi::bytes_fit(17U));
+    static_assert(!HostSpi::bytes_fit((std::numeric_limits<std::size_t>::max() / 8U) + 1U));
+    std::array<std::uint8_t, 4> spi_tx{};
+    auto spi_job = HostSpi::job(spi_tx.data(), nullptr, spi_tx.size());
+    expect(spi_job.length == 32U && spi_job.rxlength == 0U && spi_job.tx_buffer == spi_tx.data(),
+           "SPI master job uses checked bit length");
+    auto spi_oversize_job = HostSpi::job(spi_tx.data(), nullptr, 17U);
+    expect(spi_oversize_job.length == 0U && spi_oversize_job.rxlength == 0U,
+           "SPI master job rejects oversize bit length");
+    arc_host_spi_transmit_calls = 0U;
+    expect(HostSpi::send(spi_tx.data(), 17U) == ESP_ERR_INVALID_ARG && arc_host_spi_transmit_calls == 0U,
+           "SPI master send rejects oversize before driver call");
+    arc_host_spi_queue_calls = 0U;
+    expect(HostSpi::queue(spi_oversize_job, 0U) == ESP_ERR_INVALID_ARG && arc_host_spi_queue_calls == 0U,
+           "SPI master queue rejects invalid transaction before driver call");
+
+    using HostSpiSlave = arc::SpiSlave<SPI3_HOST, 5, 6, 7, 8, 2, 0, 16>;
+    static_assert(HostSpiSlave::bytes_fit(16U));
+    static_assert(!HostSpiSlave::bytes_fit(17U));
+    static_assert(!HostSpiSlave::bytes_fit((std::numeric_limits<std::size_t>::max() / 8U) + 1U));
+    auto spi_slave_job = HostSpiSlave::job(spi_tx.data(), nullptr, spi_tx.size());
+    expect(spi_slave_job.length == 32U && spi_slave_job.tx_buffer == spi_tx.data(),
+           "SPI slave job uses checked bit length");
+    auto spi_slave_oversize_job = HostSpiSlave::job(spi_tx.data(), nullptr, 17U);
+    expect(spi_slave_oversize_job.length == 0U, "SPI slave job rejects oversize bit length");
+    arc_host_spi_slave_transmit_calls = 0U;
+    expect(HostSpiSlave::send(spi_tx.data(), 17U, 0U) == ESP_ERR_INVALID_ARG &&
+               arc_host_spi_slave_transmit_calls == 0U,
+           "SPI slave send rejects oversize before driver call");
+    arc_host_spi_slave_queue_calls = 0U;
+    expect(HostSpiSlave::queue(spi_slave_oversize_job, 0U) == ESP_ERR_INVALID_ARG &&
+               arc_host_spi_slave_queue_calls == 0U,
+           "SPI slave queue rejects invalid transaction before driver call");
+
     const arc::Copy<>::Ticket pending_copy{.target = 1U};
     expect(!arc::Copy<>::wait_for(pending_copy, 2U), "Copy bounded wait reports unfinished target");
     struct CopyYield {
@@ -4946,6 +6397,11 @@ void test_current_goal_surfaces()
         {.stall_mask = 0x03U, .dummy_reads = 3U},
         cloak_dummy);
     expect(cloak_stats.stalls == 4U && cloak_stats.dummy_reads == 3U, "Cloak scrambling budget");
+    const auto null_cloak_stats = arc::crypto::Cloak::scramble<CloakPolicy>(
+        {.stall_mask = 0x03U, .dummy_reads = 3U},
+        std::span<const std::byte>{static_cast<const std::byte*>(nullptr), 1U});
+    expect(null_cloak_stats.stalls == 4U && null_cloak_stats.dummy_reads == 0U,
+           "Cloak skips null dummy span");
     const auto flatten_stats = arc::crypto::Cloak::flatten<CloakPolicy>({.flatten_ticks = 3U}, 1U);
     expect(flatten_stats.flatten_heavy == 1U && flatten_stats.flatten_light == 2U &&
                cloak_heavy == 1U && cloak_light == 2U,
@@ -4979,6 +6435,16 @@ void test_current_goal_surfaces()
     expect(snn.step(std::span<const std::int8_t, 16>{snn_input}, std::span<std::uint8_t, 2>{snn_spikes}).has_value() &&
                snn_spikes[0] == 1U && snn_spikes[1] == 1U,
            "SNN LIF layer spikes");
+    expect(!snn.step(
+               std::span<const std::int8_t, 16>{static_cast<const std::int8_t*>(nullptr), snn_input.size()},
+               std::span<std::uint8_t, 2>{snn_spikes}),
+           "SNN rejects null input span");
+    arc::ml::Snn<16, 2> null_snn{
+        .weights = std::span<const std::int8_t, 32>{static_cast<const std::int8_t*>(nullptr), snn_weights.size()},
+        .params = {.threshold = 64, .leak = 0, .reset = 0},
+    };
+    expect(!null_snn.step(std::span<const std::int8_t, 16>{snn_input}, std::span<std::uint8_t, 2>{snn_spikes}),
+           "SNN rejects null weights span");
 
     struct FabricPolicy {
         static esp_err_t send(const std::uint32_t next_hop, const std::span<const std::uint8_t> bytes) noexcept
@@ -4998,6 +6464,24 @@ void test_current_goal_surfaces()
                arc::net::Fabric::forward<FabricPolicy>(fabric_routes, *fabric_packet, mesh_schedule, 150U).has_value() &&
                fabric_next_hop == 2U && fabric_bytes == 2U && fabric_packet->ttl == 1U,
            "Fabric deterministic TDMA forward");
+    auto forged_fabric_packet = arc::net::FabricPacket<8>{
+        .src = 1U,
+        .dst = 4U,
+        .ttl = 1U,
+        .bytes = 9U,
+    };
+    expect(!arc::net::Fabric::valid_packet(forged_fabric_packet) &&
+               !arc::net::Fabric::forward<FabricPolicy>(fabric_routes, forged_fabric_packet, mesh_schedule, 150U),
+           "Fabric rejects forged packet length");
+    const arc::net::FabricTable<1> zero_fabric_route{.routes = {arc::net::FabricRoute{.dst = 0U, .next_hop = 2U, .ttl = 1U}}};
+    expect(!arc::net::Fabric::lookup(zero_fabric_route, 0U),
+           "Fabric lookup rejects zero destination route");
+    expect(!arc::net::Fabric::make<8>(
+               1U,
+               4U,
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+               2U),
+           "Fabric rejects null payload span");
 
     using Mag = arc::MagLev<1>;
     Mag::State mag_state{};
@@ -5038,6 +6522,16 @@ void test_current_goal_surfaces()
                10) &&
                audio_bins[0] == 2 && audio_bins[1] == 4,
            "ULP audio signature bins");
+    expect(!arc::ulp::ml::AudioSignature<4, 2>::bins(
+               std::span<const std::int16_t, 4>{static_cast<const std::int16_t*>(nullptr), 4U},
+               std::span<std::int8_t, 2>{audio_bins},
+               10),
+           "ULP audio signature rejects null samples span");
+    expect(!arc::ulp::ml::AudioSignature<4, 2>::bins(
+               std::span<const std::int16_t, 4>{audio_samples},
+               std::span<std::int8_t, 2>{static_cast<std::int8_t*>(nullptr), 2U},
+               10),
+           "ULP audio signature rejects null output span");
 
     struct UsbHostPolicy {
         static esp_err_t host_start(const arc::usb::HostConfig&) noexcept
@@ -5071,6 +6565,18 @@ void test_current_goal_surfaces()
         .tx = usb_tx,
         .rx = usb_rx,
     });
+    expect(!arc::usb::Host::submit<UsbHostPolicy>({
+               .address = 2U,
+               .endpoint = 1U,
+               .tx = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+           }),
+           "USB host rejects null TX span");
+    expect(!arc::usb::Host::submit<UsbHostPolicy>({
+               .address = 2U,
+               .endpoint = 1U,
+               .rx = std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), 1U},
+           }),
+           "USB host rejects null RX span");
     expect(arc::usb::Host::start<UsbHostPolicy>().has_value() &&
                usb_device.has_value() && usb_device->configured &&
                usb_bytes.has_value() && *usb_bytes == 6U && usb_host_started == 1U && usb_host_submitted == 1U &&
@@ -5108,6 +6614,46 @@ void test_current_goal_surfaces()
                rdma_store_addr == rdma_window.base + 4U && rdma_store_bytes == rdma_payload.size() &&
                arc::net::Rdma::promiscuous<RdmaPolicy>().has_value(),
            "RDMA raw-frame write applies to aligned window");
+    const arc::net::RdmaWindow wrapping_rdma_window{
+        .node = 2U,
+        .base = std::numeric_limits<std::uintptr_t>::max() - 7U,
+        .bytes = 16U,
+        .alignment = 1U,
+    };
+    expect(!arc::net::Rdma::range_fit(wrapping_rdma_window) &&
+               !arc::net::Rdma::write<8>(wrapping_rdma_window, 1U, rdma_payload, 0U),
+           "RDMA write rejects wrapping remote windows");
+    expect(!arc::net::Rdma::write<8>(
+               rdma_window,
+               1U,
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+               0U),
+           "RDMA write rejects null payload span");
+    arc::net::RdmaFrame<8> wrapping_rdma_frame{
+        .header = {.src = 1U, .dst = 2U, .offset = 0U, .bytes = 3U},
+    };
+    expect(!arc::net::Rdma::apply<RdmaPolicy>(wrapping_rdma_window, wrapping_rdma_frame),
+           "RDMA apply rejects wrapping local windows");
+    arc::net::RdmaFrame<8> zero_src_rdma_frame{
+        .header = {.src = 0U, .dst = 2U, .offset = 0U, .bytes = 1U},
+    };
+    expect(!arc::net::Rdma::apply<RdmaPolicy>(rdma_window, zero_src_rdma_frame),
+           "RDMA apply rejects zero source node");
+    arc::net::RdmaFrame<8> zero_bytes_rdma_frame{
+        .header = {.src = 1U, .dst = 2U, .offset = 0U, .bytes = 0U},
+    };
+    expect(!arc::net::Rdma::apply<RdmaPolicy>(rdma_window, zero_bytes_rdma_frame),
+           "RDMA apply rejects empty writes");
+    const arc::net::RdmaWindow zero_node_rdma_window{
+        .node = 0U,
+        .base = reinterpret_cast<std::uintptr_t>(rdma_dst.data()),
+        .bytes = rdma_dst.size(),
+    };
+    arc::net::RdmaFrame<8> zero_dst_rdma_frame{
+        .header = {.src = 1U, .dst = 0U, .offset = 0U, .bytes = 1U},
+    };
+    expect(!arc::net::Rdma::apply<RdmaPolicy>(zero_node_rdma_window, zero_dst_rdma_frame),
+           "RDMA apply rejects zero local node");
 
     struct DistributedMmuPolicy {
         static esp_err_t fetch_line(
@@ -5153,6 +6699,25 @@ void test_current_goal_surfaces()
                distributed_remap_line == reinterpret_cast<std::uintptr_t>(distributed_line.data()) &&
                distributed_resume_core == 1U && distributed_line[1] == 8U,
            "DistributedPager fetches remote cache line and resumes trapped core");
+    const arc::mmu::DistributedSpan<std::uint16_t> huge_distributed_span{
+        .base = 0x1000U,
+        .count = (std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t)) + 1U,
+        .node = 1U,
+        .line_bytes = 32U,
+    };
+    expect(!huge_distributed_span.bytes_fit() && !huge_distributed_span.contains(0x1000U) &&
+               !huge_distributed_span.fault(0x1000U),
+           "DistributedSpan rejects byte-size overflow");
+    const auto max_address = std::numeric_limits<std::uintptr_t>::max();
+    const arc::mmu::DistributedSpan<std::uint32_t> wrapping_distributed_span{
+        .base = max_address - 7U,
+        .count = 3U,
+        .node = 1U,
+        .line_bytes = 4U,
+    };
+    expect(wrapping_distributed_span.bytes_fit() && !wrapping_distributed_span.range_fit() &&
+               !wrapping_distributed_span.contains(max_address) && !wrapping_distributed_span.fault(max_address),
+           "DistributedSpan rejects wrapping address ranges");
 
     struct TraceLivePolicy {
         static esp_err_t trace_arm(const arc::trace::LiveStreamConfig config) noexcept
@@ -5169,6 +6734,20 @@ void test_current_goal_surfaces()
         static esp_err_t trace_swap() noexcept
         {
             ++live_trace_swaps;
+            return ESP_OK;
+        }
+    };
+    struct NullTraceLivePolicy {
+        static arc::Result<arc::trace::LiveChunk> trace_half(std::size_t) noexcept
+        {
+            return arc::trace::LiveChunk{
+                .bytes = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+                .bank = 1U,
+            };
+        }
+
+        static esp_err_t trace_swap() noexcept
+        {
             return ESP_OK;
         }
     };
@@ -5189,6 +6768,16 @@ void test_current_goal_surfaces()
                    .has_value() &&
                live_trace_bytes == 32U && live_trace_sink_bytes == 32U && live_trace_swaps == 1U,
            "LiveStream swaps TRAX bank and exfiltrates half-full chunk");
+    expect(!arc::trace::LiveStream::arm<TraceLivePolicy>({.bank_bytes = 64U, .watermark_bytes = 0U}) &&
+               !arc::trace::LiveStream::half_isr<TraceLivePolicy>({.bank_bytes = 64U, .watermark_bytes = 0U}) &&
+               !arc::trace::LiveStream::half_isr<TraceLivePolicy>({.bank_bytes = 64U, .watermark_bytes = 65U}),
+           "LiveStream rejects invalid trace bank geometry");
+    expect(!arc::trace::LiveStream::half_isr<NullTraceLivePolicy>({.bank_bytes = 64U, .watermark_bytes = 32U}),
+           "LiveStream rejects null trace chunk span");
+    expect(!arc::trace::LiveStream::exfiltrate(
+               {.bytes = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}},
+               trace_sink),
+           "LiveStream rejects null exfiltration span");
 
     struct GovernorPolicy {
         static esp_err_t cpu_boost() noexcept
@@ -5214,6 +6803,21 @@ void test_current_goal_surfaces()
                cool_decision->action == arc::power::GovernorAction::release &&
                governor_boosts == 1U && governor_releases == 1U,
            "Governor predicts slack and applies CPU lock policy");
+    arc::power::Governor<float> saturated_governor{};
+    saturated_governor.seeded = true;
+    saturated_governor.slack_filter.x(0, 0) = 1.0e30F;
+    const auto saturated_decision = saturated_governor.decide(
+        100U,
+        100U,
+        {
+            .guard_cycles = 0,
+            .min_samples = 1U,
+            .process_noise = std::numeric_limits<float>::quiet_NaN(),
+            .measurement_noise = -1.0F,
+        });
+    expect(saturated_decision.predicted_slack == std::numeric_limits<std::int32_t>::max() &&
+               saturated_decision.action == arc::power::GovernorAction::release,
+           "Governor clamps huge filtered slack and sanitizes invalid noise");
 
     struct VslamCamera {
         static esp_err_t capture_gray(const std::span<std::uint8_t> frame) noexcept
@@ -5226,7 +6830,9 @@ void test_current_goal_surfaces()
     };
     std::array<std::uint8_t, 100> gray{};
     const auto captured_gray = arc::vision::VSlam::capture_gray<VslamCamera>(gray);
-    expect(captured_gray.has_value() && (*captured_gray)[7] == 7U,
+    const auto null_captured_gray = arc::vision::VSlam::capture_gray<VslamCamera>(
+        std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), gray.size()});
+    expect(captured_gray.has_value() && (*captured_gray)[7] == 7U && !null_captured_gray.has_value(),
            "VSlam captures grayscale frames into caller DMA span");
     for (auto& pixel : gray) {
         pixel = 10U;
@@ -5256,6 +6862,26 @@ void test_current_goal_surfaces()
     }
     std::array<arc::vision::Corner, 64> corners{};
     const auto fast = arc::vision::VSlam::fast_corners(gray, 10U, 10U, corners, 40U);
+    const auto null_fast_gray = arc::vision::VSlam::fast_corners(
+        std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), gray.size()},
+        10U,
+        10U,
+        corners,
+        40U);
+    const auto null_fast_out = arc::vision::VSlam::fast_corners(
+        gray,
+        10U,
+        10U,
+        std::span<arc::vision::Corner>{static_cast<arc::vision::Corner*>(nullptr), corners.size()},
+        40U);
+    const auto too_wide_fast = arc::vision::VSlam::fast_corners(
+        gray,
+        static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()) + 1U,
+        10U,
+        corners,
+        40U);
+    expect(!too_wide_fast && too_wide_fast.error() == ESP_ERR_INVALID_ARG,
+           "VSlam rejects corner coordinate overflow");
     std::array<std::uint8_t, 4> tiny_vslam_gray{};
     const auto oversized_fast = arc::vision::VSlam::fast_corners(
         std::span(tiny_vslam_gray),
@@ -5273,8 +6899,20 @@ void test_current_goal_surfaces()
         arc::vision::Corner{.x = 22U, .y = 13U, .score = 12U},
     };
     const auto essential = arc::vision::VSlam::from_flow(prev_corners, curr_corners, 2U, 100.0F);
+    const auto null_essential_previous = arc::vision::VSlam::from_flow(
+        std::span<const arc::vision::Corner>{static_cast<const arc::vision::Corner*>(nullptr), prev_corners.size()},
+        curr_corners,
+        2U,
+        100.0F);
+    const auto null_essential_current = arc::vision::VSlam::from_flow(
+        prev_corners,
+        std::span<const arc::vision::Corner>{static_cast<const arc::vision::Corner*>(nullptr), curr_corners.size()},
+        2U,
+        100.0F);
     arc::nav::Eskf<float>::State vision_state{};
-    expect(fast.has_value() && !fast->empty() && essential.has_value() &&
+    expect(fast.has_value() && !fast->empty() && !null_fast_gray.has_value() &&
+               !null_fast_out.has_value() && essential.has_value() &&
+               !null_essential_previous.has_value() && !null_essential_current.has_value() &&
                near(essential->essential(1, 2), -0.02F) &&
                arc::vision::VSlam::correct_filter(vision_state, essential->delta, 1.0F).has_value() &&
                near(vision_state.position[0], 0.02F, 0.001F),
@@ -5388,6 +7026,29 @@ void test_current_goal_surfaces()
                migration_process == 3U && migration_ip == 0x200U && migration_sp == 0x100U &&
                resumed_memory[0] == 1U && resumed_memory[3] == 4U,
            "Migrator snapshots, teleports, and resumes WASM process state");
+    expect(!arc::swarm::Migrator::snapshot<16>(
+               3U,
+               {
+                   .linear_memory = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+                   .stack_pointer = 0x100U,
+                   .instruction_pointer = 0x200U,
+                   .fuel = 9U,
+               }),
+           "Migrator rejects null snapshot memory span");
+    expect(migration_frame.has_value() &&
+               !arc::swarm::Migrator::resume<MigrationPolicy>(
+                   *migration_frame,
+                   std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), wasm_memory.size()}),
+           "Migrator rejects null resume memory span");
+    auto forged_migration_frame = arc::swarm::MigrationFrame<16>{
+        .process_id = 3U,
+        .memory_bytes = 17U,
+    };
+    expect(!arc::swarm::Migrator::valid_frame(forged_migration_frame) &&
+               arc::swarm::Migrator::bytes(forged_migration_frame).empty() &&
+               !arc::swarm::Migrator::teleport<MigrationPolicy>(migrate_decision.peer, forged_migration_frame) &&
+               !arc::swarm::Migrator::resume<MigrationPolicy>(forged_migration_frame, resumed_memory),
+           "Migrator rejects forged payload length");
 
     struct ProfilerPolicy {
         static arc::Result<std::uint16_t> current_milliamps() noexcept
@@ -5412,6 +7073,24 @@ void test_current_goal_surfaces()
         pcs,
         power_samples,
         {.sample_hz = 40'000U, .milliamps_per_lsb = 2.0F});
+    std::array<arc::power::PowerSample, 1> saturated_power_sample{};
+    const std::array<std::uint16_t, 1> high_current_lsb{std::numeric_limits<std::uint16_t>::max()};
+    const std::array<std::uint32_t, 1> high_pc{0x30U};
+    const auto saturated_power = arc::power::Profiler::interleave(
+        high_current_lsb,
+        high_pc,
+        saturated_power_sample,
+        {.sample_hz = 1U, .milliamps_per_lsb = 1.0e9F});
+    const auto invalid_scale_power = arc::power::Profiler::interleave(
+        high_current_lsb,
+        high_pc,
+        saturated_power_sample,
+        {.sample_hz = 1U, .milliamps_per_lsb = std::numeric_limits<float>::infinity()});
+    const auto wrapped_ticks = arc::power::Profiler::interleave(
+        std::span<const std::uint16_t>{current_lsb.data(), std::numeric_limits<std::uint32_t>::max()},
+        std::span<const std::uint32_t>{pcs.data(), std::numeric_limits<std::uint32_t>::max()},
+        std::span<arc::power::PowerSample>{power_samples.data(), std::numeric_limits<std::uint32_t>::max()},
+        {.sample_hz = 1U, .milliamps_per_lsb = 1.0F});
     const auto heatmap = power_sample.has_value()
         ? arc::power::Profiler::perfetto_counter(perfetto_json, *power_sample)
         : arc::Result<std::span<const std::uint8_t>>{arc::fail(ESP_ERR_INVALID_STATE)};
@@ -5422,6 +7101,9 @@ void test_current_goal_surfaces()
     expect(power_sample.has_value() && power_sample->milliamps == 123U &&
                interleaved.has_value() && interleaved->size() == 2U &&
                (*interleaved)[1].tick == 25U && (*interleaved)[1].milliamps == 40U &&
+               saturated_power.has_value() &&
+               (*saturated_power)[0].milliamps == std::numeric_limits<std::uint16_t>::max() &&
+               !invalid_scale_power.has_value() && !wrapped_ticks.has_value() &&
                heatmap.has_value() && heatmap_text.find("milliamps") != std::string_view::npos,
            "Power Profiler interleaves 40kHz current samples with trace PCs");
 
@@ -5441,12 +7123,26 @@ void test_current_goal_surfaces()
     const std::array<std::uint8_t, 1> lifi_bytes{0b1010'0000U};
     std::array<arc::optical::LiFiSymbol, 8> lifi_symbols{};
     const auto lifi_encoded = arc::optical::LiFi::encode(lifi_bytes, lifi_symbols, {.half_ticks = 3U});
+    const auto null_lifi_in = arc::optical::LiFi::encode(
+        std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), lifi_bytes.size()},
+        lifi_symbols,
+        {.half_ticks = 3U});
+    const auto null_lifi_out = arc::optical::LiFi::encode(
+        lifi_bytes,
+        std::span<arc::optical::LiFiSymbol>{static_cast<arc::optical::LiFiSymbol*>(nullptr), lifi_symbols.size()},
+        {.half_ticks = 3U});
     expect(lifi_encoded.has_value() && lifi_encoded->size() == 8U &&
                (*lifi_encoded)[0].first_high && !(*lifi_encoded)[0].second_high &&
                !(*lifi_encoded)[1].first_high && (*lifi_encoded)[1].second_high &&
                arc::optical::LiFi::transmit<LiFiPolicy>(*lifi_encoded).has_value() &&
                arc::optical::LiFi::arm_receiver<LiFiPolicy>().has_value() &&
-               lifi_sent_symbols == 8U && lifi_armed == 1U,
+               lifi_sent_symbols == 8U && lifi_armed == 1U &&
+               !null_lifi_in.has_value() && !null_lifi_out.has_value() &&
+               !arc::optical::LiFi::transmit<LiFiPolicy>(
+                    std::span<const arc::optical::LiFiSymbol>{
+                        static_cast<const arc::optical::LiFiSymbol*>(nullptr),
+                        1U})
+                    .has_value(),
            "LiFi Manchester plan and policy hooks");
 
     struct JitPolicy {
@@ -5477,6 +7173,14 @@ void test_current_goal_surfaces()
                jit_finalized_words == jit_program.size() &&
                (*translated)[0] == arc::vm::PseudoXtensaJitPolicy::alu(jit_program[0]),
            "BPF JIT emits bounded executable image");
+    expect(!arc::vm::Jit::translate<JitPolicy>(
+               std::span<const arc::vm::BpfInsn>{static_cast<const arc::vm::BpfInsn*>(nullptr), 1U},
+               jit_image),
+           "BPF JIT rejects null program span");
+    expect(!arc::vm::Jit::translate<JitPolicy>(
+               jit_program,
+               std::span<std::uint32_t>{static_cast<std::uint32_t*>(nullptr), jit_program.size()}),
+           "BPF JIT rejects null output span");
 
     struct WasmPolicy {
         static std::uint32_t i32_const(const std::int32_t value) noexcept
@@ -5533,6 +7237,39 @@ void test_current_goal_surfaces()
                arc::vm::WasmSandbox::protect<WasmGuardPolicy>(*wasm_translated).has_value() &&
                wasm_guard_regions == 1U,
            "WasmAot translates bounded WASM ops into protected executable image");
+    expect(!arc::vm::WasmAot::translate<WasmPolicy>(
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), wasm_code.size()},
+               wasm_image),
+           "WasmAot rejects null bytecode span");
+    expect(!arc::vm::WasmAot::translate<WasmPolicy>(
+               wasm_code,
+               std::span<std::uint32_t>{static_cast<std::uint32_t*>(nullptr), wasm_image.size()}),
+           "WasmAot rejects null output span");
+    expect(!arc::vm::WasmSandbox::protect<WasmGuardPolicy>(
+               std::span<const std::uint32_t>{static_cast<const std::uint32_t*>(nullptr), 1U}),
+           "WasmSandbox rejects null image span");
+    const std::array<std::uint8_t, 1> sleb_minus_one_bytes{0x7fU};
+    arc::vm::WasmCursor sleb_minus_one{.bytes = sleb_minus_one_bytes};
+    const auto sleb_minus_one_value = sleb_minus_one.sleb();
+    expect(sleb_minus_one_value.has_value() && *sleb_minus_one_value == -1,
+           "WasmCursor decodes negative one without signed shift");
+    const std::array<std::uint8_t, 5> uleb_max_bytes{0xffU, 0xffU, 0xffU, 0xffU, 0x0fU};
+    arc::vm::WasmCursor uleb_max{.bytes = uleb_max_bytes};
+    const auto uleb_max_value = uleb_max.uleb();
+    expect(uleb_max_value.has_value() && *uleb_max_value == std::numeric_limits<std::uint32_t>::max(),
+           "WasmCursor decodes max u32 ULEB");
+    const std::array<std::uint8_t, 5> uleb_overflow_bytes{0xffU, 0xffU, 0xffU, 0xffU, 0x10U};
+    arc::vm::WasmCursor uleb_overflow{.bytes = uleb_overflow_bytes};
+    expect(!uleb_overflow.uleb(), "WasmCursor rejects overflowing u32 ULEB");
+    const std::array<std::uint8_t, 5> sleb_min_bytes{0x80U, 0x80U, 0x80U, 0x80U, 0x78U};
+    arc::vm::WasmCursor sleb_min{.bytes = sleb_min_bytes};
+    const auto sleb_min_value = sleb_min.sleb();
+    expect(sleb_min_value.has_value() && *sleb_min_value == std::numeric_limits<std::int32_t>::min(),
+           "WasmCursor decodes INT32_MIN without signed shift overflow");
+    arc::vm::WasmCursor null_wasm_cursor{
+        .bytes = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
+    };
+    expect(!null_wasm_cursor.u8(), "WasmCursor rejects null byte span");
 
     struct BlackBoxHash {
         static void begin() noexcept
@@ -5577,6 +7314,32 @@ void test_current_goal_surfaces()
                sealed->payload_bytes == flight_record.size() &&
                blackbox_write_bytes == sizeof(*sealed) + flight_record.size(),
            "BlackBox seals Merkle-linked encrypted record");
+    expect(!arc::covert::BlackBox::seal<BlackBoxHash, 4>(
+               9U,
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), flight_record.size()},
+               std::span<const std::uint8_t, 4>{previous_root},
+               die_key),
+           "BlackBox seal rejects null payload span");
+    expect(!arc::covert::BlackBox::seal<BlackBoxHash, 4>(
+               9U,
+               flight_record,
+               std::span<const std::uint8_t, 4>{static_cast<const std::uint8_t*>(nullptr), previous_root.size()},
+               die_key),
+           "BlackBox seal rejects null previous root span");
+    expect(sealed.has_value() &&
+               !arc::covert::BlackBox::append<BlackBoxStore>(
+                   32U,
+                   *sealed,
+                   std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), flight_record.size()}),
+           "BlackBox append rejects null payload span");
+    blackbox_write_bytes = 0U;
+    expect(sealed.has_value() &&
+               !arc::covert::BlackBox::append<BlackBoxStore>(
+                   std::numeric_limits<std::uint32_t>::max() - static_cast<std::uint32_t>(sizeof(*sealed)) + 1U,
+                   *sealed,
+                   flight_record) &&
+               blackbox_write_bytes == 0U,
+           "BlackBox append rejects wrapping storage offset");
 
     using Twin = arc::hil::DigitalTwin<float, 2, 1, 1>;
     struct TwinCapture {
@@ -5618,6 +7381,8 @@ void test_current_goal_surfaces()
                cli.parse(std::span<const char>{kp_line.data(), kp_line.size()}).has_value() &&
                cli_drive_left == -3 && cli_drive_right == 7 && near(cli_kp, 1.5F),
            "Cli parses fixed command arguments without mutation");
+    expect(!cli.parse(std::span<const char>{static_cast<const char*>(nullptr), 1U}),
+           "Cli rejects null input span");
 
     struct SdioPolicy {
         static esp_err_t sdio_start(const arc::SdioSlaveConfig config) noexcept
@@ -5723,6 +7488,10 @@ void test_current_goal_surfaces()
                arc::net::Thread::send<ThreadPolicy>(thread_peer, rdma_payload).has_value() &&
                thread_peer_rloc == thread_peer.rloc16,
            "Thread policy bridge validates dataset and peer send");
+    expect(!arc::net::Thread::send<ThreadPolicy>(
+               thread_peer,
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}),
+           "Thread send rejects null payload span");
 
     struct BleMeshPolicy {
         static esp_err_t mesh_provision(const arc::ble::MeshAddress address) noexcept
@@ -5744,6 +7513,11 @@ void test_current_goal_surfaces()
                arc::ble::Mesh::publish<BleMeshPolicy>(mesh_address, {.company = 0x02E5U, .model = 1U}, rdma_payload).has_value() &&
                ble_mesh_group == mesh_address.group,
            "BLE Mesh policy bridge provisions and publishes");
+    expect(!arc::ble::Mesh::publish<BleMeshPolicy>(
+               mesh_address,
+               {.company = 0x02E5U, .model = 1U},
+               std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}),
+           "BLE Mesh publish rejects null payload span");
 
     struct IpcPolicy {
         static esp_err_t ipc_call(const arc::IpcCore core, arc::Ipc::Fn fn, void* arg) noexcept
@@ -5780,6 +7554,9 @@ void test_current_goal_surfaces()
     expect(arc::x509::Bundle::attach<CertPolicy>({.der = cert_der, .certificates = 1U}).has_value() &&
                cert_bundle_bytes == cert_der.size(),
            "x509 bundle policy attaches DER roots");
+    expect(!arc::x509::Bundle::attach<CertPolicy>(
+               {.der = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U}, .certificates = 1U}),
+           "x509 bundle rejects null DER span");
 
     struct NvsPolicy {
         static esp_err_t nvs_mount_encrypted(const arc::NvsCryptoConfig config) noexcept
@@ -5791,6 +7568,12 @@ void test_current_goal_surfaces()
     expect(arc::NvsCrypto::mount<NvsPolicy>({.partition = "cfg", .key_partition = "keys", .generate_keys = true}).has_value() &&
                nvs_crypto_partition == "cfg",
            "NVS crypto mounts encrypted partition policy");
+    expect(!arc::NvsCrypto::mount<NvsPolicy>(
+               {.partition = std::string_view{static_cast<const char*>(nullptr), 1U}, .key_partition = "keys"}),
+           "NVS crypto rejects null partition string");
+    expect(!arc::NvsCrypto::mount<NvsPolicy>(
+               {.partition = "cfg", .key_partition = std::string_view{static_cast<const char*>(nullptr), 1U}}),
+           "NVS crypto rejects null key partition string");
 
     struct SecureBootPolicy {
         static arc::Result<arc::secure::BootState> boot_state() noexcept
@@ -5831,7 +7614,21 @@ void test_hive_goal_surfaces()
                hyper.observe(Matrix::from_ftm({.x_mm = 100.0F}, 11, 4.0F)).has_value() &&
                hyper.observe(Matrix::from_acoustic({.x_mm = 100.0F}, 12, 16.0F)).has_value(),
            "HyperMatrix fuses visual RF and acoustic observations");
+    auto null_seeded_hyper = Matrix::seeded(std::span<const arc::swarm::Pose6, Matrix::cells>{
+        static_cast<const arc::swarm::Pose6*>(nullptr),
+        Matrix::cells,
+    });
+    const auto null_seeded_observe = null_seeded_hyper.observe(Matrix::from_vslam({}, 10, 1.0F));
+    const auto null_seeded_pose = null_seeded_hyper.estimate();
     const auto hyper_pose = hyper.estimate();
+    auto poisoned_hyper = hyper;
+    poisoned_hyper.probability[0] = std::numeric_limits<float>::quiet_NaN();
+    expect(!hyper.observe({.pose = {.x_mm = std::numeric_limits<float>::quiet_NaN()}, .variance = 1.0F}) &&
+               !hyper.observe({.pose = {}, .variance = std::numeric_limits<float>::infinity()}) &&
+               null_seeded_observe.has_value() && null_seeded_pose.has_value() &&
+               std::isfinite(null_seeded_pose->x_mm) &&
+               !poisoned_hyper.estimate(),
+           "HyperMatrix rejects non-finite observations and estimates");
     struct HyperPolicy {
         static esp_err_t send(const std::uint32_t node, const std::span<const std::uint8_t> bytes) noexcept
         {
@@ -5859,8 +7656,21 @@ void test_hive_goal_surfaces()
     const auto five = arc::cnc::Kinematics::five_axis(
         {1.0F, 2.0F, 3.0F, 4.0F, 5.0F},
         {10.0F, 10.0F, 10.0F, 10.0F, 2.0F});
+    expect(arc::cnc::Kinematics::round_i32(std::numeric_limits<float>::infinity()) == std::numeric_limits<std::int32_t>::max() &&
+               arc::cnc::Kinematics::round_i32(-std::numeric_limits<float>::infinity()) == std::numeric_limits<std::int32_t>::min() &&
+               arc::cnc::Kinematics::round_i32(std::numeric_limits<float>::quiet_NaN()) == 0,
+           "CNC round_i32 handles non-finite inputs without narrowing UB");
+    expect(!arc::cnc::Kinematics::delta(
+               {0.0F, 0.0F, std::numeric_limits<float>::quiet_NaN()},
+               {.arm_mm = 120.0F, .radius_mm = 30.0F, .steps_mm = 10.0F}),
+           "CNC delta rejects non-finite coordinates");
     const std::string_view line{"N7 G1 X10 Y5 F1200"};
     const auto block = arc::cnc::GCode::parse_line(std::span<const char>{line.data(), line.size()});
+    const std::string_view bad_line{"N-1 G1 X0"};
+    const auto bad_block = arc::cnc::GCode::parse_line(std::span<const char>{bad_line.data(), bad_line.size()});
+    const std::string_view huge_g{"G2147483648 X0"};
+    const auto huge_g_block = arc::cnc::GCode::parse_line(std::span<const char>{huge_g.data(), huge_g.size()});
+    const auto null_g_block = arc::cnc::GCode::parse_line(std::span<const char>{static_cast<const char*>(nullptr), 1U});
     std::array<arc::MotionStep<2>, 128> cnc_steps{};
     const auto planned = block.has_value()
         ? arc::cnc::GCode::plan_linear<2>(*block, {0.0F, 0.0F}, 10.0F, cnc_steps)
@@ -5870,6 +7680,7 @@ void test_hive_goal_surfaces()
                five.delta[0] == 10 && five.delta[4] == 10 &&
                block.has_value() && block->command == arc::cnc::Command::linear &&
                block->line == 7U && block->has_axis[0] && block->axis[0] == 10.0F &&
+               !bad_block.has_value() && !huge_g_block.has_value() && !null_g_block.has_value() &&
                planned.has_value() && planned->size() == 100U,
            "CNC kinematics and zero-allocation G-code feed MotionPlan");
 
@@ -5881,8 +7692,15 @@ void test_hive_goal_surfaces()
     const auto dot = arc::hls::dot<int, 4>(
         std::span<const int, 4>{coeffs},
         std::span<const int, 4>{samples});
+    const auto null_fir = arc::hls::fir<int, 4>(
+        std::span<const int, 4>{static_cast<const int*>(nullptr), coeffs.size()},
+        std::span<const int, 4>{samples});
+    const auto null_dot = arc::hls::dot<int, 4>(
+        std::span<const int, 4>{coeffs},
+        std::span<const int, 4>{static_cast<const int*>(nullptr), samples.size()});
     constexpr auto dense_spec = arc::hls::DenseSpec<4, 2>::hls_spec();
     expect(fir.has_value() && *fir == 20 && dot.has_value() && *dot == 20 &&
+               !null_fir.has_value() && !null_dot.has_value() &&
                dense_spec.static_bounds && dense_spec.heapless &&
                dense_spec.latency_cycles == 8U,
            "HLS helpers expose fixed-bound heapless kernel metadata");
@@ -6020,6 +7838,31 @@ void test_refinit()
         "RefLease final destructor aborts");
 }
 
+void test_task_arena()
+{
+    alignas(16) std::array<std::byte, 64> storage{};
+    arc::TaskArena arena{.data = storage.data(), .bytes = storage.size()};
+
+    expect(arena.allocate(1U, 0U) == nullptr && arena.used == 0U, "TaskArena rejects zero alignment");
+    expect(arena.allocate(1U, 3U) == nullptr && arena.used == 0U, "TaskArena rejects non-power alignment");
+    const auto* first = static_cast<const std::byte*>(arena.allocate(1U, 8U));
+    expect(first == storage.data() && arena.used == 1U, "TaskArena first allocation");
+    const auto* second = static_cast<const std::byte*>(arena.allocate(1U, 16U));
+    expect(second == storage.data() + 16U && arena.used == 17U, "TaskArena aligns second allocation");
+
+    arena.used = storage.size() + 1U;
+    expect(arena.allocate(1U, 8U) == nullptr && arena.used == storage.size() + 1U,
+           "TaskArena rejects used past capacity");
+
+    arc::TaskArena wrapped{
+        .data = reinterpret_cast<void*>(std::numeric_limits<std::uintptr_t>::max() - 3U),
+        .bytes = 16U,
+        .used = 3U,
+    };
+    expect(wrapped.allocate(8U, 8U) == nullptr && wrapped.used == 3U,
+           "TaskArena rejects alignment overflow");
+}
+
 }  // namespace
 
 int main()
@@ -6077,6 +7920,7 @@ int main()
     test_resilient_edge_goal_surfaces();
     test_current_goal_surfaces();
     test_hive_goal_surfaces();
+    test_task_arena();
     test_refinit();
     std::puts("arc host tests: OK");
 }
