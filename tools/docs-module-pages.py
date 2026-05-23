@@ -201,6 +201,7 @@ SPECIAL_LANDMARKS = {
         "SpanResult",
         "StringViewResult",
         "NonOwningViewResult",
+        "IsPlainScopedResult",
         "PlainScopedResult",
     ],
     "arc/migrator.hpp": [

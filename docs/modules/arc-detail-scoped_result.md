@@ -23,7 +23,7 @@ Application code should not include this detail header directly. Keep direct inc
 
 ## Source Landmarks
 
-Source landmarks: `IsReferenceWrapper`, `ReferenceWrapperResult`, `SpanResult`, `StringViewResult`, `NonOwningViewResult`, `PlainScopedResult`.
+Source landmarks: `IsReferenceWrapper`, `ReferenceWrapperResult`, `SpanResult`, `StringViewResult`, `NonOwningViewResult`, `IsPlainScopedResult`, `PlainScopedResult`.
 
 ## Start From Zero
 

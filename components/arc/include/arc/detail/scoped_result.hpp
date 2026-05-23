@@ -1,9 +1,13 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <functional>
 #include <span>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace arc::detail {
 
@@ -38,8 +42,24 @@ template <typename T>
 concept NonOwningViewResult = SpanResult<T> || StringViewResult<T>;
 
 template <typename T>
-concept PlainScopedResult =
-    !std::is_reference_v<T> && !std::is_pointer_v<T> && !ReferenceWrapperResult<T> &&
-    !NonOwningViewResult<T>;
+struct IsPlainScopedResult : std::bool_constant<!std::is_reference_v<T> &&
+                                                !std::is_pointer_v<std::remove_cv_t<T>> &&
+                                                !ReferenceWrapperResult<T> &&
+                                                !NonOwningViewResult<T>> {};
+
+template <typename First, typename Second>
+struct IsPlainScopedResult<std::pair<First, Second>>
+    : std::bool_constant<IsPlainScopedResult<std::remove_cv_t<First>>::value &&
+                         IsPlainScopedResult<std::remove_cv_t<Second>>::value> {};
+
+template <typename... Items>
+struct IsPlainScopedResult<std::tuple<Items...>>
+    : std::bool_constant<(IsPlainScopedResult<std::remove_cv_t<Items>>::value && ...)> {};
+
+template <typename Item, std::size_t Count>
+struct IsPlainScopedResult<std::array<Item, Count>> : IsPlainScopedResult<std::remove_cv_t<Item>> {};
+
+template <typename T>
+concept PlainScopedResult = IsPlainScopedResult<std::remove_cv_t<T>>::value;
 
 }  // namespace arc::detail

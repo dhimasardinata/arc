@@ -13,9 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 PREFIX = """
 #include <cstdint>
+#include <array>
 #include <functional>
 #include <span>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 #include "arc/borrow.hpp"
@@ -340,6 +342,34 @@ void probe()
         must_contain="non-owning view",
     ),
     Case(
+        name="scoped_borrow_returns_tuple_reference",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::with_write([](State& current) {
+        return std::tuple<State&>{current};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
+        name="scoped_borrow_returns_array_pointer",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::with_write([](State& current) {
+        return std::array<State*, 1>{&current};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
         name="scoped_borrow_returns_loan",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;
@@ -438,6 +468,19 @@ void probe()
 }
 """,
         must_contain="non-owning view",
+    ),
+    Case(
+        name="core_local_returns_pair_pointer",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    (void)local.with<arc::Core::core1>([](State& current) {
+        return std::pair<State*, std::uint32_t>{&current, 1U};
+    });
+}
+""",
+        must_contain="standard wrapper",
     ),
     Case(
         name="wrong_core_local_snapshot",
@@ -560,6 +603,20 @@ void probe()
         must_contain="non-owning view",
     ),
     Case(
+        name="core_msg_returns_tuple_reference",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    const auto msg = local.msg<arc::Core::core0>();
+    (void)msg.with([](const State& current) {
+        return std::tuple<const State&>{current};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
         name="core_local_returns_pointer",
         source="""
 void probe()
@@ -637,6 +694,19 @@ void probe()
 }
 """,
         must_contain="non-owning view",
+    ),
+    Case(
+        name="scoped_role_returns_tuple_reference",
+        source="""
+void probe()
+{
+    arc::Roles<arc::Spsc<int, 4>> roles{};
+    (void)roles.with_consumer([](auto& consumer) {
+        return std::tuple<decltype(consumer)>{consumer};
+    });
+}
+""",
+        must_contain="standard wrapper",
     ),
     Case(
         name="scoped_split_returns_endpoint",
