@@ -1411,6 +1411,7 @@ around as a raw pointer or reference.
 - `StaticRef<&state, Core::core1>::write<Core::core1>()` returns a non-copyable, non-movable mutable loan.
 - `StaticRef::Read`, `StaticRef::Write`, `can_read<Core>()`, and `can_write<Core>()` keep common compile-contracts short enough for examples and static assertions.
 - `StaticRef::snapshot()` and `arc::snapshot<Ref>()` copy through the declared owner core, avoiding a borrowed reference for simple reads.
+- `arc::snapshots<Refs...>()` copies several read-only static refs into a tuple through the inferred owner core.
 - `StaticRef::with_read(fn)` and `StaticRef::with_write(fn)` scope a single static owner through its own declared core.
 - `StaticRef::with_read<Core>(fn)` and `StaticRef::with_write<Core>(fn)` keep the explicit-core form for boundaries that should not infer from the owner.
 - Scoped borrow callbacks may return `void` or an ordinary value, but not a reference or raw pointer.
@@ -1425,6 +1426,7 @@ around as a raw pointer or reference.
 - `StaticReadable`, `StaticWritable`, `LoanReadable`, and `LoanWritable` let templates check whether a static owner or loan can be used from a specific core.
 - `with_read<Ref, Core>(fn)`, `with_reads<Refs...>(fn)`, and `with_write<Ref, Core>(fn)` keep loans scoped to one callback when code should not hold them across a larger block.
 - `with_reads<Core, Refs...>(fn)` keeps the explicit-core form available for read-only packs that should not infer from the first ref.
+- `snapshots<Core, Refs...>()` keeps the explicit-core form available for read-only copy-out packs.
 - `with_edit<WriteRef, ReadRefs...>(fn)` uses the writer's owner for the common one-writer, many-reader path.
 - `with_edit<Core, WriteRef, ReadRefs...>(fn)` keeps the explicit-core form available when the boundary is not the writer owner.
 - `loans_ok<Loans...>()` lets compile-contract tests check the same alias rule without intentionally failing the build.

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -417,6 +418,25 @@ concept StaticEditRefs = StaticRefType<WriteRef> && WriteRef::writable && (Stati
 template <typename WriteRef, typename... ReadRefs>
     requires detail::StaticEditRefs<WriteRef, ReadRefs...>
 using StaticEdit = LoanPack<typename WriteRef::Write, typename ReadRefs::Read...>;
+
+template <Core Access, typename... Refs>
+    requires(sizeof...(Refs) > 0U && detail::StaticReadRefs<Refs...> &&
+             StaticReads<Refs...>::template can_access<Access>() &&
+             (std::copy_constructible<typename Refs::value_type> && ...))
+[[nodiscard]] constexpr auto snapshots() noexcept((noexcept(Refs::template snapshot<Access>()) && ...))
+{
+    return std::tuple<typename Refs::value_type...>{Refs::template snapshot<Access>()...};
+}
+
+template <typename FirstRef, typename... Refs>
+    requires(detail::StaticReadRefs<FirstRef, Refs...> &&
+             StaticReads<FirstRef, Refs...>::template can_access<FirstRef::owner>() &&
+             std::copy_constructible<typename FirstRef::value_type> &&
+             (std::copy_constructible<typename Refs::value_type> && ...))
+[[nodiscard]] constexpr auto snapshots() noexcept(noexcept(snapshots<FirstRef::owner, FirstRef, Refs...>()))
+{
+    return snapshots<FirstRef::owner, FirstRef, Refs...>();
+}
 
 template <StaticRefType Ref, Core Access = Ref::owner, typename Fn>
     requires StaticReadable<Ref, Access> && std::invocable<Fn, const typename Ref::value_type&>

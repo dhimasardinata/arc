@@ -135,6 +135,30 @@ void probe()
 """,
     ),
     Case(
+        name="mixed_owner_inferred_snapshots",
+        source="""
+using Core1Cell = arc::StaticRef<&state, arc::Core::core1>;
+using Core0Cell = arc::StaticRef<&other, arc::Core::core0>;
+
+void probe()
+{
+    (void)arc::snapshots<Core1Cell, Core0Cell>();
+}
+""",
+    ),
+    Case(
+        name="wrong_core_static_snapshots",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+using OtherCell = arc::StaticRef<&other, arc::Core::core1>;
+
+void probe()
+{
+    (void)arc::snapshots<arc::Core::core0, Cell, OtherCell>();
+}
+""",
+    ),
+    Case(
         name="scoped_borrow_returns_reference",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;

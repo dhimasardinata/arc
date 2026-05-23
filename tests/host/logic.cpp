@@ -14,6 +14,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -985,6 +986,12 @@ concept HasLoanSnapshot = requires(const T& loan) { loan.template snapshot<Acces
 template <typename T>
 concept HasLoanSnapshotInferred = requires(const T& loan) { loan.snapshot(); };
 
+template <arc::Core Access, typename... Refs>
+concept HasStaticSnapshots = requires { arc::snapshots<Access, Refs...>(); };
+
+template <typename... Refs>
+concept HasStaticSnapshotsInferred = requires { arc::snapshots<Refs...>(); };
+
 template <typename T>
 concept HasLoanArrow = requires(T& loan) { loan.operator->(); };
 
@@ -1291,6 +1298,9 @@ void test_static_borrow()
     static_assert(!arc::HasStaticRefWrite<ReadPack, Cell>);
     static_assert(arc::HasStaticWrite<WritePack, &other_borrow_fixture>);
     static_assert(arc::HasStaticRefWrite<WritePack, OtherCell>);
+    static_assert(HasStaticSnapshots<arc::Core::core1, Cell, OtherCell>);
+    static_assert(!HasStaticSnapshots<arc::Core::core0, Cell, OtherCell>);
+    static_assert(HasStaticSnapshotsInferred<Cell, OtherCell>);
     static_assert(std::is_copy_constructible_v<Read>);
     static_assert(!std::is_copy_constructible_v<Write>);
     static_assert(std::is_move_constructible_v<Read>);
@@ -1358,11 +1368,17 @@ void test_static_borrow()
             return state.value + other.value;
         });
     expect(reads_sum == 27U, "StaticReads scoped helper uses inferred owner");
+    const auto read_copies = arc::snapshots<Cell, OtherCell>();
+    expect(std::get<0>(read_copies).value == 14U && std::get<1>(read_copies).value == 13U,
+           "StaticReads snapshots copy inferred owner values");
     const auto explicit_reads_sum = arc::with_reads<arc::Core::core1, Cell, OtherCell>(
         [](const BorrowFixture& state, const BorrowFixture& other) {
             return state.value + other.value;
         });
     expect(explicit_reads_sum == 27U, "StaticReads explicit core helper stays available");
+    const auto explicit_read_copies = arc::snapshots<arc::Core::core1, Cell, OtherCell>();
+    expect(std::get<0>(explicit_read_copies).value == 14U && std::get<1>(explicit_read_copies).value == 13U,
+           "StaticReads explicit snapshots copy values");
 
     other_borrow_fixture.value = 5U;
     const auto edited = arc::with_edit<Cell, OtherCell>([](BorrowFixture& state, const BorrowFixture& other) {
