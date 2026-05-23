@@ -188,6 +188,7 @@ SPECIAL_LANDMARKS = {
         "LoanReadable",
         "LoanWritable",
         "with_read",
+        "with_reads",
         "with_write",
         "with_edit",
     ],

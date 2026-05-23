@@ -98,6 +98,9 @@ references named by the loan pack:
 ```cpp
 void control_step()
 {
+    arc::with_reads<ControlCell, TelemetryCell>([](const ControlState& control, const ControlState& telemetry) {
+        static_cast<void>(control.tick + telemetry.tick);
+    });
     arc::with_edit<ControlCell, TelemetryCell>([](ControlState& control, const ControlState& telemetry) {
         control.tick += telemetry.tick;
     });

@@ -89,6 +89,18 @@ static_assert(Bad::count == 2U);
         must_contain="static borrow conflict",
     ),
     Case(
+        name="mixed_owner_inferred_reads",
+        source="""
+using Core1Cell = arc::StaticRef<&state, arc::Core::core1>;
+using Core0Cell = arc::StaticRef<&other, arc::Core::core0>;
+
+void probe()
+{
+    arc::with_reads<Core1Cell, Core0Cell>([](const State&, const State&) {});
+}
+""",
+    ),
+    Case(
         name="move_mutable_loan",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;

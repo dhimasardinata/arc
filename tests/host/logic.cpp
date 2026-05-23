@@ -1263,6 +1263,16 @@ void test_static_borrow()
         return state.value;
     });
     expect(scoped_read == 14U, "StaticRef scoped helpers keep loan use local");
+    const auto reads_sum = arc::with_reads<Cell, OtherCell>(
+        [](const BorrowFixture& state, const BorrowFixture& other) {
+            return state.value + other.value;
+        });
+    expect(reads_sum == 27U, "StaticReads scoped helper uses inferred owner");
+    const auto explicit_reads_sum = arc::with_reads<arc::Core::core1, Cell, OtherCell>(
+        [](const BorrowFixture& state, const BorrowFixture& other) {
+            return state.value + other.value;
+        });
+    expect(explicit_reads_sum == 27U, "StaticReads explicit core helper stays available");
 
     other_borrow_fixture.value = 5U;
     const auto edited = arc::with_edit<Cell, OtherCell>([](BorrowFixture& state, const BorrowFixture& other) {
