@@ -224,6 +224,31 @@ void probe()
 """,
     ),
     Case(
+        name="wrong_core_msg_with",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    const auto msg = local.msg<arc::Core::core0>();
+    msg.with<arc::Core::core1>([](const State&) {});
+}
+""",
+    ),
+    Case(
+        name="core_msg_returns_reference",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    const auto msg = local.msg<arc::Core::core0>();
+    (void)msg.with([](const State& current) -> const State& {
+        return current;
+    });
+}
+""",
+        must_contain="callback cannot return a reference or pointer",
+    ),
+    Case(
         name="core_local_returns_pointer",
         source="""
 void probe()

@@ -975,6 +975,16 @@ template <typename T>
 concept HasMsgSnapshotInferred = requires(const T& msg) { msg.snapshot(); };
 
 template <typename T, arc::Core Access>
+concept HasMsgWith = requires(const T& msg) {
+    msg.template with<Access>([](const auto&) {});
+};
+
+template <typename T>
+concept HasMsgWithInferred = requires(const T& msg) {
+    msg.with([](const auto&) {});
+};
+
+template <typename T, arc::Core Access>
 concept HasStaticSnapshot = requires { T::template snapshot<Access>(); };
 
 template <typename T>
@@ -1234,12 +1244,23 @@ void test_core_local()
     static_assert(HasMsgSnapshot<Msg, arc::Core::core0>);
     static_assert(!HasMsgSnapshot<Msg, arc::Core::core1>);
     static_assert(HasMsgSnapshotInferred<Msg>);
+    static_assert(HasMsgWith<Msg, arc::Core::core0>);
+    static_assert(!HasMsgWith<Msg, arc::Core::core1>);
+    static_assert(HasMsgWithInferred<Msg>);
     using Core0Counter = arc::CoreLocal<std::uint32_t, arc::Core::core0>;
     static_assert(HasCoreAccept<Core0Counter, Msg>);
     expect(msg.get<arc::Core::core0>() == 44U, "CoreMsg destination reads payload");
     expect(msg.get() == 44U, "CoreMsg inferred destination reads payload");
     expect(msg.snapshot<arc::Core::core0>() == 44U, "CoreMsg destination snapshots payload");
     expect(msg.snapshot() == 44U, "CoreMsg inferred snapshot copies payload");
+    expect(msg.with<arc::Core::core0>([](const std::uint32_t& value) {
+        return value + 1U;
+    }) == 45U,
+           "CoreMsg explicit scoped access returns copied value");
+    expect(msg.with([](const std::uint32_t& value) {
+        return value + 2U;
+    }) == 46U,
+           "CoreMsg inferred scoped access returns copied value");
 
     Core0Counter mirror{};
     mirror.accept(msg);

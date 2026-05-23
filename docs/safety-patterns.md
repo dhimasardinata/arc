@@ -139,16 +139,21 @@ auto msg = counter.msg<arc::Core::core0>();
 static_assert(decltype(msg)::from == arc::Core::core1);
 static_assert(decltype(msg)::to == arc::Core::core0);
 static_cast<void>(msg.get());
+static_cast<void>(msg.with([](const std::uint32_t& value) {
+    return value;
+}));
 auto delivered = msg.snapshot();
 ```
 
 For simple reads, `snapshot()` copies out a value instead of handing out a
 reference. The message carries its destination in the type, so `msg.get()` reads
-through that encoded destination. Explicit `get<Core>()` is still available when
-a boundary should name the core directly. Like static-borrow helpers,
-`CoreLocal::with` callbacks cannot return references or raw pointers. Explicit
-forms such as `with<Core>(fn)` and `msg<Core, To>()` remain available when a
-boundary should spell the access core directly.
+through that encoded destination, while `msg.with(fn)` scopes the read to one
+callback. Explicit `get<Core>()` and `with<Core>(fn)` are still available when a
+boundary should name the core directly. Like static-borrow helpers,
+`CoreLocal::with` and `CoreMsg::with` callbacks cannot return references or raw
+pointers. Explicit forms such as `CoreLocal::with<Core>(fn)` and
+`msg<Core, To>()` remain available when a boundary should spell the access core
+directly.
 
 ## Role Boundary
 

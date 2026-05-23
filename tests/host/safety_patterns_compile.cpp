@@ -101,6 +101,9 @@ static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
     static_assert(decltype(msg)::to == arc::Core::core0);
     static_cast<void>(msg.get());
     static_cast<void>(msg.snapshot());
+    static_cast<void>(msg.with([](const std::uint32_t& value) {
+        return value;
+    }));
 
     arc::CoreLocal<std::uint32_t, arc::Core::core0> mirror{};
     mirror.accept(msg);

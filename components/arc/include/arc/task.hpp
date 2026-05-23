@@ -73,7 +73,7 @@ consteval void require_scoped_core_result()
 {
     using Result = std::invoke_result_t<Fn, Args...>;
     static_assert(scoped_core_result<Result>,
-                  "[ARC ERROR] scoped core-local callback cannot return a reference or pointer. Action: copy out a value.");
+                  "[ARC ERROR] scoped core callback cannot return a reference or pointer. Action: copy out a value.");
 }
 
 }  // namespace detail
@@ -115,6 +115,21 @@ public:
         requires std::copy_constructible<T>
     {
         return snapshot<To>();
+    }
+
+    template <Core Access, typename Fn>
+        requires CoreOwner<Access, To> && std::invocable<Fn, const T&>
+    constexpr decltype(auto) with(Fn&& fn) const& noexcept(noexcept(std::invoke(std::forward<Fn>(fn), value_)))
+    {
+        detail::require_scoped_core_result<Fn, const T&>();
+        return std::invoke(std::forward<Fn>(fn), value_);
+    }
+
+    template <typename Fn>
+        requires std::invocable<Fn, const T&>
+    constexpr decltype(auto) with(Fn&& fn) const&
+    {
+        return with<To>(std::forward<Fn>(fn));
     }
 
 private:
