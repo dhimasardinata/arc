@@ -222,6 +222,12 @@ a standard/result wrapper. `PushRole`, `PopRole`, `RpcClientRole`, and
 actually use. The scoped callback check rejects captured endpoint values too,
 so a producer callback cannot smuggle out a consumer endpoint.
 
+Lane, fan-in, RPC, and `Flow` payloads are also checked at the type boundary.
+They must be copied values, stable IDs, or fixed arrays; direct pointers,
+`std::reference_wrapper`, `std::span`, `std::string_view`, and standard/result
+wrappers containing those fail the build before they can cross a task or core
+boundary.
+
 ## Static Plane Launch
 
 When a workload owns static state, bind the task to the same `StaticRef` instead

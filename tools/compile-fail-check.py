@@ -25,6 +25,9 @@ PREFIX = """
 #include <variant>
 
 #include "arc/borrow.hpp"
+#include "arc/fanin.hpp"
+#include "arc/flow.hpp"
+#include "arc/mpsc.hpp"
 #include "arc/proof.hpp"
 #include "arc/result.hpp"
 #include "arc/roles.hpp"
@@ -757,6 +760,85 @@ void probe()
     static_cast<void>(moved);
 }
 """,
+    ),
+    Case(
+        name="spsc_pointer_payload",
+        source="""
+using Bad = arc::Spsc<State*, 4>;
+static_assert(Bad::bytes() > 0U);
+""",
+        must_contain="payload cannot carry borrowed storage directly",
+    ),
+    Case(
+        name="mpsc_span_payload",
+        source="""
+using Bad = arc::Mpsc<std::span<State, 1>, 4>;
+static_assert(Bad::cap() == 4U);
+""",
+        must_contain="payload cannot carry borrowed storage directly",
+    ),
+    Case(
+        name="fanin_array_pointer_payload",
+        source="""
+using Bad = arc::Fanin<std::array<State*, 1>, 4, 2>;
+static_assert(Bad::cap() == 4U);
+""",
+        must_contain="payload cannot carry borrowed storage directly",
+    ),
+    Case(
+        name="rpc_request_pointer_payload",
+        source="""
+using Bad = arc::RpcLane<std::uint8_t, State*, State, 4>;
+static_assert(sizeof(Bad) > 0U);
+""",
+        must_contain="payload cannot carry borrowed storage directly",
+    ),
+    Case(
+        name="rpc_reply_string_view_payload",
+        source="""
+using Bad = arc::RpcLane<std::uint8_t, State, std::string_view, 4>;
+static_assert(sizeof(Bad) > 0U);
+""",
+        must_contain="payload cannot carry borrowed storage directly",
+    ),
+    Case(
+        name="flow_pointer_payload",
+        source="""
+struct PtrProducer {
+    [[nodiscard]] bool try_push(State* const&) noexcept { return true; }
+};
+
+struct PtrConsumer {
+    [[nodiscard]] bool try_pop(State*& out) noexcept
+    {
+        out = nullptr;
+        return true;
+    }
+};
+
+struct PtrLane {
+    using value_type = State*;
+    [[nodiscard]] PtrProducer producer() noexcept { return {}; }
+    [[nodiscard]] PtrConsumer consumer() noexcept { return {}; }
+};
+
+struct PtrSource {
+    using value_type = State*;
+    static bool read(State*& out) noexcept
+    {
+        out = nullptr;
+        return true;
+    }
+};
+
+struct PtrSink {
+    static bool write(State* const&) noexcept { return true; }
+};
+
+using Bad = arc::Flow<PtrSource, PtrLane, PtrSink>;
+static_assert(sizeof(Bad) > 0U);
+""",
+        must_contain="payload cannot carry borrowed storage directly",
     ),
     Case(
         name="scoped_role_returns_endpoint",

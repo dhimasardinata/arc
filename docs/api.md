@@ -436,6 +436,7 @@ Static source/lane/sink blueprint for simple data paths.
 - `drain()` moves one queued item to the sink, retaining the popped item if the sink is temporarily full, while `drain(max)` drains a bounded batch.
 - `step()` performs one fill plus one drain and reports whether the lane queued, wrote, blocked, or still has pending data.
 - `blocked()` / `pending()` report retained source or sink-side data that must be polled again before the flow is idle.
+- Flow payloads must be copied values, stable IDs, or fixed arrays; direct pointers, reference wrappers, `std::span`, `std::string_view`, and standard/result wrappers containing those fail at compile time.
 
 Use this when a data path should be declared as static types and checked at compile time, but task ownership, polling cadence, and hardware policy should stay explicit in application code.
 
@@ -454,7 +455,7 @@ Bounded lock-free lane for one producer and one consumer.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation; a bool-return callback stops the batch when it returns `false`.
 - `cap()` exposes the usable capacity; the backing ring keeps one slot empty.
 - `bytes()` exposes the queue object footprint.
-- Payloads stay trivially copyable and the backing ring size remains a power of two.
+- Payloads stay trivially copyable, cannot directly carry borrowed storage such as pointers or views, and the backing ring size remains a power of two.
 
 Use this when event history matters and the ownership contract is exactly one writer and one reader. `arc::Ring<T, Capacity>` is the compatibility alias for the same type.
 
@@ -472,7 +473,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 - `cap()` exposes the power-of-two static capacity.
 - `cell_align()`, `cell_bytes()`, and `bytes()` expose the queue's RAM geometry.
 - Sequence checks use explicit 32-bit modular deltas, so wrap is handled on the queue clock instead of pointer-width signed math.
-- Payloads stay trivially copyable and capacity remains a power of two.
+- Payloads stay trivially copyable, cannot directly carry borrowed storage such as pointers or views, and capacity remains a power of two.
 - Each cell is cache-line isolated to avoid producer/consumer false sharing, so large capacities intentionally spend more internal RAM than a packed queue.
 - CAS contention uses a tiny capped `nop` backoff in IRAM instead of immediately hammering the shared head cache line.
 
@@ -500,6 +501,7 @@ Static fan-in made from one SPSC lane per producer and one round-robin consumer.
 - `size<Producer>()` and `space<Producer>()` expose per-lane occupancy and producer room.
 - `drain(scratch, fn, max)` accepts either `fn(event)` or `fn(producer, event)`; a bool-return callback stops the batch when it returns `false`.
 - `cap()` is the usable per-producer lane capacity, `producers()` is the static lane count, and `bytes()` exposes the full object footprint.
+- Payloads stay trivially copyable and cannot directly carry borrowed storage such as pointers, reference wrappers, non-owning views, or standard/result wrappers containing them.
 
 Use this when producer identity is static and tail latency matters more than one global FIFO order.
 
@@ -519,6 +521,7 @@ Typed request/reply command lane built from static SPSC queues.
 - `poll(reply)` drains replies in FIFO order.
 - `poll_match(serial, reply)` accepts the requested serial and parks one unmatched reply in a static deferred lane.
 - `poll_deferred(reply)` lets the requester recover deferred out-of-order replies.
+- Request and reply payloads stay trivially copyable and cannot directly carry borrowed storage such as pointers, reference wrappers, non-owning views, or standard/result wrappers containing them.
 
 Use this for bounded Core 0 to Core 1 control commands when the payloads are trivially copyable and blocking would violate the realtime contract. It is not a dynamic RPC framework: routing, serial allocation, and retry policy stay explicit in application code.
 

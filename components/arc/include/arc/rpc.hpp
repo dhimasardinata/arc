@@ -7,6 +7,7 @@
 
 #include "esp_err.h"
 
+#include "arc/detail/scoped_result.hpp"
 #include "arc/spsc.hpp"
 
 namespace arc {
@@ -44,9 +45,17 @@ struct RpcLane {
         "[ARC ERROR] arc::RpcLane request payload must be trivially copyable. "
         "Action: use a flat request struct with integers, enums, floats, or std::array; keep owning objects outside the RPC lane.");
     static_assert(
+        detail::PlainScopedResult<RequestPayload>,
+        "[ARC ERROR] arc::RpcLane request payload cannot carry borrowed storage directly. "
+        "Action: send copied request values, stable IDs, or fixed arrays; keep pointers, reference wrappers, spans, string_views, and wrappers containing them outside the RPC payload.");
+    static_assert(
         std::is_trivially_copyable_v<ReplyPayload>,
         "[ARC ERROR] arc::RpcLane reply payload must be trivially copyable. "
         "Action: use a flat reply struct with integers, enums, floats, or std::array; keep owning objects outside the RPC lane.");
+    static_assert(
+        detail::PlainScopedResult<ReplyPayload>,
+        "[ARC ERROR] arc::RpcLane reply payload cannot carry borrowed storage directly. "
+        "Action: send copied reply values, stable IDs, or fixed arrays; keep pointers, reference wrappers, spans, string_views, and wrappers containing them outside the RPC payload.");
 
     class Client {
     public:

@@ -14,6 +14,7 @@
 #include "arc/audit.hpp"
 #include "arc/assume.hpp"
 #include "arc/detail/owner.hpp"
+#include "arc/detail/scoped_result.hpp"
 #include "arc/sdk.hpp"
 
 namespace arc {
@@ -42,6 +43,10 @@ struct Spsc {
         std::is_copy_assignable_v<T>,
         "[ARC ERROR] arc::Spsc payload must be copy assignable. "
         "Action: keep queued payload fields mutable and flat, or pass stable handles outside the queue payload.");
+    static_assert(
+        detail::PlainScopedResult<T>,
+        "[ARC ERROR] arc::Spsc payload cannot carry borrowed storage directly. "
+        "Action: queue copied values, stable IDs, or fixed arrays; keep pointers, reference wrappers, spans, string_views, and wrappers containing them outside the lane payload.");
 
     class Producer {
     public:

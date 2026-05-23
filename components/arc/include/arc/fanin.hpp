@@ -12,6 +12,7 @@
 
 #include "arc/audit.hpp"
 #include "arc/detail/owner.hpp"
+#include "arc/detail/scoped_result.hpp"
 #include "arc/spsc.hpp"
 
 namespace arc {
@@ -40,6 +41,10 @@ struct Fanin {
         std::is_copy_assignable_v<T>,
         "[ARC ERROR] arc::Fanin payload must be copy assignable. "
         "Action: keep queued payload fields mutable and flat, or pass stable handles outside the queue payload.");
+    static_assert(
+        detail::PlainScopedResult<T>,
+        "[ARC ERROR] arc::Fanin payload cannot carry borrowed storage directly. "
+        "Action: queue copied values, stable IDs, or fixed arrays; keep pointers, reference wrappers, spans, string_views, and wrappers containing them outside the fan-in payload.");
 
     template <std::size_t Lane>
     class Producer {
