@@ -35,9 +35,11 @@ struct Esp32P4 {
     static constexpr bool dedicated_gpio = true;
     static constexpr bool gdma = true;
     static constexpr bool dma2d = true;
+    static constexpr bool ppa = true;
     static constexpr bool mipi_csi = true;
     static constexpr bool mipi_dsi = true;
     static constexpr bool jpeg = true;
+    static constexpr bool h264 = true;
     static constexpr bool mask = false;
     static constexpr bool trax = false;
 

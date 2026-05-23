@@ -9,7 +9,7 @@ This page mirrors the API section from `README.md` so the same reference is avai
 Compile-time ESP32-S3 capability map.
 
 - Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
-- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_jtag`, `etm`, `simd`, `async_copy`, `ahb_dma`, `fast_gpio`, `rtc_gpio`, `rtc_io`, `rtc_hold`, `rtc_wake`, `lcd_i80`, `dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, `ecdsa`, `xts`, `ulp_fsm`, and `ulp_riscv`.
+- Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_jtag`, `etm`, `simd`, `async_copy`, `ahb_dma`, `dma2d`, `ppa`, `jpeg`, `h264`, `fast_gpio`, `rtc_gpio`, `rtc_io`, `rtc_hold`, `rtc_wake`, `lcd_i80`, `dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, `ecdsa`, `xts`, `ulp_fsm`, and `ulp_riscv`.
 - Exposes hardware counts such as `gpio_pins`, `rtc_pins`, `adc_units`, `ledc_channels`, `spi_ports`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
 - `etm` and `ecdsa` are deliberately represented even when the pinned ESP32-S3 `soc_caps.h` does not advertise those driver surfaces.
 - Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
@@ -752,6 +752,17 @@ Compile-time DVP camera input using the ESP32-S3 LCD_CAM block.
 - `frames()` and `bytes()` expose received-frame counters.
 
 Use this for camera or parallel input streams that should land in RAM through LCD_CAM/DMA instead of CPU sampling.
+
+### `arc::vision::PpaSrm`, `PpaFill`, `PpaBlend`, `JpegEncoder`, and `H264Encoder`
+
+Policy-level P4 vision-accelerator planning for frame transforms and compressed output.
+
+- `frame_bytes(width, height, format, stride)` computes bounded raw-frame storage for RGB, YUYV, and YUV420 inputs.
+- `PpaSrm`, `PpaFill`, and `PpaBlend` validate source/output frame spans, blocks, scale factors, and formats before calling `policy.srm(...)`, `policy.fill(...)`, or `policy.blend(...)`.
+- `JpegEncoder<Width, Height, Quality>` and `H264Encoder<Width, Height, Bitrate, Fps>` keep dimensions, quality, bitrate, and frame rate visible in the type.
+- `JpegEncode::submit(policy)` and `H264Encode::submit(policy)` accept caller-owned bitstream buffers and delegate the actual hardware/software driver call to board policy.
+
+Use this between `arc::Dvp` capture, `arc::AxiGraph` movement, and Ethernet/USB streaming when PPA/JPEG/H264 ownership must stay zero-copy. Arc validates buffer geometry and policy contracts; SDK handle lifetime, queue depth, cache maintenance, and component-specific encode settings stay in the board policy.
 
 ### `arc::I80Bus<arc::Lines<...>, Dc, Wr>` and `arc::I80<Bus, Cs>`
 

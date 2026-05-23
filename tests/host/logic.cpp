@@ -149,6 +149,7 @@
 #include "arc/vm.hpp"
 #include "arc/wasm_aot.hpp"
 #include "arc/vision.hpp"
+#include "arc/vision_accel.hpp"
 #include "arc/vslam.hpp"
 #include "arc/ftm.hpp"
 #include "arc/wavefront.hpp"
@@ -187,6 +188,9 @@ static_assert(arc::soc::Esp32P4::mhz == 400U);
 static_assert(!arc::soc::Esp32P4::wifi);
 static_assert(arc::soc::Esp32P4::ethernet_mac);
 static_assert(arc::soc::Esp32P4::dma2d);
+static_assert(arc::soc::Esp32P4::ppa);
+static_assert(arc::soc::Esp32P4::jpeg);
+static_assert(arc::soc::Esp32P4::h264);
 static_assert(arc::soc::has<arc::soc::Cap::ptp, arc::soc::Esp32P4>);
 static_assert(!arc::soc::has<arc::soc::Cap::drive, arc::soc::Esp32P4>);
 static_assert(arc::stack::round_up(std::numeric_limits<std::size_t>::max() - 3U, 8U) ==
@@ -6054,6 +6058,144 @@ void test_pru_isp_vision()
            "Vision optical flow rejects oversized frame");
     const auto target = arc::vision::VisualServo::flow_target({.dx_q8 = 256, .confidence = 1U}, 0.25F, 12.0F);
     expect(target.q == -0.25F && target.bus == 12.0F, "Vision flow to FOC target");
+
+    const auto yuv420_size = arc::vision::frame_bytes(4U, 4U, arc::vision::Pixel::yuv420);
+    expect(yuv420_size.has_value() && *yuv420_size == 24U &&
+               !arc::vision::frame_bytes(3U, 4U, arc::vision::Pixel::yuv420),
+           "Vision accelerator sizes YUV420 frames");
+
+    std::array<std::uint8_t, 32> rgb565_in_bytes{};
+    std::array<std::uint8_t, 8> rgb565_out_bytes{};
+    const arc::vision::InFrame rgb565_in{
+        .data = std::span<const std::uint8_t>{rgb565_in_bytes},
+        .width = 4U,
+        .height = 4U,
+        .format = arc::vision::Pixel::rgb565,
+    };
+    const arc::vision::OutFrame rgb565_out{
+        .data = std::span<std::uint8_t>{rgb565_out_bytes},
+        .width = 2U,
+        .height = 2U,
+        .format = arc::vision::Pixel::rgb565,
+    };
+
+    struct VisionAccelPolicy {
+        int srm_calls{};
+        int fill_calls{};
+        int blend_calls{};
+        int jpeg_calls{};
+        int h264_calls{};
+
+        [[nodiscard]] esp_err_t srm(const arc::vision::PpaSrm& plan) noexcept
+        {
+            ++srm_calls;
+            return plan.source.w == 2U ? ESP_OK : ESP_FAIL;
+        }
+
+        [[nodiscard]] arc::Status fill(const arc::vision::PpaFill&) noexcept
+        {
+            ++fill_calls;
+            return arc::ok();
+        }
+
+        [[nodiscard]] esp_err_t blend(const arc::vision::PpaBlend&) noexcept
+        {
+            ++blend_calls;
+            return ESP_OK;
+        }
+
+        [[nodiscard]] arc::Status jpeg(const arc::vision::JpegEncode&) noexcept
+        {
+            ++jpeg_calls;
+            return arc::ok();
+        }
+
+        [[nodiscard]] esp_err_t h264(const arc::vision::H264Encode&) noexcept
+        {
+            ++h264_calls;
+            return ESP_OK;
+        }
+    };
+
+    VisionAccelPolicy vision_policy{};
+    const arc::vision::PpaSrm srm{
+        .in = rgb565_in,
+        .source = {.x = 1U, .y = 1U, .w = 2U, .h = 2U},
+        .out = rgb565_out,
+        .target = arc::vision::full_frame(2U, 2U),
+        .sx_q8 = 128U,
+        .sy_q8 = 128U,
+    };
+    expect(srm.validate().has_value() && srm.submit(vision_policy).has_value() && vision_policy.srm_calls == 1,
+           "Vision accelerator validates and submits PPA SRM");
+    auto bad_srm = srm;
+    bad_srm.source = {.x = 3U, .y = 3U, .w = 2U, .h = 2U};
+    expect(!bad_srm.validate(), "Vision accelerator rejects out-of-frame PPA source");
+
+    const arc::vision::PpaFill fill{
+        .out = rgb565_out,
+        .target = arc::vision::full_frame(2U, 2U),
+        .argb8888 = 0xff00ff00U,
+    };
+    expect(fill.submit(vision_policy).has_value() && vision_policy.fill_calls == 1,
+           "Vision accelerator submits PPA fill");
+
+    std::array<std::uint8_t, 32> blend_out_bytes{};
+    const arc::vision::OutFrame blend_out{
+        .data = std::span<std::uint8_t>{blend_out_bytes},
+        .width = 4U,
+        .height = 4U,
+        .format = arc::vision::Pixel::rgb565,
+    };
+    const arc::vision::PpaBlend blend{
+        .bg = rgb565_in,
+        .fg = rgb565_in,
+        .out = blend_out,
+        .target = arc::vision::full_frame(4U, 4U),
+        .alpha_q8 = 128U,
+    };
+    expect(blend.submit(vision_policy).has_value() && vision_policy.blend_calls == 1,
+           "Vision accelerator submits PPA blend");
+
+    std::array<std::uint8_t, 64> jpeg_bytes{};
+    const auto jpeg = arc::vision::JpegEncoder<4U, 4U, 90U>::frame(rgb565_in, std::span(jpeg_bytes));
+    expect(jpeg.validate().has_value() &&
+               arc::vision::JpegEncoder<4U, 4U, 90U>::encode(vision_policy, rgb565_in, std::span(jpeg_bytes))
+                   .has_value() &&
+               vision_policy.jpeg_calls == 1,
+           "Vision accelerator validates JPEG encode plans");
+    const arc::vision::JpegEncode bad_jpeg{
+        .raw = rgb565_in,
+        .out = std::span<std::uint8_t>{jpeg_bytes},
+        .quality = 0U,
+    };
+    expect(!bad_jpeg.validate(), "Vision accelerator rejects invalid JPEG quality");
+
+    std::array<std::uint8_t, 24> yuv_bytes{};
+    std::array<std::uint8_t, 80> h264_bytes{};
+    const arc::vision::InFrame yuv_frame{
+        .data = std::span<const std::uint8_t>{yuv_bytes},
+        .width = 4U,
+        .height = 4U,
+        .format = arc::vision::Pixel::yuv420,
+    };
+    const auto h264 = arc::vision::H264Encoder<4U, 4U, 400'000U>::frame(yuv_frame, std::span(h264_bytes));
+    expect(h264.validate().has_value() &&
+               arc::vision::H264Encoder<4U, 4U, 400'000U>::encode(vision_policy, yuv_frame, std::span(h264_bytes))
+                   .has_value() &&
+               vision_policy.h264_calls == 1,
+           "Vision accelerator validates H264 encode plans");
+    const arc::vision::H264Encode bad_h264{
+        .raw = rgb565_in,
+        .out = std::span<std::uint8_t>{h264_bytes},
+        .bitrate = 400'000U,
+    };
+    expect(!bad_h264.validate(), "Vision accelerator rejects non-YUV H264 input");
+    struct EmptyVisionPolicy {};
+    EmptyVisionPolicy empty_vision_policy{};
+    const auto unsupported_srm = srm.submit(empty_vision_policy);
+    expect(!unsupported_srm && unsupported_srm.error() == ESP_ERR_NOT_SUPPORTED,
+           "Vision accelerator reports unsupported policy hooks");
 }
 
 void test_vm_bpf()

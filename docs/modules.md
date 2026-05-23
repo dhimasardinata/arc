@@ -272,6 +272,7 @@ These modules are for deterministic compute, not dynamic frameworks.
 | `arc/hil.hpp` | HIL-facing helper types and evidence surfaces. |
 | `arc/isp.hpp` | Caller-buffer camera ISP kernels. |
 | `arc/vision.hpp` | Sobel, optical flow, visual servo, and related vision kernels. |
+| `arc/vision_accel.hpp` | PPA/JPEG/H264 frame and bitstream plan validation. |
 | `arc/vslam.hpp` | Visual SLAM correction hooks. |
 | `arc/star_tracker.hpp` | Star centroid and catalog matching helpers. |
 | `arc/ecs.hpp` | Structure-of-arrays style entity/control data helpers. |

@@ -34,6 +34,10 @@ struct Esp32S3 {
 
     static constexpr bool dedicated_gpio = true;
     static constexpr bool gdma = true;
+    static constexpr bool dma2d = false;
+    static constexpr bool ppa = false;
+    static constexpr bool jpeg = false;
+    static constexpr bool h264 = false;
     static constexpr bool mask = true;
     static constexpr bool trax = true;
 

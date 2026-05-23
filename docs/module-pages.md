@@ -88,6 +88,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/snn.hpp` | Spike-driven inference primitives. | [Open](/modules/arc-snn) |
 | `arc/star_tracker.hpp` | Star centroid and catalog matching helpers. | [Open](/modules/arc-star_tracker) |
 | `arc/vision.hpp` | Sobel, optical flow, visual servo, and related vision kernels. | [Open](/modules/arc-vision) |
+| `arc/vision_accel.hpp` | PPA/JPEG/H264 frame and bitstream plan validation. | [Open](/modules/arc-vision_accel) |
 | `arc/vslam.hpp` | Visual SLAM correction hooks. | [Open](/modules/arc-vslam) |
 | `arc/wavefront.hpp` | Multichannel acoustic phase planning and synthesis. | [Open](/modules/arc-wavefront) |
 
