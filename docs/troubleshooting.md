@@ -107,8 +107,9 @@ or removing an evidence path.
 Use `./tools/safety-case-check.py --format json` when a release or CI artifact
 needs the claim list, evidence paths, required commands, and non-claims without
 parsing the human status line.
-Use `python3 tools/compile-fail-check.py --format json` when the artifact needs
-the grouped negative static-borrow and scoped-endpoint cases covered by the gate.
+Use `python3 tools/compile-fail-check.py --format report` when a reviewer needs
+the grouped negative static-borrow and scoped-endpoint cases in plain text, or
+`--format json` when a CI artifact needs the same structure.
 
 ## Benchmark And Hardware Claims
 

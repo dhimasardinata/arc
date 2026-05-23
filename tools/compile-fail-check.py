@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_FORMATS = ("text", "json")
+OUTPUT_FORMATS = ("text", "report", "json")
 
 PREFIX = """
 #include <cstdint>
@@ -1088,6 +1088,21 @@ def group_summary(results: list[CaseResult]) -> dict[str, dict[str, int]]:
     return groups
 
 
+def print_report(results: list[CaseResult]) -> None:
+    payload = report(results)
+    summary = payload["summary"]
+    print("arc compile-fail report")
+    print(f"- compiler: {payload['compiler']}")
+    print(f"- cases: {summary['cases']}")
+    print(f"- passed: {summary['passed']}")
+    print(f"- failed: {summary['failed']}")
+    print("- groups:")
+    for group, counts in sorted(summary["groups"].items()):
+        print(f"  - {group}: {counts['passed']}/{counts['cases']} passed")
+        names = [result.name for result in results if case_group(result.name) == group]
+        print(f"    cases: {', '.join(names)}")
+
+
 def report(results: list[CaseResult]) -> dict[str, object]:
     failed = [result for result in results if not result.passed]
     return {
@@ -1118,7 +1133,7 @@ def main(argv: list[str] | None = None) -> int:
         "--format",
         choices=OUTPUT_FORMATS,
         default="text",
-        help="output style: text status or JSON case summary",
+        help="output style: text status, grouped human report, or JSON case summary",
     )
     args = parser.parse_args(argv)
 
@@ -1126,6 +1141,8 @@ def main(argv: list[str] | None = None) -> int:
     problems = [result.problem for result in results if result.problem is not None]
     if args.format == "json":
         print(json.dumps(report(results), indent=2, sort_keys=True))
+    elif args.format == "report":
+        print_report(results)
     if problems:
         if args.format == "text":
             for problem in problems:

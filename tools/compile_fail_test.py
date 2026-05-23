@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import importlib.util
 import json
 import sys
@@ -58,6 +60,31 @@ class CompileFailCheckTest(unittest.TestCase):
         self.assertEqual(compile_fail_check.case_group("flow_pointer_payload"), "payload_boundary")
         self.assertEqual(compile_fail_check.case_group("scoped_rpc_returns_other_endpoint"), "role_scope")
         self.assertEqual(compile_fail_check.case_group("proof_zero_subject_fact"), "proof_metadata")
+
+    def test_report_format_groups_cases_for_humans(self) -> None:
+        results = [
+            compile_fail_check.CaseResult(
+                name="scoped_borrow_returns_pointer",
+                must_contain="callback cannot return a reference or pointer",
+                problem=None,
+            ),
+            compile_fail_check.CaseResult(
+                name="flow_pointer_payload",
+                must_contain="payload cannot carry borrowed storage directly",
+                problem=None,
+            ),
+        ]
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            compile_fail_check.print_report(results)
+
+        text = out.getvalue()
+        self.assertIn("arc compile-fail report", text)
+        self.assertIn("- groups:", text)
+        self.assertIn("scoped_borrow_result: 1/1 passed", text)
+        self.assertIn("payload_boundary: 1/1 passed", text)
+        self.assertIn("cases: scoped_borrow_returns_pointer", text)
 
 
 if __name__ == "__main__":
