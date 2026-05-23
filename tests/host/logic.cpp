@@ -2469,6 +2469,17 @@ void test_uri()
     expect(in_place_wire.has_value() &&
                std::memcmp(in_place_wire->data(), "a%2Fb+%3F", in_place_wire->size()) == 0,
            "URI encode preserves in-place expansion");
+    std::array<char, 16> shifted_encode{'x', 'a', '/', 'b'};
+    expect(!arc::net::Uri::encode(
+               std::span<char>{shifted_encode.data(), shifted_encode.size()},
+               std::span<const char>{shifted_encode.data() + 1U, 3U}),
+           "URI encode rejects shifted overlap");
+    std::array<char, 16> shifted_decode{'a', 'b', '%', '2', '0', 'z'};
+    expect(!arc::net::Uri::decode(
+               std::span<char>{shifted_decode.data() + 1U, shifted_decode.size() - 1U},
+               std::span<const char>{shifted_decode.data(), 6U},
+               true),
+           "URI decode rejects shifted overlap");
 
     std::array<char, 2> small{};
     expect(!arc::net::Uri::decode(std::span(small), "abcd"), "URI decode capacity rejects");

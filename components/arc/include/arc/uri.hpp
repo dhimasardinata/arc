@@ -275,6 +275,9 @@ struct Uri {
         if (!valid_span(out) || !valid_span(in)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
+        if (shifted_overlap(out, in)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
 
         auto used = std::size_t{0U};
         for (std::size_t i = 0U; i < in.size(); ++i) {
@@ -318,6 +321,9 @@ struct Uri {
         if (!valid_span(out) || !valid_span(in)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
+        if (shifted_overlap(out, in)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
 
         auto used = std::size_t{0U};
         for (const char ch : in) {
@@ -354,6 +360,23 @@ private:
     [[nodiscard]] static constexpr bool valid_span(const std::span<T> value) noexcept
     {
         return value.empty() || value.data() != nullptr;
+    }
+
+    [[nodiscard]] static bool shifted_overlap(
+        const std::span<char> out,
+        const std::span<const char> in) noexcept
+    {
+        if (out.empty() || in.empty() || out.data() == nullptr || in.data() == nullptr || out.data() == in.data()) {
+            return false;
+        }
+        const auto out_first = reinterpret_cast<std::uintptr_t>(out.data());
+        const auto in_first = reinterpret_cast<std::uintptr_t>(in.data());
+        if (out.size() > UINTPTR_MAX - out_first || in.size() > UINTPTR_MAX - in_first) {
+            return true;
+        }
+        const auto out_last = out_first + out.size();
+        const auto in_last = in_first + in.size();
+        return out_first < in_last && in_first < out_last;
     }
 
     [[nodiscard]] static bool split_authority(UriView& out) noexcept
