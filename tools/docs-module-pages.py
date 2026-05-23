@@ -170,6 +170,15 @@ GROUP_EXAMPLES = {
 SPECIAL_LANDMARKS = {
     "arc/borrow.hpp": ["BorrowMode", "StaticRef", "StaticLoan", "StaticRead", "StaticMut", "LoanPack"],
     "arc/detail/quant.hpp": ["mul_sat", "add_sat", "round_shift_s64"],
+    "arc/migrator.hpp": [
+        "FleetPeer",
+        "IdleCore",
+        "AnyIdleCore",
+        "WasmSnapshot",
+        "MigrationDecision",
+        "MigrationFrame",
+        "Migrator",
+    ],
     "arc/proof.hpp": ["Kind", "Claim", "Fact", "ProofFact", "Pack"],
 }
 

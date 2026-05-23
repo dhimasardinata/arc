@@ -1,6 +1,6 @@
 # `arc/migrator.hpp`
 
-WASM state snapshot, transport, and resume helpers.
+Fixed fleet idle-core selection plus WASM snapshot, transport, and resume helpers.
 
 ## Fit
 
@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `WasmSnapshot`, `MigrationDecision`, `MigrationFrame`, `Migrator`.
+Source landmarks: `FleetPeer`, `IdleCore`, `AnyIdleCore`, `WasmSnapshot`, `MigrationDecision`, `MigrationFrame`, `Migrator`.
 
 ## Start From Zero
 

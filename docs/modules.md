@@ -312,7 +312,7 @@ rules stay above Arc.
 | `arc/jit.hpp` | Bounded BPF-to-executable-word translation hooks. |
 | `arc/hotswap.hpp` | Signed native, BPF, and WASM hot-swap staging policy. |
 | `arc/wasm_aot.hpp` | Bounded WASM AOT translation policy surface. |
-| `arc/migrator.hpp` | WASM state snapshot, transport, and resume helpers. |
+| `arc/migrator.hpp` | Fixed fleet idle-core selection plus WASM snapshot, transport, and resume helpers. |
 | `arc/hypervisor.hpp` | Restricted partition planning and trap decisions. |
 | `arc/hotpatch.hpp` | Executable payload loading and IRAM detour policy hooks. |
 | `arc/chaos.hpp` | Bounded fault injection and postmortem logging. |

@@ -8214,9 +8214,29 @@ void test_current_goal_surfaces()
         }
     };
     const std::array<std::uint8_t, 4> wasm_memory{1U, 2U, 3U, 4U};
+    const std::array<arc::swarm::FleetPeer, 4> fleet_peers{
+        arc::swarm::FleetPeer{.node = 11U, .slack = 4, .free_cycles = 64U, .overruns = 0U, .online = true},
+        arc::swarm::FleetPeer{.node = 77U, .slack = 20, .free_cycles = 256U, .overruns = 0U, .online = true},
+        arc::swarm::FleetPeer{.node = 88U, .slack = 40, .free_cycles = 512U, .overruns = 1U, .online = true},
+        arc::swarm::FleetPeer{.node = 99U, .slack = 80, .free_cycles = 1024U, .overruns = 0U, .online = false},
+    };
+    const auto idle_core = arc::swarm::AnyIdleCore::select(
+        std::span<const arc::swarm::FleetPeer, fleet_peers.size()>{fleet_peers},
+        0,
+        128U);
+    expect(idle_core.has_value() && idle_core->peer == 77U && idle_core->free_cycles == 256U,
+           "AnyIdleCore selects the best online non-overrun peer");
+    expect(!arc::swarm::AnyIdleCore::select(
+               std::span<const arc::swarm::FleetPeer, fleet_peers.size()>{fleet_peers},
+               64,
+               1U),
+           "AnyIdleCore rejects fleets without an eligible peer");
+    expect(!arc::swarm::AnyIdleCore::select(
+               std::span<const arc::swarm::FleetPeer, 1>{static_cast<const arc::swarm::FleetPeer*>(nullptr), 1U}),
+           "AnyIdleCore rejects null fleet spans");
     const auto migrate_decision = arc::swarm::Migrator::from_governor(
         {.action = arc::power::GovernorAction::boost, .predicted_slack = -5, .overrun_risk = true},
-        77U);
+        idle_core.value());
     const auto migration_frame = arc::swarm::Migrator::snapshot<16>(
         3U,
         {
@@ -8233,6 +8253,7 @@ void test_current_goal_surfaces()
                arc::swarm::Migrator::teleport<MigrationPolicy>(migrate_decision.peer, *migration_frame).has_value() &&
                arc::swarm::Migrator::resume<MigrationPolicy>(*migration_frame, resumed_memory).has_value() &&
                migration_peer == 77U && migration_bytes > wasm_memory.size() &&
+               migrate_decision.slack == idle_core->slack &&
                migration_process == 3U && migration_ip == 0x200U && migration_sp == 0x100U &&
                resumed_memory[0] == 1U && resumed_memory[3] == 4U,
            "Migrator snapshots, teleports, and resumes WASM process state");

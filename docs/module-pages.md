@@ -46,7 +46,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/interrupt_matrix.hpp` | Direct interrupt routing contracts. | [Open](/modules/arc-interrupt_matrix) |
 | `arc/jit.hpp` | Bounded BPF-to-executable-word translation hooks. | [Open](/modules/arc-jit) |
 | `arc/kyber.hpp` | Caller-buffer ML-KEM-shaped polynomial/KEM surfaces. | [Open](/modules/arc-kyber) |
-| `arc/migrator.hpp` | WASM state snapshot, transport, and resume helpers. | [Open](/modules/arc-migrator) |
+| `arc/migrator.hpp` | Fixed fleet idle-core selection plus WASM snapshot, transport, and resume helpers. | [Open](/modules/arc-migrator) |
 | `arc/mpi.hpp` | Move-only mbedTLS big integers. | [Open](/modules/arc-mpi) |
 | `arc/nvs_crypto.hpp` | Encrypted-NVS policy hooks. | [Open](/modules/arc-nvs_crypto) |
 | `arc/paillier.hpp` | Modular arithmetic surfaces for encrypted telemetry aggregation. | [Open](/modules/arc-paillier) |

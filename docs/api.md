@@ -119,6 +119,18 @@ Signed control-payload staging for native hotpatch, BPF JIT, and WASM AOT paths.
 
 Use this when Core 0 has fetched a signed payload and the product needs one auditable path from verification to PMS/world protection to activation. Signature verification, key trust, executable-memory policy, persistent rollback storage, and jump policy remain product policy.
 
+### `arc::swarm::AnyIdleCore` and `arc::swarm::Migrator`
+
+Fixed fleet target selection and WASM process migration helpers.
+
+- `FleetPeer` records one peer's node id, deadline slack, free cycle budget, overrun count, and online state.
+- `AnyIdleCore::select(span, min_slack, min_cycles)` picks the online non-overrun peer with the best slack from a fixed-extent caller-owned span.
+- `Migrator::from_governor(decision, idle_core)` converts a Core 0 governor decision plus selected peer into a `MigrationDecision`.
+- `snapshot<MaxBytes>(process, state)` copies bounded WASM linear memory plus stack, instruction pointer, and fuel into a fixed `MigrationFrame`.
+- `teleport<Policy>(peer, frame)` and `resume<Policy>(frame, memory)` delegate radio send and sandbox resume to board policy.
+
+Use this when a fleet has measured peer state and a sandboxed Core 0 workload may be moved off-chip. Arc chooses only from explicit fixed state; peer discovery, trust, radio retries, and result return policy remain product code.
+
 ### `arc::Mpi`
 
 Move-only owner for mbedTLS multiple-precision integers.

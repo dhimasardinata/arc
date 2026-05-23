@@ -28,6 +28,58 @@ struct MigrationDecision {
     std::uint32_t overruns{};
 };
 
+struct FleetPeer {
+    std::uint16_t node{};
+    std::int32_t slack{};
+    std::uint32_t free_cycles{};
+    std::uint32_t overruns{};
+    bool online{};
+};
+
+struct IdleCore {
+    std::uint16_t peer{};
+    std::int32_t slack{};
+    std::uint32_t free_cycles{};
+};
+
+struct AnyIdleCore {
+    template <std::size_t Peers>
+    [[nodiscard]] static constexpr Result<IdleCore> select(
+        const std::span<const FleetPeer, Peers> peers,
+        const std::int32_t min_slack = 0,
+        const std::uint32_t min_cycles = 1U) noexcept
+    {
+        static_assert(Peers != std::dynamic_extent && Peers > 0U,
+                      "[ARC ERROR] arc::swarm::AnyIdleCore needs fixed fleet state. Action: pass a fixed-extent span.");
+        if (peers.data() == nullptr) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        IdleCore best{};
+        bool found = false;
+        for (const auto peer : peers) {
+            if (!peer.online || peer.node == 0U || peer.overruns != 0U ||
+                peer.slack < min_slack || peer.free_cycles < min_cycles) {
+                continue;
+            }
+            const auto better = !found || peer.slack > best.slack ||
+                (peer.slack == best.slack && peer.free_cycles > best.free_cycles);
+            if (better) {
+                best = {
+                    .peer = peer.node,
+                    .slack = peer.slack,
+                    .free_cycles = peer.free_cycles,
+                };
+                found = true;
+            }
+        }
+        if (!found) {
+            return fail(ESP_ERR_NOT_FOUND);
+        }
+        return best;
+    }
+};
+
 template <std::size_t MaxBytes>
 struct MigrationFrame {
     static_assert(MaxBytes > 0U, "migration frame needs payload storage");
@@ -54,6 +106,15 @@ struct Migrator {
             .slack = decision.predicted_slack,
             .overruns = decision.overrun_risk ? 1U : 0U,
         };
+    }
+
+    [[nodiscard]] static constexpr MigrationDecision from_governor(
+        const power::GovernorDecision decision,
+        const IdleCore target) noexcept
+    {
+        auto out = from_governor(decision, target.peer);
+        out.slack = target.slack;
+        return out;
     }
 
     [[nodiscard]] static constexpr MigrationDecision from_deadline(
