@@ -5764,6 +5764,17 @@ void test_pipeline_usb_ulp()
     arc::ulp::Gpio<4, UlpPolicy>::high();
     expect(arc::ulp::Gpio<4, UlpPolicy>::read(), "ULP GPIO read");
     expect(arc::ulp::Adc<2, UlpPolicy>::read_raw().value() == 123U, "ULP ADC read");
+    constexpr auto wake_prog = arc::ulp::Builder<4>{}.read_adc(2U).if_greater(100U).wake_main().build();
+    static_assert(wake_prog.valid());
+    static_assert(wake_prog.used == 3U);
+    ulp_policy_woke = false;
+    expect(wake_prog.run<UlpPolicy>().has_value() && ulp_policy_woke, "ULP builder wakes from ADC threshold");
+    constexpr auto quiet_prog = arc::ulp::Builder<4>{}.read_adc(2U).if_greater(200U).wake_main().build();
+    ulp_policy_woke = false;
+    expect(quiet_prog.run<UlpPolicy>().has_value() && !ulp_policy_woke, "ULP builder skips failed guard");
+    constexpr auto overflow_prog = arc::ulp::Builder<2>{}.read_adc(2U).if_greater(100U).wake_main().build();
+    static_assert(!overflow_prog.valid());
+    expect(!overflow_prog.run<UlpPolicy>(), "ULP builder reports fixed budget overflow");
     std::array<std::uint8_t, 2> i2c_out{1U, 2U};
     expect(arc::ulp::I2c<0, UlpPolicy>::write(0x68U, std::span(i2c_out)).has_value(), "ULP I2C write");
     std::array<std::uint8_t, 1> i2c_in{};

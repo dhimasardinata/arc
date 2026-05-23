@@ -291,5 +291,5 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/intermittent.hpp` | RTC no-init checkpoints for brownout/intermittent execution. | [Open](/modules/arc-intermittent) |
 | `arc/ulp.hpp` | ULP RISC-V/FSM load, run, interrupt, and shared memory controls. | [Open](/modules/arc-ulp) |
 | `arc/ulp_asm.hpp` | Compile-time ULP RISC-V program assembly. | [Open](/modules/arc-ulp_asm) |
-| `arc/ulp_cxx.hpp` | Tiny C++ GPIO/I2C/ADC/SleepFsm-style ULP building blocks. | [Open](/modules/arc-ulp_cxx) |
+| `arc/ulp_cxx.hpp` | Tiny C++ builder, GPIO/I2C/ADC, and SleepFsm-style ULP building blocks. | [Open](/modules/arc-ulp_cxx) |
 | `arc/ulp_ml.hpp` | ULP-side int8 dense inference and semantic/audio wake helpers. | [Open](/modules/arc-ulp_ml) |

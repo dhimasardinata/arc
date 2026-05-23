@@ -321,7 +321,7 @@ Use these when the main cores should sleep while tiny policy code keeps running.
 | --- | --- |
 | `arc/ulp.hpp` | ULP RISC-V/FSM load, run, interrupt, and shared memory controls. |
 | `arc/ulp_asm.hpp` | Compile-time ULP RISC-V program assembly. |
-| `arc/ulp_cxx.hpp` | Tiny C++ GPIO/I2C/ADC/SleepFsm-style ULP building blocks. |
+| `arc/ulp_cxx.hpp` | Tiny C++ builder, GPIO/I2C/ADC, and SleepFsm-style ULP building blocks. |
 | `arc/ulp_ml.hpp` | ULP-side int8 dense inference and semantic/audio wake helpers. |
 | `arc/intermittent.hpp` | RTC no-init checkpoints for brownout/intermittent execution. |
 

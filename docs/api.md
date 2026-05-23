@@ -142,6 +142,8 @@ ULP RISC-V and legacy FSM control surface.
 - `Ulp::Fsm::period(index, us)`, `run(entry)`, `stop()`, `resume()`, `isr(...)`, and `off(...)` expose the ESP32-S3 FSM timer and wake hooks directly.
 - `Ulp::Word` is a 32-bit acquire/release shared word intended for RTC RAM placement.
 - `Ulp::Shared<T>` adds an 8-byte-aligned seqlock payload wrapper for trivially copyable RTC-shared structs.
+- `arc::ulp::Builder<N>` emits a fixed `Program<N>` with steps such as `read_adc(channel)`, `if_greater(threshold)`, `wake_main()`, and `halt()`.
+- `Program<N>::run<Policy>()` interprets that bounded program through the same `adc_read(...)` and `wake_main()` policy hooks used by the other ULP C++ helpers.
 
 Use this for always-on sensing, wake decisions, or low-power counters while the main cores sleep.
 

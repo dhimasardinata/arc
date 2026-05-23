@@ -1,6 +1,6 @@
 # `arc/ulp_cxx.hpp`
 
-Tiny C++ GPIO/I2C/ADC/SleepFsm-style ULP building blocks.
+Tiny C++ builder, GPIO/I2C/ADC, and SleepFsm-style ULP building blocks.
 
 ## Fit
 
@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `IoStubPolicy`, `Gpio`, `Adc`, `I2c`, `SleepFsm`, `Input`, `Output`.
+Source landmarks: `Step`, `IoStubPolicy`, `Program`, `Builder`, `Gpio`, `Adc`, `I2c`, `SleepFsm`, `Op`, `Input`.
 
 ## Start From Zero
 
