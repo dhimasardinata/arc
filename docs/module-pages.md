@@ -41,6 +41,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/crypto_dma.hpp` | Hardware-to-hardware crypto descriptor job planning. | [Open](/modules/arc-crypto_dma) |
 | `arc/hmac.hpp` | eFuse-keyed HMAC and temporary JTAG unlock. | [Open](/modules/arc-hmac) |
 | `arc/hotpatch.hpp` | Executable payload loading and IRAM detour policy hooks. | [Open](/modules/arc-hotpatch) |
+| `arc/hotswap.hpp` | Signed native, BPF, and WASM hot-swap staging policy. | [Open](/modules/arc-hotswap) |
 | `arc/hypervisor.hpp` | Restricted partition planning and trap decisions. | [Open](/modules/arc-hypervisor) |
 | `arc/interrupt_matrix.hpp` | Direct interrupt routing contracts. | [Open](/modules/arc-interrupt_matrix) |
 | `arc/jit.hpp` | Bounded BPF-to-executable-word translation hooks. | [Open](/modules/arc-jit) |

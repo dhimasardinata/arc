@@ -306,6 +306,7 @@ rules stay above Arc.
 | `arc/tee.hpp` | Secure/non-secure world assignment planning. |
 | `arc/vm.hpp` | BPF bytecode execution and sandbox helpers. |
 | `arc/jit.hpp` | Bounded BPF-to-executable-word translation hooks. |
+| `arc/hotswap.hpp` | Signed native, BPF, and WASM hot-swap staging policy. |
 | `arc/wasm_aot.hpp` | Bounded WASM AOT translation policy surface. |
 | `arc/migrator.hpp` | WASM state snapshot, transport, and resume helpers. |
 | `arc/hypervisor.hpp` | Restricted partition planning and trap decisions. |

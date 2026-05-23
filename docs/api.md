@@ -106,6 +106,18 @@ Digital Signature peripheral surface for eFuse-key-backed RSA operations.
 
 Use this for signed telemetry, challenge responses, and provisioning flows where the private RSA material should never be readable by the main cores.
 
+### `arc::vm::HotSwap`
+
+Signed control-payload staging for native hotpatch, BPF JIT, and WASM AOT paths.
+
+- `HotSwapPlan` carries the payload kind, version, payload bytes, signature bytes, and optional native entry offset.
+- `native<Policy, HeapPolicy>(plan)` verifies the plan and loads native executable bytes through `arc::HotPatch`.
+- `bpf<Policy, JitPolicy>(plan, decoded, out, config)` verifies, decodes BPF bytes, translates them through `arc::vm::Jit`, and asks policy to protect the image.
+- `wasm<Policy, AotPolicy>(plan, out, config)` verifies, translates WASM bytes through `arc::vm::WasmAot`, and asks policy to protect the image.
+- `activate<Policy>(image)` is a separate explicit policy hook so Arc never jumps into downloaded code by default.
+
+Use this when Core 0 has fetched a signed payload and the product needs one auditable path from verification to PMS/world protection to activation. Signature verification, key trust, executable-memory policy, and rollback remain product policy.
+
 ### `arc::Mpi`
 
 Move-only owner for mbedTLS multiple-precision integers.

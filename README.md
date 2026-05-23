@@ -113,6 +113,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::TeePlan` and `TrustedObject` formalize secure/non-secure world assignment for memory, cores, and critical peripherals.
 - `arc::vm::BPF`, `BpfInsn`, and `BpfSandbox` run bounded zero-allocation bytecode against caller-owned memory and expose a WorldGuard-backed protection hook for downloaded control blocks.
 - `arc::vm::Jit` translates supported BPF ALU/control instructions into caller-owned executable words through a policy micro-assembler hook.
+- `arc::vm::HotSwap` stages signed native, BPF, or WASM control payloads through explicit verify, protect, and activate policy hooks.
 - `arc::vm::Hypervisor` maps untrusted Core 0 partitions into restricted worlds, binds trap policy hooks, and returns explicit emulate/resume/terminate decisions.
 - `arc::crypto::Cloak` adds policy hooks for randomized stalls, dummy reads, and inverse-load balancing around critical crypto/ML sections.
 - `arc::covert::BlackBox` seals flight-recorder payloads into Merkle-linked nodes and delegates encrypted flash writes to board policy.
@@ -335,7 +336,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 | Binary records and optimizer hints | `arc/pack.hpp`, `arc/perfetto.hpp`, `arc/trace_live.hpp`, `arc/assume.hpp` | `arc::pack::Schema`, `arc::pack::StructOf`, `arc::pack::Reflect`, `arc::pack::Endian`, `arc::PerfettoWriter`, `arc::trace::LiveStream`, `arc::assume` |
 | Control, ML, and vision | `arc/dsp.hpp`, `arc/wavefront.hpp`, `arc/simd.hpp`, `arc/ml.hpp`, `arc/snn.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/nav.hpp`, `arc/foc.hpp`, `arc/maglev.hpp`, `arc/digital_twin.hpp`, `arc/motion.hpp`, `arc/cnc.hpp`, `arc/hls.hpp`, `arc/isp.hpp`, `arc/vision.hpp`, `arc/vslam.hpp`, `arc/star_tracker.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::dsp::Beamform`, `arc::dsp::Aec`, `arc::dsp::Wavefront`, `arc::simd::float32x4_t`, `arc::simd::int8x16_t`, `arc::simd::dot_s8`, `arc::simd::Rgb565::from_yuv422`, `arc::simd::fft_radix2`, `arc::ml::Tensor`, `arc::ml::Dense`, `arc::ml::QuantDenseS8`, `arc::ml::Snn`, `arc::ml::Conv2dS8`, `arc::ml::DepthwiseConv2dS8`, `arc::ml::MaxPool2d`, `arc::ml::mapped_weights`, `arc::ml::Core1Inference`, `arc::dsp::Matrix`, `arc::dsp::Lqr`, `arc::dsp::Kalman`, `arc::nav::Eskf`, `arc::nav::Quaternion`, `arc::Foc`, `arc::DualFoc`, `arc::FocEncoderFusion`, `arc::MagLev`, `arc::hil::DigitalTwin`, `arc::MotionPlan`, `arc::SCurve`, `arc::cnc::Kinematics`, `arc::cnc::GCode`, `arc::hls::KernelSpec`, `arc::hls::StaticLoop`, `arc::isp::Debayer`, `arc::isp::AecAwb`, `arc::vision::Sobel`, `arc::vision::OpticalFlow`, `arc::vision::VSlam`, `arc::vision::VisualServo`, `arc::vision::StarTracker`, `arc::SwarmSoa`, `arc::Hil` |
 | USB and low-power logic | `arc/usb.hpp`, `arc/usb_device.hpp`, `arc/usb_host.hpp`, `arc/ulp.hpp`, `arc/ulp_asm.hpp`, `arc/ulp_cxx.hpp`, `arc/ulp_ml.hpp` | `arc::Usb`, `arc::usb::Device`, `arc::usb::DeviceDescriptor`, `arc::usb::Cdc`, `arc::usb::Bulk`, `arc::usb::Uvc`, `arc::usb::Uac`, `arc::usb::Fifo`, `arc::usb::Host`, `arc::Ulp`, `arc::ulp::riscv::assemble`, `arc::ulp::Builder`, `arc::ulp::Program`, `arc::ulp::Gpio`, `arc::ulp::Adc`, `arc::ulp::I2c`, `arc::ulp::SleepFsm`, `arc::ulp::ml::QuantDenseS8`, `arc::ulp::ml::SemanticWake`, `arc::ulp::ml::AudioSignatureWake` |
-| Security, VM, and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/puf.hpp`, `arc/cloak.hpp`, `arc/blackbox.hpp`, `arc/cert_bundle.hpp`, `arc/nvs_crypto.hpp`, `arc/secure_boot.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/kyber.hpp`, `arc/paillier.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp`, `arc/pms.hpp`, `arc/tee.hpp`, `arc/vm.hpp`, `arc/jit.hpp`, `arc/wasm_aot.hpp`, `arc/migrator.hpp`, `arc/hypervisor.hpp`, `arc/chaos.hpp`, `arc/flash_off.hpp`, `arc/crypto_dma.hpp`, `arc/interrupt_matrix.hpp`, `arc/provisioning.hpp`, `arc/pmr.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::crypto::Puf`, `arc::crypto::Cloak`, `arc::covert::BlackBox`, `arc::x509::Bundle`, `arc::NvsCrypto`, `arc::secure::SecureBoot`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::crypto::Kyber`, `arc::crypto::Paillier`, `arc::Xts`, `arc::Fuse`, `arc::Rng`, `arc::Pms`, `arc::WorldGuard`, `arc::TeePlan`, `arc::vm::BPF`, `arc::vm::BpfInsn`, `arc::vm::BpfSandbox`, `arc::vm::Jit`, `arc::vm::WasmAot`, `arc::vm::WasmSandbox`, `arc::swarm::Migrator`, `arc::vm::Hypervisor`, `arc::chaos::Monkey`, `arc::FlashOff`, `arc::CryptoDma`, `arc::InterruptMatrix`, `arc::Provisioning`, `arc::PmrCapsResource` |
+| Security, VM, and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/puf.hpp`, `arc/cloak.hpp`, `arc/blackbox.hpp`, `arc/cert_bundle.hpp`, `arc/nvs_crypto.hpp`, `arc/secure_boot.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/kyber.hpp`, `arc/paillier.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp`, `arc/pms.hpp`, `arc/tee.hpp`, `arc/vm.hpp`, `arc/jit.hpp`, `arc/hotswap.hpp`, `arc/wasm_aot.hpp`, `arc/migrator.hpp`, `arc/hypervisor.hpp`, `arc/chaos.hpp`, `arc/flash_off.hpp`, `arc/crypto_dma.hpp`, `arc/interrupt_matrix.hpp`, `arc/provisioning.hpp`, `arc/pmr.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::crypto::Puf`, `arc::crypto::Cloak`, `arc::covert::BlackBox`, `arc::x509::Bundle`, `arc::NvsCrypto`, `arc::secure::SecureBoot`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::crypto::Kyber`, `arc::crypto::Paillier`, `arc::Xts`, `arc::Fuse`, `arc::Rng`, `arc::Pms`, `arc::WorldGuard`, `arc::TeePlan`, `arc::vm::BPF`, `arc::vm::BpfInsn`, `arc::vm::BpfSandbox`, `arc::vm::Jit`, `arc::vm::HotSwap`, `arc::vm::HotSwapPlan`, `arc::vm::WasmAot`, `arc::vm::WasmSandbox`, `arc::swarm::Migrator`, `arc::vm::Hypervisor`, `arc::chaos::Monkey`, `arc::FlashOff`, `arc::CryptoDma`, `arc::InterruptMatrix`, `arc::Provisioning`, `arc::PmrCapsResource` |
 
 </details>
 
@@ -549,6 +550,7 @@ Profile aliases for `math`, `memory`, `net_codecs`, `crypto`, `robotics`, and `s
 - `timer` (`gptimer` alias)
 - `hmac`
 - `hotpatch`
+- `hotswap`
 - `hls`
 - `http`
 - `hyper_matrix`
@@ -1151,6 +1153,18 @@ Digital Signature peripheral surface for eFuse-key-backed RSA operations.
 - `Sign::bytes(data)` returns the exact prepared-message and signature size for the encrypted RSA key.
 
 Use this for signed telemetry, challenge responses, and provisioning flows where the private RSA material should never be readable by the main cores.
+
+### `arc::vm::HotSwap`
+
+Signed control-payload staging for native hotpatch, BPF JIT, and WASM AOT paths.
+
+- `HotSwapPlan` carries the payload kind, version, payload bytes, signature bytes, and optional native entry offset.
+- `native<Policy, HeapPolicy>(plan)` verifies the plan and loads native executable bytes through `arc::HotPatch`.
+- `bpf<Policy, JitPolicy>(plan, decoded, out, config)` verifies, decodes BPF bytes, translates them through `arc::vm::Jit`, and asks policy to protect the image.
+- `wasm<Policy, AotPolicy>(plan, out, config)` verifies, translates WASM bytes through `arc::vm::WasmAot`, and asks policy to protect the image.
+- `activate<Policy>(image)` is a separate explicit policy hook so Arc never jumps into downloaded code by default.
+
+Use this when Core 0 has fetched a signed payload and the product needs one auditable path from verification to PMS/world protection to activation. Signature verification, key trust, executable-memory policy, and rollback remain product policy.
 
 ### `arc::Mpi`
 
@@ -3379,6 +3393,7 @@ For hardware numbers, build and flash `examples/esp32s3/bench` on an ESP32-S3. T
 - `arc::optical::LiFi` produces Manchester optical symbols; analog comparator thresholds, optics, and eye-safety limits stay with board policy.
 - `arc::nav::Eskf`, `arc::ml::Snn`, and `arc::MagLev` are deterministic math/control surfaces, not sensor calibration or plant-identification tools.
 - `arc::vm::Jit` owns bounded BPF-to-word translation; real Xtensa opcode selection and executable-memory policy stay behind the micro-assembler hook.
+- `arc::vm::HotSwap` sequences verification, translation/loading, protection, and activation hooks; transport, key trust, rollback, and jump policy stay with the product.
 - `arc::vm::WasmAot` owns bounded WASM opcode decoding; full module provenance, import policy, and native instruction selection stay behind the AOT policy.
 - `arc::x509::Bundle`, `arc::NvsCrypto`, and `arc::secure::SecureBoot` expose security state transitions; CA rollout, key custody, and revocation policy stay with the product.
 - `arc::hil::DigitalTwin` wires capture, plant stepping, and encoder output, but the physical model constants and wiring harness remain test-jig policy.

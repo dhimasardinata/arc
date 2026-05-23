@@ -4,6 +4,7 @@
 // policy surfaces.
 
 #include "arc/hypervisor.hpp"
+#include "arc/hotswap.hpp"
 #include "arc/jit.hpp"
 #include "arc/pms.hpp"
 #include "arc/tee.hpp"

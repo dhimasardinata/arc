@@ -54,6 +54,7 @@
 #include "arc/fsm.hpp"
 #include "arc/hil.hpp"
 #include "arc/hotpatch.hpp"
+#include "arc/hotswap.hpp"
 #include "arc/hypervisor.hpp"
 #include "arc/http.hpp"
 #include "arc/http_server.hpp"
@@ -284,6 +285,9 @@ std::size_t hotpatch_locks{};
 std::size_t hotpatch_stores{};
 std::size_t hotpatch_syncs{};
 std::size_t hotpatch_unlocks{};
+std::size_t hotswap_verified{};
+std::size_t hotswap_protected_words{};
+std::uint32_t hotswap_activated_version{};
 std::uint32_t covert_hz{};
 std::uint32_t covert_duty{};
 int covert_density{};
@@ -7970,6 +7974,80 @@ void test_current_goal_surfaces()
     expect(!arc::vm::WasmSandbox::protect<WasmGuardPolicy>(
                std::span<const std::uint32_t>{static_cast<const std::uint32_t*>(nullptr), 1U}),
            "WasmSandbox rejects null image span");
+
+    struct HotSwapPolicy {
+        static esp_err_t verify(const arc::vm::HotSwapPlan plan) noexcept
+        {
+            ++hotswap_verified;
+            return plan.version == 7U && !plan.signature.empty() ? ESP_OK : ESP_FAIL;
+        }
+
+        static esp_err_t protect(const arc::vm::HotSwapImage image) noexcept
+        {
+            hotswap_protected_words = image.words.size();
+            return image.entry == image.words.data() ? ESP_OK : ESP_FAIL;
+        }
+
+        static esp_err_t activate(const arc::vm::HotSwapImage image) noexcept
+        {
+            hotswap_activated_version = image.version;
+            return image.entry == image.words.data() ? ESP_OK : ESP_FAIL;
+        }
+    };
+
+    const std::array<std::uint8_t, 4> hotswap_signature{0x41U, 0x52U, 0x43U, 0x21U};
+    hotswap_verified = 0U;
+    hotswap_protected_words = 0U;
+    hotswap_activated_version = 0U;
+    std::array<std::uint32_t, 8> hotswap_wasm_image{};
+    const arc::vm::HotSwapPlan hotswap_wasm{
+        .kind = arc::vm::HotSwapKind::wasm,
+        .version = 7U,
+        .payload = wasm_code,
+        .signature = hotswap_signature,
+    };
+    const auto staged_wasm = arc::vm::HotSwap::wasm<HotSwapPolicy, WasmPolicy>(hotswap_wasm, hotswap_wasm_image);
+    expect(staged_wasm.has_value() &&
+               staged_wasm->kind == arc::vm::HotSwapKind::wasm &&
+               staged_wasm->words.size() == 4U &&
+               hotswap_verified == 1U &&
+               hotswap_protected_words == 4U &&
+               arc::vm::HotSwap::activate<HotSwapPolicy>(*staged_wasm).has_value() &&
+               hotswap_activated_version == 7U,
+           "HotSwap verifies, protects, and activates signed WASM image");
+
+    std::array<arc::vm::BpfInsn, 4> hotswap_bpf_decoded{};
+    std::array<std::uint32_t, 4> hotswap_bpf_image{};
+    const std::span<const std::uint8_t> hotswap_bpf_payload{
+        reinterpret_cast<const std::uint8_t*>(jit_program.data()),
+        jit_program.size() * sizeof(arc::vm::BpfInsn),
+    };
+    const arc::vm::HotSwapPlan hotswap_bpf{
+        .kind = arc::vm::HotSwapKind::bpf,
+        .version = 7U,
+        .payload = hotswap_bpf_payload,
+        .signature = hotswap_signature,
+    };
+    const auto staged_bpf = arc::vm::HotSwap::bpf<HotSwapPolicy, JitPolicy>(
+        hotswap_bpf,
+        hotswap_bpf_decoded,
+        hotswap_bpf_image);
+    expect(staged_bpf.has_value() &&
+               staged_bpf->kind == arc::vm::HotSwapKind::bpf &&
+               staged_bpf->words.size() == jit_program.size() &&
+               hotswap_verified == 2U &&
+               hotswap_protected_words == jit_program.size(),
+           "HotSwap stages signed BPF bytecode through JIT policy");
+    expect(!arc::vm::HotSwap::wasm<HotSwapPolicy, WasmPolicy>(hotswap_bpf, hotswap_wasm_image),
+           "HotSwap rejects payload kind mismatch");
+    expect(!arc::vm::HotSwap::verify<HotSwapPolicy>({
+               .kind = arc::vm::HotSwapKind::wasm,
+               .version = 7U,
+               .payload = wasm_code,
+               .signature = {},
+           }),
+           "HotSwap rejects unsigned payload");
+
     const std::array<std::uint8_t, 1> sleb_minus_one_bytes{0x7fU};
     arc::vm::WasmCursor sleb_minus_one{.bytes = sleb_minus_one_bytes};
     const auto sleb_minus_one_value = sleb_minus_one.sleb();

@@ -1,28 +1,28 @@
-# `arc/sandbox.hpp`
+# `arc/hotswap.hpp`
 
-VM, JIT, WASM AOT, hypervisor, PMS/TEE planning, hotpatch, chaos, and sandbox policy hooks.
+Signed native, BPF, and WASM hot-swap staging policy.
 
 ## Fit
 
-- Use it when a reader wants one coherent entry point for a domain or a subset build wants a profile root.
-- Do not start here when one source file only needs a narrow peripheral or codec header.
-- Verification focus: confirm the profile does not drag domain roots into small substrate builds unless that is intentional.
+- Use it when security-sensitive bytes need caller-owned buffers, explicit hardware-policy boundaries, or bounded sandbox hooks.
+- Do not start here when key custody, trust decisions, product authorization, or threat modeling belongs above Arc.
+- Verification focus: document key source, buffer lifetime, failure handling, and which side owns the final security decision.
 
 ## Arc Contract
 
-- Header: `arc/sandbox.hpp`
-- Module group: Profile Modules
-- CMake feature: `sandbox`
-- Closest example: `.`
+- Header: `arc/hotswap.hpp`
+- Module group: Crypto, Security, VM, And Sandbox
+- CMake feature: `hotswap`
+- Closest example: `examples/esp32s3/store`
 
-Declare `arc_requires(main_requires core sandbox)` in the component that includes this header.
+Declare `arc_requires(main_requires core hotswap)` in the component that includes this header.
 
 ## CMake And Include
 
 ```cmake
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/arc-deps.cmake)
 
-arc_requires(main_requires core sandbox)
+arc_requires(main_requires core hotswap)
 
 idf_component_register(
     SRCS "app_main.cpp"
@@ -31,12 +31,12 @@ idf_component_register(
 ```
 
 ```cpp
-#include "arc/sandbox.hpp"
+#include "arc/hotswap.hpp"
 ```
 
 ## Source Landmarks
 
-Source landmarks: `arc/hypervisor.hpp`, `arc/hotswap.hpp`, `arc/jit.hpp`, `arc/pms.hpp`, `arc/tee.hpp`, `arc/vm.hpp`, `arc/wasm_aot.hpp`.
+Source landmarks: `HotSwapPlan`, `HotSwapImage`, `HotSwap`, `HotSwapKind`.
 
 ## Start From Zero
 
@@ -74,12 +74,12 @@ extern "C" void app_main()
 
 ## Build Or Example
 
-The root project is the smallest place to try this module.
+The closest shipped example is `examples/esp32s3/store`.
 
 ```sh
 . ./env.sh
-idf.py build
-idf.py -p /dev/ttyACM0 flash monitor
+idf.py -C examples/esp32s3/store build
+idf.py -C examples/esp32s3/store -p /dev/ttyACM0 flash monitor
 ```
 
 ## Runtime Check
