@@ -584,6 +584,22 @@ void probe()
 """,
     ),
     Case(
+        name="core_local_pointer_state",
+        source="""
+using Bad = arc::CoreLocal<State*, arc::Core::core1>;
+static_assert(Bad::owner == arc::Core::core1);
+""",
+        must_contain="cannot carry borrowed storage directly",
+    ),
+    Case(
+        name="core_msg_span_payload",
+        source="""
+using Bad = arc::CoreMsg<std::span<State, 1>, arc::Core::core1, arc::Core::core0>;
+static_assert(Bad::from == arc::Core::core1);
+""",
+        must_contain="cannot carry borrowed storage directly",
+    ),
+    Case(
         name="wrong_core_local_set",
         source="""
 void probe()

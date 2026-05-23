@@ -89,6 +89,10 @@ class CoreMsg {
     static_assert(
         To != Core::any,
         "[ARC ERROR] arc::CoreMsg destination must be a concrete core. Action: use Core::core0 or Core::core1.");
+    static_assert(
+        detail::PlainScopedResult<T>,
+        "[ARC ERROR] arc::CoreMsg payload cannot carry borrowed storage directly. "
+        "Action: send copied values, stable IDs, or fixed arrays; keep pointers, reference wrappers, spans, string_views, and wrappers containing them outside the core message payload.");
 
 public:
     using value_type = T;
@@ -152,6 +156,10 @@ class CoreLocal {
     static_assert(
         Owner != Core::any,
         "[ARC ERROR] arc::CoreLocal owner must be a concrete core. Action: use Core::core0 or Core::core1.");
+    static_assert(
+        detail::PlainScopedResult<T>,
+        "[ARC ERROR] arc::CoreLocal state cannot carry borrowed storage directly. "
+        "Action: store copied values, stable IDs, or fixed arrays; keep pointers, reference wrappers, spans, string_views, and wrappers containing them outside core-local state.");
 
 public:
     using value_type = T;

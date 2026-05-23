@@ -1395,6 +1395,7 @@ Compile-time core ownership tags for state that must not be casually shared acro
 - `CoreLocal::can_access<Core>()` and `with(fn)` keep common owner checks and short scoped mutations readable without repeating the owner core.
 - `CoreLocal::Msg<To>` and `CoreLocal::Incoming<From>` name outbound and inbound `CoreMsg` contracts without repeating the payload and owner core.
 - `set<Core>(value)`, `with<Core>(fn)`, `msg<Core, To>()`, and `accept<Core>(msg)` remain available when a call site should spell the access core explicitly.
+- Core-local state and core-message payloads must be copied values, stable IDs, or fixed arrays; direct pointers, reference wrappers, `std::span`, `std::string_view`, and standard/result wrappers containing those fail at compile time.
 - `CoreLocal::with<Core>(fn)` and `CoreMsg::with<Core>(fn)` callbacks may return `void` or an ordinary value, but not a reference, raw pointer, `std::reference_wrapper`, common non-owning view such as `std::span` / `std::string_view`, or standard/result wrapper such as `std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant` / `std::expected` / `arc::Result` containing those.
 - `snapshot()` copies the current value through the encoded owner core, avoiding a borrowed reference for simple reads.
 - `msg<To>()` creates a copied message from the owner core to the destination core, and `accept(msg)` applies a message addressed to the local core.

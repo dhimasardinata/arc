@@ -174,11 +174,13 @@ auto delivered = msg.snapshot();
 For simple reads, `snapshot()` copies out a value instead of handing out a
 reference. The message carries its destination in the type, so `msg.get()` reads
 through that encoded destination, while `msg.with(fn)` scopes the read to one
-callback. Explicit `get<Core>()` and `with<Core>(fn)` are still available when a
-boundary should name the core directly. Like static-borrow helpers,
-`CoreLocal::with` and `CoreMsg::with` callbacks cannot return references, raw
-pointers, `std::reference_wrapper`, or common non-owning views such as
-`std::span` / `std::string_view`, or standard/result wrappers such as
+callback. Core-local state and message payloads must be copied values, stable
+IDs, or fixed arrays; direct pointers and non-owning views fail before the value
+can cross a core boundary. Explicit `get<Core>()` and `with<Core>(fn)` are still
+available when a boundary should name the core directly. Like static-borrow
+helpers, `CoreLocal::with` and `CoreMsg::with` callbacks cannot return
+references, raw pointers, `std::reference_wrapper`, or common non-owning views
+such as `std::span` / `std::string_view`, or standard/result wrappers such as
 `std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant` /
 `std::expected` / `arc::Result` containing those. Explicit forms such as
 `CoreLocal::with<Core>(fn)` and `msg<Core, To>()` remain available when a
