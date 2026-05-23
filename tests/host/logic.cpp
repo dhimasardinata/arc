@@ -79,6 +79,7 @@
 #include "arc/hyper_matrix.hpp"
 #include "arc/math.hpp"
 #include "arc/matrix.hpp"
+#include "arc/mcap.hpp"
 #include "arc/migrator.hpp"
 #include "arc/maglev.hpp"
 #include "arc/memory.hpp"
@@ -4541,6 +4542,59 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
         {.tick = 1U});
     expect(perfetto.has_value() && perfetto->size() > 0U && pf[0] == 0x08U && !null_perfetto.has_value(),
            "Perfetto binary event");
+
+    std::array<std::uint8_t, 256> mcap_bytes{};
+    arc::mcap::Writer mcap{.out = mcap_bytes};
+    const std::array<std::uint8_t, 4> mcap_schema{'p', 'o', 's', 'e'};
+    const std::array arc_metadata{
+        arc::mcap::Meta{.key = "frame", .value = "map"},
+    };
+    expect(mcap.start("ros2", "arc").has_value() &&
+               mcap.schema({.id = 1U, .name = "Pose2", .encoding = "json", .data = mcap_schema}).has_value() &&
+               mcap.channel({
+                                .id = 1U,
+                                .schema_id = 1U,
+                                .topic = "/pose",
+                                .message_encoding = "json",
+                                .metadata = arc_metadata,
+                            })
+                   .has_value(),
+           "MCAP writes header schema and channel records");
+    const std::array<std::uint8_t, 3> pose_payload{'{', '}', '\n'};
+    const auto message_offset = mcap.pos;
+    expect(mcap.message({
+                            .channel = 1U,
+                            .sequence = 7U,
+                            .log_time = 0x0102'0304'0506'0708ULL,
+                            .publish_time = 0x1112'1314'1516'1718ULL,
+                            .data = pose_payload,
+                        })
+                   .has_value() &&
+               mcap_bytes[message_offset] == static_cast<std::uint8_t>(arc::mcap::Op::message) &&
+               mcap_bytes[message_offset + 1U] == 25U &&
+               mcap_bytes[message_offset + 9U] == 1U &&
+               mcap_bytes[message_offset + 11U] == 7U &&
+               mcap_bytes[message_offset + 15U] == 0x08U &&
+               mcap_bytes[message_offset + 31U] == static_cast<std::uint8_t>('{'),
+           "MCAP message record uses little-endian header and timestamp fields");
+    expect(mcap.finish().has_value() &&
+               mcap.finished &&
+               mcap.bytes().size() > arc::mcap::Writer::magic.size() * 2U &&
+               mcap.bytes()[0] == 0x89U &&
+               mcap.bytes()[arc::mcap::Writer::magic.size()] == static_cast<std::uint8_t>(arc::mcap::Op::header) &&
+               mcap.bytes()[9] == 15U &&
+               mcap.bytes()[mcap.bytes().size() - arc::mcap::Writer::magic.size()] == 0x89U,
+           "MCAP finishes DataEnd Footer and trailing magic");
+    arc::mcap::Writer null_mcap{.out = std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), 1U}};
+    expect(!null_mcap.start("ros2", "arc"), "MCAP rejects null output span");
+    arc::mcap::Writer tiny_mcap{.out = std::span<std::uint8_t>{mcap_bytes.data(), 8U}};
+    expect(!tiny_mcap.start("ros2", "arc"), "MCAP rejects undersized output span");
+    std::array<std::uint8_t, 48> short_tail_bytes{};
+    arc::mcap::Writer short_tail{.out = short_tail_bytes};
+    expect(short_tail.start("r", "a").has_value(), "MCAP starts with a minimal header");
+    const auto short_tail_pos = short_tail.pos;
+    expect(!short_tail.finish() && short_tail.pos == short_tail_pos && !short_tail.finished,
+           "MCAP rejects undersized footer without partial tail");
 
     arc::Provisioning<32, 64, 128> provisioning{};
     const std::array<std::uint8_t, 4> nonce{1, 2, 3, 4};

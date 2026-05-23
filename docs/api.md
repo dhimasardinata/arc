@@ -1073,6 +1073,17 @@ Caller-buffer Chrome/Perfetto trace-event JSON formatter for `arc::LogEvent`.
 
 Use this on Core 0 after draining `arc::LogLane` or `arc::Postmortem` when you want visual timing analysis in Perfetto without formatting on Core 1.
 
+### `arc::mcap::Writer`
+
+Fixed-buffer MCAP writer for telemetry archives that must not allocate while the control loop is alive.
+
+- `start(profile, library)` writes the leading magic and Header record.
+- `schema(value)` and `channel(value)` declare schema bytes, topics, encodings, and metadata from caller-owned spans.
+- `message(value)` writes channel, sequence, log time, publish time, and payload bytes.
+- `finish(data_crc, footer)` writes DataEnd, Footer, and trailing magic.
+
+Use this after draining binary lanes or ROS2 bridge state into a pre-sized buffer. Arc writes record framing and little-endian fields only; chunking, compression, CRC selection, summary sections, file transport, and ROS2 type support stay in product policy.
+
 ### `arc::Postmortem<Capacity>`
 
 RTC no-init ring buffer for reboot-surviving diagnostics.

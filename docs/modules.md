@@ -339,6 +339,7 @@ hot loop.
 | `arc/trace_stream.hpp` | Draining binary logs to UDP, WebSocket, file, or custom sinks. |
 | `arc/trace_live.hpp` | Half-full trace chunk handoff to policy-owned sinks. |
 | `arc/perfetto.hpp` | Compact binary Perfetto trace records. |
+| `arc/mcap.hpp` | Fixed-buffer MCAP telemetry records. |
 | `arc/trax.hpp` | Xtensa TRAX instruction trace memory control. |
 
 ## Detail Headers

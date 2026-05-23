@@ -210,6 +210,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 
 | Header | Purpose | Page |
 | --- | --- | --- |
+| `arc/mcap.hpp` | Fixed-buffer MCAP telemetry records. | [Open](/modules/arc-mcap) |
 | `arc/perfetto.hpp` | Compact binary Perfetto trace records. | [Open](/modules/arc-perfetto) |
 | `arc/trace_event.hpp` | Trace-event JSON fragments from binary log events. | [Open](/modules/arc-trace_event) |
 | `arc/trace_live.hpp` | Half-full trace chunk handoff to policy-owned sinks. | [Open](/modules/arc-trace_live) |
