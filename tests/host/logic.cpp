@@ -1148,6 +1148,11 @@ void test_core_local()
         return value;
     });
     expect(scoped == 43U && counter.get<arc::Core::core1>() == 43U, "CoreLocal scoped access updates local state");
+    const auto scoped_const = static_cast<const Core1Counter&>(counter).with<arc::Core::core1>(
+        [](const std::uint32_t& value) {
+            return value;
+        });
+    expect(scoped_const == 43U, "CoreLocal const scoped access returns copied value");
 
     const auto msg = counter.msg<arc::Core::core1, arc::Core::core0>();
     using Msg = decltype(msg);

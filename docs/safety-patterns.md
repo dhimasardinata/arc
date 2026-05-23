@@ -125,6 +125,7 @@ Core1Counter counter{41U};
 counter.set<arc::Core::core1>(42U);
 counter.with<arc::Core::core1>([](std::uint32_t& value) {
     value += 1U;
+    return value;
 });
 
 auto msg = counter.msg<arc::Core::core1, arc::Core::core0>();
@@ -133,7 +134,8 @@ static_assert(decltype(msg)::to == arc::Core::core0);
 ```
 
 The destination core can read the message. The source core cannot read it
-through the destination-only accessor.
+through the destination-only accessor. Like static-borrow helpers,
+`CoreLocal::with` callbacks cannot return references or raw pointers.
 
 ## Static Plane Launch
 

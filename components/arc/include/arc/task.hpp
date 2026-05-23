@@ -62,6 +62,22 @@ concept StaticTaskState =
 template <typename T, Core Owner>
 class CoreLocal;
 
+namespace detail {
+
+template <typename Result>
+inline constexpr bool scoped_core_result =
+    std::is_void_v<Result> || (!std::is_reference_v<Result> && !std::is_pointer_v<Result>);
+
+template <typename Fn, typename... Args>
+consteval void require_scoped_core_result()
+{
+    using Result = std::invoke_result_t<Fn, Args...>;
+    static_assert(scoped_core_result<Result>,
+                  "[ARC ERROR] scoped core-local callback cannot return a reference or pointer. Action: copy out a value.");
+}
+
+}  // namespace detail
+
 template <typename T, Core From, Core To>
 class CoreMsg {
     static_assert(
@@ -152,6 +168,7 @@ public:
         requires CoreOwner<Access, Owner> && std::invocable<Fn, T&>
     constexpr decltype(auto) with(Fn&& fn) & noexcept(noexcept(std::invoke(std::forward<Fn>(fn), value_)))
     {
+        detail::require_scoped_core_result<Fn, T&>();
         return std::invoke(std::forward<Fn>(fn), value_);
     }
 
@@ -159,6 +176,7 @@ public:
         requires CoreOwner<Access, Owner> && std::invocable<Fn, const T&>
     constexpr decltype(auto) with(Fn&& fn) const& noexcept(noexcept(std::invoke(std::forward<Fn>(fn), value_)))
     {
+        detail::require_scoped_core_result<Fn, const T&>();
         return std::invoke(std::forward<Fn>(fn), value_);
     }
 

@@ -141,6 +141,32 @@ void probe()
         must_contain="callback cannot return a reference or pointer",
     ),
     Case(
+        name="core_local_returns_reference",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    (void)local.with<arc::Core::core1>([](State& current) -> State& {
+        return current;
+    });
+}
+""",
+        must_contain="callback cannot return a reference or pointer",
+    ),
+    Case(
+        name="core_local_returns_pointer",
+        source="""
+void probe()
+{
+    const arc::CoreLocal<State, arc::Core::core1> local{};
+    (void)local.with<arc::Core::core1>([](const State& current) {
+        return &current;
+    });
+}
+""",
+        must_contain="callback cannot return a reference or pointer",
+    ),
+    Case(
         name="move_mutable_loan",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;
