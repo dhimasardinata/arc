@@ -1416,7 +1416,8 @@ around as a raw pointer or reference.
 - `HasStaticRefRead` and `HasStaticRefWrite` are the same query shape when the contract should stay expressed in `StaticRef` owner types.
 - `StaticReadable`, `StaticWritable`, `LoanReadable`, and `LoanWritable` let templates check whether a static owner or loan can be used from a specific core.
 - `with_read<Ref, Core>(fn)` and `with_write<Ref, Core>(fn)` keep a loan scoped to one callback when code should not hold it across a larger block.
-- `with_edit<Core, WriteRef, ReadRefs...>(fn)` is the same scoped helper for the one-writer, many-reader path.
+- `with_edit<WriteRef, ReadRefs...>(fn)` uses the writer's owner for the common one-writer, many-reader path.
+- `with_edit<Core, WriteRef, ReadRefs...>(fn)` keeps the explicit-core form available when the boundary is not the writer owner.
 - `loans_ok<Loans...>()` lets compile-contract tests check the same alias rule without intentionally failing the build.
 - Access from the wrong core owner is absent from the overload set.
 - Pointer shorthand through `operator->` and `operator*` is only available for `Core::any`; owner-bound loans must name the accessing core through `get<Core>()` or the scoped helpers.

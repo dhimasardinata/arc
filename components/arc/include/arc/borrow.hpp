@@ -388,4 +388,13 @@ constexpr decltype(auto) with_edit(Fn&& fn)
     return StaticEdit<WriteRef, ReadRefs...>::template with<Access>(std::forward<Fn>(fn));
 }
 
+template <typename WriteRef, typename... ReadRefs, typename Fn>
+    requires(detail::StaticEditRefs<WriteRef, ReadRefs...> &&
+             StaticEdit<WriteRef, ReadRefs...>::template can_access<WriteRef::owner>() &&
+             std::invocable<Fn, typename WriteRef::value_type&, const typename ReadRefs::value_type&...>)
+constexpr decltype(auto) with_edit(Fn&& fn)
+{
+    return StaticEdit<WriteRef, ReadRefs...>::template with<WriteRef::owner>(std::forward<Fn>(fn));
+}
+
 }  // namespace arc

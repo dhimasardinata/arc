@@ -1265,12 +1265,18 @@ void test_static_borrow()
     expect(scoped_read == 14U, "StaticRef scoped helpers keep loan use local");
 
     other_borrow_fixture.value = 5U;
-    const auto edited = arc::with_edit<arc::Core::core1, Cell, OtherCell>(
+    const auto edited = arc::with_edit<Cell, OtherCell>([](BorrowFixture& state, const BorrowFixture& other) {
+        state.value += other.value;
+        return state.value;
+    });
+    expect(edited == 19U && borrow_fixture.value == 19U, "StaticEdit scoped helper mixes one writer with reads");
+
+    const auto explicit_core = arc::with_edit<arc::Core::core1, Cell, OtherCell>(
         [](BorrowFixture& state, const BorrowFixture& other) {
             state.value += other.value;
             return state.value;
         });
-    expect(edited == 19U && borrow_fixture.value == 19U, "StaticEdit scoped helper mixes one writer with reads");
+    expect(explicit_core == 24U && borrow_fixture.value == 24U, "StaticEdit explicit core helper stays available");
 
     const auto read_any = ConstCell::read<arc::Core::core0>();
     expect((*read_any).value == 9U, "StaticRef default owner allows readonly global access");

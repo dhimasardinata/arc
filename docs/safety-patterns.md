@@ -98,10 +98,9 @@ references named by the loan pack:
 ```cpp
 void control_step()
 {
-    arc::with_edit<arc::Core::core1, ControlCell, TelemetryCell>(
-        [](ControlState& control, const ControlState& telemetry) {
-            control.tick += telemetry.tick;
-        });
+    arc::with_edit<ControlCell, TelemetryCell>([](ControlState& control, const ControlState& telemetry) {
+        control.tick += telemetry.tick;
+    });
 }
 ```
 
