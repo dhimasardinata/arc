@@ -1091,6 +1091,8 @@ Hot-loop math helpers for the compute plane.
 - `arc::dsp::Biquad<T>` provides a direct-form IIR/FIR section with caller-provided coefficients.
 - `arc::dsp::Sos<T, N>` chains fixed second-order sections for deterministic cascaded filtering.
 - `arc::dsp::StateSpace<T, States, Inputs, Outputs>` runs fixed-size controller/plant updates with caller-owned state.
+- `arc::dsp::inverse(Matrix<T, N, N>)` inverts fixed floating-point matrices without heap state and rejects singular inputs with `ESP_ERR_INVALID_ARG`.
+- `arc::dsp::Lqr<T, States, Inputs>` computes finite-horizon LQR gains and control actions over fixed matrix shapes.
 
 Use this when Core 1 is doing signal work and you want aligned buffers plus tight, vector-friendly loops without a heavyweight DSP framework.
 

@@ -4144,6 +4144,18 @@ void test_matrix_kalman_storage_swarm()
         arc::dsp::Matrix<float, 1, 1>{{10.0F}});
     expect(filter.x(0, 0) == 5.0F, "Kalman diagonal correction");
 
+    using ScalarLqr = arc::dsp::Lqr<float, 1, 1>;
+    const ScalarLqr::A lqr_a{{1.0F}};
+    const ScalarLqr::B lqr_b{{1.0F}};
+    const ScalarLqr::Q lqr_q{{1.0F}};
+    const ScalarLqr::R lqr_r{{1.0F}};
+    const ScalarLqr::P terminal{{1.0F}};
+    const auto lqr_k = ScalarLqr::solve(lqr_a, lqr_b, lqr_q, lqr_r, terminal, 1U);
+    expect(lqr_k.has_value() && near((*lqr_k)(0, 0), 0.6F), "LQR finite gain");
+    const auto lqr_u = ScalarLqr::act(*lqr_k, ScalarLqr::State{{10.0F}});
+    expect(near(lqr_u(0, 0), -6.0F), "LQR control action");
+    expect(!arc::dsp::inverse(arc::dsp::Matrix<float, 1, 1>{{0.0F}}), "Matrix inverse rejects singular");
+
     struct Sink {
         std::size_t bytes{};
         esp_err_t write(std::span<const std::uint8_t> data) noexcept

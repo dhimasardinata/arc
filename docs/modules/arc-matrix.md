@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Matrix`.
+Source landmarks: `Matrix`, `Lqr`, `inverse`.
 
 ## Start From Zero
 
