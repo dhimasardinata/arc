@@ -1056,6 +1056,38 @@ def run_cases(cases: tuple[Case, ...] = CASES) -> list[CaseResult]:
     return results
 
 
+def case_group(name: str) -> str:
+    if name.startswith(("wrong_core_static", "wrong_core_loan", "mixed_owner", "const_static", "owner_bound")):
+        return "static_borrow_access"
+    if name.startswith(("mutable_const", "conflicting_", "const_member", "move_mutable_loan")):
+        return "static_borrow_alias"
+    if name.startswith(("scoped_borrow", "scoped_member")):
+        return "scoped_borrow_result"
+    if name.startswith(("wrong_core_local", "core_local")):
+        return "core_local"
+    if name.startswith(("wrong_core_msg", "core_msg")):
+        return "core_msg"
+    if name.startswith(("spsc_", "mpsc_", "fanin_", "rpc_", "flow_")):
+        return "payload_boundary"
+    if name.startswith(("scoped_role", "scoped_split", "scoped_rpc")):
+        return "role_scope"
+    if name.startswith("proof_"):
+        return "proof_metadata"
+    return "other"
+
+
+def group_summary(results: list[CaseResult]) -> dict[str, dict[str, int]]:
+    groups: dict[str, dict[str, int]] = {}
+    for result in results:
+        group = groups.setdefault(case_group(result.name), {"cases": 0, "passed": 0, "failed": 0})
+        group["cases"] += 1
+        if result.passed:
+            group["passed"] += 1
+        else:
+            group["failed"] += 1
+    return groups
+
+
 def report(results: list[CaseResult]) -> dict[str, object]:
     failed = [result for result in results if not result.passed]
     return {
@@ -1065,10 +1097,12 @@ def report(results: list[CaseResult]) -> dict[str, object]:
             "cases": len(results),
             "passed": len(results) - len(failed),
             "failed": len(failed),
+            "groups": group_summary(results),
         },
         "cases": [
             {
                 "name": result.name,
+                "group": case_group(result.name),
                 "must_contain": result.must_contain,
                 "status": "failed_as_expected" if result.passed else "problem",
                 **({} if result.problem is None else {"problem": result.problem}),

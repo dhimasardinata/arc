@@ -35,16 +35,29 @@ class CompileFailCheckTest(unittest.TestCase):
         payload = compile_fail_check.report(results)
 
         self.assertFalse(payload["ok"])
-        self.assertEqual(payload["summary"], {"cases": 2, "passed": 1, "failed": 1})
+        self.assertEqual(payload["summary"]["cases"], 2)
+        self.assertEqual(payload["summary"]["passed"], 1)
+        self.assertEqual(payload["summary"]["failed"], 1)
+        self.assertEqual(payload["summary"]["groups"]["scoped_borrow_result"], {"cases": 1, "passed": 1, "failed": 0})
+        self.assertEqual(payload["summary"]["groups"]["static_borrow_access"], {"cases": 1, "passed": 0, "failed": 1})
         self.assertEqual(payload["cases"][0]["status"], "failed_as_expected")
+        self.assertEqual(payload["cases"][0]["group"], "scoped_borrow_result")
         self.assertEqual(payload["cases"][0]["must_contain"], "callback cannot return a reference or pointer")
         self.assertEqual(payload["cases"][1]["status"], "problem")
+        self.assertEqual(payload["cases"][1]["group"], "static_borrow_access")
         self.assertIn("expected compile failure", payload["cases"][1]["problem"])
         json.dumps(payload)
 
     def test_case_result_passed_tracks_problem(self) -> None:
         self.assertTrue(compile_fail_check.CaseResult("ok_case", None, None).passed)
         self.assertFalse(compile_fail_check.CaseResult("bad_case", None, "failed").passed)
+
+    def test_case_group_names_main_contract_areas(self) -> None:
+        self.assertEqual(compile_fail_check.case_group("wrong_core_loan_snapshot"), "static_borrow_access")
+        self.assertEqual(compile_fail_check.case_group("core_msg_returns_reference"), "core_msg")
+        self.assertEqual(compile_fail_check.case_group("flow_pointer_payload"), "payload_boundary")
+        self.assertEqual(compile_fail_check.case_group("scoped_rpc_returns_other_endpoint"), "role_scope")
+        self.assertEqual(compile_fail_check.case_group("proof_zero_subject_fact"), "proof_metadata")
 
 
 if __name__ == "__main__":
