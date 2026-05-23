@@ -35,6 +35,7 @@ Arc exists for firmware where "it probably initializes" and "the ISR usually kee
 | DMA buffers silently land in the wrong memory | Capability-tagged buffers and cache handoff APIs make SRAM/PSRAM/DMA ownership visible at the call site. |
 | Realtime work competes with networking and logs | Core 1 is the deterministic compute plane; Core 0 owns control, transport, storage, and framework work. |
 | Shared peripheral lifetime becomes informal | `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, and `arc::RefLease` encode init, rollback, references, and teardown in one atomic word. |
+| Static shared state loses its lifetime story | `arc::StaticRef<&object, Core>` and `StaticLoan` keep global storage, core access, and read/mutable intent in the type. |
 | Lock-free code accidentally invokes C++ data-race UB | Queue and snapshot lanes use explicit acquire/release sequencing, cache-line layout, and dual-buffer handoff where payload tearing would otherwise be undefined. |
 | ESP-IDF APIs leak raw handles into app code | Arc keeps ownership typed, static, and explicit while still returning `esp_err_t` or `arc::Result<T>` when recovery matters. |
 
@@ -53,6 +54,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::Pins` gives one-file board topology checks so duplicate physical pins are caught where hardware truth is declared.
 - `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::Gate`, and `arc::MutexGate` provide initialization, shared-resource lifetime, and task-level locking primitives for static drivers.
+- `arc::StaticRef<&object, Core>` creates zero-cost `StaticLoan` read/mutable views so task state can carry static lifetime, core owner, and access mode without pointer plumbing.
 - `arc::stack` turns task stack sizing into a compile-time contract: Arc task wrappers reject stacks below their declared budget, and Arc's CMake interface enables GCC stack/frame errors for oversized C++ frames.
 - `arc::Result<T>` is an opt-in `std::expected<T, esp_err_t>` alias for runtime operations that should not hard-panic.
 - `arc::Cache` makes DMA/PSRAM cache coherency explicit at the call site, while `arc::Copy::send_coherent(...)` and `finish_coherent(...)` cover the common async-memcpy handoff without blocking useful CPU work.
@@ -328,7 +330,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 | Area | Headers | Primary types |
 | --- | --- | --- |
 | Profile umbrellas | `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/math.hpp`, `arc.hpp` | Subset entry points for substrate, coherency/DMA, no-heap codecs, DSP/math, and the compatibility umbrella |
-| Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/lockstep.hpp`, `arc/sim.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/flow.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::CoreLocal`, `arc::CoreMsg`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::Lockstep`, `arc::LockstepFault`, `arc::sim::Drive`, `arc::sim::Sense`, `arc::sim::Spi`, `arc::sim::Fifo`, `arc::sim::TraceLog`, `arc::sim::Harness`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Flow`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
+| Core plane | `arc/task.hpp`, `arc/borrow.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/lockstep.hpp`, `arc/sim.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/flow.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::CoreLocal`, `arc::CoreMsg`, `arc::StaticRef`, `arc::StaticLoan`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::Lockstep`, `arc::LockstepFault`, `arc::sim::Drive`, `arc::sim::Sense`, `arc::sim::Spi`, `arc::sim::Fifo`, `arc::sim::TraceLog`, `arc::sim::Harness`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Flow`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp`, `arc/roles.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit`, `arc::Roles` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/hotpatch.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/axi_graph.hpp`, `arc/pipeline.hpp`, `arc/mmu_span.hpp`, `arc/distributed_mmu.hpp`, `arc/fram.hpp`, `arc/place.hpp`, `arc/prefetch.hpp`, `arc/scrub.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::HotPatch`, `arc::HotPatchImage`, `arc::HotPatchDetour`, `arc::DmaChain`, `arc::DmaEndpoint`, `arc::AxiGraph`, `arc::AxiPort`, `arc::AxiEdge`, `arc::Pipeline`, `arc::Dma2dWindow`, `arc::bind_rows`, `arc::MmuSpan`, `arc::mmu::DistributedSpan`, `arc::mmu::DistributedPager`, `arc::FramArena`, `arc::FramRef`, `arc::FramAlloc`, `arc::Copy`, `arc::prefetch`, `arc::Scrub` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp`, `arc/rpc.hpp`, `arc/rtc_ring.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem`, `arc::RpcLane`, `arc::RtcRing` |
@@ -521,6 +523,7 @@ Profile aliases for `math`, `memory`, `net_codecs`, `crypto`, `robotics`, and `s
 - `aes`
 - `ble`
 - `ble_mesh`
+- `borrow`
 - `blackbox`
 - `cert_bundle`
 - `chaos`
@@ -731,6 +734,7 @@ Arc keeps driver lifetime explicit because ESP-IDF peripheral handles often have
 - `arc::RefInit` is the shared-resource variant. The first `begin()` owns initialization, later `begin()` or `take()` calls acquire a reference, and only the final `drop()` returns `true` so the caller can tear the hardware down. `arc::RefInitTxn` gives the first initializer the same rollback-on-early-return protection as `arc::InitTxn`.
 - Both init machines expose `is_empty()`, `is_busy()`, and `is_ready()` so diagnostics can inspect state without depending on sentinel values.
 - `arc::RefLease` is the scoped form for borrowed shared references. `take()` acquires a new reference, `adopt()` wraps an existing one, and the final owner must call `release()` and perform teardown explicitly instead of hiding hardware deinit in a destructor.
+- `arc::StaticRef<&object, Owner>` is the compile-time form for static app state. `read<Core>()` returns a copyable readonly `StaticLoan`, `write<Core>()` returns a move-only mutable `StaticLoan`, and both disappear from the overload set for the wrong core owner or const storage.
 - `arc::Gate` is a tiny task-context guard for protecting short hot mutations. It asserts in ISR context instead of blocking where FreeRTOS cannot safely sleep.
 - `arc::TryGate` is the non-blocking form for paths that may probe ownership but must not sleep; failed acquisition is just `false`.
 - `arc::MutexGate` and `arc::TryMutexGate` wrap a lazily created `StaticSemaphore_t` mutex for task-level control-plane locks that should get FreeRTOS priority inheritance instead of spin-sleep polling.
@@ -1376,6 +1380,20 @@ Compile-time core ownership tags for state that must not be casually shared acro
 - `accept<Owner>(msg)` applies an addressed message to the destination local slot.
 
 Use this for small ownership-sensitive control or telemetry records where `Spsc`, `SeqReg`, or another lane carries the transfer and the value itself should still remember which core may touch it.
+
+### `arc::StaticRef<&object, Owner>` and `arc::StaticLoan`
+
+Compile-time static-lifetime loans for app state that would otherwise be passed
+around as a raw pointer or reference.
+
+- `StaticRef<&state, Core::core1>::read<Core::core1>()` returns a copyable readonly loan.
+- `StaticRef<&state, Core::core1>::write<Core::core1>()` returns a move-only mutable loan.
+- Access from the wrong core owner is absent from the overload set.
+- `write<...>()` is absent for const storage, so readonly global state cannot be accidentally made mutable.
+
+Use this when a task, simulator harness, or policy object should receive state
+with its static storage and core owner visible in the C++ type. It is an Arc
+boundary contract, not a whole-program C++ alias analysis engine.
 
 ### `arc::Link<Event, Control, Capacity>`
 

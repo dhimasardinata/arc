@@ -25,6 +25,7 @@
 #include "arc/bft.hpp"
 #include "arc/ble_mesh.hpp"
 #include "arc/blackbox.hpp"
+#include "arc/borrow.hpp"
 #include "arc/burst.hpp"
 #include "arc/caps.hpp"
 #include "arc/cert_bundle.hpp"
@@ -943,6 +944,15 @@ concept HasCoreMsg = requires(const T& local) { local.template msg<Access, To>()
 template <typename T, arc::Core Access>
 concept HasMsgGet = requires(const T& msg) { msg.template get<Access>(); };
 
+template <typename T, arc::Core Access>
+concept HasStaticRead = requires { T::template read<Access>(); };
+
+template <typename T, arc::Core Access>
+concept HasStaticWrite = requires { T::template write<Access>(); };
+
+template <typename T, arc::Core Access>
+concept HasLoanGet = requires(T& loan) { loan.template get<Access>(); };
+
 struct FlowPacket {
     std::uint32_t seq{};
 };
@@ -1135,6 +1145,55 @@ void test_core_local()
     arc::CoreLocal<std::uint32_t, arc::Core::core0> mirror{};
     mirror.accept<arc::Core::core0>(msg);
     expect(mirror.get<arc::Core::core0>() == 42U, "CoreLocal accepts addressed message");
+}
+
+struct BorrowFixture {
+    std::uint32_t value{};
+};
+
+constinit BorrowFixture borrow_fixture{7U};
+constinit const BorrowFixture const_borrow_fixture{9U};
+
+void test_static_borrow()
+{
+    using Cell = arc::StaticRef<&borrow_fixture, arc::Core::core1>;
+    using Read = decltype(Cell::read<arc::Core::core1>());
+    using Write = decltype(Cell::write<arc::Core::core1>());
+    using ConstCell = arc::StaticRef<&const_borrow_fixture>;
+
+    static_assert(Cell::owner == arc::Core::core1);
+    static_assert(Cell::object == &borrow_fixture);
+    static_assert(Read::mode == arc::BorrowMode::read);
+    static_assert(Write::mode == arc::BorrowMode::mut);
+    static_assert(std::is_copy_constructible_v<Read>);
+    static_assert(!std::is_copy_constructible_v<Write>);
+    static_assert(HasStaticRead<Cell, arc::Core::core1>);
+    static_assert(!HasStaticRead<Cell, arc::Core::core0>);
+    static_assert(HasStaticWrite<Cell, arc::Core::core1>);
+    static_assert(!HasStaticWrite<Cell, arc::Core::core0>);
+    static_assert(HasLoanGet<Read, arc::Core::core1>);
+    static_assert(!HasLoanGet<Read, arc::Core::core0>);
+    static_assert(HasStaticRead<ConstCell, arc::Core::core0>);
+    static_assert(!HasStaticWrite<ConstCell, arc::Core::core0>);
+
+    borrow_fixture.value = 7U;
+    {
+        const auto read = Cell::read<arc::Core::core1>();
+        const auto copied = read;
+        expect(read->value == 7U && copied.get<arc::Core::core1>().value == 7U,
+               "StaticRef shared loan reads static storage");
+    }
+
+    {
+        auto write = Cell::write<arc::Core::core1>();
+        write->value = 11U;
+        auto moved = std::move(write);
+        moved.get<arc::Core::core1>().value = 12U;
+    }
+    expect(borrow_fixture.value == 12U, "StaticRef mutable loan writes static storage");
+
+    const auto read_any = ConstCell::read<arc::Core::core0>();
+    expect((*read_any).value == 9U, "StaticRef default owner allows readonly global access");
 }
 
 struct LockstepOut {
@@ -9160,6 +9219,7 @@ int main()
     test_any_io();
     test_spsc();
     test_core_local();
+    test_static_borrow();
     test_lockstep();
     test_sim();
     test_checked_spsc();

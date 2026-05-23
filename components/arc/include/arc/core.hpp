@@ -7,6 +7,7 @@
 #include "arc/assume.hpp"
 #include "arc/audit.hpp"
 #include "arc/bare_core.hpp"
+#include "arc/borrow.hpp"
 #include "arc/bus.hpp"
 #include "arc/cfg.hpp"
 #include "arc/claim.hpp"

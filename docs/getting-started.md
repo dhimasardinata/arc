@@ -51,6 +51,21 @@ For public headers or component dependency changes, validate the clangd compile 
 - Host tests and compile contracts live in `tests/host/`.
 - Repo automation lives in `tools/`.
 
+## First Mental Model
+
+When Arc is new to you, start with ownership instead of feature count:
+
+- put slow services on Core 0 and deterministic work on Core 1;
+- name shared state once as static storage, then pass it through `arc::StaticRef`
+  or a lane such as `arc::Spsc`;
+- use `read<Core>()` when code only observes state, and `write<Core>()` only at
+  the owner boundary;
+- keep hardware topology, buffer storage, and failure policy close together in
+  one owner type.
+
+This path gives beginner code a small shape first, then lets you open specific
+modules only when the app needs that hardware or protocol.
+
 ## Reading Path
 
 Read in this order when Arc is new to you:

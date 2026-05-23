@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `arc/any.hpp`, `arc/assume.hpp`, `arc/audit.hpp`, `arc/bare_core.hpp`, `arc/bus.hpp`, `arc/cfg.hpp`, `arc/claim.hpp`, `arc/clock.hpp`.
+Source landmarks: `arc/any.hpp`, `arc/assume.hpp`, `arc/audit.hpp`, `arc/bare_core.hpp`, `arc/borrow.hpp`, `arc/bus.hpp`, `arc/cfg.hpp`, `arc/claim.hpp`.
 
 ## Start From Zero
 

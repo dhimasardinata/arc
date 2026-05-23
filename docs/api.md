@@ -347,6 +347,20 @@ Compile-time core ownership tags for state that must not be casually shared acro
 
 Use this for small ownership-sensitive control or telemetry records where `Spsc`, `SeqReg`, or another lane carries the transfer and the value itself should still remember which core may touch it.
 
+### `arc::StaticRef<&object, Owner>` and `arc::StaticLoan`
+
+Compile-time static-lifetime loans for app state that would otherwise be passed
+around as a raw pointer or reference.
+
+- `StaticRef<&state, Core::core1>::read<Core::core1>()` returns a copyable readonly loan.
+- `StaticRef<&state, Core::core1>::write<Core::core1>()` returns a move-only mutable loan.
+- Access from the wrong core owner is absent from the overload set.
+- `write<...>()` is absent for const storage, so readonly global state cannot be accidentally made mutable.
+
+Use this when a task, simulator harness, or policy object should receive state
+with its static storage and core owner visible in the C++ type. It is an Arc
+boundary contract, not a whole-program C++ alias analysis engine.
+
 ### `arc::Link<Event, Control, Capacity>`
 
 Shared state for asymmetric programs.

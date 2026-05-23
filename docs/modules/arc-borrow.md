@@ -1,6 +1,6 @@
-# `arc/sim.hpp`
+# `arc/borrow.hpp`
 
-Host simulator FIFO, SPI byte lane, trace log, harness ticks, and pin drive/sense facades for app logic tests.
+Static-lifetime read/mutable loans with core-owner access checks.
 
 ## Fit
 
@@ -10,19 +10,19 @@ Host simulator FIFO, SPI byte lane, trace log, harness ticks, and pin drive/sens
 
 ## Arc Contract
 
-- Header: `arc/sim.hpp`
+- Header: `arc/borrow.hpp`
 - Module group: Program Shape And Ownership
-- CMake feature: `sim`
+- CMake feature: `core`
 - Closest example: `.`
 
-Declare `arc_requires(main_requires core sim)` in the component that includes this header.
+Declare `arc_requires(main_requires core)` in the component that includes this header.
 
 ## CMake And Include
 
 ```cmake
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/arc-deps.cmake)
 
-arc_requires(main_requires core sim)
+arc_requires(main_requires core)
 
 idf_component_register(
     SRCS "app_main.cpp"
@@ -31,12 +31,12 @@ idf_component_register(
 ```
 
 ```cpp
-#include "arc/sim.hpp"
+#include "arc/borrow.hpp"
 ```
 
 ## Source Landmarks
 
-Source landmarks: `QuietTrace`, `StdoutTrace`, `Event`, `TraceLog`, `Fifo`, `Drive`, `Sense`, `Spi`, `Harness`, `EventKind`.
+Source landmarks: `BorrowMode`, `StaticRef`, `StaticLoan`, `StaticRead`, `StaticMut`.
 
 ## Start From Zero
 

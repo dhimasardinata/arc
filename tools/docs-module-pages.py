@@ -19,6 +19,7 @@ SPECIAL_FEATURES = {
     "axi_graph": "memory",
     "bare_core": "core",
     "bft": "net_codecs",
+    "borrow": "core",
     "bridge": "mcpwm",
     "burst": "rmt",
     "bus": "core",
@@ -165,6 +166,7 @@ GROUP_EXAMPLES = {
 }
 
 SPECIAL_LANDMARKS = {
+    "arc/borrow.hpp": ["BorrowMode", "StaticRef", "StaticLoan", "StaticRead", "StaticMut"],
     "arc/detail/quant.hpp": ["mul_sat", "add_sat", "round_shift_s64"],
 }
 

@@ -228,7 +228,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/crypto.hpp` | AES, SHA, HMAC, signatures, MPI, XTS, Kyber, Paillier, PUF, secure boot, and related security helpers. | [Open](/modules/arc-crypto) |
 | `arc/math.hpp` | DSP, SIMD, fixed matrices, Kalman, motion, ML, and control math surfaces. | [Open](/modules/arc-math) |
 | `arc/memory.hpp` | Capability buffers, cache ownership, DMA copy, descriptor chains, AXI graphs, pipelines, scrubbing, and placement helpers. | [Open](/modules/arc-memory) |
-| `arc/net_codecs.hpp` | URI, streams, fixed records, CRDTs, BFT votes, MQTT, WebSocket, CoAP, and small HTTP server helpers without owning Wi-Fi. | [Open](/modules/arc-net_codecs) |
+| `arc/net_codecs.hpp` | URI, streams, fixed records, CRDTs, BFT votes, MQTT, WebSocket, CoAP, XRCE, and small HTTP server helpers without owning Wi-Fi. | [Open](/modules/arc-net_codecs) |
 | `arc/robotics.hpp` | Motor control, CNC, motion, sensors, vision, DVP/LCD, digital twin, and robotics-oriented hardware paths. | [Open](/modules/arc-robotics) |
 | `arc/sandbox.hpp` | VM, JIT, WASM AOT, hypervisor, PMS/TEE planning, hotpatch, chaos, and sandbox policy hooks. | [Open](/modules/arc-sandbox) |
 
@@ -238,6 +238,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | --- | --- | --- |
 | `arc/audit.hpp` | Opt-in misuse assertions for queues and topology-sensitive lanes. | [Open](/modules/arc-audit) |
 | `arc/bare_core.hpp` | True-AMP Core 1 boot contracts for board policies outside FreeRTOS. | [Open](/modules/arc-bare_core) |
+| `arc/borrow.hpp` | Static-lifetime read/mutable loans with core-owner access checks. | [Open](/modules/arc-borrow) |
 | `arc/bus.hpp` | Compatibility naming for shared event/control buses. | [Open](/modules/arc-bus) |
 | `arc/claim.hpp` | Runtime hardware ownership claims. | [Open](/modules/arc-claim) |
 | `arc/cli.hpp` | Fixed command parsing from caller-owned byte spans. | [Open](/modules/arc-cli) |
