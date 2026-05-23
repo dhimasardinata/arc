@@ -4439,6 +4439,25 @@ void test_matrix_kalman_storage_swarm()
     expect(lqr_k.has_value() && near((*lqr_k)(0, 0), 0.6F), "LQR finite gain");
     const auto lqr_u = ScalarLqr::act(*lqr_k, ScalarLqr::State{{10.0F}});
     expect(near(lqr_u(0, 0), -6.0F), "LQR control action");
+    const auto adapted_lqr = ScalarLqr::adapt(
+        lqr_a,
+        lqr_b,
+        lqr_q,
+        lqr_r,
+        terminal,
+        ScalarLqr::AdaptSample{
+            .previous = ScalarLqr::State{{2.0F}},
+            .input = ScalarLqr::Input{{1.0F}},
+            .observed = ScalarLqr::State{{4.0F}},
+        },
+        {.rate = 0.1F, .limit = 0.5F, .epsilon = 0.001F, .steps = 1U});
+    expect(adapted_lqr.has_value() &&
+               adapted_lqr->a(0, 0) > lqr_a(0, 0) &&
+               adapted_lqr->b(0, 0) > lqr_b(0, 0) &&
+               adapted_lqr->residual > 0.0F,
+           "LQR adapt identifies model deltas from observed state");
+    expect(!ScalarLqr::adapt(lqr_a, lqr_b, lqr_q, lqr_r, terminal, {}, {.rate = 0.0F}),
+           "LQR adapt rejects invalid config");
     expect(!arc::dsp::inverse(arc::dsp::Matrix<float, 1, 1>{{0.0F}}), "Matrix inverse rejects singular");
 
     struct Sink {

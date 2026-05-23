@@ -79,7 +79,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/kalman.hpp` | Deterministic Kalman correction helpers. | [Open](/modules/arc-kalman) |
 | `arc/lifi.hpp` | Manchester optical symbol generation. | [Open](/modules/arc-lifi) |
 | `arc/maglev.hpp` | Unstable state-space control surfaces. | [Open](/modules/arc-maglev) |
-| `arc/matrix.hpp` | Fixed-size matrix math. | [Open](/modules/arc-matrix) |
+| `arc/matrix.hpp` | Fixed-size matrix math and adaptive LQR identification. | [Open](/modules/arc-matrix) |
 | `arc/ml.hpp` | Fixed-shape tensor, dense, quantized dense, conv, pool, and inference surfaces. | [Open](/modules/arc-ml) |
 | `arc/motion.hpp` | Bounded synchronized motion plans. | [Open](/modules/arc-motion) |
 | `arc/nav.hpp` | ESKF and quaternion navigation helpers. | [Open](/modules/arc-nav) |

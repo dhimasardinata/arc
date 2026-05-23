@@ -1,6 +1,6 @@
 # `arc/matrix.hpp`
 
-Fixed-size matrix math.
+Fixed-size matrix math and adaptive LQR identification.
 
 ## Fit
 
@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Matrix`, `Lqr`, `A`, `B`, `Q`, `R`, `P`, `K`, `State`, `Input`.
+Source landmarks: `Matrix`, `Lqr`, `AdaptConfig`, `AdaptSample`, `Adapted`, `A`, `B`, `Q`, `R`, `P`.
 
 ## Start From Zero
 

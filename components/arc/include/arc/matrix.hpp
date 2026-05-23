@@ -165,6 +165,26 @@ struct Lqr {
     using State = Matrix<T, States, 1>;
     using Input = Matrix<T, Inputs, 1>;
 
+    struct AdaptConfig {
+        T rate{T{0.05}};
+        T limit{T{0.25}};
+        T epsilon{T{0.000001}};
+        std::size_t steps{1U};
+    };
+
+    struct AdaptSample {
+        State previous{};
+        Input input{};
+        State observed{};
+    };
+
+    struct Adapted {
+        A a{};
+        B b{};
+        K k{};
+        T residual{};
+    };
+
     [[nodiscard]] static Result<K> gain(
         const A& a,
         const B& b,
@@ -209,6 +229,62 @@ struct Lqr {
             item = -item;
         }
         return out;
+    }
+
+    [[nodiscard]] static Result<Adapted> adapt(
+        const A& a,
+        const B& b,
+        const Q& q,
+        const R& r,
+        const P& terminal,
+        const AdaptSample& sample,
+        const AdaptConfig config = {}) noexcept
+    {
+        if (config.rate <= T{} || config.limit < T{} || config.epsilon <= T{}) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        auto next_a = a;
+        auto next_b = b;
+        const auto predicted = add(mul_vec(a, sample.previous), mul_vec(b, sample.input));
+        auto residual = T{};
+        for (std::size_t row = 0U; row < States; ++row) {
+            const auto error = sample.observed(row, 0U) - predicted(row, 0U);
+            residual += abs(error);
+            for (std::size_t col = 0U; col < States; ++col) {
+                tune(next_a(row, col), sample.previous(col, 0U), error, config);
+            }
+            for (std::size_t col = 0U; col < Inputs; ++col) {
+                tune(next_b(row, col), sample.input(col, 0U), error, config);
+            }
+        }
+
+        ARC_TRY(next_k, solve(next_a, next_b, q, r, terminal, config.steps));
+        return Adapted{.a = next_a, .b = next_b, .k = next_k, .residual = residual};
+    }
+
+private:
+    [[nodiscard]] static constexpr T abs(const T value) noexcept
+    {
+        return value < T{} ? -value : value;
+    }
+
+    [[nodiscard]] static constexpr T clamp(const T value, const T limit) noexcept
+    {
+        return value < -limit ? -limit : value > limit ? limit
+                                                       : value;
+    }
+
+    static constexpr void tune(
+        T& coefficient,
+        const T basis,
+        const T error,
+        const AdaptConfig config) noexcept
+    {
+        if (abs(basis) <= config.epsilon) {
+            return;
+        }
+        coefficient += clamp((config.rate * error) / basis, config.limit);
     }
 };
 

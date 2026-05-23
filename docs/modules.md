@@ -260,7 +260,7 @@ These modules are for deterministic compute, not dynamic frameworks.
 | --- | --- |
 | `arc/dsp.hpp` | Dot/scale/mix/MAC, FIR, PID, biquad, SOS, and state-space kernels. |
 | `arc/simd.hpp` | Explicit S3-focused vector and image/math kernels. |
-| `arc/matrix.hpp` | Fixed-size matrix math. |
+| `arc/matrix.hpp` | Fixed-size matrix math and adaptive LQR identification. |
 | `arc/kalman.hpp` | Deterministic Kalman correction helpers. |
 | `arc/ml.hpp` | Fixed-shape tensor, dense, quantized dense, conv, pool, and inference surfaces. |
 | `arc/snn.hpp` | Spike-driven inference primitives. |
