@@ -1424,7 +1424,7 @@ around as a raw pointer or reference.
 - `StaticRef::with_reads<Core, ReadRefs...>(fn)` keeps the explicit-core form for mixed-boundary code.
 - `StaticRef::with_edit<ReadRefs...>(fn)` scopes the common one-writer, many-reader edit without naming a separate `StaticEdit` contract first.
 - `StaticRef::with_edit<Core, ReadRefs...>(fn)` keeps the explicit-core form for mixed-boundary code.
-- Scoped borrow callbacks may return `void` or an ordinary value, but not a reference or raw pointer.
+- Scoped borrow callbacks may return `void` or an ordinary value, but not a reference, raw pointer, or `StaticLoan`.
 - `StaticReads<Refs...>` and `StaticWrites<Refs...>` build `LoanPack` contracts from `StaticRef` owner types instead of raw object addresses.
 - `StaticEdit<WriteRef, ReadRefs...>` builds the common one-writer, many-reader `LoanPack` without manually naming each loan type.
 - `LoanPack<Loans...>` rejects packs where one static object has a mutable loan plus any other loan.

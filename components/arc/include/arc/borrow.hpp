@@ -187,14 +187,15 @@ using LoanArg = std::conditional_t<Loan::mode == BorrowMode::mut,
 
 template <typename Result>
 inline constexpr bool scoped_borrow_result =
-    std::is_void_v<Result> || (!std::is_reference_v<Result> && !std::is_pointer_v<Result>);
+    std::is_void_v<Result> || (!std::is_reference_v<Result> && !std::is_pointer_v<Result> && !StaticLoanType<std::remove_cvref_t<Result>>);
 
 template <typename Fn, typename... Args>
 consteval void require_scoped_borrow_result()
 {
     using Result = std::invoke_result_t<Fn, Args...>;
     static_assert(scoped_borrow_result<Result>,
-                  "[ARC ERROR] scoped static borrow callback cannot return a reference or pointer. Action: copy out a value.");
+                  "[ARC ERROR] scoped static borrow callback cannot return a reference or pointer or static loan. "
+                  "Action: copy out a value.");
 }
 
 template <Core Access, typename Loan>

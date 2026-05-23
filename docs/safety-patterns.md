@@ -67,9 +67,10 @@ free `arc::with_read<...>` and `arc::with_write<...>` helpers remain available
 when code prefers the helper at the call site instead of on the owner type. For
 simple reads, `StaticRef::snapshot()` copies out a value without exposing a
 borrowed reference. Scoped callbacks can return `void` or a copied value;
-returning a reference or raw pointer fails the build so the borrow cannot escape
-the callback. `StaticRef::set(value)` and `arc::set<Ref>(value)` cover whole-value
-assignment when a callback would only expose a mutable reference for one store.
+returning a reference, raw pointer, or `StaticLoan` fails the build so the
+borrow token cannot escape the callback. `StaticRef::set(value)` and
+`arc::set<Ref>(value)` cover whole-value assignment when a callback would only
+expose a mutable reference for one store.
 
 ## Shared Task Contract
 

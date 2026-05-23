@@ -290,6 +290,37 @@ void probe()
         must_contain="callback cannot return a reference or pointer",
     ),
     Case(
+        name="scoped_borrow_returns_loan",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    const auto read = Cell::read<arc::Core::core1>();
+    (void)Cell::with_write([&](State&) {
+        return read;
+    });
+}
+""",
+        must_contain="callback cannot return a reference or pointer or static loan",
+    ),
+    Case(
+        name="scoped_borrow_pack_returns_loan",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+using OtherCell = arc::StaticRef<&other, arc::Core::core1>;
+
+void probe()
+{
+    const auto read = OtherCell::read<arc::Core::core1>();
+    (void)arc::with_reads<Cell, OtherCell>([&](const State&, const State&) {
+        return read;
+    });
+}
+""",
+        must_contain="callback cannot return a reference or pointer or static loan",
+    ),
+    Case(
         name="scoped_member_reads_returns_pointer",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;
