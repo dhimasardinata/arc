@@ -90,16 +90,77 @@ private:
 
 using Critical = Mask<XCHAL_EXCM_LEVEL>;
 using Silence = Mask<15U>;
+#elif ARC_TARGET_ARCH_RISCV
+template <unsigned Level = 1U>
+struct Mask {
+    static_assert(Level <= 1U,
+                  "[ARC ERROR] arc::Mask on RISC-V only supports global interrupt masking. Action: use Mask<1>.");
+
+    [[gnu::always_inline]] inline Mask() noexcept
+        : state_(clear())
+    {
+        fence();
+    }
+
+    Mask(const Mask&) = delete;
+    Mask& operator=(const Mask&) = delete;
+
+    [[gnu::always_inline]] inline ~Mask() noexcept
+    {
+        fence();
+        restore(state_);
+    }
+
+    [[nodiscard]] [[gnu::always_inline]] unsigned state() const noexcept
+    {
+        return state_;
+    }
+
+    [[nodiscard]] [[gnu::always_inline]] static unsigned raise() noexcept
+    {
+        return clear();
+    }
+
+    [[gnu::always_inline]] static void restore(const unsigned state) noexcept
+    {
+#if defined(__riscv)
+        if ((state & mie_bit) != 0U) {
+            asm volatile("csrsi mstatus, 8" ::: "memory");
+        } else {
+            asm volatile("csrci mstatus, 8" ::: "memory");
+        }
+#else
+        static_cast<void>(state);
+#endif
+    }
+
+private:
+    static constexpr unsigned mie_bit = 1U << 3U;
+
+    [[nodiscard]] [[gnu::always_inline]] static unsigned clear() noexcept
+    {
+#if defined(__riscv)
+        unsigned state{};
+        asm volatile("csrrc %0, mstatus, %1" : "=r"(state) : "r"(mie_bit) : "memory");
+        return state;
+#else
+        return 0U;
+#endif
+    }
+
+    unsigned state_{0};
+};
+
+using Critical = Mask<1U>;
+using Silence = Mask<1U>;
 #else
 template <unsigned Level = 0U>
 struct Mask {
-    static_assert(
-        soc::never_v<Level>,
-        "arc::Mask is Xtensa-specific; ESP32-S31/RISC-V interrupt masking is not implemented yet");
+    static_assert(soc::never_v<Level>, "arc::Mask has no implementation for this target architecture");
 };
 
 using Critical = Mask<0U>;
-using Silence = Mask<15U>;
+using Silence = Mask<0U>;
 #endif
 
 }  // namespace arc

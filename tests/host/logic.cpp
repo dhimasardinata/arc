@@ -5895,6 +5895,16 @@ void test_probe_stats()
     constexpr auto proof_claims = ControlProof::claims();
     static_assert(proof_claims[0].kind == arc::proof::Kind::deadline);
     static_assert(proof_claims[2].kind == arc::proof::Kind::static_life);
+    using ControlCertificate = arc::proof::Certificate<ControlProof, 2U>;
+    constexpr auto cert_header = ControlCertificate::header();
+    static_assert(cert_header.magic == arc::proof::Certificate<ControlProof>::magic);
+    static_assert(cert_header.version == 2U);
+    static_assert(cert_header.cycles == ControlProof::cycles);
+    static_assert(cert_header.claims == ControlProof::count);
+    static_assert(ControlCertificate::covers<
+                  arc::proof::Kind::deadline,
+                  arc::proof::Kind::no_heap,
+                  arc::proof::Kind::static_life>());
     expect(proof_claims.size() == 4U && proof_claims[1].subject == 17U && proof_claims[3].subject == 18U,
            "Proof pack carries compile-time workload claims");
 
@@ -8682,6 +8692,11 @@ void test_current_goal_surfaces()
     const auto migrate_decision = arc::swarm::Migrator::from_governor(
         {.action = arc::power::GovernorAction::boost, .predicted_slack = -5, .overrun_risk = true},
         idle_core.value());
+    const auto fleet_decision = arc::swarm::Migrator::from_fleet(
+        {.action = arc::power::GovernorAction::boost, .predicted_slack = -5, .overrun_risk = true},
+        std::span<const arc::swarm::FleetPeer, fleet_peers.size()>{fleet_peers},
+        0,
+        128U);
     const auto migration_frame = arc::swarm::Migrator::snapshot<16>(
         3U,
         {
@@ -8694,7 +8709,8 @@ void test_current_goal_surfaces()
     migration_peer = 0U;
     migration_bytes = 0U;
     migration_process = 0U;
-    expect(migrate_decision.migrate && migration_frame.has_value() &&
+    expect(migrate_decision.migrate && fleet_decision.has_value() && fleet_decision->peer == 77U &&
+               migration_frame.has_value() &&
                arc::swarm::Migrator::teleport<MigrationPolicy>(migrate_decision.peer, *migration_frame).has_value() &&
                arc::swarm::Migrator::resume<MigrationPolicy>(*migration_frame, resumed_memory).has_value() &&
                migration_peer == 77U && migration_bytes > wasm_memory.size() &&
@@ -9158,6 +9174,22 @@ void test_current_goal_surfaces()
                std::span<const Twin::InputVec, 1U>{static_cast<const Twin::InputVec*>(nullptr), 1U},
                std::span<Twin::OutputVec, 1U>{forecast_outputs.data(), 1U}),
            "DigitalTwin forecast rejects null input span");
+    const std::array<Twin::InputVec, 6> candidate_inputs{
+        Twin::InputVec{4.0F},
+        Twin::InputVec{4.0F},
+        Twin::InputVec{4.0F},
+        Twin::InputVec{0.0F},
+        Twin::InputVec{0.0F},
+        Twin::InputVec{0.0F}};
+    const auto chosen = Twin::choose<3U, 2U>(
+        forecast_state,
+        forecast_model,
+        std::span<const Twin::InputVec, candidate_inputs.size()>{candidate_inputs},
+        [](const std::size_t, const std::size_t, const Twin::OutputVec& output) noexcept {
+            return output[0] * output[0];
+        });
+    expect(chosen.has_value() && *chosen == 1U && near(forecast_state.x[0], 1.0F),
+           "DigitalTwin chooses the lowest-cost forecast without mutating live state");
 
     const auto drive_cb = +[](const int left, const int right) noexcept -> arc::Status {
         cli_drive_left = left;

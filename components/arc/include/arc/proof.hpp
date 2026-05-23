@@ -21,6 +21,13 @@ struct Claim {
     std::uint32_t bound{};
 };
 
+struct CertificateHeader {
+    std::uint32_t magic{};
+    std::uint32_t version{};
+    std::uint32_t cycles{};
+    std::uint32_t claims{};
+};
+
 template <Kind K, std::uint32_t Subject, std::uint32_t Bound = 0U>
 struct Fact {
     static_assert(Subject != 0U,
@@ -54,6 +61,13 @@ using StaticLife = Fact<Kind::static_life, Subject>;
 template <typename T>
 concept ProofFact = requires {
     { T::claim() } -> std::same_as<Claim>;
+};
+
+template <typename T>
+concept ProofPack = requires {
+    { T::cycles } -> std::convertible_to<std::uint32_t>;
+    { T::count } -> std::convertible_to<std::size_t>;
+    T::claims();
 };
 
 template <std::uint32_t Cycles, typename... Facts>
@@ -103,6 +117,38 @@ struct Pack {
         std::uint32_t out{};
         (((Facts::kind == Target && Facts::subject == Subject) ? out = Facts::bound : out), ...);
         return out;
+    }
+};
+
+template <ProofPack Pack, std::uint32_t Version = 1U>
+struct Certificate {
+    static_assert(Version != 0U,
+                  "[ARC ERROR] arc::proof::Certificate needs a version. Action: use a non-zero evidence version.");
+
+    static constexpr std::uint32_t magic = 0x41524350U;  // ARCP
+    static constexpr std::uint32_t version = Version;
+    static constexpr std::uint32_t cycles = Pack::cycles;
+    static constexpr std::size_t count = Pack::count;
+
+    [[nodiscard]] static consteval CertificateHeader header() noexcept
+    {
+        return {
+            .magic = magic,
+            .version = version,
+            .cycles = cycles,
+            .claims = static_cast<std::uint32_t>(count),
+        };
+    }
+
+    [[nodiscard]] static consteval auto claims() noexcept
+    {
+        return Pack::claims();
+    }
+
+    template <Kind... Required>
+    [[nodiscard]] static consteval bool covers() noexcept
+    {
+        return (true && ... && Pack::template has<Required>());
     }
 };
 

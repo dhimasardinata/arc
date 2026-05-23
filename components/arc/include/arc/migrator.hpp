@@ -117,6 +117,20 @@ struct Migrator {
         return out;
     }
 
+    template <std::size_t Peers>
+    [[nodiscard]] static constexpr Result<MigrationDecision> from_fleet(
+        const power::GovernorDecision decision,
+        const std::span<const FleetPeer, Peers> peers,
+        const std::int32_t min_slack = 0,
+        const std::uint32_t min_cycles = 1U) noexcept
+    {
+        auto target = AnyIdleCore::select(peers, min_slack, min_cycles);
+        if (!target) {
+            return fail(target.error());
+        }
+        return from_governor(decision, *target);
+    }
+
     [[nodiscard]] static constexpr MigrationDecision from_deadline(
         const DeadlineStats& stats,
         const std::int32_t min_slack,

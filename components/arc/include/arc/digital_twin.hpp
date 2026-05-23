@@ -1,9 +1,13 @@
 #pragma once
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
+#include <type_traits>
+#include <utility>
 
 #include "arc/dsp.hpp"
 #include "arc/result.hpp"
@@ -59,6 +63,44 @@ struct DigitalTwin {
             outputs[i] = Plant::step(state, model, inputs[i]);
         }
         return Horizon;
+    }
+
+    template <std::size_t Horizon, std::size_t Candidates, typename ScorePolicy>
+        requires std::convertible_to<std::invoke_result_t<ScorePolicy, std::size_t, std::size_t, const OutputVec&>, T>
+    [[nodiscard]] static Result<std::size_t> choose(
+        State state,
+        const Model& model,
+        const std::span<const InputVec, Horizon * Candidates> inputs,
+        ScorePolicy&& score) noexcept(noexcept(std::invoke(std::declval<ScorePolicy&>(),
+                                                           std::size_t{},
+                                                           std::size_t{},
+                                                           std::declval<const OutputVec&>())))
+    {
+        static_assert(Horizon > 0U,
+                      "[ARC ERROR] arc::hil::DigitalTwin choose needs a forecast horizon. Action: set Horizon above zero.");
+        static_assert(Candidates > 0U,
+                      "[ARC ERROR] arc::hil::DigitalTwin choose needs candidates. Action: set Candidates above zero.");
+        if (!valid(inputs)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        std::size_t best{};
+        T best_cost{};
+        bool found = false;
+        for (std::size_t candidate = 0U; candidate < Candidates; ++candidate) {
+            auto copy = state;
+            T cost{};
+            for (std::size_t step = 0U; step < Horizon; ++step) {
+                const auto output = Plant::step(copy, model, inputs[candidate * Horizon + step]);
+                cost += static_cast<T>(std::invoke(score, candidate, step, output));
+            }
+            if (!found || cost < best_cost) {
+                best = candidate;
+                best_cost = cost;
+                found = true;
+            }
+        }
+        return best;
     }
 
 private:
