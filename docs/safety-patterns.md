@@ -236,16 +236,20 @@ source-visible claim beside a measured cycle budget.
 
 using ControlProof = arc::proof::Pack<
     10'000U,
-    arc::proof::Fact<arc::proof::Kind::deadline, 17U, 10'000U>,
-    arc::proof::Fact<arc::proof::Kind::no_heap, 17U>,
-    arc::proof::Fact<arc::proof::Kind::static_life, 17U>>;
+    arc::proof::Deadline<17U, 10'000U>,
+    arc::proof::NoHeap<17U>,
+    arc::proof::StaticLife<17U>>;
 
 static_assert(ControlProof::has<arc::proof::Kind::deadline>());
+static_assert(ControlProof::has<arc::proof::Kind::deadline, 17U>());
 static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
+static_assert(ControlProof::bound<arc::proof::Kind::deadline, 17U>() == 10'000U);
 ```
 
 The proof pack is not a certificate. It is a compact artifact that keeps the
-reviewed claim, subject id, and bound near the code that depends on it.
+reviewed claim, subject id, and bound near the code that depends on it. Prefer
+the subject-specific checks when a pack carries facts for more than one
+workload.
 
 ## Verification Loop
 

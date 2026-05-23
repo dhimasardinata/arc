@@ -16,6 +16,7 @@ PREFIX = """
 #include <utility>
 
 #include "arc/borrow.hpp"
+#include "arc/proof.hpp"
 #include "arc/roles.hpp"
 #include "arc/spsc.hpp"
 
@@ -349,6 +350,24 @@ void probe()
     local.set<arc::Core::core0>(State{});
 }
 """,
+    ),
+    Case(
+        name="proof_zero_subject_fact",
+        source="""
+using Bad = arc::proof::Deadline<0U, 100U>;
+static_assert(Bad::bound == 100U);
+""",
+        must_contain="Fact needs a subject",
+    ),
+    Case(
+        name="proof_zero_subject_query",
+        source="""
+using Claims = arc::proof::Pack<
+    100U,
+    arc::proof::Deadline<17U, 100U>>;
+static_assert(Claims::has<arc::proof::Kind::deadline, 0U>());
+""",
+        must_contain="subject query needs a non-zero subject",
     ),
     Case(
         name="wrong_core_msg_snapshot",

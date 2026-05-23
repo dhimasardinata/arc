@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Kind`, `Claim`, `Fact`, `ProofFact`, `Pack`.
+Source landmarks: `Kind`, `Claim`, `Fact`, `Deadline`, `NoHeap`, `NoBlock`, `NoNull`, `StaticLife`, `ProofFact`, `Pack`.
 
 ## Start From Zero
 

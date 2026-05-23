@@ -1225,12 +1225,17 @@ Compile-time proof metadata for release evidence.
 
 - `proof::Fact<Kind, Subject, Bound>` records one non-zero workload or module id
   plus an optional numeric bound.
+- `proof::Deadline<Subject, Cycles>`, `NoHeap<Subject>`,
+  `NoBlock<Subject>`, `NoNull<Subject>`, and `StaticLife<Subject>` keep common
+  facts readable without repeating `Kind`.
 - `proof::Pack<Cycles, Facts...>` binds facts to a verified cycle budget and
   rejects empty packs at compile time.
 - `claims()` returns a fixed `std::array<proof::Claim, N>` that release tooling
   can serialize beside a firmware artifact.
 - `has<Kind>()` and `bound<Kind>()` let tests assert that required facts stayed
   attached to a workload.
+- `has<Kind, Subject>()` and `bound<Kind, Subject>()` pin the check to one
+  workload id, avoiding accidental reuse of a fact from another subject.
 
 Use this when a safety review needs proof-carrying metadata next to a typed
 workload. It does not replace measurement, formal proof tools, or certification

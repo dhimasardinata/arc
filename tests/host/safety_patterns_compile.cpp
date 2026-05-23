@@ -63,12 +63,14 @@ static_assert(ControlStep::reads<TelemetryCell>());
 
 using ControlProof = arc::proof::Pack<
     10'000U,
-    arc::proof::Fact<arc::proof::Kind::deadline, 17U, 10'000U>,
-    arc::proof::Fact<arc::proof::Kind::no_heap, 17U>,
-    arc::proof::Fact<arc::proof::Kind::static_life, 17U>>;
+    arc::proof::Deadline<17U, 10'000U>,
+    arc::proof::NoHeap<17U>,
+    arc::proof::StaticLife<17U>>;
 
 static_assert(ControlProof::has<arc::proof::Kind::deadline>());
+static_assert(ControlProof::has<arc::proof::Kind::deadline, 17U>());
 static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
+static_assert(ControlProof::bound<arc::proof::Kind::deadline, 17U>() == 10'000U);
 
 [[maybe_unused]] void control_tick()
 {

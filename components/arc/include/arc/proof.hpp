@@ -36,6 +36,21 @@ struct Fact {
     }
 };
 
+template <std::uint32_t Subject, std::uint32_t Cycles>
+using Deadline = Fact<Kind::deadline, Subject, Cycles>;
+
+template <std::uint32_t Subject>
+using NoHeap = Fact<Kind::no_heap, Subject>;
+
+template <std::uint32_t Subject>
+using NoBlock = Fact<Kind::no_block, Subject>;
+
+template <std::uint32_t Subject>
+using NoNull = Fact<Kind::no_null, Subject>;
+
+template <std::uint32_t Subject>
+using StaticLife = Fact<Kind::static_life, Subject>;
+
 template <typename T>
 concept ProofFact = requires {
     { T::claim() } -> std::same_as<Claim>;
@@ -64,11 +79,29 @@ struct Pack {
         return ((Facts::kind == Target) || ...);
     }
 
+    template <Kind Target, std::uint32_t Subject>
+    [[nodiscard]] static consteval bool has() noexcept
+    {
+        static_assert(Subject != 0U,
+                      "[ARC ERROR] arc::proof::Pack subject query needs a non-zero subject.");
+        return (((Facts::kind == Target) && (Facts::subject == Subject)) || ...);
+    }
+
     template <Kind Target>
     [[nodiscard]] static consteval std::uint32_t bound() noexcept
     {
         std::uint32_t out{};
         ((Facts::kind == Target ? out = Facts::bound : out), ...);
+        return out;
+    }
+
+    template <Kind Target, std::uint32_t Subject>
+    [[nodiscard]] static consteval std::uint32_t bound() noexcept
+    {
+        static_assert(Subject != 0U,
+                      "[ARC ERROR] arc::proof::Pack subject query needs a non-zero subject.");
+        std::uint32_t out{};
+        (((Facts::kind == Target && Facts::subject == Subject) ? out = Facts::bound : out), ...);
         return out;
     }
 };
