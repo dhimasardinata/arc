@@ -1121,6 +1121,17 @@ Standard containers can use the same placement rules through one-word allocators
 Do not let a capability-allocated `std::vector` reallocate while DMA or a peripheral owns its `.data()` pointer. Reserve capacity before handoff, or prefer `arc::CapsBuf` / `std::array` for active hardware buffers.
 Use `arc::OwnedDmaChain<T, N>` when a descriptor ring should own its DMA-capable buffers for the whole ring lifetime instead of binding descriptors to caller-owned spans.
 
+### `arc::AxiGraph<Nodes...>`
+
+Compile-time hardware graph planner for descriptor-to-descriptor peripheral chains.
+
+- Each node exposes `input()` and `output()` returning `arc::AxiPort`.
+- `plan(nodes...)` validates adjacent output/input DMA ports and returns fixed `AxiEdge` records.
+- `link(nodes...)` connects each upstream DMA tail to the next node's DMA head.
+- `boot(policy, nodes...)` links descriptors, calls optional `policy.link(edge_index, edge)` for board ETM/AXI trigger setup, then optional `policy.arm(node_index, node)` for each node.
+
+Use this when board policy wants a camera-to-transform-to-sink path expressed once while keeping the actual register trigger setup outside Arc. `AxiGraph` proves topology and descriptor continuity; runtime throughput still needs hardware capture on the target board.
+
 ### Placement aliases
 
 Arc also exposes short placement aliases in `arc/place.hpp`:

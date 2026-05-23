@@ -34,7 +34,7 @@ These headers are the main entry points for readers and subset builds.
 | Header | Use it for |
 | --- | --- |
 | `arc/core.hpp` | Core task shape, topology, init, GPIO, timing, queues, text, and basic storage-neutral substrate pieces. |
-| `arc/memory.hpp` | Capability buffers, cache ownership, DMA copy, descriptor chains, pipelines, and placement helpers. |
+| `arc/memory.hpp` | Capability buffers, cache ownership, DMA copy, descriptor chains, AXI graphs, pipelines, and placement helpers. |
 | `arc/net_codecs.hpp` | URI, streams, fixed records, CRDTs, BFT votes, MQTT, WebSocket, CoAP, and small HTTP server helpers without owning Wi-Fi. |
 | `arc/math.hpp` | DSP, SIMD, fixed matrices, Kalman, motion, ML, and control math surfaces. |
 | `arc/crypto.hpp` | AES, SHA, HMAC, signatures, MPI, XTS, Kyber, Paillier, PUF, secure boot, and related security helpers. |
@@ -100,6 +100,7 @@ Reach for these whenever a pointer crosses a hardware or core boundary.
 | `arc/cache_lock.hpp` | Policy facade for cache-locked hot code or data regions. |
 | `arc/copy.hpp` | Async DMA memcpy, exact tickets, and coherent copy leases. |
 | `arc/dma_chain.hpp` | Static DMA descriptor rings and owned DMA-chain buffers. |
+| `arc/axi_graph.hpp` | Compile-time hardware graph planning over DMA endpoints and board trigger policy. |
 | `arc/pipeline.hpp` | Descriptor endpoint composition and 2D row binding. |
 | `arc/mmu_span.hpp` | Typed read-only spans over mapped flash or PSRAM data. |
 | `arc/distributed_mmu.hpp` | Remote span fault planning and deterministic cache-line fetch policy. |

@@ -153,6 +153,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 
 | Header | Purpose | Page |
 | --- | --- | --- |
+| `arc/axi_graph.hpp` | Compile-time hardware graph planning over DMA endpoints and board trigger policy. | [Open](/modules/arc-axi_graph) |
 | `arc/cache.hpp` | Explicit CPU-to-device and device-to-CPU cache ownership. | [Open](/modules/arc-cache) |
 | `arc/cache_lock.hpp` | Policy facade for cache-locked hot code or data regions. | [Open](/modules/arc-cache_lock) |
 | `arc/caps.hpp` | Capability-tagged buffers such as `dmabuf`, `simdbuf`, `rtbuf`, and allocators. | [Open](/modules/arc-caps) |
@@ -219,7 +220,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/core.hpp` | Core task shape, topology, init, GPIO, timing, queues, text, and basic storage-neutral substrate pieces. | [Open](/modules/arc-core) |
 | `arc/crypto.hpp` | AES, SHA, HMAC, signatures, MPI, XTS, Kyber, Paillier, PUF, secure boot, and related security helpers. | [Open](/modules/arc-crypto) |
 | `arc/math.hpp` | DSP, SIMD, fixed matrices, Kalman, motion, ML, and control math surfaces. | [Open](/modules/arc-math) |
-| `arc/memory.hpp` | Capability buffers, cache ownership, DMA copy, descriptor chains, pipelines, and placement helpers. | [Open](/modules/arc-memory) |
+| `arc/memory.hpp` | Capability buffers, cache ownership, DMA copy, descriptor chains, AXI graphs, pipelines, and placement helpers. | [Open](/modules/arc-memory) |
 | `arc/net_codecs.hpp` | URI, streams, fixed records, CRDTs, BFT votes, MQTT, WebSocket, CoAP, and small HTTP server helpers without owning Wi-Fi. | [Open](/modules/arc-net_codecs) |
 | `arc/robotics.hpp` | Motor control, CNC, motion, sensors, vision, DVP/LCD, digital twin, and robotics-oriented hardware paths. | [Open](/modules/arc-robotics) |
 | `arc/sandbox.hpp` | VM, JIT, WASM AOT, hypervisor, PMS/TEE planning, hotpatch, chaos, and sandbox policy hooks. | [Open](/modules/arc-sandbox) |

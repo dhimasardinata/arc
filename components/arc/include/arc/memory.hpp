@@ -2,6 +2,7 @@
 
 // Profile umbrella: memory placement, DMA descriptors, and cache coherency.
 
+#include "arc/axi_graph.hpp"
 #include "arc/cache.hpp"
 #include "arc/cache_lock.hpp"
 #include "arc/caps.hpp"

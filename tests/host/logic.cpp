@@ -20,6 +20,7 @@
 
 #include "arc/any.hpp"
 #include "arc/acoustic_slam.hpp"
+#include "arc/axi_graph.hpp"
 #include "arc/bare_core.hpp"
 #include "arc/bft.hpp"
 #include "arc/ble_mesh.hpp"
@@ -5372,6 +5373,78 @@ void test_pipeline_usb_ulp()
     expect(pipe.bind(1, arc::endpoint(display)).has_value(), "Pipeline sink bind");
     expect(pipe.link_linear().has_value(), "Pipeline linear link");
     expect(camera.tail()->next == display.head() && display.tail()->next == nullptr, "Pipeline descriptor chain");
+
+    struct AxiMockNode {
+        arc::AxiPort in{};
+        arc::AxiPort out{};
+
+        [[nodiscard]] arc::AxiPort input() noexcept
+        {
+            return in;
+        }
+
+        [[nodiscard]] arc::AxiPort output() noexcept
+        {
+            return out;
+        }
+    };
+    struct AxiMockPolicy {
+        std::size_t links{};
+        std::size_t arms{};
+
+        [[nodiscard]] esp_err_t link(const std::size_t index, const arc::AxiEdge& edge) noexcept
+        {
+            links += edge.bytes != 0U && index == links ? 1U : 0U;
+            return ESP_OK;
+        }
+
+        [[nodiscard]] esp_err_t arm(const std::size_t index, AxiMockNode&) noexcept
+        {
+            arms += index == arms ? 1U : 0U;
+            return ESP_OK;
+        }
+    };
+    arc::DmaChain<1> cam_out{};
+    arc::DmaChain<1> aes_in{};
+    arc::DmaChain<1> aes_out{};
+    arc::DmaChain<1> spi_in{};
+    std::array<std::uint8_t, 4> cam_data{};
+    std::array<std::uint8_t, 4> aes_rx{};
+    std::array<std::uint8_t, 4> aes_tx{};
+    std::array<std::uint8_t, 4> spi_data{};
+    cam_out.bind(0, std::span(cam_data), true);
+    aes_in.bind(0, std::span(aes_rx), true);
+    aes_out.bind(0, std::span(aes_tx), true);
+    spi_in.bind(0, std::span(spi_data), true);
+    AxiMockNode cam_node{.out = {.dma = arc::endpoint(cam_out), .signal = 1U}};
+    AxiMockNode aes_node{
+        .in = {.dma = arc::endpoint(aes_in), .signal = 2U},
+        .out = {.dma = arc::endpoint(aes_out), .signal = 3U},
+    };
+    AxiMockNode spi_node{.in = {.dma = arc::endpoint(spi_in), .signal = 4U}};
+    using AxiMockGraph = arc::AxiGraph<AxiMockNode, AxiMockNode, AxiMockNode>;
+    static_assert(AxiMockGraph::nodes == 3U);
+    static_assert(AxiMockGraph::edges == 2U);
+    const auto axi_plan = AxiMockGraph::plan(cam_node, aes_node, spi_node);
+    expect(axi_plan.has_value() && axi_plan->bytes == 8U, "AxiGraph plans adjacent DMA ports");
+    AxiMockPolicy axi_policy{};
+    expect(AxiMockGraph::boot(axi_policy, cam_node, aes_node, spi_node).has_value() &&
+               axi_policy.links == 2U &&
+               axi_policy.arms == 3U,
+           "AxiGraph boots policy hooks");
+    expect(cam_out.tail()->next == aes_in.head() && aes_out.tail()->next == spi_in.head(), "AxiGraph links DMA tails");
+    AxiMockNode bad_axi{};
+    expect(!AxiMockGraph::plan(bad_axi, aes_node, spi_node), "AxiGraph rejects missing ports");
+    const arc::DmaEndpoint huge_ep{
+        .head = cam_out.head(),
+        .tail = cam_out.tail(),
+        .descriptors = 1U,
+        .bytes = std::numeric_limits<std::size_t>::max(),
+    };
+    AxiMockNode huge_a{.out = {.dma = huge_ep}};
+    AxiMockNode huge_b{.in = {.dma = huge_ep}, .out = {.dma = huge_ep}};
+    AxiMockNode huge_c{.in = {.dma = huge_ep}};
+    expect(!AxiMockGraph::plan(huge_a, huge_b, huge_c), "AxiGraph rejects byte accumulation overflow");
 
     alignas(arc::cache_line) std::array<std::uint8_t, 384> frame{};
     arc::DmaChain<2> rows{};

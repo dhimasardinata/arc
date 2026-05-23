@@ -16,6 +16,7 @@ SPECIAL_FEATURES = {
     "arch-xtensa": "core",
     "assume": "core",
     "audit": "core",
+    "axi_graph": "memory",
     "bare_core": "core",
     "bft": "net_codecs",
     "bridge": "mcpwm",
