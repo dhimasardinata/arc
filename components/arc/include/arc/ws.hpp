@@ -92,6 +92,9 @@ struct Ws {
         if (out.size() < header || bytes > out.size() - header) {
             return fail(ESP_ERR_NO_MEM);
         }
+        if (bytes != 0U) {
+            std::memmove(out.data() + header, data, bytes);
+        }
 
         auto pos = std::size_t{0U};
         out[pos++] =
@@ -106,13 +109,10 @@ struct Ws {
             pos += write_u32(out, pos, mask);
         }
 
-        const auto* const src = static_cast<const std::uint8_t*>(data);
-        for (std::size_t i = 0; i < bytes; ++i) {
-            auto byte = src[i];
-            if (mask != 0U) {
-                byte ^= mask_byte(mask, i);
+        if (mask != 0U) {
+            for (std::size_t i = 0; i < bytes; ++i) {
+                out[pos + i] = static_cast<std::uint8_t>(out[pos + i] ^ mask_byte(mask, i));
             }
-            out[pos + i] = byte;
         }
         pos += bytes;
         return out.first(pos);

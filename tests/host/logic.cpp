@@ -1848,6 +1848,20 @@ void test_ws()
     expect(parsed->fin, "WS text fin");
     expect(parsed->payload.size() == 3U, "WS text payload size");
     expect(std::memcmp(parsed->payload.data(), "arc", parsed->payload.size()) == 0, "WS text payload");
+    std::array<std::uint8_t, 128> in_place_ws_buf{'a', 'r', 'c', '!'};
+    const std::array<std::uint8_t, 4> in_place_ws_payload{'a', 'r', 'c', '!'};
+    const auto in_place_ws_frame = arc::net::Ws::binary(
+        std::span(in_place_ws_buf),
+        std::span(in_place_ws_buf).first(in_place_ws_payload.size()),
+        true,
+        0x01020304U);
+    expect(in_place_ws_frame.has_value(), "WS in-place binary encodes");
+    std::array<std::uint8_t, 8> in_place_ws_scratch{};
+    const auto in_place_ws = arc::net::Ws::parse(*in_place_ws_frame, std::span(in_place_ws_scratch));
+    expect(in_place_ws.has_value() &&
+               in_place_ws->payload.size() == in_place_ws_payload.size() &&
+               std::memcmp(in_place_ws->payload.data(), in_place_ws_payload.data(), in_place_ws_payload.size()) == 0,
+           "WS preserves in-place masked payload");
 
     const std::array<std::uint8_t, 3> ping_data{1U, 2U, 3U};
     const auto ping = arc::net::Ws::ping(frame, std::span(ping_data));
