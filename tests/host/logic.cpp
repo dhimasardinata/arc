@@ -8359,6 +8359,8 @@ void test_current_goal_surfaces()
         .payload = wasm_code,
         .signature = hotswap_signature,
     };
+    arc::vm::HotSwapGate hotswap_gate{};
+    expect(hotswap_gate.accept(hotswap_wasm).has_value(), "HotSwapGate accepts signed monotonic plan");
     const auto staged_wasm = arc::vm::HotSwap::wasm<HotSwapPolicy, WasmPolicy>(hotswap_wasm, hotswap_wasm_image);
     expect(staged_wasm.has_value() &&
                staged_wasm->kind == arc::vm::HotSwapKind::wasm &&
@@ -8366,8 +8368,11 @@ void test_current_goal_surfaces()
                hotswap_verified == 1U &&
                hotswap_protected_words == 4U &&
                arc::vm::HotSwap::activate<HotSwapPolicy>(*staged_wasm).has_value() &&
+               hotswap_gate.commit(*staged_wasm).has_value() &&
+               hotswap_gate.active == 7U &&
                hotswap_activated_version == 7U,
            "HotSwap verifies, protects, and activates signed WASM image");
+    expect(!hotswap_gate.accept(hotswap_wasm), "HotSwapGate rejects replayed active version");
 
     std::array<arc::vm::BpfInsn, 4> hotswap_bpf_decoded{};
     std::array<std::uint32_t, 4> hotswap_bpf_image{};
@@ -8400,6 +8405,22 @@ void test_current_goal_surfaces()
                .signature = {},
            }),
            "HotSwap rejects unsigned payload");
+    expect(!arc::vm::HotSwap::verify<HotSwapPolicy>({
+               .kind = arc::vm::HotSwapKind::wasm,
+               .version = 0U,
+               .payload = wasm_code,
+               .signature = hotswap_signature,
+           }),
+           "HotSwap rejects unversioned payload");
+    arc::vm::HotSwapGate mismatch_gate{};
+    expect(mismatch_gate.accept(hotswap_wasm).has_value(), "HotSwapGate accepts staged mismatch fixture");
+    const arc::vm::HotSwapImage wrong_image{
+        .kind = arc::vm::HotSwapKind::bpf,
+        .version = hotswap_wasm.version,
+        .words = std::span<const std::uint32_t>{hotswap_wasm_image}.first(1U),
+        .entry = hotswap_wasm_image.data(),
+    };
+    expect(!mismatch_gate.commit(wrong_image), "HotSwapGate rejects mismatched staged image");
 
     const std::array<std::uint8_t, 1> sleb_minus_one_bytes{0x7fU};
     arc::vm::WasmCursor sleb_minus_one{.bytes = sleb_minus_one_bytes};

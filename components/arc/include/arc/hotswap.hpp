@@ -33,11 +33,60 @@ struct HotSwapImage {
     const void* entry{};
 };
 
+struct HotSwapGate {
+    HotSwapKind kind{};
+    std::uint32_t active{};
+    std::uint32_t staged{};
+    bool has_active{};
+    bool has_staged{};
+
+    [[nodiscard]] Status accept(const HotSwapPlan plan) noexcept
+    {
+        if (!valid(plan.payload) || !valid(plan.signature) || plan.version == 0U) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+        if (has_active && plan.version <= active) {
+            return Status{fail(ESP_ERR_INVALID_STATE)};
+        }
+        kind = plan.kind;
+        staged = plan.version;
+        has_staged = true;
+        return ok();
+    }
+
+    [[nodiscard]] Status commit(const HotSwapImage image) noexcept
+    {
+        if (!valid(image.words) || image.entry == nullptr) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+        if (!has_staged || image.kind != kind || image.version != staged) {
+            return Status{fail(ESP_ERR_INVALID_STATE)};
+        }
+        active = image.version;
+        has_active = true;
+        has_staged = false;
+        return ok();
+    }
+
+    constexpr void cancel() noexcept
+    {
+        has_staged = false;
+        staged = 0U;
+    }
+
+private:
+    template <typename T>
+    [[nodiscard]] static constexpr bool valid(const std::span<T> span) noexcept
+    {
+        return !span.empty() && span.data() != nullptr;
+    }
+};
+
 struct HotSwap {
     template <typename Policy>
     [[nodiscard]] static Status verify(const HotSwapPlan plan) noexcept
     {
-        if (!valid(plan.payload) || !valid(plan.signature)) {
+        if (!valid(plan.payload) || !valid(plan.signature) || plan.version == 0U) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
         if constexpr (requires { Policy::verify(plan); }) {

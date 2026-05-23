@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `HotSwapPlan`, `HotSwapImage`, `HotSwap`, `HotSwapKind`.
+Source landmarks: `HotSwapPlan`, `HotSwapImage`, `HotSwapGate`, `HotSwap`, `HotSwapKind`.
 
 ## Start From Zero
 
