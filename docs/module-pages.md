@@ -198,6 +198,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/tcp.hpp` | Direct TCP client sockets. | [Open](/modules/arc-tcp) |
 | `arc/thread.hpp` | Thread/OpenThread policy bridge. | [Open](/modules/arc-thread) |
 | `arc/tls.hpp` | Direct ESP-TLS client sessions. | [Open](/modules/arc-tls) |
+| `arc/tsn.hpp` | Time-aware Ethernet gate schedule checks for deterministic transmit windows. | [Open](/modules/arc-tsn) |
 | `arc/udp.hpp` | Reusable Core 0 UDP transport plane. | [Open](/modules/arc-udp) |
 | `arc/uri.hpp` | Heapless URI parsing and percent encode/decode. | [Open](/modules/arc-uri) |
 | `arc/w5500.hpp` | Policy-driven W5500 raw Ethernet path. | [Open](/modules/arc-w5500) |

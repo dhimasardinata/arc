@@ -242,6 +242,7 @@ The radio owner lives on Core 0. Protocol codecs stay caller-buffered.
 | `arc/netrpc.hpp` | Struct-codec commands over radio or transport payloads. |
 | `arc/swarm.hpp` | Distributed snapshots, schedules, and swarm helper types. |
 | `arc/ethernet.hpp` | Raw Ethernet frame ring for policy-owned MAC/PHY paths. |
+| `arc/tsn.hpp` | Time-aware Ethernet gate schedule checks for deterministic transmit windows. |
 | `arc/w5500.hpp` | Policy-driven W5500 raw Ethernet path. |
 | `arc/thread.hpp` | Thread/OpenThread policy bridge. |
 | `arc/ble.hpp` | NimBLE lifecycle, GAP, advertising, and scanning bridge. |

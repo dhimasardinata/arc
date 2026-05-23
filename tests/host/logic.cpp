@@ -133,6 +133,7 @@
 #include "arc/tcp.hpp"
 #include "arc/text.hpp"
 #include "arc/tls.hpp"
+#include "arc/tsn.hpp"
 #include "arc/trace_event.hpp"
 #include "arc/trace_live.hpp"
 #include "arc/trace_stream.hpp"
@@ -4585,6 +4586,26 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
     const auto null_eth = eth.push(std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U});
     expect(eth.pop(popped) && popped.size == frame.size() && popped.bytes[5] == 5U && !null_eth,
            "Ethernet frame pop");
+
+    arc::net::TsnSchedule<3> tsn{.cycle_ns = 1'000'000U, .base_ns = 10'000U};
+    expect(tsn.set(0U, {.offset_ns = 0U, .duration_ns = 100'000U, .guard_ns = 10'000U, .traffic = 3U}).has_value() &&
+               tsn.set(1U, {.offset_ns = 200'000U, .duration_ns = 50'000U, .guard_ns = 5'000U, .traffic = 7U}).has_value(),
+           "TSN schedule installs guarded gates");
+    expect(!tsn.set(2U, {.offset_ns = 400'000U, .duration_ns = 10U, .guard_ns = 6U, .traffic = 1U}),
+           "TSN schedule rejects closed guard window");
+    expect(!tsn.set(2U, {.offset_ns = 400'000U, .duration_ns = 10U, .guard_ns = 5U, .traffic = 1U}),
+           "TSN schedule rejects zero-width guard window");
+    const auto tsn_window = tsn.window(30'000U, 3U);
+    expect(tsn_window.has_value() && tsn_window->open && tsn_window->start_ns == 20'000U &&
+               tsn_window->end_ns == 100'000U,
+           "TSN window opens inside guarded gate");
+    expect(!tsn.allow(15'000U, 3U), "TSN guard time closes early phase");
+    expect(tsn.allow(217'000U, 7U), "TSN allows matching traffic class");
+    const auto next_tsn = tsn.next_open(105'000U, 7U);
+    expect(next_tsn.has_value() && *next_tsn == 215'000U, "TSN reports next same-cycle open");
+    const auto wrapped_tsn = tsn.next_open(260'000U, 7U);
+    expect(wrapped_tsn.has_value() && *wrapped_tsn == 1'215'000U, "TSN reports next-cycle open");
+    expect(!tsn.next_open(260'000U, 9U), "TSN rejects missing traffic class");
 
     struct SpiPolicy {
         static esp_err_t writev(const std::array<std::uint8_t, 3>& header, std::span<const std::uint8_t> frame) noexcept

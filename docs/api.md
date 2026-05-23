@@ -1411,6 +1411,17 @@ Bounded Byzantine-fault-tolerant quorum collection for critical fleet decisions.
 
 Use this for small abort/commit/role-transfer decisions where the application already owns peer identity, digest policy, and authentication. It is a bounded vote collector, not a radio task or membership service.
 
+### `arc::net::TsnSchedule<Entries>`
+
+Time-aware Ethernet transmit gate checks for deterministic MAC policies.
+
+- `set(index, gate)` installs a fixed `TsnGate` with cycle offset, duration, guard time, and traffic class.
+- `window(now_ns, traffic)` returns the active `TsnWindow` for that class when the current nanosecond timestamp is inside a guarded gate.
+- `allow(now_ns, traffic)` is the boolean fast path for MAC queues.
+- `next_open(now_ns, traffic)` returns the next eligible nanosecond timestamp for that traffic class.
+
+Use this after a PTP-disciplined clock has provided a shared time base. Arc evaluates the schedule without heap state; the board policy still owns MAC queues, timestamp capture, switch configuration, and whether the schedule maps to 802.1Qbv or a simpler private gate table.
+
 ### `arc::pack::Schema<Fields...>`
 
 Fixed binary record packer for telemetry and configuration frames.
