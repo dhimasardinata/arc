@@ -154,6 +154,27 @@ void probe()
         must_contain="callback cannot return a reference or pointer",
     ),
     Case(
+        name="wrong_core_local_snapshot",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    (void)local.snapshot<arc::Core::core0>();
+}
+""",
+    ),
+    Case(
+        name="wrong_core_msg_snapshot",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    const auto msg = local.msg<arc::Core::core0>();
+    (void)msg.snapshot<arc::Core::core1>();
+}
+""",
+    ),
+    Case(
         name="core_local_returns_pointer",
         source="""
 void probe()

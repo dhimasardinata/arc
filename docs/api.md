@@ -353,13 +353,14 @@ Arc's component interface enables GCC `-Werror=stack-usage=2048` and `-Werror=fr
 
 Compile-time core ownership tags for state that must not be casually shared across the AMP boundary.
 
-- `CoreLocal<T, Core::core1>` stores the value privately and only exposes owner-gated access such as `get<Core::core1>()`, `set<Core::core1>(...)`, and `msg<To>()`.
+- `CoreLocal<T, Core::core1>` stores the value privately and only exposes owner-gated access such as `snapshot()`, `with(fn)`, `set<Core::core1>(...)`, and `msg<To>()`.
 - `CoreLocal::can_access<Core>()` and `with(fn)` keep common owner checks and short scoped mutations readable without repeating the owner core.
 - `with<Core>(fn)`, `msg<Core, To>()`, and `accept<Core>(msg)` remain available when a call site should spell the access core explicitly.
 - `CoreLocal::with<Core>(fn)` callbacks may return `void` or an ordinary value, but not a reference or raw pointer.
+- `snapshot()` copies the current value through the encoded owner core, avoiding a borrowed reference for simple reads.
 - `msg<To>()` creates a copied message from the owner core to the destination core, and `accept(msg)` applies a message addressed to the local core.
 - Access from the wrong core is absent from the overload set, so misuse fails during template checking instead of becoming a runtime convention.
-- `CoreMsg<T, From, To>` carries a copied payload across a queue or mailbox type; `get()` reads through the encoded destination core, while `get<To>()` stays available for explicit boundary code.
+- `CoreMsg<T, From, To>` carries a copied payload across a queue or mailbox type; `snapshot()` copies and `get()` borrows through the encoded destination core, while `get<To>()` stays available for explicit boundary code.
 - `accept<Owner>(msg)` applies an addressed message to the destination local slot.
 
 Use this for small ownership-sensitive control or telemetry records where `Spsc`, `SeqReg`, or another lane carries the transfer and the value itself should still remember which core may touch it.

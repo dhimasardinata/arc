@@ -104,6 +104,19 @@ public:
         return get<To>();
     }
 
+    template <Core Access>
+        requires CoreOwner<Access, To> && std::copy_constructible<T>
+    [[nodiscard]] constexpr T snapshot() const& noexcept(noexcept(T(value_)))
+    {
+        return value_;
+    }
+
+    [[nodiscard]] constexpr T snapshot() const& noexcept(noexcept(T(value_)))
+        requires std::copy_constructible<T>
+    {
+        return snapshot<To>();
+    }
+
 private:
     template <typename, Core>
     friend class CoreLocal;
@@ -153,6 +166,19 @@ public:
     [[nodiscard]] constexpr const T& get() const& noexcept
     {
         return value_;
+    }
+
+    template <Core Access>
+        requires CoreOwner<Access, Owner> && std::copy_constructible<T>
+    [[nodiscard]] constexpr T snapshot() const& noexcept(noexcept(T(value_)))
+    {
+        return value_;
+    }
+
+    [[nodiscard]] constexpr T snapshot() const& noexcept(noexcept(T(value_)))
+        requires std::copy_constructible<T>
+    {
+        return snapshot<Owner>();
     }
 
     template <Core Access>

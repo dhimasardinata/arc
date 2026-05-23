@@ -123,6 +123,7 @@ using Core1Counter = arc::CoreLocal<std::uint32_t, arc::Core::core1>;
 
 Core1Counter counter{41U};
 counter.set<arc::Core::core1>(42U);
+auto current = counter.snapshot();
 counter.with([](std::uint32_t& value) {
     value += 1U;
     return value;
@@ -132,11 +133,13 @@ auto msg = counter.msg<arc::Core::core0>();
 static_assert(decltype(msg)::from == arc::Core::core1);
 static_assert(decltype(msg)::to == arc::Core::core0);
 static_cast<void>(msg.get());
+auto delivered = msg.snapshot();
 ```
 
-The message carries its destination in the type, so `msg.get()` reads through
-that encoded destination. Explicit `get<Core>()` is still available when a
-boundary should name the core directly. Like static-borrow helpers,
+For simple reads, `snapshot()` copies out a value instead of handing out a
+reference. The message carries its destination in the type, so `msg.get()` reads
+through that encoded destination. Explicit `get<Core>()` is still available when
+a boundary should name the core directly. Like static-borrow helpers,
 `CoreLocal::with` callbacks cannot return references or raw pointers. Explicit
 forms such as `with<Core>(fn)` and `msg<Core, To>()` remain available when a
 boundary should spell the access core directly.
