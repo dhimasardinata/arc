@@ -48,6 +48,25 @@ class TopologyCheckTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("unresolved: CONFIG_LED", result.stdout)
 
+    def test_report_format_groups_pins_for_humans(self) -> None:
+        result = self.run_tool("struct Board { using pins = arc::Pins<4, -1, CONFIG_LED>; };\n", "--format", "report")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("arc topology report", result.stdout)
+        self.assertIn("pins: GPIO4", result.stdout)
+        self.assertIn("optional sentinels: -1", result.stdout)
+        self.assertIn("unresolved tokens: CONFIG_LED", result.stdout)
+
+    def test_dot_format_draws_pin_pack_graph(self) -> None:
+        result = self.run_tool("struct Board { using pins = arc::Pins<4, -1, CONFIG_LED>; };\n", "--format", "dot")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("digraph arc_topology", result.stdout)
+        self.assertIn('label="GPIO4"', result.stdout)
+        self.assertIn('label="optional -1"', result.stdout)
+        self.assertIn('label="CONFIG_LED"', result.stdout)
+        self.assertNotIn("arc topology check: OK", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

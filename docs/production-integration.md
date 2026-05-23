@@ -91,6 +91,10 @@ static_assert(Board::pins::has<18>());
 static_assert(Board::pins::index<19>() != Board::pins::npos);
 ```
 
+Run `./tools/topology-check.py path/to/board.hpp --format report` to see the
+literal pins grouped by board declaration, or `--format dot` to emit a Graphviz
+view for design reviews.
+
 Keep board policy near this declaration:
 
 - which task owns Wi-Fi and storage;
