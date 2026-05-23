@@ -3,6 +3,8 @@
 This page is the short path from a blank file to Arc's compile-time safety
 surface. It does not replace the safety case or product hazard analysis; it
 shows the code shapes that make ownership and lifetime visible before runtime.
+The core snippets here are compile-checked in
+`tests/host/safety_patterns_compile.cpp`.
 
 ## What Arc Can Prove
 

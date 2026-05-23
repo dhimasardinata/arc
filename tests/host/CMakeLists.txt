@@ -15,7 +15,7 @@ target_include_directories(
 )
 target_link_libraries(arc_host_flags INTERFACE pthread)
 
-add_executable(arc-host-logic logic.cpp plane_compile.cpp fuzz_codecs.cpp)
+add_executable(arc-host-logic logic.cpp plane_compile.cpp safety_patterns_compile.cpp fuzz_codecs.cpp)
 target_link_libraries(arc-host-logic PRIVATE arc_host_flags)
 target_compile_options(arc-host-logic PRIVATE -O2 -g)
 
