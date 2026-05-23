@@ -3,11 +3,13 @@
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace arc::detail {
 
@@ -58,6 +60,13 @@ struct IsPlainScopedResult<std::tuple<Items...>>
 
 template <typename Item, std::size_t Count>
 struct IsPlainScopedResult<std::array<Item, Count>> : IsPlainScopedResult<std::remove_cv_t<Item>> {};
+
+template <typename Item>
+struct IsPlainScopedResult<std::optional<Item>> : IsPlainScopedResult<std::remove_cv_t<Item>> {};
+
+template <typename... Items>
+struct IsPlainScopedResult<std::variant<Items...>>
+    : std::bool_constant<(IsPlainScopedResult<std::remove_cv_t<Items>>::value && ...)> {};
 
 template <typename T>
 concept PlainScopedResult = IsPlainScopedResult<std::remove_cv_t<T>>::value;

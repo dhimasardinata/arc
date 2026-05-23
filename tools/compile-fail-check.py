@@ -15,10 +15,12 @@ PREFIX = """
 #include <cstdint>
 #include <array>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <tuple>
 #include <utility>
+#include <variant>
 
 #include "arc/borrow.hpp"
 #include "arc/proof.hpp"
@@ -370,6 +372,34 @@ void probe()
         must_contain="standard wrapper",
     ),
     Case(
+        name="scoped_borrow_returns_optional_pointer",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::with_write([](State& current) {
+        return std::optional<State*>{&current};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
+        name="scoped_borrow_returns_variant_span",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::with_write([](State& current) {
+        return std::variant<std::span<State, 1>, std::uint32_t>{std::span<State, 1>{&current, 1}};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
         name="scoped_borrow_returns_loan",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;
@@ -477,6 +507,19 @@ void probe()
     arc::CoreLocal<State, arc::Core::core1> local{};
     (void)local.with<arc::Core::core1>([](State& current) {
         return std::pair<State*, std::uint32_t>{&current, 1U};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
+        name="core_local_returns_optional_pointer",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    (void)local.with<arc::Core::core1>([](State& current) {
+        return std::optional<State*>{&current};
     });
 }
 """,
@@ -617,6 +660,20 @@ void probe()
         must_contain="standard wrapper",
     ),
     Case(
+        name="core_msg_returns_optional_reference_wrapper",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    const auto msg = local.msg<arc::Core::core0>();
+    (void)msg.with([](const State& current) {
+        return std::optional{std::cref(current)};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
         name="core_local_returns_pointer",
         source="""
 void probe()
@@ -703,6 +760,19 @@ void probe()
     arc::Roles<arc::Spsc<int, 4>> roles{};
     (void)roles.with_consumer([](auto& consumer) {
         return std::tuple<decltype(consumer)>{consumer};
+    });
+}
+""",
+        must_contain="standard wrapper",
+    ),
+    Case(
+        name="scoped_role_returns_optional_reference_wrapper",
+        source="""
+void probe()
+{
+    arc::Roles<arc::Spsc<int, 4>> roles{};
+    (void)roles.with_consumer([](auto& consumer) {
+        return std::optional{std::ref(consumer)};
     });
 }
 """,

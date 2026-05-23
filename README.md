@@ -1395,7 +1395,7 @@ Compile-time core ownership tags for state that must not be casually shared acro
 - `CoreLocal::can_access<Core>()` and `with(fn)` keep common owner checks and short scoped mutations readable without repeating the owner core.
 - `CoreLocal::Msg<To>` and `CoreLocal::Incoming<From>` name outbound and inbound `CoreMsg` contracts without repeating the payload and owner core.
 - `set<Core>(value)`, `with<Core>(fn)`, `msg<Core, To>()`, and `accept<Core>(msg)` remain available when a call site should spell the access core explicitly.
-- `CoreLocal::with<Core>(fn)` and `CoreMsg::with<Core>(fn)` callbacks may return `void` or an ordinary value, but not a reference, raw pointer, `std::reference_wrapper`, common non-owning view such as `std::span` / `std::string_view`, or `std::tuple` / `std::pair` / `std::array` containing those.
+- `CoreLocal::with<Core>(fn)` and `CoreMsg::with<Core>(fn)` callbacks may return `void` or an ordinary value, but not a reference, raw pointer, `std::reference_wrapper`, common non-owning view such as `std::span` / `std::string_view`, or standard wrapper such as `std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant` containing those.
 - `snapshot()` copies the current value through the encoded owner core, avoiding a borrowed reference for simple reads.
 - `msg<To>()` creates a copied message from the owner core to the destination core, and `accept(msg)` applies a message addressed to the local core.
 - Access from the wrong core is absent from the overload set, so misuse fails during template checking instead of becoming a runtime convention.
@@ -1424,7 +1424,7 @@ around as a raw pointer or reference.
 - `StaticRef::with_reads<Core, ReadRefs...>(fn)` keeps the explicit-core form for mixed-boundary code.
 - `StaticRef::with_edit<ReadRefs...>(fn)` scopes the common one-writer, many-reader edit without naming a separate `StaticEdit` contract first.
 - `StaticRef::with_edit<Core, ReadRefs...>(fn)` keeps the explicit-core form for mixed-boundary code.
-- Scoped borrow callbacks may return `void` or an ordinary value, but not a reference, raw pointer, `std::reference_wrapper`, common non-owning view such as `std::span` / `std::string_view`, `std::tuple` / `std::pair` / `std::array` containing those, or `StaticLoan`.
+- Scoped borrow callbacks may return `void` or an ordinary value, but not a reference, raw pointer, `std::reference_wrapper`, common non-owning view such as `std::span` / `std::string_view`, standard wrapper such as `std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant` containing those, or `StaticLoan`.
 - `StaticReads<Refs...>` and `StaticWrites<Refs...>` build `LoanPack` contracts from `StaticRef` owner types instead of raw object addresses.
 - `StaticEdit<WriteRef, ReadRefs...>` builds the common one-writer, many-reader `LoanPack` without manually naming each loan type.
 - `LoanPack<Loans...>` rejects packs where one static object has a mutable loan plus any other loan.
@@ -1482,7 +1482,7 @@ Bounded lock-free lane for one producer and one consumer.
 - `try_pop(event)` is consumer-only.
 - `producer()`, `consumer()`, and `split()` return move-only role endpoints, so task setup can pass only the push or pop side instead of exposing the full lane API.
 - `arc::Roles<arc::Spsc<T, Capacity>>` owns the lane privately and exposes only role endpoints, so direct queue mutation is not part of the wrapper's compile-time API.
-- `Roles<...>::with_producer(fn)`, `with_consumer(fn)`, and `with_split(fn)` scope endpoint use to one callback and reject callbacks that return endpoints, references, raw pointers, `std::reference_wrapper`, common non-owning views, or `std::tuple` / `std::pair` / `std::array` containing those.
+- `Roles<...>::with_producer(fn)`, `with_consumer(fn)`, and `with_split(fn)` scope endpoint use to one callback and reject callbacks that return endpoints, references, raw pointers, `std::reference_wrapper`, common non-owning views, or standard wrappers such as `std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant` containing those.
 - `RoleEndpoint`, `PushRole<Endpoint, T>`, and `PopRole<Endpoint, T>` let function templates require endpoint-shaped inputs directly.
 - `push(span)` and `pop(span)` batch contiguous transfers, wrapping at most once, so burst handoff avoids per-element index publication.
 - `size()` and `space()` expose the current ring occupancy and producer room.
@@ -1502,7 +1502,7 @@ Bounded lock-free fan-in for many producers and one consumer.
 - `try_push(event)` can be called by multiple producer tasks.
 - `try_pop(event)` is single-consumer and fits Core 0 drain loops.
 - `producer()`, `consumer()`, and `split()` return role endpoints; producer handles may be copied across producers, while the consumer handle is move-only.
-- `Roles<...>::with_producer(fn)`, `with_consumer(fn)`, and `with_split(fn)` scope endpoint use to one callback and reject callbacks that return endpoints, references, raw pointers, `std::reference_wrapper`, common non-owning views, or `std::tuple` / `std::pair` / `std::array` containing those.
+- `Roles<...>::with_producer(fn)`, `with_consumer(fn)`, and `with_split(fn)` scope endpoint use to one callback and reject callbacks that return endpoints, references, raw pointers, `std::reference_wrapper`, common non-owning views, or standard wrappers such as `std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant` containing those.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation; a bool-return callback stops the batch when it returns `false`.
 - `cap()` exposes the power-of-two static capacity.
 - `cell_align()`, `cell_bytes()`, and `bytes()` expose the queue's RAM geometry.
@@ -1528,7 +1528,7 @@ Static fan-in made from one SPSC lane per producer and one round-robin consumer.
 - `try_push<Producer>(event)` is wait-free for that producer lane.
 - `push<Producer>(span)` batches producer-side writes into one static lane.
 - `producer<Index>()` and `consumer()` return move-only role endpoints for setup code that should pass only one static producer lane or the fan-in drain side.
-- `Roles<...>::with_producer<Index>(fn)` and `with_consumer(fn)` scope fan-in endpoint use to one callback and reject callbacks that return endpoints, references, raw pointers, `std::reference_wrapper`, common non-owning views, or `std::tuple` / `std::pair` / `std::array` containing those.
+- `Roles<...>::with_producer<Index>(fn)` and `with_consumer(fn)` scope fan-in endpoint use to one callback and reject callbacks that return endpoints, references, raw pointers, `std::reference_wrapper`, common non-owning views, or standard wrappers such as `std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant` containing those.
 - `try_pop(event)` drains any completed producer without waiting behind another producer's half-finished slot.
 - `try_pop(producer, event)` also reports which lane produced the event.
 - `pop(span)` batches consumer-side fan-in when producer identity is not needed per item.
@@ -1549,7 +1549,7 @@ Typed request/reply command lane built from static SPSC queues.
 - `reply(serial, status, payload)` sends a structured completion.
 - `client()` and `server()` return move-only role endpoints so setup code can pass only requester or owner-side operations.
 - `arc::Roles<arc::RpcLane<...>>` owns the lane privately and exposes only `client()` and `server()` endpoints when direct root-lane mutation should be rejected at compile time.
-- `Roles<...>::with_client(fn)` and `with_server(fn)` scope RPC endpoint use to one callback and reject callbacks that return endpoints, references, raw pointers, `std::reference_wrapper`, common non-owning views, or `std::tuple` / `std::pair` / `std::array` containing those.
+- `Roles<...>::with_client(fn)` and `with_server(fn)` scope RPC endpoint use to one callback and reject callbacks that return endpoints, references, raw pointers, `std::reference_wrapper`, common non-owning views, or standard wrappers such as `std::tuple` / `std::pair` / `std::array` / `std::optional` / `std::variant` containing those.
 - `RpcClientRole<Endpoint, Op, RequestPayload, Reply>` and `RpcServerRole<Endpoint, Request, Status, ReplyPayload>` make requester and owner endpoint requirements explicit in templates.
 - `poll(reply)` drains replies in FIFO order.
 - `poll_match(serial, reply)` accepts the requested serial and parks one unmatched reply in a static deferred lane.
