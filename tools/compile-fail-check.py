@@ -62,6 +62,29 @@ void probe()
 """,
     ),
     Case(
+        name="wrong_core_static_snapshot",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::snapshot<arc::Core::core0>();
+}
+""",
+    ),
+    Case(
+        name="wrong_core_loan_snapshot",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    const auto loan = Cell::read<arc::Core::core1>();
+    (void)loan.snapshot<arc::Core::core0>();
+}
+""",
+    ),
+    Case(
         name="owner_bound_arrow",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;

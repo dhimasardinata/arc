@@ -25,6 +25,8 @@ static_assert(ControlCell::can_write<arc::Core::core1>());
 static_assert(!ControlCell::can_write<arc::Core::core0>());
 static_assert(arc::StaticRefType<ControlCell>);
 static_assert(arc::StaticLoanType<ControlRead>);
+static_assert(ControlCell::can_read<arc::Core::core1>());
+static_assert(!ControlCell::can_read<arc::Core::core0>());
 static_assert(arc::StaticWritable<ControlCell, arc::Core::core1>);
 static_assert(!arc::StaticWritable<ControlCell, arc::Core::core0>);
 static_assert(arc::LoanWritable<ControlWrite, arc::Core::core1>);
@@ -62,6 +64,7 @@ static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
 
 [[maybe_unused]] void control_tick()
 {
+    static_cast<void>(ControlCell::snapshot());
     ControlCell::with_write([](ControlState& state) {
         state.tick += 1U;
     });

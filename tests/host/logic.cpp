@@ -973,6 +973,18 @@ concept HasMsgSnapshot = requires(const T& msg) { msg.template snapshot<Access>(
 template <typename T>
 concept HasMsgSnapshotInferred = requires(const T& msg) { msg.snapshot(); };
 
+template <typename T, arc::Core Access>
+concept HasStaticSnapshot = requires { T::template snapshot<Access>(); };
+
+template <typename T>
+concept HasStaticSnapshotInferred = requires { T::snapshot(); };
+
+template <typename T, arc::Core Access>
+concept HasLoanSnapshot = requires(const T& loan) { loan.template snapshot<Access>(); };
+
+template <typename T>
+concept HasLoanSnapshotInferred = requires(const T& loan) { loan.snapshot(); };
+
 template <typename T>
 concept HasLoanArrow = requires(T& loan) { loan.operator->(); };
 
@@ -1248,6 +1260,9 @@ void test_static_borrow()
     static_assert(Cell::can_write<arc::Core::core1>());
     static_assert(!Cell::can_read<arc::Core::core0>());
     static_assert(!Cell::can_write<arc::Core::core0>());
+    static_assert(HasStaticSnapshot<Cell, arc::Core::core1>);
+    static_assert(!HasStaticSnapshot<Cell, arc::Core::core0>);
+    static_assert(HasStaticSnapshotInferred<Cell>);
     static_assert(!ConstCell::writable);
     static_assert(Read::mode == arc::BorrowMode::read);
     static_assert(Write::mode == arc::BorrowMode::mut);
@@ -1286,6 +1301,9 @@ void test_static_borrow()
     static_assert(!arc::StaticWritable<Cell, arc::Core::core0>);
     static_assert(arc::LoanReadable<Read, arc::Core::core1>);
     static_assert(!arc::LoanReadable<Read, arc::Core::core0>);
+    static_assert(HasLoanSnapshot<Read, arc::Core::core1>);
+    static_assert(!HasLoanSnapshot<Read, arc::Core::core0>);
+    static_assert(HasLoanSnapshotInferred<Read>);
     static_assert(arc::LoanWritable<Write, arc::Core::core1>);
     static_assert(!arc::LoanWritable<Write, arc::Core::core0>);
     static_assert(!arc::LoanWritable<Read, arc::Core::core1>);
@@ -1294,6 +1312,7 @@ void test_static_borrow()
     static_assert(HasConstLoanArrow<AnyRead>);
     static_assert(HasConstLoanDeref<AnyRead>);
     static_assert(arc::StaticReadable<ConstCell, arc::Core::core0>);
+    static_assert(HasStaticSnapshot<ConstCell, arc::Core::core0>);
     static_assert(!arc::StaticWritable<ConstCell, arc::Core::core0>);
 
     borrow_fixture.value = 7U;
@@ -1302,7 +1321,12 @@ void test_static_borrow()
         const auto copied = read;
         expect(read.get<arc::Core::core1>().value == 7U && copied.get<arc::Core::core1>().value == 7U,
                "StaticRef shared loan reads static storage");
+        expect(read.snapshot<arc::Core::core1>().value == 7U && copied.snapshot().value == 7U,
+               "StaticLoan snapshots copy static storage");
     }
+    expect(Cell::snapshot<arc::Core::core1>().value == 7U && Cell::snapshot().value == 7U,
+           "StaticRef snapshots copy static storage");
+    expect(arc::snapshot<Cell>().value == 7U, "StaticRef free snapshot uses inferred owner");
 
     {
         auto write = Cell::write<arc::Core::core1>();

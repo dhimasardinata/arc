@@ -373,6 +373,7 @@ around as a raw pointer or reference.
 - `StaticRef<&state, Core::core1>::read<Core::core1>()` returns a copyable readonly loan.
 - `StaticRef<&state, Core::core1>::write<Core::core1>()` returns a non-copyable, non-movable mutable loan.
 - `StaticRef::Read`, `StaticRef::Write`, `can_read<Core>()`, and `can_write<Core>()` keep common compile-contracts short enough for examples and static assertions.
+- `StaticRef::snapshot()` and `arc::snapshot<Ref>()` copy through the declared owner core, avoiding a borrowed reference for simple reads.
 - `StaticRef::with_read(fn)` and `StaticRef::with_write(fn)` scope a single static owner through its own declared core.
 - `StaticRef::with_read<Core>(fn)` and `StaticRef::with_write<Core>(fn)` keep the explicit-core form for boundaries that should not infer from the owner.
 - Scoped borrow callbacks may return `void` or an ordinary value, but not a reference or raw pointer.

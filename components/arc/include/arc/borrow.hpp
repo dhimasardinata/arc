@@ -103,6 +103,13 @@ public:
         return *Object;
     }
 
+    template <Core Access = Owner>
+        requires CoreAccess<Access, Owner> && std::copy_constructible<value_type>
+    [[nodiscard]] constexpr value_type snapshot() const noexcept(noexcept(value_type(*Object)))
+    {
+        return *Object;
+    }
+
     [[nodiscard]] constexpr const value_type* operator->() const noexcept
         requires(Owner == Core::any)
     {
@@ -330,6 +337,13 @@ struct StaticRef {
         return StaticLoan<Object, Owner, BorrowMode::read>{typename StaticLoan<Object, Owner, BorrowMode::read>::Key{}};
     }
 
+    template <Core Access = Owner>
+        requires CoreAccess<Access, Owner> && std::copy_constructible<value_type>
+    [[nodiscard]] static constexpr value_type snapshot() noexcept(noexcept(value_type(*Object)))
+    {
+        return *Object;
+    }
+
     template <Core Access = Owner, typename Fn>
         requires CoreAccess<Access, Owner> && std::invocable<Fn, const value_type&>
     static constexpr decltype(auto) with_read(Fn&& fn)
@@ -375,6 +389,13 @@ template <typename T, Core Access>
 concept LoanWritable = StaticLoanType<T> && requires(T& loan) {
     { loan.template get<Access>() } -> std::same_as<typename T::value_type&>;
 };
+
+template <StaticRefType Ref, Core Access = Ref::owner>
+    requires StaticReadable<Ref, Access> && std::copy_constructible<typename Ref::value_type>
+[[nodiscard]] constexpr typename Ref::value_type snapshot() noexcept(noexcept(Ref::template snapshot<Access>()))
+{
+    return Ref::template snapshot<Access>();
+}
 
 template <StaticRefType... Refs>
 using StaticReads = LoanPack<typename Refs::Read...>;

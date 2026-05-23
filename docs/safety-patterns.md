@@ -52,6 +52,8 @@ Use the loans at the owner boundary:
 ```cpp
 void control_tick()
 {
+    auto before = ControlCell::snapshot();
+    static_cast<void>(before);
     ControlCell::with_write([](ControlState& state) {
         state.tick += 1U;
     });
@@ -61,9 +63,11 @@ void control_tick()
 That is the basic Arc pattern: name the owner, make access mode explicit, and
 let the wrong core or wrong access mode disappear from the overload set. The
 free `arc::with_read<...>` and `arc::with_write<...>` helpers remain available
-when code prefers the helper at the call site instead of on the owner type.
-Scoped callbacks can return `void` or a copied value; returning a reference or
-raw pointer fails the build so the borrow cannot escape the callback.
+when code prefers the helper at the call site instead of on the owner type. For
+simple reads, `StaticRef::snapshot()` copies out a value without exposing a
+borrowed reference. Scoped callbacks can return `void` or a copied value;
+returning a reference or raw pointer fails the build so the borrow cannot escape
+the callback.
 
 ## Shared Task Contract
 
