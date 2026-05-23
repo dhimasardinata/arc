@@ -62,6 +62,8 @@ That is the basic Arc pattern: name the owner, make access mode explicit, and
 let the wrong core or wrong access mode disappear from the overload set. The
 free `arc::with_read<...>` and `arc::with_write<...>` helpers remain available
 when code prefers the helper at the call site instead of on the owner type.
+Scoped callbacks can return `void` or a copied value; returning a reference or
+raw pointer fails the build so the borrow cannot escape the callback.
 
 ## Shared Task Contract
 

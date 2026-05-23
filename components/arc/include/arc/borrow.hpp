@@ -177,6 +177,18 @@ using LoanArg = std::conditional_t<Loan::mode == BorrowMode::mut,
                                    typename Loan::value_type&,
                                    const typename Loan::value_type&>;
 
+template <typename Result>
+inline constexpr bool scoped_borrow_result =
+    std::is_void_v<Result> || (!std::is_reference_v<Result> && !std::is_pointer_v<Result>);
+
+template <typename Fn, typename... Args>
+consteval void require_scoped_borrow_result()
+{
+    using Result = std::invoke_result_t<Fn, Args...>;
+    static_assert(scoped_borrow_result<Result>,
+                  "[ARC ERROR] scoped static borrow callback cannot return a reference or pointer. Action: copy out a value.");
+}
+
 template <Core Access, typename Loan>
     requires LoanCoreAccess<Access, Loan>
 [[nodiscard]] constexpr LoanArg<Loan> loan_arg() noexcept
@@ -227,6 +239,7 @@ struct LoanPack {
     static constexpr decltype(auto) with(Fn&& fn) noexcept(
         noexcept(std::invoke(std::forward<Fn>(fn), detail::loan_arg<Access, Loans>()...)))
     {
+        detail::require_scoped_borrow_result<Fn, detail::LoanArg<Loans>...>();
         return std::invoke(std::forward<Fn>(fn), detail::loan_arg<Access, Loans>()...);
     }
 
@@ -321,6 +334,7 @@ struct StaticRef {
         requires CoreAccess<Access, Owner> && std::invocable<Fn, const value_type&>
     static constexpr decltype(auto) with_read(Fn&& fn)
     {
+        detail::require_scoped_borrow_result<Fn, const value_type&>();
         const auto loan = read<Access>();
         return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
     }
@@ -336,6 +350,7 @@ struct StaticRef {
         requires CoreAccess<Access, Owner> && writable && std::invocable<Fn, value_type&>
     static constexpr decltype(auto) with_write(Fn&& fn)
     {
+        detail::require_scoped_borrow_result<Fn, value_type&>();
         auto loan = write<Access>();
         return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
     }
@@ -386,8 +401,7 @@ template <StaticRefType Ref, Core Access = Ref::owner, typename Fn>
     requires StaticReadable<Ref, Access> && std::invocable<Fn, const typename Ref::value_type&>
 constexpr decltype(auto) with_read(Fn&& fn)
 {
-    const auto loan = Ref::template read<Access>();
-    return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
+    return Ref::template with_read<Access>(std::forward<Fn>(fn));
 }
 
 template <Core Access, typename... Refs, typename Fn>
@@ -411,8 +425,7 @@ template <StaticRefType Ref, Core Access = Ref::owner, typename Fn>
     requires StaticWritable<Ref, Access> && std::invocable<Fn, typename Ref::value_type&>
 constexpr decltype(auto) with_write(Fn&& fn)
 {
-    auto loan = Ref::template write<Access>();
-    return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
+    return Ref::template with_write<Access>(std::forward<Fn>(fn));
 }
 
 template <Core Access, typename WriteRef, typename... ReadRefs, typename Fn>
