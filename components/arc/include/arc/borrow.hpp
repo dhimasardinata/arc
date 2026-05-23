@@ -352,6 +352,17 @@ template <StaticRefType... Refs>
     requires((Refs::writable && ...))
 using StaticWrites = LoanPack<typename Refs::Write...>;
 
+namespace detail {
+
+template <typename WriteRef, typename... ReadRefs>
+concept StaticEditRefs = StaticRefType<WriteRef> && WriteRef::writable && (StaticRefType<ReadRefs> && ...);
+
+}  // namespace detail
+
+template <typename WriteRef, typename... ReadRefs>
+    requires detail::StaticEditRefs<WriteRef, ReadRefs...>
+using StaticEdit = LoanPack<typename WriteRef::Write, typename ReadRefs::Read...>;
+
 template <StaticRefType Ref, Core Access = Ref::owner, typename Fn>
     requires StaticReadable<Ref, Access> && std::invocable<Fn, const typename Ref::value_type&>
 constexpr decltype(auto) with_read(Fn&& fn)
@@ -366,6 +377,15 @@ constexpr decltype(auto) with_write(Fn&& fn)
 {
     auto loan = Ref::template write<Access>();
     return std::invoke(std::forward<Fn>(fn), loan.template get<Access>());
+}
+
+template <Core Access, typename WriteRef, typename... ReadRefs, typename Fn>
+    requires(detail::StaticEditRefs<WriteRef, ReadRefs...> &&
+             StaticEdit<WriteRef, ReadRefs...>::template can_access<Access>() &&
+             std::invocable<Fn, typename WriteRef::value_type&, const typename ReadRefs::value_type&...>)
+constexpr decltype(auto) with_edit(Fn&& fn)
+{
+    return StaticEdit<WriteRef, ReadRefs...>::template with<Access>(std::forward<Fn>(fn));
 }
 
 }  // namespace arc

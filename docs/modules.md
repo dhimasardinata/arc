@@ -68,7 +68,7 @@ Use these when deciding who owns work, lifetime, and access.
 | Header | Use it for |
 | --- | --- |
 | `arc/task.hpp` | Static FreeRTOS task memory and pinned task bring-up. |
-| `arc/borrow.hpp` | Static-lifetime loans and loan-pack alias checks with core-owner access gates. |
+| `arc/borrow.hpp` | Static-lifetime loans, one-writer edit packs, and loan-pack alias checks with core-owner access gates. |
 | `arc/plane.hpp` | Stateful pinned workloads with explicit shared state. |
 | `arc/sketch.hpp` | Compatibility alias for small app-style programs. |
 | `arc/tight.hpp` | Masked deterministic step loops for the rare very-low-jitter path. |

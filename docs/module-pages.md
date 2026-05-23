@@ -238,7 +238,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | --- | --- | --- |
 | `arc/audit.hpp` | Opt-in misuse assertions for queues and topology-sensitive lanes. | [Open](/modules/arc-audit) |
 | `arc/bare_core.hpp` | True-AMP Core 1 boot contracts for board policies outside FreeRTOS. | [Open](/modules/arc-bare_core) |
-| `arc/borrow.hpp` | Static-lifetime loans and loan-pack alias checks with core-owner access gates. | [Open](/modules/arc-borrow) |
+| `arc/borrow.hpp` | Static-lifetime loans, one-writer edit packs, and loan-pack alias checks with core-owner access gates. | [Open](/modules/arc-borrow) |
 | `arc/bus.hpp` | Compatibility naming for shared event/control buses. | [Open](/modules/arc-bus) |
 | `arc/claim.hpp` | Runtime hardware ownership claims. | [Open](/modules/arc-claim) |
 | `arc/cli.hpp` | Fixed command parsing from caller-owned byte spans. | [Open](/modules/arc-cli) |

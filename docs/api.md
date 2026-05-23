@@ -370,6 +370,7 @@ around as a raw pointer or reference.
 - `StaticRef<&state, Core::core1>::write<Core::core1>()` returns a non-copyable, non-movable mutable loan.
 - `StaticRef::Read`, `StaticRef::Write`, `can_read<Core>()`, and `can_write<Core>()` keep common compile-contracts short enough for examples and static assertions.
 - `StaticReads<Refs...>` and `StaticWrites<Refs...>` build `LoanPack` contracts from `StaticRef` owner types instead of raw object addresses.
+- `StaticEdit<WriteRef, ReadRefs...>` builds the common one-writer, many-reader `LoanPack` without manually naming each loan type.
 - `LoanPack<Loans...>` rejects packs where one static object has a mutable loan plus any other loan.
 - `LoanPack::contains<Loan>()`, `reads<Ref>()`, `reads<&object>()`, `writes<Ref>()`, and `writes<&object>()` make task-boundary requirements testable.
 - `LoanPack::can_access<Core>()` checks whether the whole pack is usable from one core owner.
@@ -378,6 +379,7 @@ around as a raw pointer or reference.
 - `HasStaticRefRead` and `HasStaticRefWrite` are the same query shape when the contract should stay expressed in `StaticRef` owner types.
 - `StaticReadable`, `StaticWritable`, `LoanReadable`, and `LoanWritable` let templates check whether a static owner or loan can be used from a specific core.
 - `with_read<Ref, Core>(fn)` and `with_write<Ref, Core>(fn)` keep a loan scoped to one callback when code should not hold it across a larger block.
+- `with_edit<Core, WriteRef, ReadRefs...>(fn)` is the same scoped helper for the one-writer, many-reader path.
 - `loans_ok<Loans...>()` lets compile-contract tests check the same alias rule without intentionally failing the build.
 - Access from the wrong core owner is absent from the overload set.
 - Pointer shorthand through `operator->` and `operator*` is only available for `Core::any`; owner-bound loans must name the accessing core through `get<Core>()` or the scoped helpers.

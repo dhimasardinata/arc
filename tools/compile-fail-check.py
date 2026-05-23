@@ -80,6 +80,15 @@ static_assert(Bad::count == 2U);
         must_contain="static borrow conflict",
     ),
     Case(
+        name="conflicting_static_edit",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+using Bad = arc::StaticEdit<Cell, Cell>;
+static_assert(Bad::count == 2U);
+""",
+        must_contain="static borrow conflict",
+    ),
+    Case(
         name="move_mutable_loan",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;

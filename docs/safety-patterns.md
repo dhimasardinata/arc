@@ -74,18 +74,21 @@ using TelemetryCell = arc::StaticRef<&telemetry_state, arc::Core::core1>;
 using TelemetryRead = TelemetryCell::Read;
 
 using TelemetryInputs = arc::StaticReads<ControlCell, TelemetryCell>;
-using ControlStep = arc::LoanPack<ControlWrite, TelemetryRead>;
+using ControlStep = arc::StaticEdit<ControlCell, TelemetryCell>;
 static_assert(TelemetryInputs::count == 2U);
 static_assert(TelemetryInputs::contains<ControlRead>());
 static_assert(TelemetryInputs::reads<ControlCell>());
 static_assert(TelemetryInputs::reads<TelemetryCell>());
 static_assert(!TelemetryInputs::writes<ControlCell>());
 static_assert(arc::HasStaticRefRead<TelemetryInputs, TelemetryCell>);
+static_assert(ControlStep::contains<ControlWrite>());
+static_assert(ControlStep::contains<TelemetryRead>());
 static_assert(ControlStep::can_access<arc::Core::core1>());
 static_assert(!ControlStep::can_access<arc::Core::core0>());
 ```
 
-If the task later tries to add `ControlWrite` beside `ControlRead`, `LoanPack`
+`StaticEdit<WriteRef, ReadRefs...>` is the common one-writer, many-reader shape.
+If the task later tries to add the writer as one of its readers, `LoanPack`
 fails the build. This is not full alias analysis; it is a deliberate contract
 for the static objects listed in the task type.
 
@@ -95,9 +98,10 @@ references named by the loan pack:
 ```cpp
 void control_step()
 {
-    ControlStep::with<arc::Core::core1>([](ControlState& control, const ControlState& telemetry) {
-        control.tick += telemetry.tick;
-    });
+    arc::with_edit<arc::Core::core1, ControlCell, TelemetryCell>(
+        [](ControlState& control, const ControlState& telemetry) {
+            control.tick += telemetry.tick;
+        });
 }
 ```
 
