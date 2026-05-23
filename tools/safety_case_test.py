@@ -51,6 +51,27 @@ class SafetyCaseCheckTest(unittest.TestCase):
         self.assertTrue(payload["claims"][0]["paths"])
         self.assertNotIn("arc safety-case check: OK", result.stdout)
 
+    def test_report_format_groups_evidence_for_humans(self) -> None:
+        result = subprocess.run(
+            [str(TOOL), "--format", "report"],
+            cwd=ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("arc safety-case report", result.stdout)
+        self.assertIn("- claims: 22", result.stdout)
+        self.assertIn("- required commands:", result.stdout)
+        self.assertIn("  - ./tools/check-repo.sh", result.stdout)
+        self.assertIn("- non-claims:", result.stdout)
+        self.assertIn("  - certification for aerospace", result.stdout)
+        self.assertIn("- claims:", result.stdout)
+        self.assertIn("Target selection is explicit", result.stdout)
+        self.assertNotIn("arc safety-case check: OK", result.stdout)
+
     def test_claim_rows_require_evidence_paths(self) -> None:
         rows = safety_case_check.claim_rows(
             "\n".join(

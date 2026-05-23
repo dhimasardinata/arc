@@ -46,7 +46,7 @@ remain outside Arc.
 | Formal-model files have at least structural coverage in every repo policy run. | `tools/check-repo.sh` runs `tools/arc-prove.sh`, which validates required TLA+ modules such as `specs/Spsc.tla`, `specs/Roles.tla`, and `specs/Consensus.tla`, checks the SPSC model head/tail names against `components/arc/include/arc/spsc.hpp`, and uses Apalache or TLC when available. |
 | Moved-from handle misuse has static-analysis coverage on the host compile surface. | `tools/check-repo.sh` runs `tools/use-after-move-check.sh`, which invokes `clang-tidy` with `bugprone-use-after-move` as an error when the tool is available; intentional moved-from state probes in `tests/host/logic.cpp` must carry narrow `NOLINT` annotations. |
 | HIL evidence has a machine-checkable artifact shape. | `docs/hil-test-jig.md` defines the required physical cases, and `tools/hil-evidence-check.py` validates captured JSONL artifacts before they are used as board evidence. |
-| Safety claims stay tied to live repo evidence and non-claims. | `tools/check-repo.sh` runs `tools/safety-case-check.py`, which verifies claim evidence paths, required evidence commands, non-claim coverage, and certification-overclaim wording; `tools/safety-case-check.py --format json` emits the same claim/path/command map as structured release evidence. |
+| Safety claims stay tied to live repo evidence and non-claims. | `tools/check-repo.sh` runs `tools/safety-case-check.py`, which verifies claim evidence paths, required evidence commands, non-claim coverage, and certification-overclaim wording; `tools/safety-case-check.py --format report` and `--format json` emit the same claim/path/command map as human or structured release evidence. |
 
 ## Required Local Evidence
 
@@ -64,9 +64,9 @@ python3 tools/compile-fail-check.py
 ./tools/clangd-compile-commands.py --validate-arc-headers --changed-arc-headers HEAD -o /tmp/arc_compile_commands.json
 ```
 
-Use `./tools/safety-case-check.py --format json` when the review needs a
-machine-readable evidence summary for release notes, CI artifacts, or external
-traceability tooling.
+Use `./tools/safety-case-check.py --format report` when a human review needs
+the claim/path/command/non-claim map, or `--format json` when the same evidence
+must be consumed by release tooling.
 Use `python3 tools/compile-fail-check.py --format report` when a human review
 needs the grouped negative borrow-check case list, or `--format json` when the
 same evidence must be consumed by release tooling.

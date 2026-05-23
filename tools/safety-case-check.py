@@ -27,7 +27,7 @@ OVERCLAIMS = (
     re.compile(r"\bIEC\s+61508\s+certified\b", re.IGNORECASE),
     re.compile(r"\bDO-178C\s+certified\b", re.IGNORECASE),
 )
-OUTPUT_FORMATS = ("text", "json")
+OUTPUT_FORMATS = ("text", "report", "json")
 
 
 def die(message: str) -> int:
@@ -182,13 +182,38 @@ def report(rows: list[tuple[str, str]], commands: list[str], problems: list[str]
     }
 
 
+def print_report(rows: list[tuple[str, str]], commands: list[str], problems: list[str]) -> None:
+    payload = report(rows, commands, problems)
+    summary = payload["summary"]
+    print("arc safety-case report")
+    print(f"- claims: {summary['claims']}")
+    print(f"- required commands: {summary['required_commands']}")
+    print(f"- non-claims: {summary['non_claims']}")
+    print(f"- problems: {summary['problems']}")
+    print("- required commands:")
+    for command in payload["required_commands"]:
+        print(f"  - {command}")
+    print("- non-claims:")
+    for phrase in payload["non_claims"]:
+        print(f"  - {phrase}")
+    print("- claims:")
+    for claim in payload["claims"]:
+        paths = ", ".join(claim["paths"]) if claim["paths"] else "none"
+        print(f"  - {claim['claim']}")
+        print(f"    paths: {paths}")
+    if payload["problems"]:
+        print("- problems:")
+        for problem in payload["problems"]:
+            print(f"  - {problem}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check Arc safety-case evidence claims")
     parser.add_argument(
         "--format",
         choices=OUTPUT_FORMATS,
         default="text",
-        help="output style: text status or JSON evidence summary",
+        help="output style: text status, human evidence report, or JSON evidence summary",
     )
     args = parser.parse_args(argv)
 
@@ -196,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
     rows, commands, problems = check_safety_case(text)
     if args.format == "json":
         print(json.dumps(report(rows, commands, problems), indent=2, sort_keys=True))
+    elif args.format == "report":
+        print_report(rows, commands, problems)
 
     if problems:
         if args.format == "text":
