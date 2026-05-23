@@ -270,7 +270,7 @@ These modules are for deterministic compute, not dynamic frameworks.
 | `arc/maglev.hpp` | Unstable state-space control surfaces. |
 | `arc/hls.hpp` | HLS-shaped fixed-loop kernel helpers. |
 | `arc/wavefront.hpp` | Multichannel acoustic phase planning and synthesis. |
-| `arc/digital_twin.hpp` | HIL plant stepping and encoder-output policy hooks. |
+| `arc/digital_twin.hpp` | HIL plant stepping, fixed-horizon forecasting, and encoder-output policy hooks. |
 | `arc/hil.hpp` | HIL-facing helper types and evidence surfaces. |
 | `arc/isp.hpp` | Caller-buffer camera ISP kernels. |
 | `arc/vision.hpp` | Sobel, optical flow, visual servo, and related vision kernels. |

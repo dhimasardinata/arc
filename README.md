@@ -150,7 +150,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::swarm::Migrator` snapshots WASM linear memory plus stack/instruction pointers, ships the state through a board radio policy, and resumes it inside a peer sandbox.
 - `arc::net::Thread`, `arc::ble::Mesh`, `arc::SdioSlave`, and `arc::Ipc` wrap missing ESP-IDF edges behind explicit policy hooks.
 - `arc::optical::LiFi` builds Manchester optical symbols for RMT/ETM-style LED and photodiode air-gap links.
-- `arc::hil::DigitalTwin` closes a silicon-in-the-loop plant model by sampling capture ticks, stepping `StateSpace`, and emitting encoder policy output.
+- `arc::hil::DigitalTwin` closes a silicon-in-the-loop plant model by sampling capture ticks, stepping `StateSpace`, forecasting fixed horizons from copied state, and emitting encoder policy output.
 - `arc::PostmortemFaultFrame` stores compact hard-fault registers and stack PCs in RTC memory for reboot-time reporting.
 - `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, and `arc::StallStats` read the Xtensa cycle counter so hot-path latency, period jitter, control-loop budget slack, and shared-bus stalls can be measured, not guessed.
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.

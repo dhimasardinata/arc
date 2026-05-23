@@ -41,6 +41,32 @@ struct DigitalTwin {
         }
         return Sample{.output = output, .captured_ticks = *captured};
     }
+
+    template <std::size_t Horizon>
+    [[nodiscard]] static Result<std::size_t> forecast(
+        State state,
+        const Model& model,
+        const std::span<const InputVec, Horizon> inputs,
+        const std::span<OutputVec, Horizon> outputs) noexcept
+    {
+        static_assert(Horizon > 0U,
+                      "[ARC ERROR] arc::hil::DigitalTwin forecast needs steps. Action: set Horizon above zero.");
+        if (!valid(inputs) || !valid(outputs)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        for (std::size_t i = 0U; i < Horizon; ++i) {
+            outputs[i] = Plant::step(state, model, inputs[i]);
+        }
+        return Horizon;
+    }
+
+private:
+    template <typename TSpan, std::size_t Extent>
+    [[nodiscard]] static constexpr bool valid(const std::span<TSpan, Extent> span) noexcept
+    {
+        return span.empty() || span.data() != nullptr;
+    }
 };
 
 }  // namespace arc::hil

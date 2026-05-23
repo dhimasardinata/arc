@@ -68,7 +68,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/acoustic_slam.hpp` | FMCW chirp, TDoA, range, and acoustic swarm helpers. | [Open](/modules/arc-acoustic_slam) |
 | `arc/cnc.hpp` | Kinematics and no-allocation G-code parsing. | [Open](/modules/arc-cnc) |
 | `arc/covert.hpp` | PWM/Sigma-Delta FSK symbol planning for experimental air-gap channels. | [Open](/modules/arc-covert) |
-| `arc/digital_twin.hpp` | HIL plant stepping and encoder-output policy hooks. | [Open](/modules/arc-digital_twin) |
+| `arc/digital_twin.hpp` | HIL plant stepping, fixed-horizon forecasting, and encoder-output policy hooks. | [Open](/modules/arc-digital_twin) |
 | `arc/dsp.hpp` | Dot/scale/mix/MAC, FIR, PID, biquad, SOS, and state-space kernels. | [Open](/modules/arc-dsp) |
 | `arc/ecs.hpp` | Structure-of-arrays style entity/control data helpers. | [Open](/modules/arc-ecs) |
 | `arc/foc.hpp` | BLDC field-oriented control and motor-control helpers. | [Open](/modules/arc-foc) |

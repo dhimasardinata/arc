@@ -146,6 +146,7 @@ EXAMPLES = {
     "uart": "examples/esp32s3/uart",
     "udp": "examples/esp32s3/udp",
     "usb": "examples/esp32s3/uart",
+    "vision_accel": "examples/esp32s3/dvp",
     "wave": "examples/esp32s3/pwm",
 }
 
@@ -247,6 +248,14 @@ DEFAULT_GUIDANCE = {
     "when": "the module purpose matches the firmware boundary you are trying to make explicit",
     "avoid": "another narrower Arc header owns the same boundary with less surface area",
     "check": "build the closest example, then capture the real board evidence that matches the module purpose",
+}
+
+SPECIAL_GUIDANCE = {
+    "arc/vision_accel.hpp": {
+        "when": "ESP32-P4 PPA, JPEG, or H264 paths need fixed frame and bitstream plans before board policy submits work",
+        "avoid": "SDK handle lifetime, queue depth, interrupts, or cache maintenance policy are still undefined",
+        "check": "prove input/output sizes and policy calls on host, then benchmark on ESP32-P4 before publishing timing claims",
+    },
 }
 
 
@@ -360,7 +369,7 @@ def render_bullets(items: list[str]) -> str:
 def page_for(rel: str, group: str, purpose: str, feature: str, example: str) -> str:
     include = '#include "arc.hpp"' if rel == "arc.hpp" else f'#include "{rel}"'
     cmake_expr = feature_requirements(feature)
-    guidance = GROUP_GUIDANCE.get(group, DEFAULT_GUIDANCE)
+    guidance = SPECIAL_GUIDANCE.get(rel, GROUP_GUIDANCE.get(group, DEFAULT_GUIDANCE))
     landmarks = public_landmarks(rel)
     landmark_line = (
         "Source landmarks: " + ", ".join(f"`{name}`" for name in landmarks) + "."

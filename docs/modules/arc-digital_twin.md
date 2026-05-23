@@ -1,6 +1,6 @@
 # `arc/digital_twin.hpp`
 
-HIL plant stepping and encoder-output policy hooks.
+HIL plant stepping, fixed-horizon forecasting, and encoder-output policy hooks.
 
 ## Fit
 

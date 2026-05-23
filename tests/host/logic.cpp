@@ -8621,6 +8621,31 @@ void test_current_goal_surfaces()
     expect(twin.has_value() && near(twin->output[0], 6.0F) &&
                near(digital_twin_last_output, 6.0F) && twin->captured_ticks == 77U,
            "DigitalTwin captures PWM and emits simulated encoder state");
+    Twin::State forecast_state{};
+    forecast_state.x[0] = 1.0F;
+    Twin::Model forecast_model{};
+    forecast_model.a[0][0] = 1.0F;
+    forecast_model.b[0][0] = 1.0F;
+    forecast_model.c[0][0] = 1.0F;
+    const std::array<Twin::InputVec, 3> forecast_inputs{Twin::InputVec{1.0F}, Twin::InputVec{2.0F}, Twin::InputVec{3.0F}};
+    std::array<Twin::OutputVec, 3> forecast_outputs{};
+    const auto forecast = Twin::forecast<forecast_inputs.size()>(
+        forecast_state,
+        forecast_model,
+        std::span<const Twin::InputVec, forecast_inputs.size()>{forecast_inputs},
+        std::span<Twin::OutputVec, forecast_outputs.size()>{forecast_outputs});
+    expect(forecast.has_value() && *forecast == forecast_outputs.size() &&
+               near(forecast_outputs[0][0], 1.0F) &&
+               near(forecast_outputs[1][0], 2.0F) &&
+               near(forecast_outputs[2][0], 4.0F) &&
+               near(forecast_state.x[0], 1.0F),
+           "DigitalTwin forecasts fixed horizon without mutating live state");
+    expect(!Twin::forecast<1U>(
+               forecast_state,
+               forecast_model,
+               std::span<const Twin::InputVec, 1U>{static_cast<const Twin::InputVec*>(nullptr), 1U},
+               std::span<Twin::OutputVec, 1U>{forecast_outputs.data(), 1U}),
+           "DigitalTwin forecast rejects null input span");
 
     const auto drive_cb = +[](const int left, const int right) noexcept -> arc::Status {
         cli_drive_left = left;

@@ -1195,6 +1195,23 @@ Hot-loop math helpers for the compute plane.
 
 Use this when Core 1 is doing signal work and you want aligned buffers plus tight, vector-friendly loops without a heavyweight DSP framework.
 
+### `arc::hil::DigitalTwin<T, States, Inputs, Outputs>`
+
+Fixed plant stepping for HIL and predictive simulation.
+
+- `tick<CapturePolicy, EncoderPolicy>(state, model, input)` samples a capture
+  policy, steps `arc::dsp::StateSpace`, and emits the output through an encoder
+  policy.
+- `forecast<Horizon>(state, model, inputs, outputs)` copies the starting state,
+  rolls it forward over fixed caller-owned spans, and writes one output vector
+  per future step.
+- `forecast(...)` rejects null spans and leaves the live state untouched, so a
+  Core 0 planner can evaluate future paths before sending one trajectory to the
+  Core 1 lane.
+
+Use this for simulator/HIL loops or faster-than-real-time planning where the
+model dimensions and horizon are compile-time facts.
+
 ### `arc::CapsBuf<T>` and explicit capability buffers
 
 Typed heap slabs for memory placement that should stay obvious in user code.
