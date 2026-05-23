@@ -1636,6 +1636,30 @@ void test_mqtt()
                in_place_view->payload.size() == in_place_payload.size() &&
                std::memcmp(in_place_view->payload.data(), in_place_payload.data(), in_place_payload.size()) == 0,
            "MQTT publish preserves in-place payload");
+    std::array<std::uint8_t, 96> in_place_topic_buf{};
+    constexpr char in_place_topic_text[] = "arc/in-place/topic";
+    std::memcpy(in_place_topic_buf.data(), in_place_topic_text, sizeof(in_place_topic_text));
+    const std::array<std::uint8_t, 2> in_place_topic_payload{0x10U, 0x20U};
+    const auto in_place_topic_mqtt = arc::net::Mqtt::publish(
+        std::span(in_place_topic_buf),
+        reinterpret_cast<const char*>(in_place_topic_buf.data()),
+        std::span(in_place_topic_payload));
+    expect(in_place_topic_mqtt.has_value(), "MQTT publish in-place topic encodes");
+    const auto in_place_topic_packet = arc::net::Mqtt::parse(*in_place_topic_mqtt);
+    expect(in_place_topic_packet.has_value(), "MQTT publish in-place topic parses");
+    const auto in_place_topic_view = arc::net::Mqtt::view(*in_place_topic_packet);
+    expect(in_place_topic_view.has_value() &&
+               in_place_topic_view->topic.size() == sizeof(in_place_topic_text) - 1U &&
+               std::memcmp(
+                   in_place_topic_view->topic.data(),
+                   in_place_topic_text,
+                   sizeof(in_place_topic_text) - 1U) == 0 &&
+               in_place_topic_view->payload.size() == in_place_topic_payload.size() &&
+               std::memcmp(
+                   in_place_topic_view->payload.data(),
+                   in_place_topic_payload.data(),
+                   in_place_topic_payload.size()) == 0,
+           "MQTT publish preserves in-place topic");
 
     const std::array subscriptions{
         arc::net::MqttSubscription{.filter = "arc/+/status", .qos = arc::net::MqttQos::at_least},

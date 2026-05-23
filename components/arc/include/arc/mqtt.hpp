@@ -200,7 +200,8 @@ struct Mqtt {
         }
 
         const auto header = header_bytes(remaining);
-        const auto payload_pos = header + 2U + *topic + (qos != 0U ? 2U : 0U);
+        const auto topic_pos = header + 2U;
+        const auto payload_pos = topic_pos + *topic + (qos != 0U ? 2U : 0U);
         if (!valid_span(out)) {
             return fail(ESP_ERR_INVALID_ARG);
         }
@@ -210,6 +211,7 @@ struct Mqtt {
         if (cfg.bytes != 0U) {
             std::memmove(out.data() + payload_pos, cfg.data, cfg.bytes);
         }
+        std::memmove(out.data() + topic_pos, cfg.topic, *topic);
 
         auto packet = begin(out, static_cast<std::uint8_t>(MqttType::publish), flags, remaining);
         if (!packet) {
@@ -218,7 +220,8 @@ struct Mqtt {
 
         auto frame = *packet;
         auto pos = header;
-        pos += write_string(frame, pos, cfg.topic);
+        pos += write_u16(frame, pos, *topic);
+        pos += *topic;
 
         if (qos != 0U) {
             pos += write_u16(frame, pos, cfg.packet);
