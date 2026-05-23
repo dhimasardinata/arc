@@ -4380,6 +4380,12 @@ void test_text()
     expect(text.done().has_value() && text.done()->size() == view.size(), "Text done span");
     text.clear();
     expect(text.empty(), "Text clear");
+    expect(text.append("abcd"), "Text overlap seed");
+    text.clear();
+    expect(text.push('x') && text.push('y'), "Text overlap prefix");
+    expect(text.append(std::span<const char>{out.data() + 1U, 3U}) &&
+               std::string_view{text.view()} == "xyycd",
+           "Text append preserves overlapping source span");
 
     std::array<char, 4> small{};
     arc::Text tiny{std::span(small)};

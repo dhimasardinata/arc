@@ -86,7 +86,7 @@ struct Text {
         if (space() < value.size()) {
             return false;
         }
-        std::memcpy(out_.data() + pos_, value.data(), value.size());
+        std::memmove(out_.data() + pos_, value.data(), value.size());
         pos_ += value.size();
         return true;
     }
