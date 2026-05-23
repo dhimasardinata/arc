@@ -36,6 +36,8 @@ struct Esp32S3 {
     static constexpr bool gdma = true;
     static constexpr bool dma2d = false;
     static constexpr bool ppa = false;
+    static constexpr bool mipi_csi = false;
+    static constexpr bool mipi_dsi = false;
     static constexpr bool jpeg = false;
     static constexpr bool h264 = false;
     static constexpr bool mask = true;

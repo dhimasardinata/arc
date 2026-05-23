@@ -61,8 +61,11 @@ struct Soc {
     static constexpr bool gdma = SOC_GDMA_SUPPORTED;
     static constexpr bool ahb_dma = SOC_AHB_GDMA_SUPPORTED;
     static constexpr bool psram_dma = SOC_PSRAM_DMA_CAPABLE;
+    static constexpr bool ethernet = Chip::ethernet_mac;
     static constexpr bool dma2d = Chip::dma2d;
     static constexpr bool ppa = Chip::ppa;
+    static constexpr bool mipi_csi = Chip::mipi_csi;
+    static constexpr bool mipi_dsi = Chip::mipi_dsi;
     static constexpr bool jpeg = Chip::jpeg;
     static constexpr bool h264 = Chip::h264;
 

@@ -197,6 +197,14 @@ static_assert(arc::soc::Esp32P4::ppa);
 static_assert(arc::soc::Esp32P4::jpeg);
 static_assert(arc::soc::Esp32P4::h264);
 static_assert(arc::soc::has<arc::soc::Cap::ptp, arc::soc::Esp32P4>);
+static_assert(arc::soc::has<arc::soc::Cap::ethernet, arc::soc::Esp32P4>);
+static_assert(arc::soc::has<arc::soc::Cap::dma2d, arc::soc::Esp32P4>);
+static_assert(arc::soc::has<arc::soc::Cap::ppa, arc::soc::Esp32P4>);
+static_assert(arc::soc::has<arc::soc::Cap::mipi_csi, arc::soc::Esp32P4>);
+static_assert(arc::soc::has<arc::soc::Cap::mipi_dsi, arc::soc::Esp32P4>);
+static_assert(arc::soc::has<arc::soc::Cap::jpeg, arc::soc::Esp32P4>);
+static_assert(arc::soc::has<arc::soc::Cap::h264, arc::soc::Esp32P4>);
+static_assert(!arc::soc::has<arc::soc::Cap::h264, arc::soc::Esp32S3>);
 static_assert(!arc::soc::has<arc::soc::Cap::drive, arc::soc::Esp32P4>);
 static_assert(arc::stack::round_up(std::numeric_limits<std::size_t>::max() - 3U, 8U) ==
               std::numeric_limits<std::size_t>::max());

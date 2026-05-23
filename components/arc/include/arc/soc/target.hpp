@@ -62,6 +62,13 @@ enum class Cap : std::uint8_t {
     amp,
     cam,
     control,
+    ethernet,
+    dma2d,
+    ppa,
+    mipi_csi,
+    mipi_dsi,
+    jpeg,
+    h264,
 };
 
 #if ARC_TARGET_IS_ESP32S31
@@ -117,8 +124,22 @@ template <Cap C, typename T>
         return T::Api::amp;
     } else if constexpr (C == Cap::cam) {
         return T::Api::cam;
-    } else {
+    } else if constexpr (C == Cap::control) {
         return T::Api::control;
+    } else if constexpr (C == Cap::ethernet) {
+        return T::ethernet_mac;
+    } else if constexpr (C == Cap::dma2d) {
+        return T::dma2d;
+    } else if constexpr (C == Cap::ppa) {
+        return T::ppa;
+    } else if constexpr (C == Cap::mipi_csi) {
+        return T::mipi_csi;
+    } else if constexpr (C == Cap::mipi_dsi) {
+        return T::mipi_dsi;
+    } else if constexpr (C == Cap::jpeg) {
+        return T::jpeg;
+    } else {
+        return T::h264;
     }
 }
 
