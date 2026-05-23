@@ -223,6 +223,12 @@ concept HasStaticRead = StaticLoanPack<Pack> && Pack::template reads<Object>();
 template <typename Pack, auto* Object>
 concept HasStaticWrite = StaticLoanPack<Pack> && Pack::template writes<Object>();
 
+template <typename Pack, typename Ref>
+concept HasStaticRefRead = StaticLoanPack<Pack> && StaticRefType<Ref> && Pack::template reads<Ref>();
+
+template <typename Pack, typename Ref>
+concept HasStaticRefWrite = StaticLoanPack<Pack> && StaticRefType<Ref> && Pack::template writes<Ref>();
+
 template <auto* Object, Core Owner>
 struct StaticRef {
     static_assert(Object != nullptr,

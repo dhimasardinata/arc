@@ -1193,8 +1193,11 @@ void test_static_borrow()
     static_assert(WritePack::writes<Cell>());
     static_assert(arc::HasLoan<ReadPack, Read>);
     static_assert(arc::HasStaticRead<ReadPack, &borrow_fixture>);
+    static_assert(arc::HasStaticRefRead<ReadPack, Cell>);
     static_assert(!arc::HasStaticWrite<ReadPack, &borrow_fixture>);
+    static_assert(!arc::HasStaticRefWrite<ReadPack, Cell>);
     static_assert(arc::HasStaticWrite<WritePack, &other_borrow_fixture>);
+    static_assert(arc::HasStaticRefWrite<WritePack, OtherCell>);
     static_assert(std::is_copy_constructible_v<Read>);
     static_assert(!std::is_copy_constructible_v<Write>);
     static_assert(arc::StaticReadable<Cell, arc::Core::core1>);

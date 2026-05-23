@@ -40,7 +40,9 @@ static_assert(!TelemetryInputs::writes<&control_state>());
 static_assert(!TelemetryInputs::writes<ControlCell>());
 static_assert(arc::HasLoan<TelemetryInputs, TelemetryRead>);
 static_assert(arc::HasStaticRead<TelemetryInputs, &control_state>);
+static_assert(arc::HasStaticRefRead<TelemetryInputs, ControlCell>);
 static_assert(!arc::HasStaticWrite<TelemetryInputs, &control_state>);
+static_assert(!arc::HasStaticRefWrite<TelemetryInputs, ControlCell>);
 
 using ControlProof = arc::proof::Pack<
     10'000U,

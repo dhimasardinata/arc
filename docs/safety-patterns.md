@@ -78,7 +78,7 @@ static_assert(TelemetryInputs::contains<ControlRead>());
 static_assert(TelemetryInputs::reads<ControlCell>());
 static_assert(TelemetryInputs::reads<TelemetryCell>());
 static_assert(!TelemetryInputs::writes<ControlCell>());
-static_assert(arc::HasStaticRead<TelemetryInputs, &telemetry_state>);
+static_assert(arc::HasStaticRefRead<TelemetryInputs, TelemetryCell>);
 ```
 
 If the task later tries to add `ControlWrite` beside `ControlRead`, `LoanPack`

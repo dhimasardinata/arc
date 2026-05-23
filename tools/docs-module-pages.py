@@ -180,6 +180,8 @@ SPECIAL_LANDMARKS = {
         "HasLoan",
         "HasStaticRead",
         "HasStaticWrite",
+        "HasStaticRefRead",
+        "HasStaticRefWrite",
         "StaticReadable",
         "StaticWritable",
         "LoanReadable",
