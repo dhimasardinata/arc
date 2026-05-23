@@ -87,6 +87,8 @@ struct Board {
 };
 
 static_assert(arc::Topology<Board>);
+static_assert(Board::pins::has<18>());
+static_assert(Board::pins::index<19>() != Board::pins::npos);
 ```
 
 Keep board policy near this declaration:

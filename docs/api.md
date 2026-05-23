@@ -19,6 +19,7 @@ Compile-time ESP32-S3 capability map.
 Compile-time board topology guard.
 
 - `arc::Pins<...>` asserts that all non-negative physical pins in the pack are unique.
+- `Pins::count`, `Pins::has<Pin>()`, and `Pins::index<Pin>()` keep board-owner assertions short without repeating the pin list.
 - `arc::Topology<Board>` checks that `Board::pins` exists and passes the uniqueness rule.
 - Use it in one central `Board`/`Hw` declaration, not scattered through application files.
 

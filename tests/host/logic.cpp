@@ -222,6 +222,13 @@ static_assert(sizeof(arc::net::EthernetFrame<std::numeric_limits<std::uint16_t>:
 static_assert(sizeof(decltype(arc::claim_token<1, 2, 3>())) == sizeof(std::uint64_t));
 static_assert(arc::claim_token<1, 2, 3>() != arc::claim_token<1, 2, 4>());
 static_assert(arc::claim_proof<1, 2, 3>() != arc::claim_proof<1, 2, 4>());
+using BoardPins = arc::Pins<2, 4, -1, 18>;
+static_assert(BoardPins::count == 4U);
+static_assert(BoardPins::has<4>());
+static_assert(!BoardPins::has<5>());
+static_assert(!BoardPins::has<-1>());
+static_assert(BoardPins::index<18>() == 3U);
+static_assert(BoardPins::index<5>() == BoardPins::npos);
 static_assert(arc::Result<int>{2}.and_then([](int value) { return arc::Result<int>{value + 1}; }).value() == 3);
 static_assert(arc::status_code(arc::ok()) == ESP_OK);
 
