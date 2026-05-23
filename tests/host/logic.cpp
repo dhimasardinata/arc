@@ -105,6 +105,7 @@
 #include "arc/power_profiler.hpp"
 #include "arc/power_governor.hpp"
 #include "arc/probe.hpp"
+#include "arc/proof.hpp"
 #include "arc/provisioning.hpp"
 #include "arc/pru.hpp"
 #include "arc/puf.hpp"
@@ -5407,6 +5408,22 @@ void test_ulp_shared()
 
 void test_probe_stats()
 {
+    using ControlProof = arc::proof::Pack<
+        10'000U,
+        arc::proof::Fact<arc::proof::Kind::deadline, 17U, 10'000U>,
+        arc::proof::Fact<arc::proof::Kind::no_heap, 17U>,
+        arc::proof::Fact<arc::proof::Kind::static_life, 17U>>;
+    static_assert(ControlProof::cycles == 10'000U);
+    static_assert(ControlProof::count == 3U);
+    static_assert(ControlProof::has<arc::proof::Kind::deadline>());
+    static_assert(!ControlProof::has<arc::proof::Kind::no_null>());
+    static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
+    constexpr auto proof_claims = ControlProof::claims();
+    static_assert(proof_claims[0].kind == arc::proof::Kind::deadline);
+    static_assert(proof_claims[2].kind == arc::proof::Kind::static_life);
+    expect(proof_claims.size() == 3U && proof_claims[1].subject == 17U,
+           "Proof pack carries compile-time workload claims");
+
     arc::CycleStats cycles{};
     cycles.add(10U);
     cycles.add(30U);

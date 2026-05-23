@@ -63,6 +63,7 @@ SPECIAL_FEATURES = {
     "pmr": "memory",
     "postmortem": "core",
     "prefetch": "memory",
+    "proof": "core",
     "pru": "lcd",
     "pulse": "mcpwm",
     "rcu": "core",
@@ -169,6 +170,7 @@ GROUP_EXAMPLES = {
 SPECIAL_LANDMARKS = {
     "arc/borrow.hpp": ["BorrowMode", "StaticRef", "StaticLoan", "StaticRead", "StaticMut"],
     "arc/detail/quant.hpp": ["mul_sat", "add_sat", "round_shift_s64"],
+    "arc/proof.hpp": ["Kind", "Claim", "Fact", "ProofFact", "Pack"],
 }
 
 GROUP_GUIDANCE = {

@@ -55,6 +55,7 @@ the API docs while still making the meaning easy to check.
 | Term | Meaning in Arc |
 | --- | --- |
 | Proof path | The smallest command or artifact that actually supports the claim being made. |
+| Proof pack | A fixed `arc::proof::Pack` of source-visible claims and a cycle budget that release tooling can keep beside a workload artifact. |
 | Host check | A local compile/test check that runs without ESP32-S3 hardware. Useful for logic and contracts, not timing claims. |
 | Firmware build | An ESP-IDF build for the root project or an example. It proves buildability, not board behavior. |
 | Runtime proof | Captured serial, network, benchmark, or HIL evidence from the relevant board and fixture. |

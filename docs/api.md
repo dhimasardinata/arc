@@ -1164,6 +1164,23 @@ Cycle-counter instrumentation for hot paths.
 
 Use this when you want to validate the actual cost of a hot path, scheduler period, or realtime budget instead of trusting intuition.
 
+### `arc::proof::Pack<Cycles, Facts...>`
+
+Compile-time proof metadata for release evidence.
+
+- `proof::Fact<Kind, Subject, Bound>` records one non-zero workload or module id
+  plus an optional numeric bound.
+- `proof::Pack<Cycles, Facts...>` binds facts to a verified cycle budget and
+  rejects empty packs at compile time.
+- `claims()` returns a fixed `std::array<proof::Claim, N>` that release tooling
+  can serialize beside a firmware artifact.
+- `has<Kind>()` and `bound<Kind>()` let tests assert that required facts stayed
+  attached to a workload.
+
+Use this when a safety review needs proof-carrying metadata next to a typed
+workload. It does not replace measurement, formal proof tools, or certification
+evidence; it keeps those claims source-visible and machine-readable.
+
 ### `arc::TimeSync`
 
 Zero-allocation PI discipliner for peer clock synchronization.

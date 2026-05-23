@@ -79,6 +79,7 @@ Use these when deciding who owns work, lifetime, and access.
 | `arc/rtos.hpp` | Safe chrono-to-FreeRTOS tick conversion helpers. |
 | `arc/stack.hpp` | Compile-time stack budget helpers and task stack floors. |
 | `arc/init.hpp` | Boot-once and shared-reference init state machines. |
+| `arc/proof.hpp` | Compile-time proof facts and cycle-budget packs for evidence-carrying workloads. |
 | `arc/claim.hpp` | Runtime hardware ownership claims. |
 | `arc/audit.hpp` | Opt-in misuse assertions for queues and topology-sensitive lanes. |
 | `arc/roles.hpp` | Producer/consumer endpoint exposure without exposing root queue mutation. |

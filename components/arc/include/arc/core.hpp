@@ -26,6 +26,7 @@
 #include "arc/plane.hpp"
 #include "arc/postmortem.hpp"
 #include "arc/probe.hpp"
+#include "arc/proof.hpp"
 #include "arc/rcu.hpp"
 #include "arc/reg.hpp"
 #include "arc/result.hpp"

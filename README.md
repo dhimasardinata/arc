@@ -153,6 +153,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::hil::DigitalTwin` closes a silicon-in-the-loop plant model by sampling capture ticks, stepping `StateSpace`, forecasting fixed horizons from copied state, and emitting encoder policy output.
 - `arc::PostmortemFaultFrame` stores compact hard-fault registers and stack PCs in RTC memory for reboot-time reporting.
 - `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, and `arc::StallStats` read the Xtensa cycle counter so hot-path latency, period jitter, control-loop budget slack, and shared-bus stalls can be measured, not guessed.
+- `arc::proof::Pack` carries compile-time proof facts and verified cycle budgets beside workloads, giving release tooling a small proof-carrying metadata surface without heap or RTTI.
 - `arc::Mask` gives an explicit Core-local interrupt barrier when you really need to silence OS-visible interrupts around a tiny hot section.
 - `arc::Pwm` binds LEDC hardware PWM directly to compile-time pin/frequency defaults with runtime duty retuning.
 - `arc::Sigma` binds the ESP32-S3 Sigma-Delta Modulator to a compile-time GPIO and sample rate with runtime density retuning.
@@ -330,7 +331,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 | Area | Headers | Primary types |
 | --- | --- | --- |
 | Profile umbrellas | `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/math.hpp`, `arc.hpp` | Subset entry points for substrate, coherency/DMA, no-heap codecs, DSP/math, and the compatibility umbrella |
-| Core plane | `arc/task.hpp`, `arc/borrow.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/lockstep.hpp`, `arc/sim.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/flow.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::CoreLocal`, `arc::CoreMsg`, `arc::StaticRef`, `arc::StaticLoan`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::Lockstep`, `arc::LockstepFault`, `arc::sim::Drive`, `arc::sim::Sense`, `arc::sim::Spi`, `arc::sim::Fifo`, `arc::sim::TraceLog`, `arc::sim::Harness`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Flow`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
+| Core plane | `arc/task.hpp`, `arc/borrow.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/lockstep.hpp`, `arc/sim.hpp`, `arc/proof.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/flow.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::CoreLocal`, `arc::CoreMsg`, `arc::StaticRef`, `arc::StaticLoan`, `arc::proof::Pack`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::Lockstep`, `arc::LockstepFault`, `arc::sim::Drive`, `arc::sim::Sense`, `arc::sim::Spi`, `arc::sim::Fifo`, `arc::sim::TraceLog`, `arc::sim::Harness`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Flow`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp`, `arc/roles.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit`, `arc::Roles` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/hotpatch.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/axi_graph.hpp`, `arc/pipeline.hpp`, `arc/mmu_span.hpp`, `arc/distributed_mmu.hpp`, `arc/fram.hpp`, `arc/place.hpp`, `arc/prefetch.hpp`, `arc/scrub.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::HotPatch`, `arc::HotPatchImage`, `arc::HotPatchDetour`, `arc::DmaChain`, `arc::DmaEndpoint`, `arc::AxiGraph`, `arc::AxiPort`, `arc::AxiEdge`, `arc::Pipeline`, `arc::Dma2dWindow`, `arc::bind_rows`, `arc::MmuSpan`, `arc::mmu::DistributedSpan`, `arc::mmu::DistributedPager`, `arc::FramArena`, `arc::FramRef`, `arc::FramAlloc`, `arc::Copy`, `arc::prefetch`, `arc::Scrub` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp`, `arc/rpc.hpp`, `arc/rtc_ring.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem`, `arc::RpcLane`, `arc::RtcRing` |
@@ -594,6 +595,7 @@ Profile aliases for `math`, `memory`, `net_codecs`, `crypto`, `robotics`, and `s
 - `poll`
 - `power_governor`
 - `power_profiler`
+- `proof`
 - `puf`
 - `rdma`
 - `rng`

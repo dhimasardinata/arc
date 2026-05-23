@@ -250,6 +250,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/ipc.hpp` | Emergency and cross-partition IPC policy surface. | [Open](/modules/arc-ipc) |
 | `arc/lockstep.hpp` | Dual-output comparison and policy hooks for lockstep safety checks. | [Open](/modules/arc-lockstep) |
 | `arc/plane.hpp` | Stateful pinned workloads with explicit shared state. | [Open](/modules/arc-plane) |
+| `arc/proof.hpp` | Compile-time proof facts and cycle-budget packs for evidence-carrying workloads. | [Open](/modules/arc-proof) |
 | `arc/roles.hpp` | Producer/consumer endpoint exposure without exposing root queue mutation. | [Open](/modules/arc-roles) |
 | `arc/rtos.hpp` | Safe chrono-to-FreeRTOS tick conversion helpers. | [Open](/modules/arc-rtos) |
 | `arc/sim.hpp` | Host simulator FIFO, SPI byte lane, trace log, harness ticks, and pin drive/sense facades for app logic tests. | [Open](/modules/arc-sim) |
