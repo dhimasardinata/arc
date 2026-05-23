@@ -294,6 +294,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | Header | Purpose | Page |
 | --- | --- | --- |
 | `arc/intermittent.hpp` | RTC no-init checkpoints for brownout/intermittent execution. | [Open](/modules/arc-intermittent) |
+| `arc/lp_core.hpp` | ESP32-P4 LP-core entry tags, image metadata, and shared handoff lanes. | [Open](/modules/arc-lp_core) |
 | `arc/ulp.hpp` | ULP RISC-V/FSM load, run, interrupt, and shared memory controls. | [Open](/modules/arc-ulp) |
 | `arc/ulp_asm.hpp` | Compile-time ULP RISC-V program assembly. | [Open](/modules/arc-ulp_asm) |
 | `arc/ulp_cxx.hpp` | Tiny C++ builder, GPIO/I2C/ADC, and SleepFsm-style ULP building blocks. | [Open](/modules/arc-ulp_cxx) |

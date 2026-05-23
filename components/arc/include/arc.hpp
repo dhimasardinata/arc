@@ -218,6 +218,8 @@
 #include "arc/ulp.hpp"
 #endif
 
+#include "arc/lp_core.hpp"
+
 #if __has_include("driver/usb_serial_jtag.h")
 #include "arc/usb.hpp"
 #endif

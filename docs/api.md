@@ -159,6 +159,18 @@ ULP RISC-V and legacy FSM control surface.
 
 Use this for always-on sensing, wake decisions, or low-power counters while the main cores sleep.
 
+### `ARC_LP_CORE` and `arc::lp`
+
+ESP32-P4 LP-core handoff contracts for builds that compile a small RV32IMC side image outside the host firmware TU.
+
+- `ARC_LP_CORE`, `ARC_LP_DATA`, `ARC_LP_BSS`, and `ARC_LP_SHARED` place marked functions or objects in Arc LP-core sections.
+- `Image{binary, load, entry, stack}` and `Control{image, period_us, wake_main}` describe a fixed LP payload and run policy.
+- `load(policy, image)`, `start(policy, control)`, and `stop(policy)` validate the plan before calling board-owned hooks.
+- `Word` is a 32-bit acquire/release shared word.
+- `Mailbox<T>` provides two `arc::SeqReg<T>` lanes so host and LP code exchange multi-word snapshots without heap or locks.
+
+Use this when P4 LP-core code is compiled by a board build rule but Arc should still own the C++ tags, fixed image metadata, and shared-state contract. Toolchain selection, linker scripts, LP-RAM placement, and wake-source wiring remain board policy.
+
 ### `arc::Fuse`
 
 eFuse and MAC read helpers.
@@ -1035,7 +1047,7 @@ Seqlock-style latest-snapshot lane for payloads larger than one word.
 - `read()` retries until one stable snapshot is observed
 - `try_read(value)` gives you the same read without blocking
 
-`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It publishes into an inactive shadow slot before flipping the even sequence, so readers normally copy from a stable slot, and payload bytes are stored/loaded through relaxed atomics to avoid non-atomic data races if a stale reader overlaps a writer. The sequence counter carries release/acquire visibility without forcing seq-cst ordering. `write()` still masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
+`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It publishes into an inactive shadow slot before flipping the even sequence, so readers normally copy from a stable slot, and payload bytes are stored/loaded through relaxed atomics to avoid non-atomic data races if a stale reader overlaps a writer. The sequence counter carries release/acquire visibility without forcing seq-cst ordering. `write()` masks OS-visible interrupts around the odd sequence window on Xtensa targets and uses the same atomic seqlock path without Xtensa masking on RISC-V targets. `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
 

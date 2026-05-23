@@ -34,7 +34,9 @@ struct alignas(cache_line) SeqReg {
 
     void write(const T& value) noexcept
     {
+#if ARC_TARGET_ARCH_XTENSA
         Critical guard;
+#endif
         write_unmasked(value);
     }
 

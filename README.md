@@ -127,6 +127,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::ulp::Builder`, `Gpio`, `Adc`, `I2c`, and `SleepFsm` provide policy-based C++ building blocks for tiny ULP-side sensing and wake decisions.
 - `arc::ulp::ml::QuantDenseS8` and `SemanticWake` run stripped-down int8 inference over ULP I2C samples before deciding whether the main cores should wake.
 - `arc::ulp::ml::AudioSignature` and `AudioSignatureWake` turn small ADC/PDM sample windows into ULP-side signature bins before wake decisions.
+- `ARC_LP_CORE`, `arc::lp::Image`, `Control`, `Word`, and `Mailbox<T>` mark ESP32-P4 LP-core entry/data surfaces and keep host/LP handoff seqlock-backed.
 - `arc::isp::Debayer` and `AecAwb` turn raw camera spans into RGB565 frames and exposure/white-balance feedback without owning camera policy.
 - `arc::vision::Sobel`, `OpticalFlow`, `VSlam`, and `VisualServo` add caller-buffer vision kernels, SIMD FAST corners, essential-matrix deltas, and ESKF correction hooks for the control plane.
 - `arc::vision::PpaSrm`, `PpaFill`, `PpaBlend`, `JpegEncoder`, and `H264Encoder` validate zero-copy P4 vision-accelerator plans before board policy submits them.
@@ -337,7 +338,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream`, `arc::net::AnyStream`, `arc::net::Rtp`, `arc::net::Mjpeg` |
 | Binary records and optimizer hints | `arc/pack.hpp`, `arc/perfetto.hpp`, `arc/mcap.hpp`, `arc/trace_live.hpp`, `arc/assume.hpp` | `arc::pack::Schema`, `arc::pack::StructOf`, `arc::pack::Reflect`, `arc::pack::Endian`, `arc::PerfettoWriter`, `arc::mcap::Writer`, `arc::trace::LiveStream`, `arc::assume` |
 | Control, ML, and vision | `arc/dsp.hpp`, `arc/wavefront.hpp`, `arc/simd.hpp`, `arc/ml.hpp`, `arc/snn.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/nav.hpp`, `arc/foc.hpp`, `arc/maglev.hpp`, `arc/digital_twin.hpp`, `arc/motion.hpp`, `arc/cnc.hpp`, `arc/hls.hpp`, `arc/isp.hpp`, `arc/vision.hpp`, `arc/vision_accel.hpp`, `arc/vslam.hpp`, `arc/star_tracker.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::dsp::Beamform`, `arc::dsp::Aec`, `arc::dsp::Wavefront`, `arc::simd::float32x4_t`, `arc::simd::int8x16_t`, `arc::simd::dot_s8`, `arc::simd::Rgb565::from_yuv422`, `arc::simd::fft_radix2`, `arc::ml::Tensor`, `arc::ml::Dense`, `arc::ml::QuantDenseS8`, `arc::ml::Snn`, `arc::ml::Conv2dS8`, `arc::ml::DepthwiseConv2dS8`, `arc::ml::MaxPool2d`, `arc::ml::mapped_weights`, `arc::ml::Core1Inference`, `arc::dsp::Matrix`, `arc::dsp::Lqr`, `arc::dsp::Kalman`, `arc::nav::Eskf`, `arc::nav::Quaternion`, `arc::Foc`, `arc::DualFoc`, `arc::FocEncoderFusion`, `arc::MagLev`, `arc::hil::DigitalTwin`, `arc::MotionPlan`, `arc::SCurve`, `arc::cnc::Kinematics`, `arc::cnc::GCode`, `arc::hls::KernelSpec`, `arc::hls::StaticLoop`, `arc::isp::Debayer`, `arc::isp::AecAwb`, `arc::vision::Sobel`, `arc::vision::OpticalFlow`, `arc::vision::PpaSrm`, `arc::vision::JpegEncoder`, `arc::vision::H264Encoder`, `arc::vision::VSlam`, `arc::vision::VisualServo`, `arc::vision::StarTracker`, `arc::SwarmSoa`, `arc::Hil` |
-| USB and low-power logic | `arc/usb.hpp`, `arc/usb_device.hpp`, `arc/usb_host.hpp`, `arc/ulp.hpp`, `arc/ulp_asm.hpp`, `arc/ulp_cxx.hpp`, `arc/ulp_ml.hpp` | `arc::Usb`, `arc::usb::Device`, `arc::usb::DeviceDescriptor`, `arc::usb::Cdc`, `arc::usb::Bulk`, `arc::usb::Uvc`, `arc::usb::Uac`, `arc::usb::Fifo`, `arc::usb::Host`, `arc::Ulp`, `arc::ulp::riscv::assemble`, `arc::ulp::Builder`, `arc::ulp::Program`, `arc::ulp::Gpio`, `arc::ulp::Adc`, `arc::ulp::I2c`, `arc::ulp::SleepFsm`, `arc::ulp::ml::QuantDenseS8`, `arc::ulp::ml::SemanticWake`, `arc::ulp::ml::AudioSignatureWake` |
+| USB and low-power logic | `arc/usb.hpp`, `arc/usb_device.hpp`, `arc/usb_host.hpp`, `arc/ulp.hpp`, `arc/ulp_asm.hpp`, `arc/ulp_cxx.hpp`, `arc/ulp_ml.hpp`, `arc/lp_core.hpp` | `arc::Usb`, `arc::usb::Device`, `arc::usb::DeviceDescriptor`, `arc::usb::Cdc`, `arc::usb::Bulk`, `arc::usb::Uvc`, `arc::usb::Uac`, `arc::usb::Fifo`, `arc::usb::Host`, `arc::Ulp`, `arc::ulp::riscv::assemble`, `arc::ulp::Builder`, `arc::ulp::Program`, `arc::ulp::Gpio`, `arc::ulp::Adc`, `arc::ulp::I2c`, `arc::ulp::SleepFsm`, `arc::ulp::ml::QuantDenseS8`, `arc::ulp::ml::SemanticWake`, `arc::ulp::ml::AudioSignatureWake`, `arc::lp::Image`, `arc::lp::Control`, `arc::lp::Mailbox` |
 | Security, VM, and silicon | `arc/aes.hpp`, `arc/sha.hpp`, `arc/puf.hpp`, `arc/cloak.hpp`, `arc/blackbox.hpp`, `arc/cert_bundle.hpp`, `arc/nvs_crypto.hpp`, `arc/secure_boot.hpp`, `arc/hmac.hpp`, `arc/sign.hpp`, `arc/mpi.hpp`, `arc/kyber.hpp`, `arc/paillier.hpp`, `arc/xts.hpp`, `arc/fuse.hpp`, `arc/rng.hpp`, `arc/pms.hpp`, `arc/tee.hpp`, `arc/vm.hpp`, `arc/jit.hpp`, `arc/hotswap.hpp`, `arc/wasm_aot.hpp`, `arc/migrator.hpp`, `arc/hypervisor.hpp`, `arc/chaos.hpp`, `arc/flash_off.hpp`, `arc/crypto_dma.hpp`, `arc/interrupt_matrix.hpp`, `arc/provisioning.hpp`, `arc/pmr.hpp` | `arc::Aes`, `arc::Gcm`, `arc::Sha`, `arc::crypto::Puf`, `arc::crypto::Cloak`, `arc::covert::BlackBox`, `arc::x509::Bundle`, `arc::NvsCrypto`, `arc::secure::SecureBoot`, `arc::Hmac`, `arc::Sign`, `arc::Mpi`, `arc::crypto::Kyber`, `arc::crypto::Paillier`, `arc::Xts`, `arc::Fuse`, `arc::Rng`, `arc::Pms`, `arc::WorldGuard`, `arc::TeePlan`, `arc::vm::BPF`, `arc::vm::BpfInsn`, `arc::vm::BpfSandbox`, `arc::vm::Jit`, `arc::vm::HotSwap`, `arc::vm::HotSwapPlan`, `arc::vm::WasmAot`, `arc::vm::WasmSandbox`, `arc::swarm::Migrator`, `arc::vm::Hypervisor`, `arc::chaos::Monkey`, `arc::FlashOff`, `arc::CryptoDma`, `arc::InterruptMatrix`, `arc::Provisioning`, `arc::PmrCapsResource` |
 
 </details>
@@ -569,6 +570,7 @@ Profile aliases for `math`, `memory`, `net_codecs`, `crypto`, `robotics`, and `s
 - `kyber`
 - `lifi`
 - `lockstep`
+- `lp_core`
 - `maglev`
 - `spi`
 - `sd`
@@ -1208,6 +1210,18 @@ ULP RISC-V and legacy FSM control surface.
 - `Ulp::Shared<T>` adds an 8-byte-aligned seqlock payload wrapper for trivially copyable RTC-shared structs.
 
 Use this for always-on sensing, wake decisions, or low-power counters while the main cores sleep.
+
+### `ARC_LP_CORE` and `arc::lp`
+
+ESP32-P4 LP-core handoff contracts for builds that compile a small RV32IMC side image outside the host firmware TU.
+
+- `ARC_LP_CORE`, `ARC_LP_DATA`, `ARC_LP_BSS`, and `ARC_LP_SHARED` place marked functions or objects in Arc LP-core sections.
+- `Image{binary, load, entry, stack}` and `Control{image, period_us, wake_main}` describe a fixed LP payload and run policy.
+- `load(policy, image)`, `start(policy, control)`, and `stop(policy)` validate the plan before calling board-owned hooks.
+- `Word` is a 32-bit acquire/release shared word.
+- `Mailbox<T>` provides two `arc::SeqReg<T>` lanes so host and LP code exchange multi-word snapshots without heap or locks.
+
+Use this when P4 LP-core code is compiled by a board build rule but Arc should still own the C++ tags, fixed image metadata, and shared-state contract. Toolchain selection, linker scripts, LP-RAM placement, and wake-source wiring remain board policy.
 
 ### `arc::Fuse`
 
@@ -2062,7 +2076,7 @@ Seqlock-style latest-snapshot lane for payloads larger than one word.
 - `read()` retries until one stable snapshot is observed
 - `try_read(value)` gives you the same read without blocking
 
-`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It publishes into an inactive shadow slot before flipping the even sequence, so readers normally copy from a stable slot, and payload bytes are stored/loaded through relaxed atomics to avoid non-atomic data races if a stale reader overlaps a writer. The sequence counter carries release/acquire visibility without forcing seq-cst ordering. `write()` still masks OS-visible interrupts around the odd sequence window, and `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
+`SeqReg` is cache-line aligned to avoid false sharing with adjacent state. It publishes into an inactive shadow slot before flipping the even sequence, so readers normally copy from a stable slot, and payload bytes are stored/loaded through relaxed atomics to avoid non-atomic data races if a stale reader overlaps a writer. The sequence counter carries release/acquire visibility without forcing seq-cst ordering. `write()` masks OS-visible interrupts around the odd sequence window on Xtensa targets and uses the same atomic seqlock path without Xtensa masking on RISC-V targets. `read()` inserts a tiny `arc::pause()` between failed snapshots so a fast writer does not turn the losing core into a wasteful full-bus spin.
 
 Use this when `arc::Reg<T>` is too small but a queue would be wasteful.
 

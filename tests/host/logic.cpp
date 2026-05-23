@@ -70,6 +70,7 @@
 #include "arc/cloak.hpp"
 #include "arc/lifi.hpp"
 #include "arc/lockstep.hpp"
+#include "arc/lp_core.hpp"
 #include "arc/log.hpp"
 #include "arc/copy.hpp"
 #include "arc/core.hpp"
@@ -287,6 +288,10 @@ bool csi_policy_started{};
 arc::net::CsiCallback csi_policy_callback{};
 void* csi_policy_user{};
 std::size_t hotpatch_locks{};
+
+ARC_LP_CORE void arc_host_lp_entry() noexcept {}
+
+ARC_LP_SHARED arc::lp::Word arc_host_lp_word{};
 std::size_t hotpatch_stores{};
 std::size_t hotpatch_syncs{};
 std::size_t hotpatch_unlocks{};
@@ -5194,6 +5199,74 @@ void test_ulp_shared()
     Payload out{};
     expect(shared.read(out), "ULP shared reads stable snapshot");
     expect(out.seq == 7U && out.flags == 0x55U, "ULP shared payload");
+
+    arc_host_lp_word.write(3U);
+    expect(arc_host_lp_word.add(4U) == 7U && arc_host_lp_word.read() == 7U, "LP core shared word");
+
+    struct LpPayload {
+        std::uint32_t seq{};
+        std::uint32_t flags{};
+    };
+
+    static_assert(sizeof(LpPayload) > sizeof(std::uint32_t));
+    arc::lp::Mailbox<LpPayload> mailbox{};
+    mailbox.host_write({.seq = 11U, .flags = 0xaaU});
+    LpPayload lp_seen{};
+    expect(mailbox.lp_read(lp_seen) && lp_seen.seq == 11U && lp_seen.flags == 0xaaU,
+           "LP core mailbox reads host payload");
+    mailbox.lp_write({.seq = 12U, .flags = 0x55U});
+    LpPayload host_seen{};
+    expect(mailbox.host_read(host_seen) && host_seen.seq == 12U && host_seen.flags == 0x55U,
+           "LP core mailbox reads LP payload");
+
+    struct LpPolicy {
+        int loads{};
+        int starts{};
+        int stops{};
+
+        [[nodiscard]] esp_err_t load(const arc::lp::Image& image) noexcept
+        {
+            ++loads;
+            return image.load == 0x5000'0000U ? ESP_OK : ESP_FAIL;
+        }
+
+        [[nodiscard]] esp_err_t start(const arc::lp::Control& control) noexcept
+        {
+            ++starts;
+            return control.wake_main ? ESP_OK : ESP_FAIL;
+        }
+
+        [[nodiscard]] esp_err_t stop() noexcept
+        {
+            ++stops;
+            return ESP_OK;
+        }
+    };
+
+    const std::array<std::uint8_t, 4> lp_binary{0x13U, 0U, 0U, 0U};
+    const arc::lp::Image lp_image{
+        .binary = std::span<const std::uint8_t>{lp_binary},
+        .load = 0x5000'0000U,
+        .entry = arc_host_lp_entry,
+        .stack = 256U,
+    };
+    const arc::lp::Control lp_control{
+        .image = lp_image,
+        .period_us = 1000U,
+        .wake_main = true,
+    };
+    LpPolicy lp_policy{};
+    expect(arc::lp::load(lp_policy, lp_image).has_value() &&
+               arc::lp::start(lp_policy, lp_control).has_value() &&
+               arc::lp::stop(lp_policy).has_value() &&
+               lp_policy.loads == 1 && lp_policy.starts == 1 && lp_policy.stops == 1,
+           "LP core policy load start stop");
+    expect(!arc::lp::load(lp_policy, {}) && !arc::lp::start(lp_policy, {}),
+           "LP core rejects invalid image and control");
+    struct EmptyLpPolicy {};
+    EmptyLpPolicy empty_lp{};
+    const auto unsupported_lp = arc::lp::load(empty_lp, lp_image);
+    expect(!unsupported_lp && unsupported_lp.error() == ESP_ERR_NOT_SUPPORTED, "LP core reports unsupported policy hooks");
 }
 
 void test_probe_stats()
