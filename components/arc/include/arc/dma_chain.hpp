@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <bit>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -122,6 +124,23 @@ struct DmaChain {
             eof);
     }
 
+    template <typename Contract, typename T, std::size_t Extent>
+        requires(!std::is_const_v<T> && std::is_trivially_copyable_v<T> &&
+                 requires(std::span<T, Extent> values) {
+                     { Contract::valid(values) } -> std::convertible_to<bool>;
+                 })
+    [[nodiscard]] Status try_bind(
+        const std::size_t index,
+        const std::span<T, Extent> values,
+        const Contract = {},
+        const bool eof = false) noexcept
+    {
+        if (!Contract::valid(values)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return try_bind(index, values, eof);
+    }
+
     void bind(
         const std::size_t index,
         std::span<std::uint8_t> bytes,
@@ -165,6 +184,29 @@ struct DmaChain {
     }
 
     std::array<DmaDesc, N> desc{};
+};
+
+template <std::size_t MinBytes = 1U, std::size_t Align = 1U>
+struct DmaContract {
+    static_assert(MinBytes > 0U, "DMA contract must require at least one byte");
+    static_assert(std::has_single_bit(Align), "DMA contract alignment must be a power of two");
+
+    static constexpr std::size_t min_bytes = MinBytes;
+    static constexpr std::size_t align = Align;
+
+    [[nodiscard]] static bool valid(const void* const data, const std::size_t bytes) noexcept
+    {
+        if (data == nullptr || bytes < min_bytes || bytes > std::numeric_limits<std::uint32_t>::max()) {
+            return false;
+        }
+        return (reinterpret_cast<std::uintptr_t>(data) & (align - 1U)) == 0U;
+    }
+
+    template <typename T, std::size_t Extent>
+    [[nodiscard]] static bool valid(const std::span<T, Extent> data) noexcept
+    {
+        return valid(data.data(), data.size_bytes());
+    }
 };
 
 template <typename T, std::size_t N>

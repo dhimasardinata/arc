@@ -6496,6 +6496,19 @@ void test_pipeline_usb_ulp()
            "DmaChain cache-line bind rejects unaligned data");
     expect(!coherent_chain.try_bind(0, arc::CacheLines{.data = coherent_dma.data(), .bytes = 65U}),
            "DmaChain cache-line bind rejects partial lines");
+    using DmaLineContract = arc::DmaContract<64U, arc::cache_line>;
+    static_assert(DmaLineContract::min_bytes == 64U);
+    static_assert(DmaLineContract::align == arc::cache_line);
+    expect(DmaLineContract::valid(coherent_dma.data(), 64U), "DMA contract accepts aligned buffer");
+    expect(coherent_chain.try_bind(0, std::span(coherent_dma).first(64U), DmaLineContract{}).has_value(),
+           "DmaChain contract bind accepts aligned buffer");
+    expect(!coherent_chain.try_bind(
+               0,
+               std::span<std::uint8_t>{coherent_dma.data() + 1U, 64U},
+               DmaLineContract{}),
+           "DmaChain contract bind rejects unaligned buffer");
+    expect(!coherent_chain.try_bind(0, std::span(coherent_dma).first(32U), DmaLineContract{}),
+           "DmaChain contract bind rejects undersized buffer");
     arc::OwnedDmaChain<std::uint8_t, 2> owned_dma{};
     static_assert(!std::is_move_constructible_v<decltype(owned_dma)>);
     expect(owned_dma.alloc(4U, true).has_value(), "OwnedDmaChain allocates descriptor buffers");
