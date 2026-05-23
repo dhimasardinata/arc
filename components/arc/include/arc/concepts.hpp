@@ -3,12 +3,20 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 #include "esp_err.h"
 
+#include "arc/detail/scoped_result.hpp"
 #include "arc/result.hpp"
 
 namespace arc {
+
+template <typename T>
+concept PlainPayload = detail::PlainScopedResult<std::remove_cvref_t<T>>;
+
+template <typename T>
+concept TrivialPayload = PlainPayload<T> && std::is_trivially_copyable_v<std::remove_cvref_t<T>>;
 
 template <typename T>
 concept ControlResult = std::same_as<T, void> || std::same_as<T, esp_err_t> || std::same_as<T, Status>;

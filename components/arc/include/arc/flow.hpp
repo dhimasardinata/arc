@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <type_traits>
 
-#include "arc/detail/scoped_result.hpp"
+#include "arc/concepts.hpp"
 
 namespace arc {
 
@@ -73,7 +73,7 @@ struct FlowImpl<Source, Lane, Sink, std::void_t<typename Source::value_type, typ
         "[ARC ERROR] arc::Flow payload must be copy assignable. "
         "Action: keep queued payload fields mutable and flat, or pass stable handles outside the payload.");
     static_assert(
-        detail::PlainScopedResult<value_type>,
+        PlainPayload<value_type>,
         "[ARC ERROR] arc::Flow payload cannot carry borrowed storage directly. "
         "Action: flow copied values, stable IDs, or fixed arrays; keep pointers, reference wrappers, spans, string_views, and wrappers containing them outside the payload.");
     static_assert(

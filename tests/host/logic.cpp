@@ -1244,6 +1244,20 @@ void test_spsc()
 
 void test_core_local()
 {
+    struct NonTrivialPayload {
+        ~NonTrivialPayload() {}
+    };
+
+    static_assert(arc::PlainPayload<std::uint32_t>);
+    static_assert(arc::PlainPayload<std::array<std::uint32_t, 2>>);
+    static_assert(arc::PlainPayload<NonTrivialPayload>);
+    static_assert(arc::TrivialPayload<std::uint32_t>);
+    static_assert(arc::TrivialPayload<std::array<std::uint32_t, 2>>);
+    static_assert(!arc::TrivialPayload<NonTrivialPayload>);
+    static_assert(!arc::PlainPayload<std::uint32_t*>);
+    static_assert(!arc::PlainPayload<std::span<std::uint32_t, 1>>);
+    static_assert(!arc::PlainPayload<std::tuple<std::uint32_t*>>);
+
     using Core1Counter = arc::CoreLocal<std::uint32_t, arc::Core::core1>;
     static_assert(arc::CoreLocalType<Core1Counter>);
     static_assert(!arc::CoreMsgType<Core1Counter>);

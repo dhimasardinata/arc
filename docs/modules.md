@@ -58,7 +58,7 @@ These headers describe what silicon and language surface Arc assumes.
 | `arc/arch/riscv.hpp` | RISC-V architecture facts for experimental/ULP paths. |
 | `arc/cfg.hpp` | Kconfig-backed Arc defaults used by examples and the root app. |
 | `arc/result.hpp` | `arc::Result<T>`, `arc::Status`, `ARC_TRY`, and `ARC_CHECK`. |
-| `arc/concepts.hpp` | Small compile-time contracts for digital IO, buses, waves, and control results. |
+| `arc/concepts.hpp` | Small compile-time contracts for payloads, digital IO, buses, waves, and control results. |
 | `arc/assume.hpp` | Optimizer and unreachable-code hints where a contract has already been checked. |
 
 ## Program Shape And Ownership

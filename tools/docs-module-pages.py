@@ -194,6 +194,18 @@ SPECIAL_LANDMARKS = {
         "with_write",
         "with_edit",
     ],
+    "arc/concepts.hpp": [
+        "PlainPayload",
+        "TrivialPayload",
+        "ControlResult",
+        "DigitalOut",
+        "DigitalIn",
+        "I2cDevice",
+        "SpiDevice",
+        "UartDevice",
+        "WaveConfig",
+        "ConfigWave",
+    ],
     "arc/detail/quant.hpp": ["mul_sat", "add_sat", "round_shift_s64"],
     "arc/detail/scoped_result.hpp": [
         "IsReferenceWrapper",

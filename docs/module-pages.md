@@ -284,7 +284,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/arch/xtensa.hpp` | Xtensa-specific core and interrupt facts. | [Open](/modules/arc-arch-xtensa) |
 | `arc/assume.hpp` | Optimizer and unreachable-code hints where a contract has already been checked. | [Open](/modules/arc-assume) |
 | `arc/cfg.hpp` | Kconfig-backed Arc defaults used by examples and the root app. | [Open](/modules/arc-cfg) |
-| `arc/concepts.hpp` | Small compile-time contracts for digital IO, buses, waves, and control results. | [Open](/modules/arc-concepts) |
+| `arc/concepts.hpp` | Small compile-time contracts for payloads, digital IO, buses, waves, and control results. | [Open](/modules/arc-concepts) |
 | `arc/result.hpp` | `arc::Result<T>`, `arc::Status`, `ARC_TRY`, and `ARC_CHECK`. | [Open](/modules/arc-result) |
 | `arc/sdk.hpp` | SDK-facing compatibility helpers. | [Open](/modules/arc-sdk) |
 | `arc/soc.hpp` | Compile-time ESP32 target capability map. | [Open](/modules/arc-soc) |

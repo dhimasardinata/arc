@@ -1299,6 +1299,8 @@ Do not create multiple aliases for the same physical peripheral just to vary a r
 
 `arc/concepts.hpp` adds small compile-time contracts for app-side composition without virtual dispatch or heap-owned interfaces.
 
+- `arc::PlainPayload<T>` accepts copied values, stable IDs, fixed arrays, and standard/result wrappers that do not directly carry raw pointers, reference wrappers, spans, or string views.
+- `arc::TrivialPayload<T>` adds the trivially-copyable requirement used by lock-free lanes and wire-style payloads.
 - `arc::ControlResult<T>` accepts recoverable control functions that return `void`, `esp_err_t`, or `arc::Status`.
 - `arc::DigitalOut<T>` and `arc::DigitalIn<T>` check the static GPIO-style surfaces used by `arc::Gpio`, `arc::Drive`, and `arc::Sense`.
 - `arc::I2cDevice<T>`, `arc::SpiDevice<T>`, and `arc::UartDevice<T>` check static bus/device contracts for templated drivers that still want compile-time dispatch.

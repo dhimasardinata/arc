@@ -1,6 +1,6 @@
 # `arc/concepts.hpp`
 
-Small compile-time contracts for digital IO, buses, waves, and control results.
+Small compile-time contracts for payloads, digital IO, buses, waves, and control results.
 
 ## Fit
 
@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `arc/result.hpp`.
+Source landmarks: `PlainPayload`, `TrivialPayload`, `ControlResult`, `DigitalOut`, `DigitalIn`, `I2cDevice`, `SpiDevice`, `UartDevice`, `WaveConfig`, `ConfigWave`.
 
 ## Start From Zero
 
