@@ -84,7 +84,8 @@ static_assert(!arc::loans_ok<ControlRead, ControlWrite>());
 ```
 
 Open [Safety Patterns](/safety-patterns) for the complete copyable version,
-including core handoff, `LoanPack`, `proof::Pack`, and validation commands.
+including core handoff, `StaticReads`, `LoanPack`, `proof::Pack`, and
+validation commands.
 
 ## Reading Path
 

@@ -174,6 +174,8 @@ SPECIAL_LANDMARKS = {
         "StaticLoan",
         "StaticRead",
         "StaticMut",
+        "StaticReads",
+        "StaticWrites",
         "LoanPack",
         "HasLoan",
         "HasStaticRead",

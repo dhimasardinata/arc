@@ -72,11 +72,12 @@ constinit ControlState telemetry_state{};
 using TelemetryCell = arc::StaticRef<&telemetry_state, arc::Core::core1>;
 using TelemetryRead = TelemetryCell::Read;
 
-using TelemetryInputs = arc::LoanPack<ControlRead, TelemetryRead>;
+using TelemetryInputs = arc::StaticReads<ControlCell, TelemetryCell>;
 static_assert(TelemetryInputs::count == 2U);
 static_assert(TelemetryInputs::contains<ControlRead>());
-static_assert(TelemetryInputs::reads<&control_state>());
-static_assert(!TelemetryInputs::writes<&control_state>());
+static_assert(TelemetryInputs::reads<ControlCell>());
+static_assert(TelemetryInputs::reads<TelemetryCell>());
+static_assert(!TelemetryInputs::writes<ControlCell>());
 static_assert(arc::HasStaticRead<TelemetryInputs, &telemetry_state>);
 ```
 

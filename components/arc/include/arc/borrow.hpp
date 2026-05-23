@@ -30,6 +30,16 @@ concept StaticLoanType = requires {
     { T::mode } -> std::convertible_to<BorrowMode>;
 };
 
+template <typename T>
+concept StaticRefType = requires {
+    typename T::value_type;
+    typename T::Read;
+    typename T::Write;
+    T::object;
+    { T::owner } -> std::convertible_to<Core>;
+    { T::writable } -> std::convertible_to<bool>;
+};
+
 template <auto* Object, Core Owner, BorrowMode Mode>
 class StaticLoan {
     static_assert(Object != nullptr,
@@ -180,10 +190,22 @@ struct LoanPack {
         return (false || ... || detail::loan_refs<Object, Loans>());
     }
 
+    template <StaticRefType Ref>
+    [[nodiscard]] static consteval bool reads() noexcept
+    {
+        return reads<Ref::object>();
+    }
+
     template <auto* Object>
     [[nodiscard]] static consteval bool writes() noexcept
     {
         return (false || ... || (detail::loan_refs<Object, Loans>() && Loans::mode == BorrowMode::mut));
+    }
+
+    template <StaticRefType Ref>
+    [[nodiscard]] static consteval bool writes() noexcept
+    {
+        return writes<Ref::object>();
     }
 };
 
@@ -245,13 +267,6 @@ struct StaticRef {
     }
 };
 
-template <typename T>
-concept StaticRefType = requires {
-    typename T::value_type;
-    T::object;
-    { T::owner } -> std::convertible_to<Core>;
-};
-
 template <typename T, Core Access>
 concept StaticReadable = StaticRefType<T> && requires {
     T::template read<Access>();
@@ -271,5 +286,12 @@ template <typename T, Core Access>
 concept LoanWritable = StaticLoanType<T> && requires(T& loan) {
     { loan.template get<Access>() } -> std::same_as<typename T::value_type&>;
 };
+
+template <StaticRefType... Refs>
+using StaticReads = LoanPack<typename Refs::Read...>;
+
+template <StaticRefType... Refs>
+    requires((Refs::writable && ...))
+using StaticWrites = LoanPack<typename Refs::Write...>;
 
 }  // namespace arc
