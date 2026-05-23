@@ -70,7 +70,7 @@ the same object.
 constinit ControlState telemetry_state{};
 
 using TelemetryCell = arc::StaticRef<&telemetry_state, arc::Core::core1>;
-using TelemetryRead = decltype(TelemetryCell::read<arc::Core::core1>());
+using TelemetryRead = TelemetryCell::Read;
 
 using TelemetryInputs = arc::LoanPack<ControlRead, TelemetryRead>;
 static_assert(TelemetryInputs::count == 2U);
