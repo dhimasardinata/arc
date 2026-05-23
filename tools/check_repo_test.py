@@ -93,6 +93,20 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("[ARC ERROR] arc::RpcLane request payload must be trivially copyable", text)
         self.assertIn("Action:", text)
 
+    def test_new_static_asserts_include_actionable_arc_errors(self) -> None:
+        text = "\n".join(
+            [
+                (ROOT / "components" / "arc" / "include" / "arc" / "matrix.hpp").read_text(encoding="utf-8"),
+                (ROOT / "components" / "arc" / "include" / "arc" / "task.hpp").read_text(encoding="utf-8"),
+            ]
+        )
+
+        self.assertIn("[ARC ERROR] arc::dsp::Matrix dimensions must be non-zero", text)
+        self.assertIn("[ARC ERROR] arc::dsp::Lqr state count must be non-zero", text)
+        self.assertIn("[ARC ERROR] arc::CoreLocal owner must be a concrete core", text)
+        self.assertIn("[ARC ERROR] arc::CoreMsg source must be a concrete core", text)
+        self.assertIn("Action:", text)
+
     def test_tool_tests_runner_parallelizes_test_files(self) -> None:
         text = (ROOT / "tools" / "tool-tests.sh").read_text(encoding="utf-8")
 

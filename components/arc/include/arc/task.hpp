@@ -63,8 +63,12 @@ class CoreLocal;
 
 template <typename T, Core From, Core To>
 class CoreMsg {
-    static_assert(From != Core::any, "CoreMsg source must be a concrete core");
-    static_assert(To != Core::any, "CoreMsg destination must be a concrete core");
+    static_assert(
+        From != Core::any,
+        "[ARC ERROR] arc::CoreMsg source must be a concrete core. Action: use Core::core0 or Core::core1.");
+    static_assert(
+        To != Core::any,
+        "[ARC ERROR] arc::CoreMsg destination must be a concrete core. Action: use Core::core0 or Core::core1.");
 
 public:
     using value_type = T;
@@ -92,7 +96,9 @@ private:
 
 template <typename T, Core Owner>
 class CoreLocal {
-    static_assert(Owner != Core::any, "CoreLocal owner must be a concrete core");
+    static_assert(
+        Owner != Core::any,
+        "[ARC ERROR] arc::CoreLocal owner must be a concrete core. Action: use Core::core0 or Core::core1.");
 
 public:
     using value_type = T;

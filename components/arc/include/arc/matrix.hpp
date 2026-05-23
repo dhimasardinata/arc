@@ -13,8 +13,12 @@ namespace arc::dsp {
 
 template <typename T, std::size_t Rows, std::size_t Cols>
 struct Matrix {
-    static_assert(Rows > 0U && Cols > 0U, "matrix dimensions must be non-zero");
-    static_assert(std::is_arithmetic_v<T>, "matrix scalar must be arithmetic");
+    static_assert(
+        Rows > 0U && Cols > 0U,
+        "[ARC ERROR] arc::dsp::Matrix dimensions must be non-zero. Action: use positive row and column counts.");
+    static_assert(
+        std::is_arithmetic_v<T>,
+        "[ARC ERROR] arc::dsp::Matrix scalar must be arithmetic. Action: use an integer or floating-point scalar.");
 
     std::array<T, Rows * Cols> data{};
 
@@ -145,8 +149,12 @@ template <std::floating_point T, std::size_t N>
 
 template <std::floating_point T, std::size_t States, std::size_t Inputs>
 struct Lqr {
-    static_assert(States > 0U, "LQR state count must be non-zero");
-    static_assert(Inputs > 0U, "LQR input count must be non-zero");
+    static_assert(
+        States > 0U,
+        "[ARC ERROR] arc::dsp::Lqr state count must be non-zero. Action: choose at least one plant state.");
+    static_assert(
+        Inputs > 0U,
+        "[ARC ERROR] arc::dsp::Lqr input count must be non-zero. Action: choose at least one control input.");
 
     using A = Matrix<T, States, States>;
     using B = Matrix<T, States, Inputs>;
