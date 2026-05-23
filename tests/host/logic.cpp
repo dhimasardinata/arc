@@ -1217,6 +1217,8 @@ void test_static_borrow()
     static_assert(arc::HasStaticRefWrite<WritePack, OtherCell>);
     static_assert(std::is_copy_constructible_v<Read>);
     static_assert(!std::is_copy_constructible_v<Write>);
+    static_assert(std::is_move_constructible_v<Read>);
+    static_assert(!std::is_move_constructible_v<Write>);
     static_assert(arc::StaticReadable<Cell, arc::Core::core1>);
     static_assert(!arc::StaticReadable<Cell, arc::Core::core0>);
     static_assert(arc::StaticWritable<Cell, arc::Core::core1>);
@@ -1244,8 +1246,7 @@ void test_static_borrow()
     {
         auto write = Cell::write<arc::Core::core1>();
         write.get<arc::Core::core1>().value = 11U;
-        auto moved = std::move(write);
-        moved.get<arc::Core::core1>().value = 12U;
+        write.get<arc::Core::core1>().value = 12U;
     }
     expect(borrow_fixture.value == 12U, "StaticRef mutable loan writes static storage");
 

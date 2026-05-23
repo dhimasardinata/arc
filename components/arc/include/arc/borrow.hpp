@@ -71,8 +71,21 @@ public:
         requires(Mode == BorrowMode::mut)
     = delete;
 
-    constexpr StaticLoan(StaticLoan&&) noexcept = default;
-    constexpr StaticLoan& operator=(StaticLoan&&) noexcept = default;
+    constexpr StaticLoan(StaticLoan&&) noexcept
+        requires(Mode == BorrowMode::read)
+    = default;
+
+    constexpr StaticLoan& operator=(StaticLoan&&) noexcept
+        requires(Mode == BorrowMode::read)
+    = default;
+
+    constexpr StaticLoan(StaticLoan&&) noexcept
+        requires(Mode == BorrowMode::mut)
+    = delete;
+
+    constexpr StaticLoan& operator=(StaticLoan&&) noexcept
+        requires(Mode == BorrowMode::mut)
+    = delete;
 
     template <Core Access = Owner>
         requires CoreAccess<Access, Owner>
