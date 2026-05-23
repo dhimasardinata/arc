@@ -93,6 +93,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::ml::Tensor`, `Dense`, `QuantDenseS8`, `Conv2dS8`, `DepthwiseConv2dS8`, `MaxPool2d`, `mapped_weights`, and `Core1Inference` provide a zero-allocation inference surface for fixed-shape models stored in flash/PSRAM spans.
 - `arc::BareCore<Program>` defines the true-AMP Core 1 boot contract for board policies that hold APP CPU outside FreeRTOS and jump directly into a static control loop.
 - `arc::power::Intermittent` stores dying-gasp CPU, Tight-loop stack, and RCU state bytes in RTC no-init storage so a board policy can resurrect after brownout.
+- `arc::FramArena<N>`, `FramRef<T>`, and `FramAlloc<N>` carve persistent FRAM/MRAM offsets and delegate typed load/store to board policy.
 - `arc::DmaChain<N>` builds static scatter-gather descriptor rings for CPU-free waveform, display, and camera pipelines; `try_bind(...)` rejects invalid descriptor indexes, empty spans, descriptor lengths that cannot fit the hardware field, and cache-unsafe `arc::CacheLines` bindings, while `arc::OwnedDmaChain<T, N>` keeps DMA-capable buffers owned beside the descriptors.
 - `arc::AxiGraph<Nodes...>` plans camera/crypto/SPI-style hardware graphs over DMA endpoints, links descriptor boundaries, and delegates ETM/AXI trigger setup to board policy.
 - `arc::Pipeline`, `DmaEndpoint`, `Dma2dWindow`, and `bind_rows(...)` compose descriptor rings and 2D frame windows without making DMA topology implicit.
@@ -324,7 +325,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 | Profile umbrellas | `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/math.hpp`, `arc.hpp` | Subset entry points for substrate, coherency/DMA, no-heap codecs, DSP/math, and the compatibility umbrella |
 | Core plane | `arc/task.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/lockstep.hpp`, `arc/sim.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/flow.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::CoreLocal`, `arc::CoreMsg`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::Lockstep`, `arc::LockstepFault`, `arc::sim::Drive`, `arc::sim::Sense`, `arc::sim::Fifo`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Flow`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
 | Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp`, `arc/roles.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit`, `arc::Roles` |
-| Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/hotpatch.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/axi_graph.hpp`, `arc/pipeline.hpp`, `arc/mmu_span.hpp`, `arc/distributed_mmu.hpp`, `arc/place.hpp`, `arc/prefetch.hpp`, `arc/scrub.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::HotPatch`, `arc::HotPatchImage`, `arc::HotPatchDetour`, `arc::DmaChain`, `arc::DmaEndpoint`, `arc::AxiGraph`, `arc::AxiPort`, `arc::AxiEdge`, `arc::Pipeline`, `arc::Dma2dWindow`, `arc::bind_rows`, `arc::MmuSpan`, `arc::mmu::DistributedSpan`, `arc::mmu::DistributedPager`, `arc::Copy`, `arc::prefetch`, `arc::Scrub` |
+| Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/hotpatch.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/axi_graph.hpp`, `arc/pipeline.hpp`, `arc/mmu_span.hpp`, `arc/distributed_mmu.hpp`, `arc/fram.hpp`, `arc/place.hpp`, `arc/prefetch.hpp`, `arc/scrub.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::HotPatch`, `arc::HotPatchImage`, `arc::HotPatchDetour`, `arc::DmaChain`, `arc::DmaEndpoint`, `arc::AxiGraph`, `arc::AxiPort`, `arc::AxiEdge`, `arc::Pipeline`, `arc::Dma2dWindow`, `arc::bind_rows`, `arc::MmuSpan`, `arc::mmu::DistributedSpan`, `arc::mmu::DistributedPager`, `arc::FramArena`, `arc::FramRef`, `arc::FramAlloc`, `arc::Copy`, `arc::prefetch`, `arc::Scrub` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp`, `arc/rpc.hpp`, `arc/rtc_ring.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem`, `arc::RpcLane`, `arc::RtcRing` |
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/flexroute.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/power_governor.hpp`, `arc/power_profiler.hpp`, `arc/timesync.hpp`, `arc/tdma.hpp`, `arc/covert.hpp`, `arc/lifi.hpp`, `arc/sdr.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::matrix::FlexRoute`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::EtmRoute`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::StallStats`, `arc::power::Governor`, `arc::power::Profiler`, `arc::TimeSync`, `arc::net::Tdma`, `arc::covert::Fsk`, `arc::covert::EmTx`, `arc::covert::SonicTx`, `arc::optical::LiFi`, `arc::sdr::PulseSynth`, `arc::sdr::Tx` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp`, `arc/sdio_slave.hpp`, `arc/pru.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp`, `arc::SdioSlave`, `arc::PruOut`, `arc::PruIn`, `arc::PruTiming`, `arc::PruCursor` |
@@ -601,6 +602,7 @@ Profile aliases for `math`, `memory`, `net_codecs`, `crypto`, `robotics`, and `s
 - `trace_live`
 - `trax`
 - `ftm`
+- `fram`
 - `fs`
 - `migrator`
 - `tcp`
@@ -2165,6 +2167,18 @@ Standard containers can use the same placement rules through one-word allocators
 Do not let a capability-allocated `std::vector` reallocate while DMA or a peripheral owns its `.data()` pointer. Reserve capacity before handoff, or prefer `arc::CapsBuf` / `std::array` for active hardware buffers.
 Use `arc::OwnedDmaChain<T, N>` when a descriptor ring should own its DMA-capable buffers for the whole ring lifetime instead of binding descriptors to caller-owned spans.
 
+### `arc::FramArena<Bytes>`, `arc::FramRef<T>`, and `arc::FramAlloc<Bytes>`
+
+Policy-backed persistent offset allocation for external FRAM/MRAM state.
+
+- `FramArena<Bytes, Align>` tracks a fixed byte budget and returns aligned `FramSpan` offsets.
+- `make<T>()` allocates a typed `FramRef<T>` for trivially copyable state.
+- `FramRef<T>::store<Policy>(value)` writes bytes through `Policy::write(offset, bytes)`.
+- `FramRef<T>::load<Policy>()` reads bytes through `Policy::read(offset, bytes)`.
+- `FramAlloc<Bytes, Align>` is the short alias for the arena when the call site is allocator-shaped.
+
+Use this when a board policy owns an SPI FRAM/MRAM device or a memory-mapped non-volatile window and Arc should only own the fixed layout. Linker sections, memory-mapping registers, power-fail timing, and instruction-pointer resume remain board policy.
+
 ### Placement aliases
 
 Arc also exposes short placement aliases in `arc/place.hpp`:
@@ -3346,6 +3360,7 @@ For hardware numbers, build and flash `examples/esp32s3/bench` on an ESP32-S3. T
 - `arc::swarm::AcousticSlam` provides chirp/TDoA/trilateration primitives, while scheduling, peer trust, and microphone calibration stay with the swarm app.
 - `arc::vm::Hypervisor` plans restricted partitions and trap decisions; exact PMS exception vectors remain board-policy code.
 - `arc::power::Intermittent` stores a checkpoint image; exact brownout ISR wiring and register restore remain board-policy code.
+- `arc::FramRef<T>` stores typed state by offset only; SPI/MRAM timing, linker placement, and restart/resume semantics remain board-policy code.
 - `arc::crypto::Puf` extracts and hashes entropy spans; enrollment, helper data policy, and key lifecycle stay above Arc.
 - `arc::crypto::Cloak` adds timing and power-noise hooks; threat modeling, lab validation, and key-use policy stay with the product.
 - `arc::covert::BlackBox` seals and chains payload metadata; partition selection, PUF enrollment, and flash retention policy stay with the product.

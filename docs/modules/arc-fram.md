@@ -1,28 +1,28 @@
-# `arc/memory.hpp`
+# `arc/fram.hpp`
 
-Capability buffers, cache ownership, DMA copy, descriptor chains, AXI graphs, pipelines, scrubbing, and placement helpers.
+External FRAM/MRAM offset allocation and typed persistence hooks.
 
 ## Fit
 
-- Use it when a reader wants one coherent entry point for a domain or a subset build wants a profile root.
-- Do not start here when one source file only needs a narrow peripheral or codec header.
-- Verification focus: confirm the profile does not drag domain roots into small substrate builds unless that is intentional.
+- Use it when a pointer crosses cache, DMA, PSRAM, flash mapping, or another core boundary.
+- Do not start here when ordinary stack/local data stays inside one task and never crosses a hardware owner.
+- Verification focus: confirm alignment, capability flags, cache ownership, and completion tickets before reusing buffers.
 
 ## Arc Contract
 
-- Header: `arc/memory.hpp`
-- Module group: Profile Modules
-- CMake feature: `memory`
-- Closest example: `.`
+- Header: `arc/fram.hpp`
+- Module group: Memory, DMA, And Placement
+- CMake feature: `fram`
+- Closest example: `examples/esp32s3/copy`
 
-Declare `arc_requires(main_requires core memory)` in the component that includes this header.
+Declare `arc_requires(main_requires core fram)` in the component that includes this header.
 
 ## CMake And Include
 
 ```cmake
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/arc-deps.cmake)
 
-arc_requires(main_requires core memory)
+arc_requires(main_requires core fram)
 
 idf_component_register(
     SRCS "app_main.cpp"
@@ -31,12 +31,12 @@ idf_component_register(
 ```
 
 ```cpp
-#include "arc/memory.hpp"
+#include "arc/fram.hpp"
 ```
 
 ## Source Landmarks
 
-Source landmarks: `arc/axi_graph.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/caps.hpp`, `arc/dma_chain.hpp`, `arc/fram.hpp`, `arc/mmu_span.hpp`, `arc/pipeline.hpp`.
+Source landmarks: `FramSpan`, `FramRef`, `FramArena`, `FramAlloc`.
 
 ## Start From Zero
 
@@ -74,12 +74,12 @@ extern "C" void app_main()
 
 ## Build Or Example
 
-The root project is the smallest place to try this module.
+The closest shipped example is `examples/esp32s3/copy`.
 
 ```sh
 . ./env.sh
-idf.py build
-idf.py -p /dev/ttyACM0 flash monitor
+idf.py -C examples/esp32s3/copy build
+idf.py -C examples/esp32s3/copy -p /dev/ttyACM0 flash monitor
 ```
 
 ## Runtime Check

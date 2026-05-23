@@ -7,6 +7,7 @@
 #include "arc/cache_lock.hpp"
 #include "arc/caps.hpp"
 #include "arc/dma_chain.hpp"
+#include "arc/fram.hpp"
 #include "arc/mmu_span.hpp"
 #include "arc/pipeline.hpp"
 #include "arc/place.hpp"

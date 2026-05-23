@@ -106,6 +106,7 @@ Reach for these whenever a pointer crosses a hardware or core boundary.
 | `arc/pipeline.hpp` | Descriptor endpoint composition and 2D row binding. |
 | `arc/mmu_span.hpp` | Typed read-only spans over mapped flash or PSRAM data. |
 | `arc/distributed_mmu.hpp` | Remote span fault planning and deterministic cache-line fetch policy. |
+| `arc/fram.hpp` | External FRAM/MRAM offset allocation and typed persistence hooks. |
 | `arc/place.hpp` | Section-placement aliases such as `ARC_HOT`, `ARC_DMA`, and `ARC_RTC`. |
 | `arc/prefetch.hpp` | Explicit read/write prefetch hints for long memory walks. |
 | `arc/scrub.hpp` | CRC sealing and background scan state for fixed memory regions. |

@@ -160,6 +160,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/copy.hpp` | Async DMA memcpy, exact tickets, and coherent copy leases. | [Open](/modules/arc-copy) |
 | `arc/distributed_mmu.hpp` | Remote span fault planning and deterministic cache-line fetch policy. | [Open](/modules/arc-distributed_mmu) |
 | `arc/dma_chain.hpp` | Static DMA descriptor rings and owned DMA-chain buffers. | [Open](/modules/arc-dma_chain) |
+| `arc/fram.hpp` | External FRAM/MRAM offset allocation and typed persistence hooks. | [Open](/modules/arc-fram) |
 | `arc/mmu_span.hpp` | Typed read-only spans over mapped flash or PSRAM data. | [Open](/modules/arc-mmu_span) |
 | `arc/pipeline.hpp` | Descriptor endpoint composition and 2D row binding. | [Open](/modules/arc-pipeline) |
 | `arc/place.hpp` | Section-placement aliases such as `ARC_HOT`, `ARC_DMA`, and `ARC_RTC`. | [Open](/modules/arc-place) |

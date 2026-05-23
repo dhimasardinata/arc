@@ -49,6 +49,7 @@
 #include "arc/flexroute.hpp"
 #include "arc/flow.hpp"
 #include "arc/foc.hpp"
+#include "arc/fram.hpp"
 #include "arc/fs.hpp"
 #include "arc/fsm.hpp"
 #include "arc/hil.hpp"
@@ -287,6 +288,9 @@ std::uint32_t covert_hz{};
 std::uint32_t covert_duty{};
 int covert_density{};
 bool semantic_wake{};
+std::array<std::byte, 64> fram_storage{};
+std::size_t fram_reads{};
+std::size_t fram_writes{};
 std::size_t sdr_words{};
 std::size_t hypervisor_regions{};
 std::size_t hypervisor_traps{};
@@ -6688,6 +6692,77 @@ void test_resilient_edge_goal_surfaces()
            "Intermittent rejects checkpoint byte overflow");
     expect(Intermittent::resume<IntermittentPolicy>().has_value() && intermittent_restored,
            "Intermittent restore hook");
+
+    struct FramPolicy {
+        static esp_err_t write(
+            const std::size_t offset,
+            const std::span<const std::byte> bytes) noexcept
+        {
+            if (!bytes.empty() && bytes.data() == nullptr) {
+                return ESP_ERR_INVALID_ARG;
+            }
+            if (offset > fram_storage.size() || bytes.size() > fram_storage.size() - offset) {
+                return ESP_ERR_NO_MEM;
+            }
+            for (std::size_t i = 0U; i < bytes.size(); ++i) {
+                fram_storage[offset + i] = bytes[i];
+            }
+            ++fram_writes;
+            return ESP_OK;
+        }
+
+        static esp_err_t read(
+            const std::size_t offset,
+            const std::span<std::byte> bytes) noexcept
+        {
+            if (!bytes.empty() && bytes.data() == nullptr) {
+                return ESP_ERR_INVALID_ARG;
+            }
+            if (offset > fram_storage.size() || bytes.size() > fram_storage.size() - offset) {
+                return ESP_ERR_NO_MEM;
+            }
+            for (std::size_t i = 0U; i < bytes.size(); ++i) {
+                bytes[i] = fram_storage[offset + i];
+            }
+            ++fram_reads;
+            return ESP_OK;
+        }
+    };
+
+    struct FramState {
+        std::uint32_t boot{};
+        std::int32_t trim{};
+    };
+
+    fram_storage.fill(std::byte{});
+    fram_reads = 0U;
+    fram_writes = 0U;
+    arc::FramAlloc<32, 8> fram{};
+    const auto fram_state = fram.make<FramState>();
+    const auto fram_counter = fram.make<std::uint16_t>();
+    expect(fram_state.has_value() &&
+               fram_counter.has_value() &&
+               fram_state->span.offset == 0U &&
+               fram_state->span.bytes == sizeof(FramState) &&
+               fram_counter->span.offset == 8U &&
+               fram.used == 10U,
+           "FRAM allocator carves aligned persistent slots");
+    const FramState stored{.boot = 42U, .trim = -7};
+    const auto bad_fram_ref = arc::FramRef<std::uint16_t>{.span = fram_state->span};
+    const auto range_fram_ref = arc::FramRef<FramState>{.span = {.offset = 60U, .bytes = sizeof(FramState)}};
+    const auto loaded_fram = fram_state->store<FramPolicy>(stored).has_value()
+        ? fram_state->load<FramPolicy>()
+        : arc::Result<FramState>{arc::fail(ESP_FAIL)};
+    expect(loaded_fram.has_value() &&
+               loaded_fram->boot == 42U &&
+               loaded_fram->trim == -7 &&
+               fram_writes == 1U &&
+               fram_reads == 1U,
+           "FRAM ref stores and loads typed state through policy");
+    expect(!bad_fram_ref.load<FramPolicy>(), "FRAM ref rejects mismatched typed span");
+    expect(!range_fram_ref.store<FramPolicy>(stored), "FRAM ref propagates policy range failures");
+    expect(!fram.alloc(1U, 3U), "FRAM allocator rejects non-power alignment");
+    expect(!fram.alloc(64U, 8U), "FRAM allocator rejects exhausted storage");
 
     const std::array entropy_sram{std::byte{0xA5}, std::byte{0x3C}, std::byte{0x5A}};
     std::array<std::uint8_t, 4> raw_entropy{};

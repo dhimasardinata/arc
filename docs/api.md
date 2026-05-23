@@ -1144,6 +1144,18 @@ Standard containers can use the same placement rules through one-word allocators
 Do not let a capability-allocated `std::vector` reallocate while DMA or a peripheral owns its `.data()` pointer. Reserve capacity before handoff, or prefer `arc::CapsBuf` / `std::array` for active hardware buffers.
 Use `arc::OwnedDmaChain<T, N>` when a descriptor ring should own its DMA-capable buffers for the whole ring lifetime instead of binding descriptors to caller-owned spans.
 
+### `arc::FramArena<Bytes>`, `arc::FramRef<T>`, and `arc::FramAlloc<Bytes>`
+
+Policy-backed persistent offset allocation for external FRAM/MRAM state.
+
+- `FramArena<Bytes, Align>` tracks a fixed byte budget and returns aligned `FramSpan` offsets.
+- `make<T>()` allocates a typed `FramRef<T>` for trivially copyable state.
+- `FramRef<T>::store<Policy>(value)` writes bytes through `Policy::write(offset, bytes)`.
+- `FramRef<T>::load<Policy>()` reads bytes through `Policy::read(offset, bytes)`.
+- `FramAlloc<Bytes, Align>` is the short alias for the arena when the call site is allocator-shaped.
+
+Use this when a board policy owns an SPI FRAM/MRAM device or a memory-mapped non-volatile window and Arc should only own the fixed layout. Linker sections, memory-mapping registers, power-fail timing, and instruction-pointer resume remain board policy.
+
 ### `arc::AxiGraph<Nodes...>`
 
 Compile-time hardware graph planner for descriptor-to-descriptor peripheral chains.
