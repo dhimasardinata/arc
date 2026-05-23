@@ -1669,6 +1669,28 @@ void test_mqtt()
     expect(subscribe.has_value(), "MQTT subscribe encodes");
     expect((*subscribe)[0] == 0x82U, "MQTT subscribe flags");
     expect((*subscribe)[2] == 0x00U && (*subscribe)[3] == 0x09U, "MQTT subscribe packet id");
+    std::array<std::uint8_t, 64> in_place_subscribe_buf{'a', '/', 'b', '\0', 'c', '/', 'd', '\0'};
+    const std::array in_place_subscriptions{
+        arc::net::MqttSubscription{
+            .filter = reinterpret_cast<const char*>(in_place_subscribe_buf.data()),
+            .qos = arc::net::MqttQos::at_least},
+        arc::net::MqttSubscription{
+            .filter = reinterpret_cast<const char*>(in_place_subscribe_buf.data() + 4U),
+            .qos = arc::net::MqttQos::at_most},
+    };
+    const auto in_place_subscribe =
+        arc::net::Mqtt::subscribe(std::span(in_place_subscribe_buf), 11U, std::span(in_place_subscriptions));
+    expect(in_place_subscribe.has_value() &&
+               in_place_subscribe->size() == 16U &&
+               (*in_place_subscribe)[6] == 'a' &&
+               (*in_place_subscribe)[7] == '/' &&
+               (*in_place_subscribe)[8] == 'b' &&
+               (*in_place_subscribe)[9] == 0x01U &&
+               (*in_place_subscribe)[12] == 'c' &&
+               (*in_place_subscribe)[13] == '/' &&
+               (*in_place_subscribe)[14] == 'd' &&
+               (*in_place_subscribe)[15] == 0x00U,
+           "MQTT subscribe preserves in-place filters");
     const std::array empty_filter{arc::net::MqttSubscription{.filter = "", .qos = arc::net::MqttQos::at_most}};
     expect(!arc::net::Mqtt::subscribe(buffer, 10U, std::span(empty_filter)),
            "MQTT subscribe rejects empty filter");

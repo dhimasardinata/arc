@@ -278,19 +278,37 @@ struct Mqtt {
             }
         }
 
+        const auto header = header_bytes(remaining);
+        if (!valid_span(out)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        if (out.size() < header + remaining) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        auto staged = header + remaining;
+        for (std::size_t i = topics.size(); i != 0U; --i) {
+            const auto& topic = topics[i - 1U];
+            const auto bytes = strlen16(topic.filter);
+            if (!bytes) {
+                return fail(bytes.error());
+            }
+            staged -= 1U;
+            out[staged] = static_cast<std::uint8_t>(topic.qos);
+            staged -= *bytes;
+            std::memmove(out.data() + staged, topic.filter, *bytes);
+            staged -= 2U;
+            write_u16(out, staged, *bytes);
+        }
+
         auto frame = begin(out, static_cast<std::uint8_t>(MqttType::subscribe), 0x02U, remaining);
         if (!frame) {
             return fail(frame.error());
         }
 
         auto packet_bytes = *frame;
-        auto pos = header_bytes(remaining);
+        auto pos = header;
         pos += write_u16(packet_bytes, pos, packet);
-        for (const auto& topic : topics) {
-            pos += write_string(packet_bytes, pos, topic.filter);
-            packet_bytes[pos++] = static_cast<std::uint8_t>(topic.qos);
-        }
-        return packet_bytes.first(pos);
+        return packet_bytes.first(pos + remaining - 2U);
     }
 
     [[nodiscard]] static Result<std::span<const std::uint8_t>> ping(
