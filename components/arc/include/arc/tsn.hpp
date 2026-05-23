@@ -6,6 +6,7 @@
 #include <limits>
 
 #include "arc/result.hpp"
+#include "arc/timesync.hpp"
 
 namespace arc::net {
 
@@ -100,6 +101,26 @@ struct TsnSchedule {
         return window(now_ns, traffic).has_value();
     }
 
+    [[nodiscard]] constexpr Result<TsnWindow> window_local(
+        const PtpClock& clock,
+        const std::int64_t local_ns,
+        const std::uint8_t traffic) const noexcept
+    {
+        const auto master = clock.to_master(local_ns);
+        if (master < 0) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return window(static_cast<std::uint64_t>(master), traffic);
+    }
+
+    [[nodiscard]] constexpr bool allow_local(
+        const PtpClock& clock,
+        const std::int64_t local_ns,
+        const std::uint8_t traffic) const noexcept
+    {
+        return window_local(clock, local_ns, traffic).has_value();
+    }
+
     [[nodiscard]] constexpr Result<std::uint64_t> next_open(
         const std::uint64_t now_ns,
         const std::uint8_t traffic) const noexcept
@@ -137,6 +158,26 @@ struct TsnSchedule {
 
         return best == std::numeric_limits<std::uint64_t>::max() ? Result<std::uint64_t>{fail(ESP_ERR_NOT_FOUND)}
                                                                  : ok(best);
+    }
+
+    [[nodiscard]] constexpr Result<std::uint64_t> next_local(
+        const PtpClock& clock,
+        const std::int64_t local_ns,
+        const std::uint8_t traffic) const noexcept
+    {
+        const auto master = clock.to_master(local_ns);
+        if (master < 0) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        const auto next = next_open(static_cast<std::uint64_t>(master), traffic);
+        if (!next) {
+            return fail(next.error());
+        }
+        const auto local = clock.to_local(static_cast<std::int64_t>(*next));
+        if (local < 0) {
+            return fail(ESP_ERR_INVALID_STATE);
+        }
+        return static_cast<std::uint64_t>(local);
     }
 
 private:

@@ -5313,6 +5313,11 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
     const auto wrapped_tsn = tsn.next_open(260'000U, 7U);
     expect(wrapped_tsn.has_value() && *wrapped_tsn == 1'215'000U, "TSN reports next-cycle open");
     expect(!tsn.next_open(260'000U, 9U), "TSN rejects missing traffic class");
+    arc::PtpClock tsn_ptp{};
+    tsn_ptp.offset_ns = 10'000;
+    expect(tsn.allow_local(tsn_ptp, 20'000, 3U), "TSN can gate local timestamps through PTP offset");
+    const auto next_local_tsn = tsn.next_local(tsn_ptp, 95'000, 7U);
+    expect(next_local_tsn.has_value() && *next_local_tsn == 205'000U, "TSN reports next local open through PTP");
 
     struct SpiPolicy {
         static esp_err_t writev(const std::array<std::uint8_t, 3>& header, std::span<const std::uint8_t> frame) noexcept
@@ -5592,6 +5597,19 @@ void test_timesync()
     expect(ptp_stats.raw_offset == 110, "PTP raw offset");
     expect(ptp_stats.filt_offset == 110, "PTP filtered offset");
     expect(ptp.to_master(1'000'000) == 1'000'110, "PTP local to grandmaster");
+    const auto ptp_hw = ptp.discipline_hw(
+        {
+            .origin = 8'000'000,
+            .ingress = 8'002'000,
+            .egress = 8'002'400,
+            .receive = 8'000'800,
+            .origin_shift = 3,
+            .ingress_shift = 3,
+            .egress_shift = 3,
+            .receive_shift = 3,
+        },
+        arc::PtpConfig{.kp_shift = 2, .ki_shift = 8, .step_max = 1'000, .integral_max = 1'000});
+    expect(ptp_hw.samples == 2U, "PTP hardware timestamp sample count");
 }
 
 void test_pack()
@@ -9618,13 +9636,17 @@ void test_hive_goal_surfaces()
     constexpr auto silicon_plan = arc::hls::silicon_plan<
         arc::hls::DenseSpec<4, 2>,
         arc::hls::DenseSpec<2, 1>>(arc::hls::SiliconTarget::efpga);
+    constexpr auto silicon_manifest = arc::hls::manifest<
+        arc::hls::DenseSpec<4, 2>,
+        arc::hls::DenseSpec<2, 1>>(arc::hls::SiliconTarget::efpga);
     expect(fir.has_value() && *fir == 20 && dot.has_value() && *dot == 20 &&
                !null_fir.has_value() && !null_dot.has_value() &&
                dense_spec.static_bounds && dense_spec.heapless &&
                dense_spec.latency_cycles == 8U &&
                silicon_plan.target == arc::hls::SiliconTarget::efpga &&
                silicon_plan.kernels == 2U && silicon_plan.latency_cycles == 10U &&
-               silicon_plan.synthesizable,
+               silicon_plan.synthesizable &&
+               silicon_manifest.magic == 0x41524353U && silicon_manifest.io_words == 9U,
            "HLS helpers expose fixed-bound heapless kernel metadata and silicon plans");
 }
 

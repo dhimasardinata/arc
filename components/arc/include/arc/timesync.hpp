@@ -43,6 +43,17 @@ struct PtpSample {
     std::int64_t receive_ns{};
 };
 
+struct PtpHwSample {
+    std::int64_t origin{};
+    std::int64_t ingress{};
+    std::int64_t egress{};
+    std::int64_t receive{};
+    std::int32_t origin_shift{};
+    std::int32_t ingress_shift{};
+    std::int32_t egress_shift{};
+    std::int32_t receive_shift{};
+};
+
 struct PtpConfig {
     std::int32_t kp_shift{4};
     std::int32_t ki_shift{10};
@@ -227,6 +238,20 @@ struct PtpClock {
             .samples = stats.samples + 1U,
         };
         return stats;
+    }
+
+    [[nodiscard]] PtpStats discipline_hw(
+        const PtpHwSample sample,
+        const PtpConfig config = {}) noexcept
+    {
+        return discipline(
+            {
+                .origin_ns = TimeSync::shift(sample.origin, sample.origin_shift),
+                .ingress_ns = TimeSync::shift(sample.ingress, sample.ingress_shift),
+                .egress_ns = TimeSync::shift(sample.egress, sample.egress_shift),
+                .receive_ns = TimeSync::shift(sample.receive, sample.receive_shift),
+            },
+            config);
     }
 };
 

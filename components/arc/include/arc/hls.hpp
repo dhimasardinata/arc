@@ -50,6 +50,15 @@ struct SiliconPlan {
     bool synthesizable{};
 };
 
+struct SiliconManifest {
+    std::uint32_t magic{};
+    SiliconTarget target{SiliconTarget::hls};
+    std::uint32_t kernels{};
+    std::uint32_t latency_cycles{};
+    std::uint32_t io_words{};
+    bool synthesizable{};
+};
+
 template <typename T>
 concept StaticKernel = requires {
     { T::hls_spec() } -> std::same_as<KernelSpec>;
@@ -80,6 +89,27 @@ template <StaticKernel... Kernels>
         .static_bounds = bounds,
         .heapless = no_heap,
         .synthesizable = bounds && no_heap,
+    };
+}
+
+template <StaticKernel... Kernels>
+[[nodiscard]] consteval std::uint32_t io_words() noexcept
+{
+    return (std::uint32_t{} + ... + (Kernels::hls_spec().inputs + Kernels::hls_spec().outputs));
+}
+
+template <StaticKernel... Kernels>
+[[nodiscard]] consteval SiliconManifest manifest(
+    const SiliconTarget target = SiliconTarget::hls) noexcept
+{
+    const auto plan = silicon_plan<Kernels...>(target);
+    return {
+        .magic = 0x41524353U,  // ARCS
+        .target = plan.target,
+        .kernels = plan.kernels,
+        .latency_cycles = plan.latency_cycles,
+        .io_words = io_words<Kernels...>(),
+        .synthesizable = plan.synthesizable,
     };
 }
 
