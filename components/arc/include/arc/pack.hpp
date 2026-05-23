@@ -89,6 +89,7 @@ struct Schema {
     static_assert((Scalar<Fields> && ...), "pack fields must be integer or enum scalars up to 64 bits");
 
     static constexpr std::size_t bytes = (std::size_t{} + ... + sizeof(WireTypeT<Fields>));
+    static constexpr std::size_t fields = sizeof...(Fields);
 
     template <Endian Order = Endian::big, typename... Values>
         requires(sizeof...(Values) == sizeof...(Fields) && (std::is_convertible_v<Values, Fields> && ...))
@@ -151,6 +152,7 @@ struct Struct {
     static_assert((std::is_same_v<Object, typename Fields::Object> && ...), "pack fields must belong to object");
 
     static constexpr std::size_t bytes = (std::size_t{} + ... + sizeof(WireTypeT<typename Fields::Type>));
+    static constexpr std::size_t fields = sizeof...(Fields);
 
     template <Endian Order = Endian::big>
     [[nodiscard]] static Result<std::span<const std::uint8_t>> write(
@@ -256,6 +258,18 @@ using Reflect = typename ReflectMembers<Object>::Codec;
         using Codec = arc::pack::StructOf<Type, __VA_ARGS__>; \
     }
 
+template <typename Codec, Endian Order = Endian::big>
+[[nodiscard]] Overlay<Codec, Order> overlay(const std::span<const std::uint8_t> bytes) noexcept
+{
+    return Overlay<Codec, Order>{.bytes = bytes};
+}
+
+template <Reflected Object, Endian Order = Endian::big>
+[[nodiscard]] Overlay<Reflect<Object>, Order> overlay_reflected(const std::span<const std::uint8_t> bytes) noexcept
+{
+    return Overlay<Reflect<Object>, Order>{.bytes = bytes};
+}
+
 template <Endian Order = Endian::big, typename Codec, typename Object>
 [[nodiscard]] Result<std::span<const std::uint8_t>> serialize(
     const std::span<std::uint8_t> out,
@@ -270,6 +284,22 @@ template <Endian Order = Endian::big, typename Codec, typename Object>
     Object& out) noexcept
 {
     return Codec::template read<Order>(in, out);
+}
+
+template <Endian Order = Endian::big, Reflected Object>
+[[nodiscard]] Result<std::span<const std::uint8_t>> serialize_reflected(
+    const std::span<std::uint8_t> out,
+    const Object& value) noexcept
+{
+    return Reflect<Object>::template write<Order>(out, value);
+}
+
+template <Endian Order = Endian::big, Reflected Object>
+[[nodiscard]] Status deserialize_reflected(
+    const std::span<const std::uint8_t> in,
+    Object& out) noexcept
+{
+    return Reflect<Object>::template read<Order>(in, out);
 }
 
 }  // namespace arc::pack

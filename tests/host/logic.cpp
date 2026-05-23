@@ -3222,11 +3222,15 @@ void test_uri()
     expect(mapped.has_value(), "URI IPv4-mapped IPv6 literal parses");
 
     std::array<char, 32> decoded{};
+    const auto decoded_need = arc::net::Uri::decoded_size("sample%201+ok", true);
+    expect(decoded_need.has_value() && *decoded_need == 11U, "URI decoded size preflight");
     const auto text = arc::net::Uri::decode(std::span(decoded), "sample%201+ok", true);
     expect(text.has_value(), "URI decode succeeds");
     expect(std::memcmp(text->data(), "sample 1 ok", text->size()) == 0, "URI percent decode");
 
     std::array<char, 32> encoded{};
+    const auto encoded_need = arc::net::Uri::encoded_size("sample 1/ok?", true);
+    expect(encoded_need.has_value() && *encoded_need == 16U, "URI encoded size preflight");
     const auto wire = arc::net::Uri::encode(std::span(encoded), "sample 1/ok?", true);
     expect(wire.has_value(), "URI encode succeeds");
     expect(std::memcmp(wire->data(), "sample+1%2Fok%3F", wire->size()) == 0, "URI percent encode");
@@ -3258,6 +3262,7 @@ void test_uri()
     expect(!arc::net::Uri::copy_host(std::span(exact_host), *defaulted),
            "URI copy host reserves space for nul terminator");
     expect(!arc::net::Uri::decode(std::span(decoded), "%xz"), "URI invalid escape rejects");
+    expect(!arc::net::Uri::decoded_size("%xz"), "URI decoded size rejects invalid escape");
     expect(!arc::net::Uri::encode(std::span(small), "abc"), "URI encode capacity rejects");
     expect(!arc::net::Uri::parse("http://2001:db8::1/path"), "URI unbracketed IPv6 rejects");
     expect(!arc::net::Uri::parse("http://[node]/path"), "URI bracketed reg-name rejects");
@@ -3349,6 +3354,9 @@ void test_uri()
                std::span(decoded),
                std::span<const char>{static_cast<const char*>(nullptr), 1U}),
            "URI decode null input span rejects");
+    expect(!arc::net::Uri::decoded_size(
+               std::span<const char>{static_cast<const char*>(nullptr), 1U}),
+           "URI decoded size null input span rejects");
     expect(!arc::net::Uri::decode(
                std::span<char>{static_cast<char*>(nullptr), 1U},
                std::span<const char>{full, 1U}),
@@ -3357,6 +3365,9 @@ void test_uri()
                std::span(encoded),
                std::span<const char>{static_cast<const char*>(nullptr), 1U}),
            "URI encode null input span rejects");
+    expect(!arc::net::Uri::encoded_size(
+               std::span<const char>{static_cast<const char*>(nullptr), 1U}),
+           "URI encoded size null input span rejects");
     expect(!arc::net::Uri::encode(
                std::span<char>{static_cast<char*>(nullptr), 1U},
                std::span<const char>{full, 1U}),
@@ -5097,6 +5108,21 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
     expect(empty_stream.finish() == ESP_OK &&
                std::string_view{empty_stream.sink.bytes.data(), empty_stream.sink.pos} == "{\"traceEvents\":[]}",
            "TraceStream finish emits empty document");
+    arc::LogLane<4> chunk_lane{};
+    expect(chunk_lane.push(arc::log_id("trace.a"), 1U) &&
+               chunk_lane.push(arc::log_id("trace.b"), 2U),
+           "TraceStream queues chunked events");
+    arc::TraceStream<192, TraceSink> chunk_stream{};
+    const auto first_chunk = chunk_stream.drain_some(chunk_lane, 1U, "core0");
+    expect(first_chunk.has_value() && *first_chunk == 1U && chunk_lane.size() == 1U,
+           "TraceStream drains bounded chunk");
+    const auto zero_chunk = chunk_stream.drain_some(chunk_lane, 0U, "core0");
+    expect(zero_chunk.has_value() && *zero_chunk == 0U && chunk_lane.size() == 1U,
+           "TraceStream accepts empty chunk budget");
+    const auto final_chunk = chunk_stream.drain_some(chunk_lane, 4U, "core0");
+    expect(final_chunk.has_value() && *final_chunk == 1U && chunk_lane.size() == 0U &&
+               chunk_stream.finish() == ESP_OK,
+           "TraceStream completes chunked drain");
     struct FailingTraceSink {
         std::array<char, 384> bytes{};
         std::size_t pos{};
@@ -5620,6 +5646,7 @@ void test_pack()
 
     using Telemetry = arc::pack::Schema<Kind, std::uint16_t, std::int32_t>;
     static_assert(Telemetry::bytes == 7U);
+    static_assert(Telemetry::fields == 3U);
 
     std::array<std::uint8_t, Telemetry::bytes> frame{};
     const auto encoded = Telemetry::write(frame, Kind::sample, 0x1234U, -2);
@@ -5656,6 +5683,7 @@ void test_pack()
     };
     using PlainWire = arc::pack::StructOf<PlainTelemetry, &PlainTelemetry::seq, &PlainTelemetry::temp>;
     static_assert(PlainWire::bytes == 6U);
+    static_assert(PlainWire::fields == 2U);
 
     const PlainTelemetry plain{.seq = 0x01020304U, .temp = -20};
     std::array<std::uint8_t, PlainWire::bytes> plain_frame{};
@@ -5682,15 +5710,22 @@ void test_pack()
         .bytes = std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), PlainWire::bytes},
     };
     expect(!null_overlay.valid(), "Pack overlay rejects null byte span");
+    const auto plain_overlay = arc::pack::overlay<PlainWire>(plain_frame);
+    expect(plain_overlay.valid() && plain_overlay.template get<&PlainTelemetry::seq>() == plain.seq,
+           "Pack overlay helper reads struct field");
 
     using ReflectedWire = arc::pack::Reflect<ReflectedTelemetry>;
     static_assert(ReflectedWire::bytes == 6U);
+    static_assert(ReflectedWire::fields == 2U);
     ReflectedTelemetry reflected{.seq = 7U, .temp = -8};
     std::array<std::uint8_t, ReflectedWire::bytes> reflected_frame{};
-    expect(arc::pack::serialize<arc::pack::Endian::big, ReflectedWire>(reflected_frame, reflected).has_value(),
+    expect(arc::pack::serialize_reflected<arc::pack::Endian::big>(reflected_frame, reflected).has_value(),
            "Pack reflected encode");
+    const auto reflected_overlay = arc::pack::overlay_reflected<ReflectedTelemetry>(reflected_frame);
+    expect(reflected_overlay.valid() && reflected_overlay.template get<&ReflectedTelemetry::seq>() == reflected.seq,
+           "Pack reflected overlay helper reads field");
     ReflectedTelemetry reflected_out{};
-    expect(arc::pack::deserialize<arc::pack::Endian::big, ReflectedWire>(reflected_frame, reflected_out).has_value(),
+    expect(arc::pack::deserialize_reflected<arc::pack::Endian::big>(reflected_frame, reflected_out).has_value(),
            "Pack reflected decode");
     expect(reflected_out.seq == reflected.seq && reflected_out.temp == reflected.temp, "Pack reflected roundtrip");
 }

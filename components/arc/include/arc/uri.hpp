@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 
 #include "esp_err.h"
@@ -302,6 +303,41 @@ struct Uri {
         return out.first(used);
     }
 
+    [[nodiscard]] static Result<std::size_t> decoded_size(
+        const char* const in,
+        const bool plus_space = false) noexcept
+    {
+        if (in == nullptr) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return decoded_size(std::span<const char>{in, std::strlen(in)}, plus_space);
+    }
+
+    [[nodiscard]] static Result<std::size_t> decoded_size(
+        const std::span<const char> in,
+        const bool plus_space = false) noexcept
+    {
+        static_cast<void>(plus_space);
+        if (!valid_span(in)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        auto used = std::size_t{0U};
+        for (std::size_t i = 0U; i < in.size(); ++i) {
+            if (in[i] == '%') {
+                if (in.size() - i < 3U) {
+                    return fail(ESP_ERR_INVALID_ARG);
+                }
+                if (hex(in[i + 1U]) < 0 || hex(in[i + 2U]) < 0) {
+                    return fail(ESP_ERR_INVALID_ARG);
+                }
+                i += 2U;
+            }
+            ++used;
+        }
+        return used;
+    }
+
     [[nodiscard]] static Result<std::span<char>> encode(
         const std::span<char> out,
         const char* const in,
@@ -325,17 +361,15 @@ struct Uri {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
-        auto used = std::size_t{0U};
-        for (const char ch : in) {
-            const auto byte = static_cast<std::uint8_t>(ch);
-            const auto bytes = (unreserved(byte) || (space_plus && ch == ' ')) ? 1U : 3U;
-            if (used > out.size() || out.size() - used < bytes) {
-                return fail(ESP_ERR_NO_MEM);
-            }
-            used += bytes;
+        const auto needed = encoded_size(in, space_plus);
+        if (!needed) {
+            return fail(needed.error());
+        }
+        if (out.size() < *needed) {
+            return fail(ESP_ERR_NO_MEM);
         }
 
-        auto pos = used;
+        auto pos = *needed;
         for (std::size_t i = in.size(); i != 0U; --i) {
             const auto ch = in[i - 1U];
             const auto byte = static_cast<std::uint8_t>(ch);
@@ -350,7 +384,37 @@ struct Uri {
                 out[pos + 2U] = hex_char(byte & 0x0fU);
             }
         }
-        return out.first(used);
+        return out.first(*needed);
+    }
+
+    [[nodiscard]] static Result<std::size_t> encoded_size(
+        const char* const in,
+        const bool space_plus = false) noexcept
+    {
+        if (in == nullptr) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return encoded_size(std::span<const char>{in, std::strlen(in)}, space_plus);
+    }
+
+    [[nodiscard]] static Result<std::size_t> encoded_size(
+        const std::span<const char> in,
+        const bool space_plus = false) noexcept
+    {
+        if (!valid_span(in)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        auto used = std::size_t{0U};
+        for (const char ch : in) {
+            const auto byte = static_cast<std::uint8_t>(ch);
+            const auto bytes = (unreserved(byte) || (space_plus && ch == ' ')) ? 1U : 3U;
+            if (used > std::numeric_limits<std::size_t>::max() - bytes) {
+                return fail(ESP_ERR_NO_MEM);
+            }
+            used += bytes;
+        }
+        return used;
     }
 
 private:
