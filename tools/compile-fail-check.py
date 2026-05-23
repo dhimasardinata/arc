@@ -125,6 +125,23 @@ static_assert(Bad::count == 2U);
         must_contain="static borrow conflict",
     ),
     Case(
+        name="conflicting_member_edit",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+using Bad = Cell::Edit<Cell>;
+static_assert(Bad::count == 2U);
+""",
+        must_contain="static borrow conflict",
+    ),
+    Case(
+        name="const_member_edit",
+        source="""
+using ConstCell = arc::StaticRef<&const_state>;
+using Bad = ConstCell::Edit<>;
+static_assert(Bad::count == 1U);
+""",
+    ),
+    Case(
         name="wrong_core_static_member_edit",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;

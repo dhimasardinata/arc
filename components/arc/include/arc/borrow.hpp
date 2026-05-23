@@ -343,6 +343,13 @@ struct StaticRef {
     using Read = StaticLoan<Object, Owner, BorrowMode::read>;
     using Write = StaticLoan<Object, Owner, BorrowMode::mut>;
 
+    template <StaticRefType... ReadRefs>
+    using Reads = detail::StaticMemberReadPack<Read, ReadRefs...>;
+
+    template <StaticRefType... ReadRefs>
+        requires(!std::is_const_v<raw_type>)
+    using Edit = detail::StaticMemberEditPack<Write, ReadRefs...>;
+
     static_assert(!std::is_volatile_v<raw_type>,
                   "[ARC ERROR] arc::StaticRef cannot wrap volatile storage. Action: expose volatile access through a board policy.");
 

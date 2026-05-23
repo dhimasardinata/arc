@@ -1317,11 +1317,15 @@ void test_static_borrow()
     using ReadPack = arc::StaticReads<Cell, Cell>;
     using WritePack = arc::StaticWrites<Cell, OtherCell>;
     using EditPack = arc::StaticEdit<Cell, OtherCell>;
+    using MemberReadPack = Cell::Reads<OtherCell>;
+    using MemberEditPack = Cell::Edit<OtherCell>;
 
     static_assert(Cell::owner == arc::Core::core1);
     static_assert(Cell::object == &borrow_fixture);
     static_assert(std::same_as<typename Cell::Read, Read>);
     static_assert(std::same_as<typename Cell::Write, Write>);
+    static_assert(std::same_as<MemberReadPack, arc::StaticReads<Cell, OtherCell>>);
+    static_assert(std::same_as<MemberEditPack, arc::StaticEdit<Cell, OtherCell>>);
     static_assert(arc::StaticRefType<Cell>);
     static_assert(Cell::writable);
     static_assert(Cell::can_read<arc::Core::core1>());
@@ -1352,6 +1356,15 @@ void test_static_borrow()
     static_assert(EditPack::contains<Write>());
     static_assert(EditPack::reads<OtherCell>());
     static_assert(EditPack::writes<Cell>());
+    static_assert(MemberReadPack::can_access<arc::Core::core1>());
+    static_assert(!MemberReadPack::can_access<arc::Core::core0>());
+    static_assert(MemberReadPack::contains<Read>());
+    static_assert(MemberReadPack::reads<OtherCell>());
+    static_assert(MemberEditPack::can_access<arc::Core::core1>());
+    static_assert(!MemberEditPack::can_access<arc::Core::core0>());
+    static_assert(MemberEditPack::contains<Write>());
+    static_assert(MemberEditPack::reads<OtherCell>());
+    static_assert(MemberEditPack::writes<Cell>());
     static_assert(arc::HasLoan<ReadPack, Read>);
     static_assert(arc::HasStaticRead<ReadPack, &borrow_fixture>);
     static_assert(arc::HasStaticRefRead<ReadPack, Cell>);

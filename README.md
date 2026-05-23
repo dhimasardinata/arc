@@ -1410,6 +1410,7 @@ around as a raw pointer or reference.
 - `StaticRef<&state, Core::core1>::read<Core::core1>()` returns a copyable readonly loan.
 - `StaticRef<&state, Core::core1>::write<Core::core1>()` returns a non-copyable, non-movable mutable loan.
 - `StaticRef::Read`, `StaticRef::Write`, `can_read<Core>()`, and `can_write<Core>()` keep common compile-contracts short enough for examples and static assertions.
+- `StaticRef::Reads<ReadRefs...>` and `StaticRef::Edit<ReadRefs...>` name owner-anchored loan-pack contracts without repeating the writer owner type.
 - `StaticRef::snapshot()` and `arc::snapshot<Ref>()` copy through the declared owner core, avoiding a borrowed reference for simple reads.
 - `arc::snapshots<Refs...>()` copies several read-only static refs into a tuple through the inferred owner core.
 - `StaticRef::snapshots<ReadRefs...>()` copies this owner plus other read-only refs through the inferred owner core.
