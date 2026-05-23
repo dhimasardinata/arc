@@ -140,9 +140,11 @@ may touch it.
 #include "arc/task.hpp"
 
 using Core1Counter = arc::CoreLocal<std::uint32_t, arc::Core::core1>;
+static_assert(arc::CoreLocalType<Core1Counter>);
 
 Core1Counter counter{41U};
 using CounterMsg = Core1Counter::Msg<arc::Core::core0>;
+static_assert(arc::CoreMsgType<CounterMsg>);
 static_assert(CounterMsg::from == arc::Core::core1);
 static_assert(CounterMsg::to == arc::Core::core0);
 counter.set<arc::Core::core1>(42U);

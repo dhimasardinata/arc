@@ -280,6 +280,19 @@ private:
     T value_{};
 };
 
+template <typename T>
+concept CoreMsgType = requires {
+    typename T::value_type;
+    { T::from } -> std::convertible_to<Core>;
+    { T::to } -> std::convertible_to<Core>;
+} && (T::from != Core::any) && (T::to != Core::any);
+
+template <typename T>
+concept CoreLocalType = requires {
+    typename T::value_type;
+    { T::owner } -> std::convertible_to<Core>;
+} && (T::owner != Core::any);
+
 template <std::size_t StackBytes, std::size_t RequiredBytes = stack::task_floor>
 struct TaskMem {
     static_assert(StackBytes > 0, "stack size must be non-zero");

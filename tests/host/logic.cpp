@@ -1220,6 +1220,8 @@ void test_spsc()
 void test_core_local()
 {
     using Core1Counter = arc::CoreLocal<std::uint32_t, arc::Core::core1>;
+    static_assert(arc::CoreLocalType<Core1Counter>);
+    static_assert(!arc::CoreMsgType<Core1Counter>);
     static_assert(Core1Counter::owner == arc::Core::core1);
     static_assert(arc::CoreOwner<arc::Core::core1, Core1Counter::owner>);
     static_assert(Core1Counter::can_access<arc::Core::core1>());
@@ -1266,6 +1268,8 @@ void test_core_local()
 
     const auto msg = counter.msg<arc::Core::core0>();
     using Msg = std::remove_cvref_t<decltype(msg)>;
+    static_assert(arc::CoreMsgType<Msg>);
+    static_assert(!arc::CoreLocalType<Msg>);
     static_assert(Msg::from == arc::Core::core1);
     static_assert(Msg::to == arc::Core::core0);
     static_assert(HasMsgGet<Msg, arc::Core::core0>);
