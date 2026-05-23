@@ -67,6 +67,8 @@ python3 tools/compile-fail-check.py
 Use `./tools/safety-case-check.py --format json` when the review needs a
 machine-readable evidence summary for release notes, CI artifacts, or external
 traceability tooling.
+Use `python3 tools/compile-fail-check.py --format json` when the review needs
+the exact negative borrow-check case list as structured evidence.
 
 For broad include or dependency changes, also run full public-header validation:
 

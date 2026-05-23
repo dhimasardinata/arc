@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
+import json
 import os
 import subprocess
 import sys
@@ -10,6 +12,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+OUTPUT_FORMATS = ("text", "json")
 
 PREFIX = """
 #include <cstdint>
@@ -58,6 +61,17 @@ class Case:
     name: str
     source: str
     must_contain: str | None = None
+
+
+@dataclass(frozen=True)
+class CaseResult:
+    name: str
+    must_contain: str | None
+    problem: str | None
+
+    @property
+    def passed(self) -> bool:
+        return self.problem is None
 
 
 CASES = (
@@ -1032,21 +1046,60 @@ def compile_case(case: Case, tmp: Path) -> str | None:
     return None
 
 
-def main() -> int:
-    problems: list[str] = []
+def run_cases(cases: tuple[Case, ...] = CASES) -> list[CaseResult]:
+    results: list[CaseResult] = []
     with tempfile.TemporaryDirectory(prefix="arc-compile-fail-") as tmp_dir:
         tmp = Path(tmp_dir)
-        for case in CASES:
+        for case in cases:
             problem = compile_case(case, tmp)
-            if problem is not None:
-                problems.append(problem)
+            results.append(CaseResult(name=case.name, must_contain=case.must_contain, problem=problem))
+    return results
 
+
+def report(results: list[CaseResult]) -> dict[str, object]:
+    failed = [result for result in results if not result.passed]
+    return {
+        "ok": not failed,
+        "compiler": compiler(),
+        "summary": {
+            "cases": len(results),
+            "passed": len(results) - len(failed),
+            "failed": len(failed),
+        },
+        "cases": [
+            {
+                "name": result.name,
+                "must_contain": result.must_contain,
+                "status": "failed_as_expected" if result.passed else "problem",
+                **({} if result.problem is None else {"problem": result.problem}),
+            }
+            for result in results
+        ],
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Check Arc negative compile contracts")
+    parser.add_argument(
+        "--format",
+        choices=OUTPUT_FORMATS,
+        default="text",
+        help="output style: text status or JSON case summary",
+    )
+    args = parser.parse_args(argv)
+
+    results = run_cases()
+    problems = [result.problem for result in results if result.problem is not None]
+    if args.format == "json":
+        print(json.dumps(report(results), indent=2, sort_keys=True))
     if problems:
-        for problem in problems:
-            print(f"arc compile-fail check failed: {problem}", file=sys.stderr)
+        if args.format == "text":
+            for problem in problems:
+                print(f"arc compile-fail check failed: {problem}", file=sys.stderr)
         return 1
 
-    print(f"arc compile-fail check: OK ({len(CASES)} cases)")
+    if args.format == "text":
+        print(f"arc compile-fail check: OK ({len(CASES)} cases)")
     return 0
 
 
