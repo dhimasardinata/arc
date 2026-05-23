@@ -1153,6 +1153,7 @@ struct BorrowFixture {
 };
 
 constinit BorrowFixture borrow_fixture{7U};
+constinit BorrowFixture other_borrow_fixture{13U};
 constinit const BorrowFixture const_borrow_fixture{9U};
 
 void test_static_borrow()
@@ -1160,12 +1161,21 @@ void test_static_borrow()
     using Cell = arc::StaticRef<&borrow_fixture, arc::Core::core1>;
     using Read = decltype(Cell::read<arc::Core::core1>());
     using Write = decltype(Cell::write<arc::Core::core1>());
+    using OtherCell = arc::StaticRef<&other_borrow_fixture, arc::Core::core1>;
+    using OtherWrite = decltype(OtherCell::write<arc::Core::core1>());
     using ConstCell = arc::StaticRef<&const_borrow_fixture>;
 
     static_assert(Cell::owner == arc::Core::core1);
     static_assert(Cell::object == &borrow_fixture);
     static_assert(Read::mode == arc::BorrowMode::read);
     static_assert(Write::mode == arc::BorrowMode::mut);
+    static_assert(arc::StaticLoanType<Read>);
+    static_assert(arc::loans_ok<Read, Read>());
+    static_assert(arc::loans_ok<Write, OtherWrite>());
+    static_assert(!arc::loans_ok<Read, Write>());
+    static_assert(!arc::loans_ok<Write, Write>());
+    using ReadPack = arc::LoanPack<Read, Read>;
+    static_assert(ReadPack::count == 2U);
     static_assert(std::is_copy_constructible_v<Read>);
     static_assert(!std::is_copy_constructible_v<Write>);
     static_assert(HasStaticRead<Cell, arc::Core::core1>);

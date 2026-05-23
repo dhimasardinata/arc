@@ -1,6 +1,6 @@
 # `arc/borrow.hpp`
 
-Static-lifetime read/mutable loans with core-owner access checks.
+Static-lifetime loans and loan-pack alias checks with core-owner access gates.
 
 ## Fit
 
@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `BorrowMode`, `StaticRef`, `StaticLoan`, `StaticRead`, `StaticMut`.
+Source landmarks: `BorrowMode`, `StaticRef`, `StaticLoan`, `StaticRead`, `StaticMut`, `LoanPack`.
 
 ## Start From Zero
 

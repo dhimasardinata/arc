@@ -1,6 +1,7 @@
 #pragma once
 
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -21,6 +22,13 @@ struct StaticRef;
 
 template <auto* Object, Core Owner, BorrowMode Mode>
 class StaticLoan;
+
+template <typename T>
+concept StaticLoanType = requires {
+    T::object;
+    { T::owner } -> std::convertible_to<Core>;
+    { T::mode } -> std::convertible_to<BorrowMode>;
+};
 
 template <auto* Object, Core Owner, BorrowMode Mode>
 class StaticLoan {
@@ -103,6 +111,52 @@ using StaticRead = StaticLoan<Object, Owner, BorrowMode::read>;
 
 template <auto* Object, Core Owner>
 using StaticMut = StaticLoan<Object, Owner, BorrowMode::mut>;
+
+namespace detail {
+
+template <StaticLoanType A, StaticLoanType B>
+[[nodiscard]] consteval bool same_object() noexcept
+{
+    if constexpr (std::same_as<decltype(A::object), decltype(B::object)>) {
+        return A::object == B::object;
+    }
+    return false;
+}
+
+template <StaticLoanType A, StaticLoanType B>
+[[nodiscard]] consteval bool loans_conflict() noexcept
+{
+    return same_object<A, B>() && (A::mode == BorrowMode::mut || B::mode == BorrowMode::mut);
+}
+
+template <StaticLoanType... Loans>
+struct LoansOk;
+
+template <>
+struct LoansOk<> {
+    static constexpr bool value = true;
+};
+
+template <StaticLoanType First, StaticLoanType... Rest>
+struct LoansOk<First, Rest...> {
+    static constexpr bool value = ((!loans_conflict<First, Rest>()) && ...) && LoansOk<Rest...>::value;
+};
+
+}  // namespace detail
+
+template <StaticLoanType... Loans>
+[[nodiscard]] consteval bool loans_ok() noexcept
+{
+    return detail::LoansOk<Loans...>::value;
+}
+
+template <StaticLoanType... Loans>
+struct LoanPack {
+    static_assert(loans_ok<Loans...>(),
+                  "[ARC ERROR] arc::LoanPack has a static borrow conflict. Action: keep mutable static loans exclusive.");
+
+    static constexpr std::size_t count = sizeof...(Loans);
+};
 
 template <auto* Object, Core Owner>
 struct StaticRef {
