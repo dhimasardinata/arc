@@ -25,6 +25,13 @@ static_assert(arc::loans_ok<ControlRead, ControlRead>());
 static_assert(arc::loans_ok<ControlWrite, TelemetryRead>());
 static_assert(!arc::loans_ok<ControlRead, ControlWrite>());
 static_assert(TelemetryInputs::count == 2U);
+static_assert(TelemetryInputs::contains<ControlRead>());
+static_assert(TelemetryInputs::reads<&control_state>());
+static_assert(TelemetryInputs::reads<&telemetry_state>());
+static_assert(!TelemetryInputs::writes<&control_state>());
+static_assert(arc::HasLoan<TelemetryInputs, TelemetryRead>);
+static_assert(arc::HasStaticRead<TelemetryInputs, &control_state>);
+static_assert(!arc::HasStaticWrite<TelemetryInputs, &control_state>);
 
 using ControlProof = arc::proof::Pack<
     10'000U,

@@ -168,7 +168,17 @@ GROUP_EXAMPLES = {
 }
 
 SPECIAL_LANDMARKS = {
-    "arc/borrow.hpp": ["BorrowMode", "StaticRef", "StaticLoan", "StaticRead", "StaticMut", "LoanPack"],
+    "arc/borrow.hpp": [
+        "BorrowMode",
+        "StaticRef",
+        "StaticLoan",
+        "StaticRead",
+        "StaticMut",
+        "LoanPack",
+        "HasLoan",
+        "HasStaticRead",
+        "HasStaticWrite",
+    ],
     "arc/detail/quant.hpp": ["mul_sat", "add_sat", "round_shift_s64"],
     "arc/migrator.hpp": [
         "FleetPeer",

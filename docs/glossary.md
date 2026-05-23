@@ -20,7 +20,7 @@ the API docs while still making the meaning easy to check.
 | --- | --- |
 | Caller-owned | The caller supplies storage, lifetime, and retry policy. Arc operates on the buffer or handle without silently owning it. |
 | Static owner | A type or object that visibly owns a peripheral, queue, task, or buffer for its whole usable lifetime. |
-| Static loan | A zero-storage `arc::StaticLoan` that proves the object has static storage and carries readonly or mutable access plus an optional core owner in the type. `arc::LoanPack` adds a compile-time check for conflicting loans declared in one task contract. |
+| Static loan | A zero-storage `arc::StaticLoan` that proves the object has static storage and carries readonly or mutable access plus an optional core owner in the type. `arc::LoanPack` adds compile-time conflict checks and query helpers for task contracts. |
 | Claim token | A runtime guard that rejects competing aliases for the same hardware owner. |
 | Topology | The declared board truth: pins, peripherals, fixed task shape, and ownership boundaries. |
 | Board policy | Product-specific decisions that Arc does not guess, such as wiring, power sequencing, trust, calibration, and failsafe behavior. |

@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `BorrowMode`, `StaticRef`, `StaticLoan`, `StaticRead`, `StaticMut`, `LoanPack`.
+Source landmarks: `BorrowMode`, `StaticRef`, `StaticLoan`, `StaticRead`, `StaticMut`, `LoanPack`, `HasLoan`, `HasStaticRead`, `HasStaticWrite`.
 
 ## Start From Zero
 

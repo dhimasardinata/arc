@@ -63,11 +63,17 @@ readonly loans are valid. A mutable loan cannot be grouped with another loan to
 the same object.
 
 ```cpp
-using TelemetryCell = arc::StaticRef<&control_state, arc::Core::core1>;
+constinit ControlState telemetry_state{};
+
+using TelemetryCell = arc::StaticRef<&telemetry_state, arc::Core::core1>;
 using TelemetryRead = decltype(TelemetryCell::read<arc::Core::core1>());
 
 using TelemetryInputs = arc::LoanPack<ControlRead, TelemetryRead>;
 static_assert(TelemetryInputs::count == 2U);
+static_assert(TelemetryInputs::contains<ControlRead>());
+static_assert(TelemetryInputs::reads<&control_state>());
+static_assert(!TelemetryInputs::writes<&control_state>());
+static_assert(arc::HasStaticRead<TelemetryInputs, &telemetry_state>);
 ```
 
 If the task later tries to add `ControlWrite` beside `ControlRead`, `LoanPack`

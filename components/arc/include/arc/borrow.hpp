@@ -129,6 +129,17 @@ template <StaticLoanType A, StaticLoanType B>
     return same_object<A, B>() && (A::mode == BorrowMode::mut || B::mode == BorrowMode::mut);
 }
 
+template <auto* Object, StaticLoanType Loan>
+[[nodiscard]] consteval bool loan_refs() noexcept
+{
+    using object_type = std::remove_cv_t<decltype(Object)>;
+    using loan_object_type = std::remove_cv_t<decltype(Loan::object)>;
+    if constexpr (std::same_as<object_type, loan_object_type>) {
+        return Object == Loan::object;
+    }
+    return false;
+}
+
 template <StaticLoanType... Loans>
 struct LoansOk;
 
@@ -156,7 +167,39 @@ struct LoanPack {
                   "[ARC ERROR] arc::LoanPack has a static borrow conflict. Action: keep mutable static loans exclusive.");
 
     static constexpr std::size_t count = sizeof...(Loans);
+
+    template <StaticLoanType Need>
+    [[nodiscard]] static consteval bool contains() noexcept
+    {
+        return (false || ... || std::same_as<Need, Loans>);
+    }
+
+    template <auto* Object>
+    [[nodiscard]] static consteval bool reads() noexcept
+    {
+        return (false || ... || detail::loan_refs<Object, Loans>());
+    }
+
+    template <auto* Object>
+    [[nodiscard]] static consteval bool writes() noexcept
+    {
+        return (false || ... || (detail::loan_refs<Object, Loans>() && Loans::mode == BorrowMode::mut));
+    }
 };
+
+template <typename T>
+concept StaticLoanPack = requires {
+    { T::count } -> std::convertible_to<std::size_t>;
+};
+
+template <typename Pack, typename Need>
+concept HasLoan = StaticLoanPack<Pack> && StaticLoanType<Need> && Pack::template contains<Need>();
+
+template <typename Pack, auto* Object>
+concept HasStaticRead = StaticLoanPack<Pack> && Pack::template reads<Object>();
+
+template <typename Pack, auto* Object>
+concept HasStaticWrite = StaticLoanPack<Pack> && Pack::template writes<Object>();
 
 template <auto* Object, Core Owner>
 struct StaticRef {
