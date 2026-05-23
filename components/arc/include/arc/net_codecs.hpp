@@ -11,3 +11,4 @@
 #include "arc/stream.hpp"
 #include "arc/uri.hpp"
 #include "arc/ws.hpp"
+#include "arc/xrce.hpp"

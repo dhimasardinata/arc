@@ -23,7 +23,7 @@ At a glance:
 - Runtime shape: Core 0 owns control, networking, storage, logs, and framework work; Core 1 owns deterministic compute and GPIO.
 - Allocation stance: hot paths use static storage, caller-owned spans, capability-tagged buffers, and no framework-owned protocol heap.
 - Error stance: setup can return `esp_err_t` / `arc::Result<T>`; impossible topology and hot-path contract violations fail early.
-- Transport stance: TCP, TLS, HTTP/HTTPS, UDP, ESP-NOW, MQTT, WebSocket, and CoAP are composable lanes/codecs, not task-owning application frameworks.
+- Transport stance: TCP, TLS, HTTP/HTTPS, UDP, ESP-NOW, MQTT, WebSocket, CoAP, and DDS-XRCE are composable lanes/codecs, not task-owning application frameworks.
 
 ## Why Arc
 
@@ -137,6 +137,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::TraceStream` drains binary log lanes into a caller-provided UDP/WebSocket/file sink as live Perfetto JSON chunks.
 - `arc::PerfettoWriter` emits compact binary trace records when JSON bandwidth is too expensive.
 - `arc::mcap::Writer` emits fixed-buffer MCAP schema, channel, message, and footer records for ROS2-style telemetry handoff.
+- `arc::xrce::Writer` frames fixed DDS-XRCE message and submessage bytes for UDP/serial micro-ROS bridges without owning a session task.
 - `arc::net::Rdma` plans aligned raw Wi-Fi write frames so promiscuous RX policy can apply zero-copy remote state updates.
 - `arc::mmu::DistributedPager` turns LoadStore-style remote span faults into fixed cache-line fetch/remap/resume policy calls.
 - `arc::swarm::HyperMatrix` fuses VSlam, RF FTM, and AcousticSlam observations into a fixed 6D probability tensor and publishes the shared state through RDMA frames.
@@ -334,7 +335,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/flexroute.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/power_governor.hpp`, `arc/power_profiler.hpp`, `arc/timesync.hpp`, `arc/tdma.hpp`, `arc/covert.hpp`, `arc/lifi.hpp`, `arc/sdr.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::matrix::FlexRoute`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::EtmRoute`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::StallStats`, `arc::power::Governor`, `arc::power::Profiler`, `arc::TimeSync`, `arc::net::Tdma`, `arc::covert::Fsk`, `arc::covert::EmTx`, `arc::covert::SonicTx`, `arc::optical::LiFi`, `arc::sdr::PulseSynth`, `arc::sdr::Tx` |
 | Buses and data plane | `arc/any.hpp`, `arc/i2c.hpp`, `arc/spi.hpp`, `arc/i2s.hpp`, `arc/uart.hpp`, `arc/usb.hpp`, `arc/i80.hpp`, `arc/dvp.hpp`, `arc/sdio_slave.hpp`, `arc/pru.hpp` | `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, `arc::AnyUart`, `arc::I2cBus`, `arc::SpiBus`, `arc::I2s`, `arc::Uart`, `arc::Usb`, `arc::I80`, `arc::Dvp`, `arc::SdioSlave`, `arc::PruOut`, `arc::PruIn`, `arc::PruTiming`, `arc::PruCursor` |
 | Storage and update | `arc/fs.hpp`, `arc/file.hpp`, `arc/sd.hpp`, `arc/store.hpp`, `arc/ota.hpp`, `arc/space.hpp`, `arc/flash_log.hpp`, `arc/secure_update.hpp` | `arc::Fs`, `arc::File`, `arc::Sd`, `arc::Store`, `arc::Ota`, `arc::Space`, `arc::FlashLog`, `arc::SecureUpdate` |
-| Network and radio | `arc/net.hpp`, `arc/csi.hpp`, `arc/ftm.hpp`, `arc/sdr.hpp`, `arc/acoustic_slam.hpp`, `arc/hyper_matrix.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/fabric.hpp`, `arc/crdt.hpp`, `arc/bft.hpp`, `arc/rdma.hpp`, `arc/thread.hpp`, `arc/ble_mesh.hpp`, `arc/uri.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/mdns.hpp`, `arc/eap.hpp`, `arc/netrpc.hpp`, `arc/swarm.hpp`, `arc/ethernet.hpp`, `arc/tsn.hpp`, `arc/w5500.hpp` | `arc::net::Radio`, `arc::net::Csi`, `arc::net::CsiRx`, `arc::net::EspWifiCsiPolicy`, `arc::net::Ftm`, `arc::net::EspWifiFtmPolicy`, `arc::sdr::Tx`, `arc::swarm::AcousticSlam`, `arc::swarm::HyperMatrix`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Fabric`, `arc::Crdt`, `arc::GCounter`, `arc::PnCounter`, `arc::LwwReg`, `arc::Bft`, `arc::BftVote`, `arc::BftCert`, `arc::net::Rdma`, `arc::net::Thread`, `arc::ble::Mesh`, `arc::net::Uri`, `arc::net::UriView`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::HttpServer`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::net::Mdns`, `arc::net::Eap`, `arc::net::NetRpc`, `arc::net::SwarmSchedule`, `arc::net::DistributedRcu`, `arc::net::DeadReckoning`, `arc::net::EthernetRing`, `arc::net::TsnSchedule`, `arc::net::TsnGate`, `arc::net::W5500Raw` |
+| Network and radio | `arc/net.hpp`, `arc/csi.hpp`, `arc/ftm.hpp`, `arc/sdr.hpp`, `arc/acoustic_slam.hpp`, `arc/hyper_matrix.hpp`, `arc/udp.hpp`, `arc/espnow.hpp`, `arc/fabric.hpp`, `arc/crdt.hpp`, `arc/bft.hpp`, `arc/rdma.hpp`, `arc/thread.hpp`, `arc/ble_mesh.hpp`, `arc/uri.hpp`, `arc/tcp.hpp`, `arc/poll.hpp`, `arc/pbuf.hpp`, `arc/tls.hpp`, `arc/http.hpp`, `arc/http_server.hpp`, `arc/mqtt.hpp`, `arc/ws.hpp`, `arc/coap.hpp`, `arc/xrce.hpp`, `arc/mdns.hpp`, `arc/eap.hpp`, `arc/netrpc.hpp`, `arc/swarm.hpp`, `arc/ethernet.hpp`, `arc/tsn.hpp`, `arc/w5500.hpp` | `arc::net::Radio`, `arc::net::Csi`, `arc::net::CsiRx`, `arc::net::EspWifiCsiPolicy`, `arc::net::Ftm`, `arc::net::EspWifiFtmPolicy`, `arc::sdr::Tx`, `arc::swarm::AcousticSlam`, `arc::swarm::HyperMatrix`, `arc::net::Udp`, `arc::net::EspNow`, `arc::net::Fabric`, `arc::Crdt`, `arc::GCounter`, `arc::PnCounter`, `arc::LwwReg`, `arc::Bft`, `arc::BftVote`, `arc::BftCert`, `arc::net::Rdma`, `arc::net::Thread`, `arc::ble::Mesh`, `arc::net::Uri`, `arc::net::UriView`, `arc::net::Tcp`, `arc::net::Poll`, `arc::net::Pbuf`, `arc::net::Tls`, `arc::net::Http`, `arc::net::HttpServer`, `arc::net::Mqtt`, `arc::net::Ws`, `arc::net::Coap`, `arc::xrce::Writer`, `arc::net::Mdns`, `arc::net::Eap`, `arc::net::NetRpc`, `arc::net::SwarmSchedule`, `arc::net::DistributedRcu`, `arc::net::DeadReckoning`, `arc::net::EthernetRing`, `arc::net::TsnSchedule`, `arc::net::TsnGate`, `arc::net::W5500Raw` |
 | Stream utilities | `arc/stream.hpp` | `arc::net::Stream`, `arc::net::ByteStream`, `arc::net::AnyStream`, `arc::net::Rtp`, `arc::net::Mjpeg` |
 | Binary records and optimizer hints | `arc/pack.hpp`, `arc/perfetto.hpp`, `arc/mcap.hpp`, `arc/trace_live.hpp`, `arc/assume.hpp` | `arc::pack::Schema`, `arc::pack::StructOf`, `arc::pack::Reflect`, `arc::pack::Endian`, `arc::PerfettoWriter`, `arc::mcap::Writer`, `arc::trace::LiveStream`, `arc::assume` |
 | Control, ML, and vision | `arc/dsp.hpp`, `arc/wavefront.hpp`, `arc/simd.hpp`, `arc/ml.hpp`, `arc/snn.hpp`, `arc/matrix.hpp`, `arc/kalman.hpp`, `arc/nav.hpp`, `arc/foc.hpp`, `arc/maglev.hpp`, `arc/digital_twin.hpp`, `arc/motion.hpp`, `arc/cnc.hpp`, `arc/hls.hpp`, `arc/isp.hpp`, `arc/vision.hpp`, `arc/vision_accel.hpp`, `arc/vslam.hpp`, `arc/star_tracker.hpp`, `arc/ecs.hpp`, `arc/hil.hpp` | `arc::dsp::clarke`, `arc::dsp::park`, `arc::dsp::duty_svpwm`, `arc::dsp::DspAccel`, `arc::dsp::Beamform`, `arc::dsp::Aec`, `arc::dsp::Wavefront`, `arc::simd::float32x4_t`, `arc::simd::int8x16_t`, `arc::simd::dot_s8`, `arc::simd::Rgb565::from_yuv422`, `arc::simd::fft_radix2`, `arc::ml::Tensor`, `arc::ml::Dense`, `arc::ml::QuantDenseS8`, `arc::ml::Snn`, `arc::ml::Conv2dS8`, `arc::ml::DepthwiseConv2dS8`, `arc::ml::MaxPool2d`, `arc::ml::mapped_weights`, `arc::ml::Core1Inference`, `arc::dsp::Matrix`, `arc::dsp::Lqr`, `arc::dsp::Kalman`, `arc::nav::Eskf`, `arc::nav::Quaternion`, `arc::Foc`, `arc::DualFoc`, `arc::FocEncoderFusion`, `arc::MagLev`, `arc::hil::DigitalTwin`, `arc::MotionPlan`, `arc::SCurve`, `arc::cnc::Kinematics`, `arc::cnc::GCode`, `arc::hls::KernelSpec`, `arc::hls::StaticLoop`, `arc::isp::Debayer`, `arc::isp::AecAwb`, `arc::vision::Sobel`, `arc::vision::OpticalFlow`, `arc::vision::PpaSrm`, `arc::vision::JpegEncoder`, `arc::vision::H264Encoder`, `arc::vision::VSlam`, `arc::vision::VisualServo`, `arc::vision::StarTracker`, `arc::SwarmSoa`, `arc::Hil` |
@@ -629,6 +630,7 @@ Profile aliases for `math`, `memory`, `net_codecs`, `crypto`, `robotics`, and `s
 - `wavefront`
 - `wdt`
 - `xts`
+- `xrce`
 - `espnow`
 
 Add `gpio` when you use `arc::Drive`, `arc::Sense`, or raw `arc::Gpio`, because those pin APIs depend on the GPIO driver headers.
@@ -2137,6 +2139,18 @@ Fixed-buffer MCAP writer for telemetry archives that must not allocate while the
 - `finish(data_crc, footer)` writes DataEnd, Footer, and trailing magic.
 
 Use this after draining binary lanes or ROS2 bridge state into a pre-sized buffer. Arc writes record framing and little-endian fields only; chunking, compression, CRC selection, summary sections, file transport, and ROS2 type support stay in product policy.
+
+### `arc::xrce::Writer`
+
+Fixed-buffer DDS-XRCE message and submessage framing for UDP or serial ROS2 agent bridges.
+
+- `Header{session, stream, seq, key, keyed}` writes the compact XRCE message prefix and optional client key bytes.
+- `stream_none`, `stream_best`, and `stream_reliable` name the common XRCE stream lanes.
+- `Submsg{id, flags, payload}` wraps one caller-owned XRCE payload behind a submessage header.
+- `reserve(id, flags, bytes)` reserves payload space in-place when an XCDR serializer should write directly into the frame.
+- `read_header(bytes, keyed)` and `read_sub(bytes, offset)` parse fixed frames back into spans without allocating.
+
+Use this when Arc should own the bounded wire framing but the product still owns XRCE session state, request IDs, object IDs, reliability retries, XCDR payload serialization, and Agent lifecycle.
 
 ### `arc::Postmortem<Capacity>`
 

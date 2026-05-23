@@ -206,6 +206,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/uri.hpp` | Heapless URI parsing and percent encode/decode. | [Open](/modules/arc-uri) |
 | `arc/w5500.hpp` | Policy-driven W5500 raw Ethernet path. | [Open](/modules/arc-w5500) |
 | `arc/ws.hpp` | WebSocket handshake and frame codec. | [Open](/modules/arc-ws) |
+| `arc/xrce.hpp` | Fixed-buffer DDS-XRCE message and submessage framing. | [Open](/modules/arc-xrce) |
 
 ## Observability And Trace
 

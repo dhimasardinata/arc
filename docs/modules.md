@@ -16,7 +16,7 @@ Start with the problem, then pick the smallest module that owns that problem:
 - use `arc/core.hpp` for the basic Core 0/Core 1 programming model;
 - use `arc/memory.hpp` when buffers cross DMA, cache, PSRAM, or another core;
 - use `arc/math.hpp` when Core 1 does fixed-shape math, DSP, or control work;
-- use `arc/net_codecs.hpp` when bytes need MQTT, WebSocket, CoAP, CRDT, BFT,
+- use `arc/net_codecs.hpp` when bytes need MQTT, WebSocket, CoAP, XRCE, CRDT, BFT,
   URI, stream, or fixed binary record framing without a network task;
 - use `arc/crypto.hpp`, `arc/robotics.hpp`, or `arc/sandbox.hpp` only when the
   app really needs those heavier domain groups;
@@ -35,7 +35,7 @@ These headers are the main entry points for readers and subset builds.
 | --- | --- |
 | `arc/core.hpp` | Core task shape, topology, init, GPIO, timing, queues, text, and basic storage-neutral substrate pieces. |
 | `arc/memory.hpp` | Capability buffers, cache ownership, DMA copy, descriptor chains, AXI graphs, pipelines, scrubbing, and placement helpers. |
-| `arc/net_codecs.hpp` | URI, streams, fixed records, CRDTs, BFT votes, MQTT, WebSocket, CoAP, and small HTTP server helpers without owning Wi-Fi. |
+| `arc/net_codecs.hpp` | URI, streams, fixed records, CRDTs, BFT votes, MQTT, WebSocket, CoAP, XRCE, and small HTTP server helpers without owning Wi-Fi. |
 | `arc/math.hpp` | DSP, SIMD, fixed matrices, Kalman, motion, ML, and control math surfaces. |
 | `arc/crypto.hpp` | AES, SHA, HMAC, signatures, MPI, XTS, Kyber, Paillier, PUF, secure boot, and related security helpers. |
 | `arc/robotics.hpp` | Motor control, CNC, motion, sensors, vision, DVP/LCD, digital twin, and robotics-oriented hardware paths. |
@@ -230,6 +230,7 @@ The radio owner lives on Core 0. Protocol codecs stay caller-buffered.
 | `arc/mqtt.hpp` | MQTT 3.1.1 codec and session helper. |
 | `arc/ws.hpp` | WebSocket handshake and frame codec. |
 | `arc/coap.hpp` | CoAP datagram codec. |
+| `arc/xrce.hpp` | Fixed-buffer DDS-XRCE message and submessage framing. |
 | `arc/crdt.hpp` | Heapless CRDT counters, registers, and fixed replicated-state frames. |
 | `arc/bft.hpp` | Bounded BFT vote collection and quorum certificates for fleet decisions. |
 | `arc/mdns.hpp` | mDNS host and service advertisement. |

@@ -156,6 +156,7 @@
 #include "arc/wavefront.hpp"
 #include "arc/ws.hpp"
 #include "arc/w5500.hpp"
+#include "arc/xrce.hpp"
 
 struct ReflectedTelemetry {
     std::uint32_t seq{};
@@ -4637,6 +4638,56 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
     const auto short_tail_pos = short_tail.pos;
     expect(!short_tail.finish() && short_tail.pos == short_tail_pos && !short_tail.finished,
            "MCAP rejects undersized footer without partial tail");
+
+    std::array<std::uint8_t, 64> xrce_bytes{};
+    arc::xrce::Writer xrce{.out = xrce_bytes};
+    const arc::xrce::Header xrce_header{
+        .session = 0x81U,
+        .stream = arc::xrce::stream_reliable,
+        .seq = 0x1234U,
+        .key = {.bytes = {0x44U, 0x33U, 0x22U, 0x11U}},
+        .keyed = true,
+    };
+    const std::array<std::uint8_t, 3> xrce_payload{0xdeU, 0xadU, 0xbeU};
+    expect(xrce.header(xrce_header).has_value() &&
+               xrce.sub({
+                            .id = arc::xrce::Sub::write_data,
+                            .flags = arc::xrce::little,
+                            .payload = xrce_payload,
+                        })
+                   .has_value() &&
+               xrce_bytes[0] == 0x81U &&
+               xrce_bytes[1] == arc::xrce::stream_reliable &&
+               xrce_bytes[2] == 0x34U &&
+               xrce_bytes[3] == 0x12U &&
+               xrce_bytes[8] == static_cast<std::uint8_t>(arc::xrce::Sub::write_data) &&
+               xrce_bytes[10] == 3U &&
+               xrce_bytes[12] == 0xdeU,
+           "XRCE writes keyed message and little-endian submessage");
+    const auto xrce_frame = xrce.bytes();
+    const auto parsed_xrce_header = arc::xrce::read_header(xrce_frame, true);
+    expect(parsed_xrce_header.has_value() &&
+               parsed_xrce_header->next == 8U &&
+               parsed_xrce_header->header.seq == 0x1234U &&
+               parsed_xrce_header->header.key.bytes[3] == 0x11U &&
+               arc::xrce::reliable(parsed_xrce_header->header.stream),
+           "XRCE parses keyed message header");
+    const auto parsed_xrce_sub = arc::xrce::read_sub(xrce_frame, parsed_xrce_header->next);
+    expect(parsed_xrce_sub.has_value() &&
+               parsed_xrce_sub->id == arc::xrce::Sub::write_data &&
+               parsed_xrce_sub->payload.size() == xrce_payload.size() &&
+               parsed_xrce_sub->payload[2] == 0xbeU,
+           "XRCE parses submessage payload");
+    std::array<std::uint8_t, 8> xrce_big_bytes{};
+    arc::xrce::Writer xrce_big{.out = xrce_big_bytes};
+    const auto xrce_reserved = xrce_big.reserve(arc::xrce::Sub::data, 0U, 2U);
+    expect(xrce_reserved.has_value() &&
+               xrce_big_bytes[2] == 0U &&
+               xrce_big_bytes[3] == 2U &&
+               arc::xrce::best(arc::xrce::stream_best),
+           "XRCE reserves big-endian submessage payloads");
+    arc::xrce::Writer tiny_xrce{.out = std::span<std::uint8_t>{xrce_big_bytes.data(), 3U}};
+    expect(!tiny_xrce.header(xrce_header) && tiny_xrce.pos == 0U, "XRCE rejects undersized header without partial write");
 
     arc::Provisioning<32, 64, 128> provisioning{};
     const std::array<std::uint8_t, 4> nonce{1, 2, 3, 4};

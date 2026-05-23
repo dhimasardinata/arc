@@ -1109,6 +1109,18 @@ Fixed-buffer MCAP writer for telemetry archives that must not allocate while the
 
 Use this after draining binary lanes or ROS2 bridge state into a pre-sized buffer. Arc writes record framing and little-endian fields only; chunking, compression, CRC selection, summary sections, file transport, and ROS2 type support stay in product policy.
 
+### `arc::xrce::Writer`
+
+Fixed-buffer DDS-XRCE message and submessage framing for UDP or serial ROS2 agent bridges.
+
+- `Header{session, stream, seq, key, keyed}` writes the compact XRCE message prefix and optional client key bytes.
+- `stream_none`, `stream_best`, and `stream_reliable` name the common XRCE stream lanes.
+- `Submsg{id, flags, payload}` wraps one caller-owned XRCE payload behind a submessage header.
+- `reserve(id, flags, bytes)` reserves payload space in-place when an XCDR serializer should write directly into the frame.
+- `read_header(bytes, keyed)` and `read_sub(bytes, offset)` parse fixed frames back into spans without allocating.
+
+Use this when Arc should own the bounded wire framing but the product still owns XRCE session state, request IDs, object IDs, reliability retries, XCDR payload serialization, and Agent lifecycle.
+
 ### `arc::Postmortem<Capacity>`
 
 RTC no-init ring buffer for reboot-surviving diagnostics.
