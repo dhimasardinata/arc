@@ -322,6 +322,11 @@ template <typename Fn, typename SelfRef, typename... ReadRefs>
 concept StaticMemberReadFn =
     std::invocable<Fn, const typename SelfRef::value_type&, const typename ReadRefs::value_type&...>;
 
+template <typename SelfRef, typename... ReadRefs>
+concept StaticMemberSnapshotValues =
+    std::copy_constructible<typename SelfRef::value_type> &&
+    (std::copy_constructible<typename ReadRefs::value_type> && ...);
+
 template <typename Fn, typename WriteRef, typename... ReadRefs>
 concept StaticMemberEditFn =
     std::invocable<Fn, typename WriteRef::value_type&, const typename ReadRefs::value_type&...>;
@@ -369,6 +374,34 @@ struct StaticRef {
     [[nodiscard]] static constexpr value_type snapshot() noexcept(noexcept(value_type(*Object)))
     {
         return *Object;
+    }
+
+    template <typename FirstReadRef, typename... ReadRefs>
+        requires detail::StaticMemberReadAccess<Owner, Read, FirstReadRef, ReadRefs...> &&
+        detail::StaticMemberSnapshotValues<StaticRef, FirstReadRef, ReadRefs...>
+    [[nodiscard]] static constexpr auto snapshots() noexcept(
+        noexcept(StaticRef::template snapshot<Owner>()) &&
+        noexcept(FirstReadRef::template snapshot<Owner>()) &&
+        (noexcept(ReadRefs::template snapshot<Owner>()) && ...))
+    {
+        return std::tuple<value_type, typename FirstReadRef::value_type, typename ReadRefs::value_type...>{
+            StaticRef::template snapshot<Owner>(),
+            FirstReadRef::template snapshot<Owner>(),
+            ReadRefs::template snapshot<Owner>()...};
+    }
+
+    template <Core Access, typename FirstReadRef, typename... ReadRefs>
+        requires detail::StaticMemberReadAccess<Access, Read, FirstReadRef, ReadRefs...> &&
+        detail::StaticMemberSnapshotValues<StaticRef, FirstReadRef, ReadRefs...>
+    [[nodiscard]] static constexpr auto snapshots() noexcept(
+        noexcept(StaticRef::template snapshot<Access>()) &&
+        noexcept(FirstReadRef::template snapshot<Access>()) &&
+        (noexcept(ReadRefs::template snapshot<Access>()) && ...))
+    {
+        return std::tuple<value_type, typename FirstReadRef::value_type, typename ReadRefs::value_type...>{
+            StaticRef::template snapshot<Access>(),
+            FirstReadRef::template snapshot<Access>(),
+            ReadRefs::template snapshot<Access>()...};
     }
 
     template <Core Access = Owner, typename Fn>

@@ -80,6 +80,8 @@ static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 10'000U);
     ControlCell::with_reads<TelemetryCell>([](const ControlState& control, const ControlState& telemetry) {
         static_cast<void>(control.tick + telemetry.tick);
     });
+    auto member_copies = ControlCell::snapshots<TelemetryCell>();
+    static_cast<void>(member_copies);
     ControlStep::with<arc::Core::core1>([](ControlState& control, const ControlState& telemetry) {
         control.tick += telemetry.tick;
     });

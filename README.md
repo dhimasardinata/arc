@@ -1412,6 +1412,8 @@ around as a raw pointer or reference.
 - `StaticRef::Read`, `StaticRef::Write`, `can_read<Core>()`, and `can_write<Core>()` keep common compile-contracts short enough for examples and static assertions.
 - `StaticRef::snapshot()` and `arc::snapshot<Ref>()` copy through the declared owner core, avoiding a borrowed reference for simple reads.
 - `arc::snapshots<Refs...>()` copies several read-only static refs into a tuple through the inferred owner core.
+- `StaticRef::snapshots<ReadRefs...>()` copies this owner plus other read-only refs through the inferred owner core.
+- `StaticRef::snapshots<Core, ReadRefs...>()` keeps the explicit-core form for read-only copy-out packs.
 - `StaticRef::with_read(fn)` and `StaticRef::with_write(fn)` scope a single static owner through its own declared core.
 - `StaticRef::with_read<Core>(fn)` and `StaticRef::with_write<Core>(fn)` keep the explicit-core form for boundaries that should not infer from the owner.
 - `StaticRef::with_reads<ReadRefs...>(fn)` scopes this owner plus other read-only refs without naming a separate `StaticReads` contract first.

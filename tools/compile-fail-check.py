@@ -173,6 +173,18 @@ void probe()
 """,
     ),
     Case(
+        name="mixed_owner_member_snapshots",
+        source="""
+using Core1Cell = arc::StaticRef<&state, arc::Core::core1>;
+using Core0Cell = arc::StaticRef<&other, arc::Core::core0>;
+
+void probe()
+{
+    (void)Core1Cell::snapshots<Core0Cell>();
+}
+""",
+    ),
+    Case(
         name="wrong_core_static_snapshots",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;
@@ -181,6 +193,18 @@ using OtherCell = arc::StaticRef<&other, arc::Core::core1>;
 void probe()
 {
     (void)arc::snapshots<arc::Core::core0, Cell, OtherCell>();
+}
+""",
+    ),
+    Case(
+        name="wrong_core_static_member_snapshots",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+using OtherCell = arc::StaticRef<&other, arc::Core::core1>;
+
+void probe()
+{
+    (void)Cell::snapshots<arc::Core::core0, OtherCell>();
 }
 """,
     ),
