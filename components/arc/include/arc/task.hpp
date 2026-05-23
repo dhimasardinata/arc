@@ -154,6 +154,12 @@ public:
     using value_type = T;
     static constexpr Core owner = Owner;
 
+    template <Core To>
+    using Msg = CoreMsg<T, Owner, To>;
+
+    template <Core From>
+    using Incoming = CoreMsg<T, From, Owner>;
+
     template <Core Access>
     [[nodiscard]] static consteval bool can_access() noexcept
     {
@@ -242,21 +248,21 @@ public:
 
     template <Core Access, Core To>
         requires CoreOwner<Access, Owner> && (To != Core::any) && std::copy_constructible<T>
-    [[nodiscard]] constexpr CoreMsg<T, Owner, To> msg() const noexcept(noexcept(CoreMsg<T, Owner, To>{value_}))
+    [[nodiscard]] constexpr Msg<To> msg() const noexcept(noexcept(Msg<To>{value_}))
     {
-        return CoreMsg<T, Owner, To>{value_};
+        return Msg<To>{value_};
     }
 
     template <Core To>
         requires(To != Core::any) && std::copy_constructible<T>
-    [[nodiscard]] constexpr CoreMsg<T, Owner, To> msg() const noexcept(noexcept(CoreMsg<T, Owner, To>{value_}))
+    [[nodiscard]] constexpr Msg<To> msg() const noexcept(noexcept(Msg<To>{value_}))
     {
         return msg<Owner, To>();
     }
 
     template <Core Access, Core From>
         requires CoreOwner<Access, Owner> && std::assignable_from<T&, const T&>
-    constexpr void accept(const CoreMsg<T, From, Owner>& msg) noexcept(
+    constexpr void accept(const Incoming<From>& msg) noexcept(
         noexcept(std::declval<T&>() = msg.template get<Owner>()))
     {
         value_ = msg.template get<Owner>();
@@ -264,7 +270,7 @@ public:
 
     template <Core From>
         requires std::assignable_from<T&, const T&>
-    constexpr void accept(const CoreMsg<T, From, Owner>& msg) noexcept(
+    constexpr void accept(const Incoming<From>& msg) noexcept(
         noexcept(std::declval<T&>() = msg.template get<Owner>()))
     {
         accept<Owner>(msg);

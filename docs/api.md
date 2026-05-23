@@ -355,6 +355,7 @@ Compile-time core ownership tags for state that must not be casually shared acro
 
 - `CoreLocal<T, Core::core1>` stores the value privately and only exposes owner-gated access such as `snapshot()`, `with(fn)`, `set<Core::core1>(...)`, and `msg<To>()`.
 - `CoreLocal::can_access<Core>()` and `with(fn)` keep common owner checks and short scoped mutations readable without repeating the owner core.
+- `CoreLocal::Msg<To>` and `CoreLocal::Incoming<From>` name outbound and inbound `CoreMsg` contracts without repeating the payload and owner core.
 - `with<Core>(fn)`, `msg<Core, To>()`, and `accept<Core>(msg)` remain available when a call site should spell the access core explicitly.
 - `CoreLocal::with<Core>(fn)` and `CoreMsg::with<Core>(fn)` callbacks may return `void` or an ordinary value, but not a reference or raw pointer.
 - `snapshot()` copies the current value through the encoded owner core, avoiding a borrowed reference for simple reads.

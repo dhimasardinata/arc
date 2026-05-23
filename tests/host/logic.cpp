@@ -1224,6 +1224,10 @@ void test_core_local()
     static_assert(arc::CoreOwner<arc::Core::core1, Core1Counter::owner>);
     static_assert(Core1Counter::can_access<arc::Core::core1>());
     static_assert(!Core1Counter::can_access<arc::Core::core0>());
+    static_assert(std::same_as<Core1Counter::Msg<arc::Core::core0>,
+                               arc::CoreMsg<std::uint32_t, arc::Core::core1, arc::Core::core0>>);
+    static_assert(std::same_as<Core1Counter::Incoming<arc::Core::core0>,
+                               arc::CoreMsg<std::uint32_t, arc::Core::core0, arc::Core::core1>>);
     static_assert(HasCoreGet<Core1Counter, arc::Core::core1>);
     static_assert(!HasCoreGet<Core1Counter, arc::Core::core0>);
     static_assert(HasCoreSnapshot<Core1Counter, arc::Core::core1>);
@@ -1261,7 +1265,7 @@ void test_core_local()
     expect(inferred_const == 44U, "CoreLocal inferred const scoped access returns copied value");
 
     const auto msg = counter.msg<arc::Core::core0>();
-    using Msg = decltype(msg);
+    using Msg = std::remove_cvref_t<decltype(msg)>;
     static_assert(Msg::from == arc::Core::core1);
     static_assert(Msg::to == arc::Core::core0);
     static_assert(HasMsgGet<Msg, arc::Core::core0>);
@@ -1274,6 +1278,9 @@ void test_core_local()
     static_assert(!HasMsgWith<Msg, arc::Core::core1>);
     static_assert(HasMsgWithInferred<Msg>);
     using Core0Counter = arc::CoreLocal<std::uint32_t, arc::Core::core0>;
+    static_assert(std::same_as<Msg, Core0Counter::Incoming<arc::Core::core1>>);
+    static_assert(std::same_as<Core0Counter::Msg<arc::Core::core1>,
+                               arc::CoreMsg<std::uint32_t, arc::Core::core0, arc::Core::core1>>);
     static_assert(HasCoreAccept<Core0Counter, Msg>);
     expect(msg.get<arc::Core::core0>() == 44U, "CoreMsg destination reads payload");
     expect(msg.get() == 44U, "CoreMsg inferred destination reads payload");

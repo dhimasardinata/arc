@@ -319,6 +319,24 @@ void probe()
 """,
     ),
     Case(
+        name="core_local_msg_any",
+        source="""
+using Local = arc::CoreLocal<State, arc::Core::core1>;
+using Bad = Local::Msg<arc::Core::any>;
+static_assert(Bad::to == arc::Core::any);
+""",
+        must_contain="destination must be a concrete core",
+    ),
+    Case(
+        name="core_local_incoming_any",
+        source="""
+using Local = arc::CoreLocal<State, arc::Core::core1>;
+using Bad = Local::Incoming<arc::Core::any>;
+static_assert(Bad::from == arc::Core::any);
+""",
+        must_contain="source must be a concrete core",
+    ),
+    Case(
         name="wrong_core_msg_with",
         source="""
 void probe()

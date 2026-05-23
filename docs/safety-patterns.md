@@ -142,6 +142,9 @@ may touch it.
 using Core1Counter = arc::CoreLocal<std::uint32_t, arc::Core::core1>;
 
 Core1Counter counter{41U};
+using CounterMsg = Core1Counter::Msg<arc::Core::core0>;
+static_assert(CounterMsg::from == arc::Core::core1);
+static_assert(CounterMsg::to == arc::Core::core0);
 counter.set<arc::Core::core1>(42U);
 auto current = counter.snapshot();
 counter.with([](std::uint32_t& value) {
