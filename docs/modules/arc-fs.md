@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Fs`, `SpiffsInfo`, `FatInfo`, `State`.
+Source landmarks: `Fs`, `SpiffsInfo`, `FatInfo`, `LittlefsInfo`, `State`.
 
 ## Start From Zero
 

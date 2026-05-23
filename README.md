@@ -79,7 +79,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::Usb` binds the ESP32-S3 USB Serial/JTAG lane with typed byte IO.
 - `arc::Otg` owns the native USB OTG PHY for host/device stack bring-up without pretending to be a USB class framework.
 - `arc::Sd` mounts ESP32-S3 SD/MMC cards through FAT and keeps raw sector access explicit.
-- `arc::Fs` mounts SPIFFS and FAT-on-flash VFS paths with fixed handle ownership.
+- `arc::Fs` mounts SPIFFS, FAT-on-flash, and optional LittleFS VFS paths with fixed handle ownership.
 - `arc::File` gives RAII VFS/POSIX file I/O without leaking `FILE*` ownership into app code.
 - `arc::Count`, `arc::Quadrature`, and `arc::Encoder` offload pulse and quadrature accumulation to the PCNT block.
 - `arc::dsp` adds hot-loop math kernels, FIR, PID, biquad, FFT, beamforming, and acoustic echo-cancellation primitives that pair naturally with `arc::simdbuf` and Core 1.
@@ -2200,6 +2200,7 @@ Mounted filesystem helpers for Core 0 storage paths.
 - `spiffs_info(...)`, `spiffs_gc(...)`, `spiffs_check(...)`, and `spiffs_off(...)` cover common maintenance.
 - `fat(base, label, max_files, format, alloc)` mounts FAT-on-flash through wear levelling.
 - `fat_ro(...)`, `fat_info(...)`, `fat_format(...)`, `fat_off()`, and `ro_off(...)` keep FAT control explicit.
+- `littlefs(...)`, `littlefs_info(...)`, `littlefs_format(...)`, and `littlefs_off(...)` are available when the managed LittleFS component exposes `esp_littlefs.h`.
 
 Use this to create a mounted VFS path before using `arc::File`.
 

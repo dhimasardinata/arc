@@ -1181,6 +1181,7 @@ Mounted filesystem helpers for Core 0 storage paths.
 - `spiffs_info(...)`, `spiffs_gc(...)`, `spiffs_check(...)`, and `spiffs_off(...)` cover common maintenance.
 - `fat(base, label, max_files, format, alloc)` mounts FAT-on-flash through wear levelling.
 - `fat_ro(...)`, `fat_info(...)`, `fat_format(...)`, `fat_off()`, and `ro_off(...)` keep FAT control explicit.
+- `littlefs(...)`, `littlefs_info(...)`, `littlefs_format(...)`, and `littlefs_off(...)` are available when the managed LittleFS component exposes `esp_littlefs.h`.
 
 Use this to create a mounted VFS path before using `arc::File`.
 

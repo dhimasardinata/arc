@@ -8,6 +8,13 @@
 #include "esp_vfs_fat.h"
 #include "wear_levelling.h"
 
+#if __has_include("esp_littlefs.h")
+#include "esp_littlefs.h"
+#define ARC_HAS_LITTLEFS 1
+#else
+#define ARC_HAS_LITTLEFS 0
+#endif
+
 #include "arc/init.hpp"
 
 namespace arc {
@@ -21,6 +28,11 @@ struct Fs {
     struct FatInfo {
         std::uint64_t total{};
         std::uint64_t free{};
+    };
+
+    struct LittlefsInfo {
+        std::size_t total{};
+        std::size_t used{};
     };
 
     [[nodiscard]] static esp_err_t spiffs(
@@ -144,6 +156,46 @@ struct Fs {
     {
         return esp_vfs_fat_spiflash_format_rw_wl(base, label);
     }
+
+#if ARC_HAS_LITTLEFS
+    [[nodiscard]] static esp_err_t littlefs(
+        const char* const base = "/littlefs",
+        const char* const label = "storage",
+        const bool format = false,
+        const bool read_only = false,
+        const bool dont_mount = false) noexcept
+    {
+        esp_vfs_littlefs_conf_t cfg{};
+        cfg.base_path = base;
+        cfg.partition_label = label;
+        cfg.format_if_mount_failed = format;
+        cfg.read_only = read_only;
+        cfg.dont_mount = dont_mount;
+        return esp_vfs_littlefs_register(&cfg);
+    }
+
+    [[nodiscard]] static esp_err_t littlefs_off(const char* const label = "storage") noexcept
+    {
+        return esp_vfs_littlefs_unregister(label);
+    }
+
+    [[nodiscard]] static bool littlefs_on(const char* const label = "storage") noexcept
+    {
+        return esp_littlefs_mounted(label);
+    }
+
+    [[nodiscard]] static esp_err_t littlefs_info(
+        LittlefsInfo& out,
+        const char* const label = "storage") noexcept
+    {
+        return esp_littlefs_info(label, &out.total, &out.used);
+    }
+
+    [[nodiscard]] static esp_err_t littlefs_format(const char* const label = "storage") noexcept
+    {
+        return esp_littlefs_format(label);
+    }
+#endif
 
 private:
     struct State {

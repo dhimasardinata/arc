@@ -46,6 +46,7 @@
 #include "arc/flexroute.hpp"
 #include "arc/flow.hpp"
 #include "arc/foc.hpp"
+#include "arc/fs.hpp"
 #include "arc/fsm.hpp"
 #include "arc/hil.hpp"
 #include "arc/hotpatch.hpp"
@@ -5036,6 +5037,38 @@ void test_file()
     expect(std::remove(path) == 0, "File cleanup");
 }
 
+void test_fs()
+{
+    expect(arc::Fs::spiffs("/fs", "storage", 2U, true) == ESP_OK, "Fs SPIFFS mount");
+    expect(arc::Fs::spiffs_on("storage"), "Fs SPIFFS mounted");
+    arc::Fs::SpiffsInfo spiffs{};
+    expect(arc::Fs::spiffs_info(spiffs, "storage") == ESP_OK && spiffs.total == 64U && spiffs.used == 8U,
+           "Fs SPIFFS info");
+    expect(arc::Fs::spiffs_check("storage") == ESP_OK && arc::Fs::spiffs_gc(4U, "storage") == ESP_OK &&
+               arc::Fs::spiffs_format("storage") == ESP_OK && arc::Fs::spiffs_off("storage") == ESP_OK &&
+               !arc::Fs::spiffs_on("storage"),
+           "Fs SPIFFS maintenance");
+
+    expect(arc::Fs::fat("/fat", "storage", 2, true, 4096U) == ESP_OK, "Fs FAT mount");
+    arc::Fs::FatInfo fat{};
+    expect(arc::Fs::fat_info(fat, "/fat") == ESP_OK && fat.total == 128U && fat.free == 32U, "Fs FAT info");
+    expect(arc::Fs::fat_format("/fat", "storage") == ESP_OK && arc::Fs::fat_off() == ESP_OK, "Fs FAT off");
+    expect(arc::Fs::fat_ro("/fat", "storage", 2) == ESP_OK && arc::Fs::ro_off("/fat", "storage") == ESP_OK,
+           "Fs FAT read-only mount");
+
+#if ARC_HAS_LITTLEFS
+    expect(arc::Fs::littlefs("/littlefs", "storage", true) == ESP_OK, "Fs LittleFS mount");
+    expect(arc::Fs::littlefs_on("storage"), "Fs LittleFS mounted");
+    arc::Fs::LittlefsInfo littlefs{};
+    expect(arc::Fs::littlefs_info(littlefs, "storage") == ESP_OK && littlefs.total == 256U &&
+               littlefs.used == 16U,
+           "Fs LittleFS info");
+    expect(arc::Fs::littlefs_format("storage") == ESP_OK && arc::Fs::littlefs_off("storage") == ESP_OK &&
+               !arc::Fs::littlefs_on("storage"),
+           "Fs LittleFS maintenance");
+#endif
+}
+
 void test_store()
 {
     expect(nvs_flash_erase() == ESP_OK, "Store host reset");
@@ -8195,6 +8228,7 @@ int main()
     test_seqreg();
     test_claim();
     test_file();
+    test_fs();
     test_store();
     test_stream();
     test_pipeline_usb_ulp();
