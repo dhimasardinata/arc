@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PINS_RE = re.compile(r"\barc::Pins\s*<(?P<body>[^>]*)>", re.MULTILINE | re.DOTALL)
 INT_RE = re.compile(r"^[+-]?\d+$")
-OUTPUT_FORMATS = ("text", "report", "dot")
+OUTPUT_FORMATS = ("text", "report", "dot", "mermaid")
 
 
 @dataclass(frozen=True)
@@ -100,6 +100,10 @@ def dot_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
+def mermaid_escape(value: str) -> str:
+    return value.replace('"', "#quot;").replace("\n", "<br/>")
+
+
 def print_text(packs: list[Pack]) -> None:
     for pack in packs:
         pins = ", ".join(str(pin) for pin in pack.pins) if pack.pins else "no literal pins"
@@ -151,6 +155,30 @@ def print_dot(packs: list[Pack]) -> None:
     print("}")
 
 
+def print_mermaid(packs: list[Pack]) -> None:
+    print("flowchart LR")
+    if not packs:
+        print('  empty["no literal arc::Pins packs found"]')
+        return
+    for index, pack in enumerate(packs):
+        pack_id = f"pack_{index}"
+        pack_label = mermaid_escape(f"{display(pack.path)}:{pack.line}\narc::Pins")
+        print(f'  {pack_id}["{pack_label}"]')
+        for position, pin in enumerate(pack.pins, start=1):
+            if pin < 0:
+                node_id = f"{pack_id}_sentinel_{position}"
+                print(f'  {node_id}["optional {pin}"]')
+                print(f"  {pack_id} -. {position} .-> {node_id}")
+                continue
+            node_id = f"gpio_{pin}"
+            print(f'  {node_id}["GPIO{pin}"]')
+            print(f"  {pack_id} -->|{position}| {node_id}")
+        for position, token in enumerate(pack.unresolved, start=1):
+            node_id = f"{pack_id}_unresolved_{position}"
+            print(f'  {node_id}["{mermaid_escape(token)}"]')
+            print(f"  {pack_id} -. unresolved .-> {node_id}")
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Check literal arc::Pins topology packs")
     parser.add_argument(
@@ -183,6 +211,8 @@ def main(argv: list[str]) -> int:
             print_report(packs)
         elif args.format == "dot":
             print_dot(packs)
+        elif args.format == "mermaid":
+            print_mermaid(packs)
         else:
             print_text(packs)
 
@@ -191,7 +221,7 @@ def main(argv: list[str]) -> int:
             print(problem, file=sys.stderr)
         return 1
 
-    if args.quiet or args.format != "dot":
+    if args.quiet or args.format not in ("dot", "mermaid"):
         print(f"arc topology check: OK ({len(packs)} pin packs)")
     return 0
 

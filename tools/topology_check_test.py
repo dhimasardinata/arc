@@ -67,6 +67,18 @@ class TopologyCheckTest(unittest.TestCase):
         self.assertIn('label="CONFIG_LED"', result.stdout)
         self.assertNotIn("arc topology check: OK", result.stdout)
 
+    def test_mermaid_format_draws_markdown_graph(self) -> None:
+        result = self.run_tool("struct Board { using pins = arc::Pins<4, -1, CONFIG_LED>; };\n", "--format", "mermaid")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("flowchart LR", result.stdout)
+        self.assertIn('gpio_4["GPIO4"]', result.stdout)
+        self.assertIn('pack_0_sentinel_2["optional -1"]', result.stdout)
+        self.assertIn('pack_0_unresolved_1["CONFIG_LED"]', result.stdout)
+        self.assertIn("pack_0 -->|1| gpio_4", result.stdout)
+        self.assertIn("pack_0 -. unresolved .-> pack_0_unresolved_1", result.stdout)
+        self.assertNotIn("arc topology check: OK", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
