@@ -72,7 +72,7 @@ Use these when deciding who owns work, lifetime, and access.
 | `arc/sketch.hpp` | Compatibility alias for small app-style programs. |
 | `arc/tight.hpp` | Masked deterministic step loops for the rare very-low-jitter path. |
 | `arc/lockstep.hpp` | Dual-output comparison and policy hooks for lockstep safety checks. |
-| `arc/sim.hpp` | Host simulator FIFO, trace log, harness ticks, and pin drive/sense facades for app logic tests. |
+| `arc/sim.hpp` | Host simulator FIFO, SPI byte lane, trace log, harness ticks, and pin drive/sense facades for app logic tests. |
 | `arc/bare_core.hpp` | True-AMP Core 1 boot contracts for board policies outside FreeRTOS. |
 | `arc/coro.hpp` | Heapless coroutine state machines using explicit arenas. |
 | `arc/rtos.hpp` | Safe chrono-to-FreeRTOS tick conversion helpers. |

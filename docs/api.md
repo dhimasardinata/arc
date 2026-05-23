@@ -317,6 +317,7 @@ Host-side simulator primitives for app logic tests.
 - `sim::Fifo<T, N>` is a fixed-capacity ring for trivially copyable host samples.
 - `sim::Drive<Pin, Trace>` mirrors the static `Drive` shape with `out()`, `hi()`, `lo()`, `toggle()`, and `high()`, then calls optional `Trace::drive(pin, level)`.
 - `sim::Sense<Pin, N, Trace>` owns a fixed boolean input FIFO. `feed(...)` queues samples, `tick()` consumes one sample, and `high()` / `low()` read the current simulated pin level.
+- `sim::Spi<N, Trace>` owns fixed RX/TX byte FIFOs. `feed_rx(...)` queues peripheral response bytes, `xfer(tx, rx)` records MOSI bytes and returns queued MISO bytes or the idle byte, and `drain_tx(...)` lets a host fixture inspect captured writes.
 - `sim::TraceLog<N>` records bounded drive/sense/mark events with deterministic tick stamps.
 - `sim::Harness<Trace, Inputs...>` resets the trace and input FIFOs, advances each input once per tick, and increments the trace clock.
 - `sim::StdoutTrace` prints drive/sense transitions to stdout for host runs; custom trace policies can store deterministic evidence instead.

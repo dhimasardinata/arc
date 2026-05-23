@@ -1208,6 +1208,9 @@ struct SimTrace {
     static inline int sense_pin{};
     static inline bool sense_level{};
     static inline std::size_t sense_reads{};
+    static inline std::uint8_t spi_mosi{};
+    static inline std::uint8_t spi_miso{};
+    static inline std::size_t spi_xfers{};
 
     static void drive(const int pin, const bool level) noexcept
     {
@@ -1221,6 +1224,13 @@ struct SimTrace {
         sense_pin = pin;
         sense_level = level;
         ++sense_reads;
+    }
+
+    static void spi(const std::uint8_t mosi, const std::uint8_t miso) noexcept
+    {
+        spi_mosi = mosi;
+        spi_miso = miso;
+        ++spi_xfers;
     }
 };
 
@@ -1265,6 +1275,22 @@ void test_sim()
     expect(Button::tick() && Button::low(), "Sim Sense consumes low sample");
     expect(Button::tick() && Button::high() && !Button::tick() && SimTrace::sense_reads == 3U,
            "Sim Sense reports FIFO exhaustion");
+
+    arc::sim::Spi<4, SimTrace> spi{};
+    SimTrace::spi_xfers = 0U;
+    const std::array<std::uint8_t, 2> spi_reply{0xa1U, 0xb2U};
+    const std::array<std::uint8_t, 3> spi_request{0x10U, 0x20U, 0x30U};
+    std::array<std::uint8_t, 3> spi_seen{};
+    expect(spi.feed_rx(spi_reply).has_value() &&
+               spi.xfer(spi_request, spi_seen).has_value() &&
+               spi_seen[0] == 0xa1U && spi_seen[1] == 0xb2U && spi_seen[2] == 0xffU &&
+               SimTrace::spi_mosi == 0x30U && SimTrace::spi_miso == 0xffU &&
+               SimTrace::spi_xfers == 3U,
+           "Sim Spi exchanges fixed host FIFO bytes");
+    std::array<std::uint8_t, 4> spi_tx{};
+    expect(spi.drain_tx(spi_tx) == 3U && spi_tx[0] == 0x10U && spi_tx[2] == 0x30U,
+           "Sim Spi drains captured MOSI bytes");
+    expect(!spi.xfer(spi_request, std::span<std::uint8_t>{spi_seen}.first(2U)), "Sim Spi rejects uneven transfer");
 
     using Log = arc::sim::TraceLog<8>;
     using HarnessLed = arc::sim::Drive<7, Log>;

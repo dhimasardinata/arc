@@ -333,6 +333,73 @@ struct Sense {
     }
 };
 
+template <std::size_t Bytes, typename Trace = QuietTrace>
+struct Spi {
+    static_assert(Bytes > 0U,
+                  "[ARC ERROR] arc::sim::Spi needs storage. Action: set Bytes to the fixed byte budget.");
+
+    Fifo<std::uint8_t, Bytes> rx{};
+    Fifo<std::uint8_t, Bytes> tx{};
+    std::uint8_t idle{0xffU};
+    std::size_t xfers{};
+
+    constexpr void clear() noexcept
+    {
+        rx.clear();
+        tx.clear();
+        xfers = 0U;
+    }
+
+    [[nodiscard]] constexpr Status feed_rx(const std::span<const std::uint8_t> bytes) noexcept
+    {
+        if (!valid(bytes)) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+        if (bytes.size() > Bytes - rx.size()) {
+            return Status{fail(ESP_ERR_NO_MEM)};
+        }
+        static_cast<void>(rx.push(bytes));
+        return ok();
+    }
+
+    [[nodiscard]] constexpr std::size_t drain_tx(const std::span<std::uint8_t> out) noexcept
+    {
+        return tx.pop(out);
+    }
+
+    [[nodiscard]] constexpr Status xfer(
+        const std::span<const std::uint8_t> out,
+        const std::span<std::uint8_t> in) noexcept
+    {
+        if (!valid(out) || !valid(in) || out.size() != in.size()) {
+            return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+        if (out.size() > Bytes - tx.size()) {
+            return Status{fail(ESP_ERR_NO_MEM)};
+        }
+
+        for (std::size_t i = 0U; i < out.size(); ++i) {
+            const auto mosi = out[i];
+            auto miso = idle;
+            static_cast<void>(tx.try_push(mosi));
+            static_cast<void>(rx.try_pop(miso));
+            in[i] = miso;
+            ++xfers;
+            if constexpr (requires { Trace::spi(mosi, miso); }) {
+                Trace::spi(mosi, miso);
+            }
+        }
+        return ok();
+    }
+
+private:
+    template <typename T>
+    [[nodiscard]] static constexpr bool valid(const std::span<T> data) noexcept
+    {
+        return data.empty() || data.data() != nullptr;
+    }
+};
+
 template <typename Trace, typename... Inputs>
 struct Harness {
     static void reset() noexcept

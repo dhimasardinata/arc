@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `QuietTrace`, `StdoutTrace`, `Event`, `TraceLog`, `Fifo`, `Drive`, `Sense`, `Harness`, `EventKind`.
+Source landmarks: `QuietTrace`, `StdoutTrace`, `Event`, `TraceLog`, `Fifo`, `Drive`, `Sense`, `Spi`, `Harness`, `EventKind`.
 
 ## Start From Zero
 
