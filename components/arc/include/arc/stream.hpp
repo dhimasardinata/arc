@@ -340,8 +340,30 @@ struct Mjpeg {
             return fail(ESP_ERR_INVALID_ARG);
         }
 
+        std::array<char, 20> digits{};
+        const auto [ptr, ec] = std::to_chars(digits.data(), digits.data() + digits.size(), jpeg.size());
+        if (ec != std::errc{}) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        const std::string_view digits_view{digits.data(), static_cast<std::size_t>(ptr - digits.data())};
+        constexpr std::string_view prefix{"\r\nContent-Type: image/jpeg\r\nContent-Length: "};
+        constexpr std::string_view header_end{"\r\n\r\n"};
+        constexpr std::string_view trailer{"\r\n"};
+        const auto header_bytes = 2U + boundary.size() + prefix.size() + digits_view.size() + header_end.size();
+        if (header_bytes > out.size() || jpeg.size() > out.size() - header_bytes) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+        const auto trailer_offset = header_bytes + jpeg.size();
+        if (trailer.size() > out.size() - trailer_offset) {
+            return fail(ESP_ERR_NO_MEM);
+        }
+
+        if (!jpeg.empty()) {
+            std::memmove(out.data() + header_bytes, jpeg.data(), jpeg.size());
+        }
+
         auto* cursor = out.data();
-        auto remaining = out.size();
+        auto remaining = header_bytes;
         const auto append = [&](const std::string_view text) noexcept -> bool {
             if (remaining < text.size()) {
                 return false;
@@ -352,32 +374,11 @@ struct Mjpeg {
             return true;
         };
 
-        if (!append("--") || !append(boundary) ||
-            !append("\r\nContent-Type: image/jpeg\r\nContent-Length: ")) {
+        if (!append("--") || !append(boundary) || !append(prefix) || !append(digits_view) || !append(header_end)) {
             return fail(ESP_ERR_NO_MEM);
         }
-
-        std::array<char, 20> digits{};
-        const auto [ptr, ec] = std::to_chars(digits.data(), digits.data() + digits.size(), jpeg.size());
-        if (ec != std::errc{}) {
-            return fail(ESP_ERR_INVALID_ARG);
-        }
-        if (!append(std::string_view{digits.data(), static_cast<std::size_t>(ptr - digits.data())}) ||
-            !append("\r\n\r\n")) {
-            return fail(ESP_ERR_NO_MEM);
-        }
-        if (jpeg.size() > remaining || remaining - jpeg.size() < 2U) {
-            return fail(ESP_ERR_NO_MEM);
-        }
-        if (!jpeg.empty()) {
-            std::memcpy(cursor, jpeg.data(), jpeg.size());
-            cursor += jpeg.size();
-            remaining -= jpeg.size();
-        }
-        if (!append("\r\n")) {
-            return fail(ESP_ERR_NO_MEM);
-        }
-        return out.first(static_cast<std::size_t>(cursor - out.data()));
+        std::memcpy(out.data() + trailer_offset, trailer.data(), trailer.size());
+        return out.first(trailer_offset + trailer.size());
     }
 
     template <ByteStream Io>

@@ -34,6 +34,15 @@ project(arc_bench)
 # -Werror=stringop-truncation on GCC 15+.  Demote the error back to a
 # warning for that third-party target only; the warning is still visible.
 if(ARC_BENCH_HAS_ARDUINO)
+    idf_component_get_property(_arc_arduino_lib arduino-esp32 COMPONENT_LIB)
+    if(TARGET ${_arc_arduino_lib})
+        get_target_property(_arc_arduino_sources ${_arc_arduino_lib} SOURCES)
+        if(_arc_arduino_sources)
+            list(FILTER _arc_arduino_sources EXCLUDE REGEX "(^|[/\\\\])libraries[/\\\\]")
+            set_property(TARGET ${_arc_arduino_lib} PROPERTY SOURCES "${_arc_arduino_sources}")
+        endif()
+    endif()
+
     idf_component_get_property(_arc_modbus_lib espressif__esp-modbus COMPONENT_LIB)
     if(TARGET ${_arc_modbus_lib})
         target_compile_options(${_arc_modbus_lib} PRIVATE -Wno-error=stringop-truncation)

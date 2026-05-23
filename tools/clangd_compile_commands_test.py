@@ -57,6 +57,31 @@ class ClangdCompileCommandsTest(unittest.TestCase):
         self.assertEqual(module.auto_validate_batch_size(None, 202), 8)
         self.assertEqual(module.auto_validate_batch_size(3, 202), 3)
 
+    def test_feature_rich_rank_prefers_project_commands_over_vendor_commands(self) -> None:
+        module = load_module()
+        project_entry = {
+            "directory": str(ROOT),
+            "arguments": ["g++", "-Icomponents/arc/include", "-c", str(ROOT / "main" / "app_main.cpp")],
+            "file": str(ROOT / "main" / "app_main.cpp"),
+        }
+        vendor_entry = {
+            "directory": str(ROOT),
+            "arguments": [
+                "g++",
+                "-Ione",
+                "-Itwo",
+                "-Ithree",
+                "-c",
+                str(ROOT / "examples" / "esp32s3" / "bench" / "managed_components" / "esp-dsp" / "dsp.cpp"),
+            ],
+            "file": str(ROOT / "examples" / "esp32s3" / "bench" / "managed_components" / "esp-dsp" / "dsp.cpp"),
+        }
+
+        project_rank = module.feature_rich_rank((0, project_entry, (ROOT / "components" / "arc" / "include",)))
+        vendor_rank = module.feature_rich_rank((1, vendor_entry, (ROOT / "one", ROOT / "two", ROOT / "three")))
+
+        self.assertLess(project_rank, vendor_rank)
+
     def test_validate_header_groups_batches_clean_headers(self) -> None:
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:

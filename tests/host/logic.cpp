@@ -5055,6 +5055,15 @@ void test_pipeline_usb_ulp()
     const auto mjpeg = arc::net::Mjpeg::part(std::span(part), std::span(payload), "cam");
     expect(mjpeg.has_value() && mjpeg->size() > payload.size(), "MJPEG part");
     expect(part[0] == '-' && part[2] == 'c' && part[mjpeg->size() - 2U] == '\r', "MJPEG boundary layout");
+    std::array<std::uint8_t, 96> in_place_mjpeg{0xaaU, 0x55U};
+    const auto in_place_mjpeg_part =
+        arc::net::Mjpeg::part(std::span(in_place_mjpeg), std::span(in_place_mjpeg).first(2U), "cam");
+    expect(in_place_mjpeg_part.has_value() &&
+               (*in_place_mjpeg_part)[in_place_mjpeg_part->size() - 4U] == 0xaaU &&
+               (*in_place_mjpeg_part)[in_place_mjpeg_part->size() - 3U] == 0x55U &&
+               (*in_place_mjpeg_part)[in_place_mjpeg_part->size() - 2U] == '\r' &&
+               (*in_place_mjpeg_part)[in_place_mjpeg_part->size() - 1U] == '\n',
+           "MJPEG part preserves in-place payload");
     expect(!arc::net::Mjpeg::part(
                std::span<std::uint8_t>{static_cast<std::uint8_t*>(nullptr), part.size()},
                std::span(payload),

@@ -622,14 +622,18 @@ def cxx_candidates(commands: list[dict[str, Any]]) -> list[tuple[int, dict[str, 
     return sorted(candidates, key=rank)
 
 
-def feature_rich_rank(candidate: tuple[int, dict[str, Any], tuple[Path, ...]]) -> tuple[int, int]:
+def feature_rich_rank(candidate: tuple[int, dict[str, Any], tuple[Path, ...]]) -> tuple[int, ...]:
     _, entry, dirs = candidate
     source = entry_source(entry)
     args = entry_args(entry)
     arduino = (source is not None and under(source, ROOT / "arduino-esp32")) or any(
         "arduino-esp32" in arg or "ARDUINO" in arg for arg in args
     )
-    return (1 if arduino else 0, -len(dirs))
+    vendor = (source is not None and (under(source, ROOT / "esp-idf") or under(source, ROOT / "arduino-esp32"))) or any(
+        "managed_components" in arg for arg in args
+    )
+    project_source = source is not None and under(source, ROOT) and not vendor
+    return (1 if arduino else 0, 1 if not project_source else 0, 1 if vendor else 0, -len(dirs))
 
 
 def project_description_paths(databases: list[Path]) -> list[Path]:
