@@ -322,21 +322,26 @@ struct Uri {
         auto used = std::size_t{0U};
         for (const char ch : in) {
             const auto byte = static_cast<std::uint8_t>(ch);
+            const auto bytes = (unreserved(byte) || (space_plus && ch == ' ')) ? 1U : 3U;
+            if (used > out.size() || out.size() - used < bytes) {
+                return fail(ESP_ERR_NO_MEM);
+            }
+            used += bytes;
+        }
+
+        auto pos = used;
+        for (std::size_t i = in.size(); i != 0U; --i) {
+            const auto ch = in[i - 1U];
+            const auto byte = static_cast<std::uint8_t>(ch);
             if (unreserved(byte)) {
-                if (!put(out, used, ch)) {
-                    return fail(ESP_ERR_NO_MEM);
-                }
+                out[--pos] = ch;
             } else if (space_plus && ch == ' ') {
-                if (!put(out, used, '+')) {
-                    return fail(ESP_ERR_NO_MEM);
-                }
+                out[--pos] = '+';
             } else {
-                if (used > out.size() || out.size() - used < 3U) {
-                    return fail(ESP_ERR_NO_MEM);
-                }
-                out[used++] = '%';
-                out[used++] = hex_char(byte >> 4U);
-                out[used++] = hex_char(byte & 0x0fU);
+                pos -= 3U;
+                out[pos] = '%';
+                out[pos + 1U] = hex_char(byte >> 4U);
+                out[pos + 2U] = hex_char(byte & 0x0fU);
             }
         }
         return out.first(used);

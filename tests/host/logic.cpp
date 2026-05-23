@@ -2461,6 +2461,14 @@ void test_uri()
     const auto wire = arc::net::Uri::encode(std::span(encoded), "sample 1/ok?", true);
     expect(wire.has_value(), "URI encode succeeds");
     expect(std::memcmp(wire->data(), "sample+1%2Fok%3F", wire->size()) == 0, "URI percent encode");
+    std::array<char, 16> in_place_encode{'a', '/', 'b', ' ', '?'};
+    const auto in_place_wire = arc::net::Uri::encode(
+        std::span(in_place_encode),
+        std::span<const char>{in_place_encode.data(), 5U},
+        true);
+    expect(in_place_wire.has_value() &&
+               std::memcmp(in_place_wire->data(), "a%2Fb+%3F", in_place_wire->size()) == 0,
+           "URI encode preserves in-place expansion");
 
     std::array<char, 2> small{};
     expect(!arc::net::Uri::decode(std::span(small), "abcd"), "URI decode capacity rejects");
