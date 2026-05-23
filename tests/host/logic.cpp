@@ -2009,6 +2009,25 @@ void test_coap()
     expect(parsed_response->code == static_cast<std::uint8_t>(arc::net::CoapCode::content), "CoAP response code");
     expect(parsed_response->payload.size() == body.size(), "CoAP payload size");
     expect(std::memcmp(parsed_response->payload.data(), body.data(), body.size()) == 0, "CoAP payload");
+    std::array<std::uint8_t, 96> in_place_coap{'t', 'i', 'g', 'h', 't'};
+    const std::array<std::uint8_t, 5> in_place_coap_payload{'t', 'i', 'g', 'h', 't'};
+    const auto in_place_coap_msg = arc::net::Coap::message(
+        std::span(in_place_coap),
+        arc::net::CoapType::nonconfirmable,
+        static_cast<std::uint8_t>(arc::net::CoapCode::post),
+        0x4567U,
+        {},
+        {},
+        std::span(in_place_coap).first(in_place_coap_payload.size()));
+    expect(in_place_coap_msg.has_value(), "CoAP in-place payload encodes");
+    const auto in_place_coap_parsed = arc::net::Coap::parse(*in_place_coap_msg);
+    expect(in_place_coap_parsed.has_value() &&
+               in_place_coap_parsed->payload.size() == in_place_coap_payload.size() &&
+               std::memcmp(
+                   in_place_coap_parsed->payload.data(),
+                   in_place_coap_payload.data(),
+                   in_place_coap_payload.size()) == 0,
+           "CoAP preserves in-place payload");
 
     const auto ping = arc::net::Coap::ping(buffer, 0x40U);
     expect(ping.has_value(), "CoAP ping encodes");

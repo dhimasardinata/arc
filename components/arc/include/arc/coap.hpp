@@ -166,6 +166,9 @@ struct Coap {
         if (out.size() < bytes) {
             return fail(ESP_ERR_NO_MEM);
         }
+        if (!payload.empty()) {
+            std::memmove(out.data() + bytes - payload.size(), payload.data(), payload.size());
+        }
 
         auto pos = std::size_t{0U};
         out[pos++] = static_cast<std::uint8_t>((1U << 6U) |
@@ -193,7 +196,6 @@ struct Coap {
 
         if (!payload.empty()) {
             out[pos++] = 0xffU;
-            std::memcpy(out.data() + pos, payload.data(), payload.size());
             pos += payload.size();
         }
         return out.first(pos);
