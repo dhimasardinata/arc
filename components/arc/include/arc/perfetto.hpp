@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -59,6 +60,55 @@ private:
         } while (value != 0U);
         return true;
     }
+};
+
+template <std::size_t ScratchBytes, typename Sink>
+struct PerfettoStream {
+    static_assert(ScratchBytes >= 32U, "perfetto stream scratch buffer is too small");
+
+    template <std::size_t LaneCapacity>
+    [[nodiscard]] esp_err_t drain(LogLane<LaneCapacity>& lane) noexcept
+    {
+        const auto result = drain_some(lane, LogLane<LaneCapacity>::cap());
+        return result ? ESP_OK : result.error();
+    }
+
+    template <std::size_t LaneCapacity>
+    [[nodiscard]] Result<std::size_t> drain_some(
+        LogLane<LaneCapacity>& lane,
+        const std::size_t max_events) noexcept
+    {
+        if (failed != ESP_OK) {
+            return fail(failed);
+        }
+        if (max_events == 0U) {
+            return 0U;
+        }
+
+        LogEvent item{};
+        auto count = std::size_t{};
+        while (count < max_events && lane.peek(item)) {
+            const auto encoded = PerfettoWriter::event(std::span(scratch), item);
+            if (!encoded) {
+                failed = encoded.error();
+                return fail(failed);
+            }
+            const auto err = sink.write(*encoded);
+            if (err != ESP_OK) {
+                failed = err;
+                return fail(failed);
+            }
+            static_cast<void>(lane.drop());
+            ++count;
+        }
+        return count;
+    }
+
+    Sink sink{};
+
+private:
+    std::array<std::uint8_t, ScratchBytes> scratch{};
+    esp_err_t failed{ESP_OK};
 };
 
 }  // namespace arc

@@ -5224,6 +5224,50 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
         {.tick = 1U});
     expect(perfetto.has_value() && perfetto->size() > 0U && pf[0] == 0x08U && !null_perfetto.has_value(),
            "Perfetto binary event");
+    struct PerfettoSink {
+        std::array<std::uint8_t, 128> bytes{};
+        std::size_t pos{};
+        esp_err_t write(std::span<const std::uint8_t> data) noexcept
+        {
+            if (bytes.size() - pos < data.size()) {
+                return ESP_ERR_NO_MEM;
+            }
+            std::memcpy(bytes.data() + pos, data.data(), data.size());
+            pos += data.size();
+            return ESP_OK;
+        }
+    };
+    arc::LogLane<4> perfetto_lane{};
+    expect(perfetto_lane.push(arc::log_id("perfetto.a"), 1U) &&
+               perfetto_lane.push(arc::log_id("perfetto.b"), 2U),
+           "PerfettoStream queues binary events");
+    arc::PerfettoStream<32, PerfettoSink> perfetto_stream{};
+    const auto perfetto_first = perfetto_stream.drain_some(perfetto_lane, 1U);
+    expect(perfetto_first.has_value() && *perfetto_first == 1U && perfetto_lane.size() == 1U &&
+               perfetto_stream.sink.bytes[0] == 0x08U,
+           "PerfettoStream drains bounded binary chunk");
+    const auto perfetto_first_pos = perfetto_stream.sink.pos;
+    const auto perfetto_zero = perfetto_stream.drain_some(perfetto_lane, 0U);
+    expect(perfetto_zero.has_value() && *perfetto_zero == 0U && perfetto_lane.size() == 1U,
+           "PerfettoStream accepts empty chunk budget");
+    expect(perfetto_stream.drain(perfetto_lane) == ESP_OK && perfetto_lane.size() == 0U &&
+               perfetto_stream.sink.pos > perfetto_first_pos,
+           "PerfettoStream drains remaining binary events");
+    struct FailingPerfettoSink {
+        std::size_t writes{};
+        esp_err_t write(std::span<const std::uint8_t>) noexcept
+        {
+            ++writes;
+            return ESP_ERR_INVALID_STATE;
+        }
+    };
+    arc::LogLane<4> failed_perfetto_lane{};
+    expect(failed_perfetto_lane.push(arc::log_id("perfetto.fail"), 3U), "PerfettoStream queues failure case");
+    arc::PerfettoStream<32, FailingPerfettoSink> failed_perfetto_stream{};
+    expect(failed_perfetto_stream.drain(failed_perfetto_lane) == ESP_ERR_INVALID_STATE &&
+               failed_perfetto_lane.size() == 1U &&
+               failed_perfetto_stream.drain(failed_perfetto_lane) == ESP_ERR_INVALID_STATE,
+           "PerfettoStream preserves queued event after sink failure");
 
     std::array<std::uint8_t, 256> mcap_bytes{};
     arc::mcap::Writer mcap{.out = mcap_bytes};
