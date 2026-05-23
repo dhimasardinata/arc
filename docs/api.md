@@ -273,6 +273,16 @@ Like `App`, `Tight` enforces `Program::stack_bytes` at compile time when the pro
 
 Use this only when the step body is tiny and the jitter budget is tighter than what a normal task iteration should tolerate. `arc::Hard` is a compatibility alias.
 
+### `arc::Lockstep<T>`
+
+Typed commit point for dual-core redundant control output.
+
+- `match(primary, replica)` performs the pure equality check for trivially copyable output types.
+- `commit<Policy>(primary, replica, tick)` returns the agreed output when both cores match.
+- On mismatch, `commit` builds `LockstepFault<T>` and calls optional `Policy::capture(fault)` plus optional `Policy::halt(fault)` or `Policy::halt()` before returning `ESP_ERR_INVALID_STATE`.
+
+Use this at the end of paired Core 0/Core 1 control ticks, after both sides computed from identical inputs. Board policy should decide whether the mismatch becomes an IPC halt, postmortem capture, relay shutdown, or another product-specific safety action.
+
 ### `arc::stack`
 
 Compile-time stack sizing helpers for Arc tasks.

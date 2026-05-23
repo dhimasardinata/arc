@@ -67,6 +67,7 @@
 #include "arc/coap.hpp"
 #include "arc/cloak.hpp"
 #include "arc/lifi.hpp"
+#include "arc/lockstep.hpp"
 #include "arc/log.hpp"
 #include "arc/copy.hpp"
 #include "arc/core.hpp"
@@ -1112,6 +1113,70 @@ void test_core_local()
     arc::CoreLocal<std::uint32_t, arc::Core::core0> mirror{};
     mirror.accept<arc::Core::core0>(msg);
     expect(mirror.get<arc::Core::core0>() == 42U, "CoreLocal accepts addressed message");
+}
+
+struct LockstepOut {
+    std::int16_t left{};
+    std::int16_t right{};
+
+    constexpr bool operator==(const LockstepOut&) const = default;
+};
+
+static_assert(arc::LockstepValue<LockstepOut>);
+static_assert(std::is_same_v<arc::Lockstep<LockstepOut>::Fault, arc::LockstepFault<LockstepOut>>);
+
+struct LockstepPolicy {
+    static inline arc::LockstepFault<LockstepOut> last{};
+    static inline std::size_t captures{};
+    static inline std::size_t halts{};
+
+    static void capture(const arc::LockstepFault<LockstepOut>& fault) noexcept
+    {
+        last = fault;
+        ++captures;
+    }
+
+    [[nodiscard]] static esp_err_t halt(const arc::LockstepFault<LockstepOut>&) noexcept
+    {
+        ++halts;
+        return ESP_OK;
+    }
+};
+
+struct LockstepBareHaltPolicy {
+    static inline std::size_t halts{};
+
+    static void halt() noexcept
+    {
+        ++halts;
+    }
+};
+
+void test_lockstep()
+{
+    using Check = arc::Lockstep<LockstepOut>;
+    constexpr LockstepOut agreed{.left = 10, .right = -10};
+    static_assert(Check::match(agreed, agreed));
+    static_assert(!Check::match(agreed, {.left = 11, .right = -10}));
+
+    LockstepPolicy::last = {};
+    LockstepPolicy::captures = 0U;
+    LockstepPolicy::halts = 0U;
+
+    const auto accepted = Check::commit<LockstepPolicy>(agreed, agreed, 7U);
+    expect(accepted.has_value() && (*accepted).left == 10 && LockstepPolicy::captures == 0U &&
+               LockstepPolicy::halts == 0U,
+           "Lockstep accepts matching output without policy hooks");
+
+    const auto rejected = Check::commit<LockstepPolicy>(agreed, {.left = 11, .right = -10}, 8U);
+    expect(!rejected && rejected.error() == ESP_ERR_INVALID_STATE, "Lockstep rejects mismatched output");
+    expect(LockstepPolicy::captures == 1U && LockstepPolicy::halts == 1U && LockstepPolicy::last.tick == 8U &&
+               LockstepPolicy::last.primary.left == 10 && LockstepPolicy::last.replica.left == 11,
+           "Lockstep reports mismatch to capture and halt hooks");
+
+    LockstepBareHaltPolicy::halts = 0U;
+    const auto bare = Check::commit<LockstepBareHaltPolicy>(agreed, {.left = 10, .right = -11}, 9U);
+    expect(!bare && LockstepBareHaltPolicy::halts == 1U, "Lockstep supports a bare halt policy");
 }
 
 void test_checked_spsc()
@@ -8388,6 +8453,7 @@ int main()
     test_any_io();
     test_spsc();
     test_core_local();
+    test_lockstep();
     test_checked_spsc();
     test_mpsc_single();
     test_compact_mpsc();

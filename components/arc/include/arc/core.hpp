@@ -18,6 +18,7 @@
 #include "arc/flow.hpp"
 #include "arc/fsm.hpp"
 #include "arc/init.hpp"
+#include "arc/lockstep.hpp"
 #include "arc/log.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/pack.hpp"

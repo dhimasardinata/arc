@@ -240,6 +240,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/fsm.hpp` | Compile-time automata and transition-table checks. | [Open](/modules/arc-fsm) |
 | `arc/init.hpp` | Boot-once and shared-reference init state machines. | [Open](/modules/arc-init) |
 | `arc/ipc.hpp` | Emergency and cross-partition IPC policy surface. | [Open](/modules/arc-ipc) |
+| `arc/lockstep.hpp` | Dual-output comparison and policy hooks for lockstep safety checks. | [Open](/modules/arc-lockstep) |
 | `arc/plane.hpp` | Stateful pinned workloads with explicit shared state. | [Open](/modules/arc-plane) |
 | `arc/roles.hpp` | Producer/consumer endpoint exposure without exposing root queue mutation. | [Open](/modules/arc-roles) |
 | `arc/rtos.hpp` | Safe chrono-to-FreeRTOS tick conversion helpers. | [Open](/modules/arc-rtos) |
