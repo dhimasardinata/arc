@@ -104,6 +104,9 @@ that are easy to confuse with firmware build failures:
 
 Fix the named policy first. Do not mask a policy failure by weakening the docs
 or removing an evidence path.
+Use `./tools/safety-case-check.py --format json` when a release or CI artifact
+needs the claim list, evidence paths, required commands, and non-claims without
+parsing the human status line.
 
 ## Benchmark And Hardware Claims
 

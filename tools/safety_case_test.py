@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import unittest
 from pathlib import Path
@@ -29,6 +30,27 @@ class SafetyCaseCheckTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("arc safety-case check: OK", result.stdout)
 
+    def test_json_format_emits_machine_readable_evidence(self) -> None:
+        result = subprocess.run(
+            [str(TOOL), "--format", "json"],
+            cwd=ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertGreaterEqual(payload["summary"]["claims"], 8)
+        self.assertEqual(payload["summary"]["problems"], 0)
+        self.assertIn("./tools/check-repo.sh", payload["required_commands"])
+        self.assertIn("python3 tools/compile-fail-check.py", payload["required_commands"])
+        self.assertIn("certification for aerospace", payload["non_claims"])
+        self.assertTrue(payload["claims"][0]["paths"])
+        self.assertNotIn("arc safety-case check: OK", result.stdout)
+
     def test_claim_rows_require_evidence_paths(self) -> None:
         rows = safety_case_check.claim_rows(
             "\n".join(
@@ -45,6 +67,20 @@ class SafetyCaseCheckTest(unittest.TestCase):
         problems = safety_case_check.check_paths(rows, [])
 
         self.assertIn("claim evidence has no source path: no source reference.", problems)
+
+    def test_python_required_commands_validate_script_path(self) -> None:
+        commands = safety_case_check.required_commands(
+            "\n".join(
+                [
+                    "```bash",
+                    "python3 tools/compile-fail-check.py",
+                    "```",
+                ]
+            )
+        )
+
+        self.assertEqual(commands, ["python3 tools/compile-fail-check.py"])
+        self.assertEqual(safety_case_check.check_paths([], commands), [])
 
     def test_overclaim_patterns_do_not_match_non_claim(self) -> None:
         text = "Arc is not certified to MISRA C++:2023."

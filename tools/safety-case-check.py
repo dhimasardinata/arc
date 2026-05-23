@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -25,6 +27,7 @@ OVERCLAIMS = (
     re.compile(r"\bIEC\s+61508\s+certified\b", re.IGNORECASE),
     re.compile(r"\bDO-178C\s+certified\b", re.IGNORECASE),
 )
+OUTPUT_FORMATS = ("text", "json")
 
 
 def die(message: str) -> int:
@@ -77,9 +80,18 @@ def required_commands(text: str) -> list[str]:
         if not in_block:
             continue
         stripped = line.strip()
-        if stripped.startswith("./"):
-            commands.append(stripped.split(maxsplit=1)[0].removeprefix("./"))
+        if stripped.startswith("./") or stripped.startswith("python3 tools/"):
+            commands.append(stripped)
     return commands
+
+
+def command_path(command: str) -> str:
+    parts = command.split()
+    if not parts:
+        return ""
+    if parts[0] in ("python", "python3") and len(parts) > 1:
+        return parts[1].removeprefix("./")
+    return parts[0].removeprefix("./")
 
 
 def check_paths(rows: list[tuple[str, str]], commands: list[str]) -> list[str]:
@@ -94,7 +106,8 @@ def check_paths(rows: list[tuple[str, str]], commands: list[str]) -> list[str]:
                 missing.append(f"claim evidence path does not exist: {ref}")
 
     for command in commands:
-        if not (ROOT / command).is_file():
+        path = command_path(command)
+        if not path or not (ROOT / path).is_file():
             missing.append(f"required evidence command does not exist: {command}")
     return missing
 
@@ -114,28 +127,84 @@ def check_overclaims() -> list[str]:
     return bad
 
 
-def main() -> int:
-    text = SAFETY_CASE.read_text(encoding="utf-8")
+def evidence_paths(evidence: str) -> list[str]:
+    paths: list[str] = []
+    for span in code_spans(evidence):
+        path = path_from_code_span(span)
+        if path is not None and path not in paths:
+            paths.append(path)
+    return paths
+
+
+def check_safety_case(text: str) -> tuple[list[tuple[str, str]], list[str], list[str]]:
+    rows: list[tuple[str, str]] = []
+    problems: list[str] = []
     if "not a functional-safety certificate" not in text:
-        return die("safety case must say it is not a functional-safety certificate")
+        problems.append("safety case must say it is not a functional-safety certificate")
     if "Arc is not certified" not in text:
-        return die("safety case must explicitly reject certification claims")
+        problems.append("safety case must explicitly reject certification claims")
 
-    rows = claim_rows(text)
+    try:
+        rows = claim_rows(text)
+    except ValueError as exc:
+        problems.append(str(exc))
+
     if len(rows) < 8:
-        return die("safety case has too few claim/evidence rows")
+        problems.append("safety case has too few claim/evidence rows")
 
-    problems = [
-        *check_paths(rows, required_commands(text)),
-        *(f"missing non-claim phrase: {phrase}" for phrase in check_non_claims(text)),
-        *check_overclaims(),
-    ]
+    commands = required_commands(text)
+    problems.extend(check_paths(rows, commands))
+    problems.extend(f"missing non-claim phrase: {phrase}" for phrase in check_non_claims(text))
+    problems.extend(check_overclaims())
+    return rows, commands, problems
+
+
+def report(rows: list[tuple[str, str]], commands: list[str], problems: list[str]) -> dict[str, object]:
+    return {
+        "ok": not problems,
+        "claims": [
+            {
+                "claim": claim,
+                "evidence": evidence,
+                "paths": evidence_paths(evidence),
+            }
+            for claim, evidence in rows
+        ],
+        "required_commands": commands,
+        "non_claims": list(REQUIRED_NON_CLAIMS),
+        "summary": {
+            "claims": len(rows),
+            "required_commands": len(commands),
+            "non_claims": len(REQUIRED_NON_CLAIMS),
+            "problems": len(problems),
+        },
+        "problems": problems,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Check Arc safety-case evidence claims")
+    parser.add_argument(
+        "--format",
+        choices=OUTPUT_FORMATS,
+        default="text",
+        help="output style: text status or JSON evidence summary",
+    )
+    args = parser.parse_args(argv)
+
+    text = SAFETY_CASE.read_text(encoding="utf-8")
+    rows, commands, problems = check_safety_case(text)
+    if args.format == "json":
+        print(json.dumps(report(rows, commands, problems), indent=2, sort_keys=True))
+
     if problems:
-        for problem in problems:
-            print(problem, file=sys.stderr)
+        if args.format == "text":
+            for problem in problems:
+                print(problem, file=sys.stderr)
         return die("safety evidence map is not source-backed")
 
-    print(f"arc safety-case check: OK ({len(rows)} claims)")
+    if args.format == "text":
+        print(f"arc safety-case check: OK ({len(rows)} claims)")
     return 0
 
 
