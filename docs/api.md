@@ -447,6 +447,7 @@ Bounded lock-free lane for one producer and one consumer.
 - `producer()`, `consumer()`, and `split()` return move-only role endpoints, so task setup can pass only the push or pop side instead of exposing the full lane API.
 - `arc::Roles<arc::Spsc<T, Capacity>>` owns the lane privately and exposes only role endpoints, so direct queue mutation is not part of the wrapper's compile-time API.
 - `Roles<...>::with_producer(fn)`, `with_consumer(fn)`, and `with_split(fn)` scope endpoint use to one callback and reject callbacks that return endpoints, references, or raw pointers.
+- `RoleEndpoint`, `PushRole<Endpoint, T>`, and `PopRole<Endpoint, T>` let function templates require endpoint-shaped inputs directly.
 - `push(span)` and `pop(span)` batch contiguous transfers, wrapping at most once, so burst handoff avoids per-element index publication.
 - `size()` and `space()` expose the current ring occupancy and producer room.
 - `drain(scratch, fn, max)` batches consumer work without heap allocation; a bool-return callback stops the batch when it returns `false`.
@@ -513,6 +514,7 @@ Typed request/reply command lane built from static SPSC queues.
 - `client()` and `server()` return move-only role endpoints so setup code can pass only requester or owner-side operations.
 - `arc::Roles<arc::RpcLane<...>>` owns the lane privately and exposes only `client()` and `server()` endpoints when direct root-lane mutation should be rejected at compile time.
 - `Roles<...>::with_client(fn)` and `with_server(fn)` scope RPC endpoint use to one callback and reject callbacks that return endpoints, references, or raw pointers.
+- `RpcClientRole<Endpoint, Op, RequestPayload, Reply>` and `RpcServerRole<Endpoint, Request, Status, ReplyPayload>` make requester and owner endpoint requirements explicit in templates.
 - `poll(reply)` drains replies in FIFO order.
 - `poll_match(serial, reply)` accepts the requested serial and parks one unmatched reply in a static deferred lane.
 - `poll_deferred(reply)` lets the requester recover deferred out-of-order replies.

@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Roles`.
+Source landmarks: `RoleEndpoint`, `PushRole`, `PopRole`, `RpcClientRole`, `RpcServerRole`, `Roles`.
 
 ## Start From Zero
 

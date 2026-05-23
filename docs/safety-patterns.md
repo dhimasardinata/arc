@@ -187,6 +187,12 @@ keeping the root lane API visible.
 #include "arc/spsc.hpp"
 
 arc::Roles<arc::Spsc<std::uint32_t, 4>> events;
+using EventProducer = decltype(events.producer());
+using EventConsumer = decltype(events.consumer());
+
+static_assert(arc::PushRole<EventProducer, std::uint32_t>);
+static_assert(arc::PopRole<EventConsumer, std::uint32_t>);
+static_assert(!arc::PopRole<EventProducer, std::uint32_t>);
 
 void route_event()
 {
@@ -203,7 +209,9 @@ void route_event()
 The `with_producer`, `with_consumer`, `with_split`, `with_client`, and
 `with_server` helpers scope endpoint use to one callback. The callback may
 return `void` or an ordinary copied value; returning an endpoint, reference, or
-raw pointer fails the build.
+raw pointer fails the build. `PushRole`, `PopRole`, `RpcClientRole`, and
+`RpcServerRole` let template boundaries accept only the endpoint side they
+actually use.
 
 ## Static Plane Launch
 

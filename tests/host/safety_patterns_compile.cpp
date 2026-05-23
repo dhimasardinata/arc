@@ -137,6 +137,12 @@ static_assert(ControlProof::bound<arc::proof::Kind::deadline, 17U>() == 10'000U)
 [[maybe_unused]] void role_boundary()
 {
     arc::Roles<arc::Spsc<std::uint32_t, 4>> events{};
+    using EventProducer = decltype(events.producer());
+    using EventConsumer = decltype(events.consumer());
+    static_assert(arc::PushRole<EventProducer, std::uint32_t>);
+    static_assert(arc::PopRole<EventConsumer, std::uint32_t>);
+    static_assert(!arc::PopRole<EventProducer, std::uint32_t>);
+    static_assert(!arc::PushRole<EventConsumer, std::uint32_t>);
     static_cast<void>(events.with_producer([](auto& producer) {
         return producer.try_push(7U);
     }));

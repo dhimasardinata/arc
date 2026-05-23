@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <type_traits>
 #include <utility>
@@ -50,6 +51,34 @@ consteval void require_scoped_role_result()
 }
 
 }  // namespace detail
+
+template <typename Endpoint>
+concept RoleEndpoint = requires(const Endpoint& endpoint) {
+    { static_cast<bool>(endpoint) } -> std::same_as<bool>;
+};
+
+template <typename Endpoint, typename Payload>
+concept PushRole = RoleEndpoint<Endpoint> && requires(Endpoint& endpoint, const Payload& payload) {
+    { endpoint.try_push(payload) } -> std::convertible_to<bool>;
+};
+
+template <typename Endpoint, typename Payload>
+concept PopRole = RoleEndpoint<Endpoint> && requires(Endpoint& endpoint, Payload& payload) {
+    { endpoint.try_pop(payload) } -> std::convertible_to<bool>;
+};
+
+template <typename Endpoint, typename Op, typename RequestPayload, typename Reply>
+concept RpcClientRole = RoleEndpoint<Endpoint> && requires(Endpoint& endpoint, Op op, const RequestPayload& payload, std::uint32_t serial, Reply& reply) {
+    { endpoint.call(op, payload, serial) } -> std::convertible_to<bool>;
+    { endpoint.poll(reply) } -> std::convertible_to<bool>;
+    { endpoint.poll_match(serial, reply) } -> std::convertible_to<bool>;
+};
+
+template <typename Endpoint, typename Request, typename Status, typename ReplyPayload>
+concept RpcServerRole = RoleEndpoint<Endpoint> && requires(Endpoint& endpoint, Request& request, std::uint32_t serial, Status status, const ReplyPayload& payload) {
+    { endpoint.recv(request) } -> std::convertible_to<bool>;
+    { endpoint.reply(serial, status, payload) } -> std::convertible_to<bool>;
+};
 
 template <typename Lane>
 class Roles {
