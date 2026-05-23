@@ -319,7 +319,7 @@ Beginner reading path:
 8. Use `docs/examples.md` to pick a working firmware project near that hardware lane.
 9. Use `docs/api.md` for exact public methods, failure behavior, and ownership notes.
 
-Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target and opt-in libFuzzer harness for HTTP, URI, MQTT, WebSocket, and CoAP parsers. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/arc-audit.go -all` scans every local `loop`/`step` realtime entry call graph, `tools/topology-check.py` scans literal `arc::Pins<...>` packs for duplicate/out-of-range GPIOs, `tools/use-after-move-check.sh` runs `clang-tidy`'s moved-from-use lint when available, `tools/hil-evidence-check.py` validates captured physical HIL JSONL artifacts, and `tools/arc-prove.sh` validates the SPSC, role-exposure, and consensus TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
+Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target and opt-in libFuzzer harness for HTTP, URI, MQTT, WebSocket, and CoAP parsers. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/compile-cost.py` ranks Clang `-ftime-trace` JSON so template-heavy headers can be optimized from evidence, `tools/arc-audit.go -all` scans every local `loop`/`step` realtime entry call graph, `tools/topology-check.py` scans literal `arc::Pins<...>` packs for duplicate/out-of-range GPIOs, `tools/use-after-move-check.sh` runs `clang-tidy`'s moved-from-use lint when available, `tools/hil-evidence-check.py` validates captured physical HIL JSONL artifacts, and `tools/arc-prove.sh` validates the SPSC, role-exposure, and consensus TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
 
 <details>
 <summary>Quick API Map</summary>
@@ -636,7 +636,7 @@ Add `rtc` when you use `arc::RtcGpio` or `arc::RtcPin`; it maps to the public RT
 Add `i2c` for both master (`arc::I2cBus`, `arc::I2c`) and slave (`arc::I2cSlave`) ownership; they share the same ESP-IDF I2C driver component and the same Arc port claim lane.
 Add `spi` for both master (`arc::SpiBus`, `arc::Spi`) and slave (`arc::SpiSlave`) ownership; they share the same ESP-IDF SPI driver component and the same Arc host claim lane.
 
-For the fastest compile times, keep each app honest: include only the Arc headers you use directly, and request only the matching Arc features in CMake.
+For the fastest compile times, keep each app honest: include only the Arc headers you use directly, and request only the matching Arc features in CMake. When a header-heavy change feels slow, compile a representative translation unit with Clang `-ftime-trace` and run `./tools/compile-cost.py build/path/to/file.json --top 20` to rank the template/include events by aggregate milliseconds before refactoring.
 
 ## Programming Model
 
