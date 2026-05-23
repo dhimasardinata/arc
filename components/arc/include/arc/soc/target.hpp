@@ -4,26 +4,41 @@
 
 #include "arc/soc/esp32s3.hpp"
 #include "arc/soc/esp32s31.hpp"
+#include "arc/soc/esp32p4.hpp"
 
 #if defined(CONFIG_IDF_TARGET_ESP32S31) && !defined(ARC_TARGET_ESP32S31)
 #define ARC_TARGET_ESP32S31 1
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32P4) && !defined(ARC_TARGET_ESP32P4)
+#define ARC_TARGET_ESP32P4 1
 #endif
 
 #if defined(CONFIG_IDF_TARGET_ESP32S3) && !defined(ARC_TARGET_ESP32S3)
 #define ARC_TARGET_ESP32S3 1
 #endif
 
-#if defined(ARC_TARGET_ESP32S31) && defined(ARC_TARGET_ESP32S3)
-#error "ARC_TARGET_ESP32S31 and ARC_TARGET_ESP32S3 are mutually exclusive"
+#if (defined(ARC_TARGET_ESP32S31) && defined(ARC_TARGET_ESP32P4)) || \
+    (defined(ARC_TARGET_ESP32S31) && defined(ARC_TARGET_ESP32S3)) || \
+    (defined(ARC_TARGET_ESP32P4) && defined(ARC_TARGET_ESP32S3))
+#error "Arc targets are mutually exclusive"
 #endif
 
 #if defined(ARC_TARGET_ESP32S31)
 #define ARC_TARGET_IS_ESP32S31 1
+#define ARC_TARGET_IS_ESP32P4 0
+#define ARC_TARGET_IS_ESP32S3 0
+#define ARC_TARGET_ARCH_RISCV 1
+#define ARC_TARGET_ARCH_XTENSA 0
+#elif defined(ARC_TARGET_ESP32P4)
+#define ARC_TARGET_IS_ESP32S31 0
+#define ARC_TARGET_IS_ESP32P4 1
 #define ARC_TARGET_IS_ESP32S3 0
 #define ARC_TARGET_ARCH_RISCV 1
 #define ARC_TARGET_ARCH_XTENSA 0
 #else
 #define ARC_TARGET_IS_ESP32S31 0
+#define ARC_TARGET_IS_ESP32P4 0
 #define ARC_TARGET_IS_ESP32S3 1
 #define ARC_TARGET_ARCH_RISCV 0
 #define ARC_TARGET_ARCH_XTENSA 1
@@ -51,6 +66,8 @@ enum class Cap : std::uint8_t {
 
 #if ARC_TARGET_IS_ESP32S31
 using Target = Esp32S31;
+#elif ARC_TARGET_IS_ESP32P4
+using Target = Esp32P4;
 #else
 using Target = Esp32S3;
 #endif
@@ -63,6 +80,7 @@ inline constexpr bool is<Target> = true;
 
 inline constexpr bool s3 = is<Esp32S3>;
 inline constexpr bool s31 = is<Esp32S31>;
+inline constexpr bool p4 = is<Esp32P4>;
 inline constexpr const char* name = Target::name;
 inline constexpr const char* arch = Target::arch;
 

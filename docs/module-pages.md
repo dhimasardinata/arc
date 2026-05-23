@@ -272,7 +272,8 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/concepts.hpp` | Small compile-time contracts for digital IO, buses, waves, and control results. | [Open](/modules/arc-concepts) |
 | `arc/result.hpp` | `arc::Result<T>`, `arc::Status`, `ARC_TRY`, and `ARC_CHECK`. | [Open](/modules/arc-result) |
 | `arc/sdk.hpp` | SDK-facing compatibility helpers. | [Open](/modules/arc-sdk) |
-| `arc/soc.hpp` | Compile-time ESP32-S3 capability map. | [Open](/modules/arc-soc) |
+| `arc/soc.hpp` | Compile-time ESP32 target capability map. | [Open](/modules/arc-soc) |
+| `arc/soc/esp32p4.hpp` | ESP32-P4 target facts. | [Open](/modules/arc-soc-esp32p4) |
 | `arc/soc/esp32s3.hpp` | ESP32-S3 target facts. | [Open](/modules/arc-soc-esp32s3) |
 | `arc/soc/esp32s31.hpp` | Experimental ESP32-S31 target facts. | [Open](/modules/arc-soc-esp32s31) |
 | `arc/soc/target.hpp` | Short target-selection constants. | [Open](/modules/arc-soc-target) |

@@ -19,7 +19,7 @@ Arc is not a convenience wrapper around ESP-IDF. It is a typed substrate for fir
 
 At a glance:
 
-- Target: ESP32-S3, ESP-IDF `v6.0.1`, C++ `gnu++26`.
+- Target: ESP32-S3 by default, explicit ESP32-P4, ESP-IDF `v6.0.1`, C++ `gnu++26`.
 - Runtime shape: Core 0 owns control, networking, storage, logs, and framework work; Core 1 owns deterministic compute and GPIO.
 - Allocation stance: hot paths use static storage, caller-owned spans, capability-tagged buffers, and no framework-owned protocol heap.
 - Error stance: setup can return `esp_err_t` / `arc::Result<T>`; impossible topology and hot-path contract violations fail early.
@@ -814,15 +814,26 @@ The env loader works in this order:
 
 It also exports `IDF_TARGET` from `ARC_TARGET`, defaulting to `esp32s3`. Every project CMake entry routes through `cmake/arc-idf.cmake`, which keeps ESP32-S3 as the stable default and rejects unknown targets instead of silently falling back.
 
-## Experimental ESP32-S31 Support
+## Target Selection
 
-Arc has experimental ESP32-S31 scaffolding without changing the default ESP32-S3 build. The selector is:
+Arc keeps ESP32-S3 as the default while allowing explicit non-default targets. The selector is:
 
 - `ARC_TARGET=esp32s3` by default; this still forces `IDF_TARGET=esp32s3`.
+- `ARC_TARGET=esp32p4` configures ESP32-P4 when the pinned ESP-IDF checkout provides that target.
 - `ARC_TARGET=esp32s31` only configures when `ARC_EXPERIMENTAL_ESP32S31=ON` is also set.
 - Any unknown `ARC_TARGET` fails during configure.
 
-The root firmware and ESP32-S3 examples under `examples/esp32s3/` each declare `arc_target(esp32s3)`, so they fail fast instead of inheriting an incompatible experimental target from the shell. Target-neutral examples live under `examples/portable/`. ESP32-S31 scaffolds live under `examples/esp32s31/`, declare `arc_target(esp32s31)`, and are intentionally skipped by default CI until ESP-IDF exposes a usable `esp32s31` target.
+The root firmware and ESP32-S3 examples under `examples/esp32s3/` each declare `arc_target(esp32s3)`, so they fail fast instead of inheriting an incompatible target from the shell. Target-neutral examples live under `examples/portable/`. ESP32-S31 scaffolds live under `examples/esp32s31/`, declare `arc_target(esp32s31)`, and are intentionally skipped by default CI until ESP-IDF exposes a usable `esp32s31` target.
+
+ESP32-P4 is Arc's high-performance no-radio target profile: dual-core RISC-V, 400 MHz class CPU clock, SIMD, Ethernet MAC/PTP, USB OTG, camera/display, MIPI CSI/DSI, JPEG, GDMA, and 2D-DMA facts are available through `arc::soc::Esp32P4` and `arc::soc::p4`. Radio-backed features still stay off because the chip has no Wi-Fi/BLE.
+
+Example P4 configure flow:
+
+```bash
+export ARC_TARGET=esp32p4
+. ./env.sh
+idf.py build
+```
 
 Example S31 configure flow:
 
@@ -846,7 +857,7 @@ Migration note: ESP32-S3 and ESP32-S31 share Arc's high-level programming model,
 The public target API follows Arc's short naming policy:
 
 ```cpp
-static_assert(arc::soc::s31);
+static_assert(arc::soc::s3 || arc::soc::p4 || arc::soc::s31);
 arc::soc::has<arc::soc::Cap::ptp>;
 arc::CoreMap<>::det;
 ```

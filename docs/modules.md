@@ -49,9 +49,10 @@ These headers describe what silicon and language surface Arc assumes.
 | Header | Use it for |
 | --- | --- |
 | `arc/sdk.hpp` | SDK-facing compatibility helpers. |
-| `arc/soc.hpp` | Compile-time ESP32-S3 capability map. |
+| `arc/soc.hpp` | Compile-time ESP32 target capability map. |
 | `arc/soc/target.hpp` | Short target-selection constants. |
 | `arc/soc/esp32s3.hpp` | ESP32-S3 target facts. |
+| `arc/soc/esp32p4.hpp` | ESP32-P4 target facts. |
 | `arc/soc/esp32s31.hpp` | Experimental ESP32-S31 target facts. |
 | `arc/arch/xtensa.hpp` | Xtensa-specific core and interrupt facts. |
 | `arc/arch/riscv.hpp` | RISC-V architecture facts for experimental/ULP paths. |

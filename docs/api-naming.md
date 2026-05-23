@@ -17,7 +17,7 @@ Rules:
 Good:
 
 ```cpp
-static_assert(arc::soc::s31);
+static_assert(arc::soc::p4 || arc::soc::s31);
 arc::soc::has<arc::soc::Cap::ptp>;
 arc::CoreMap<>::det;
 ```

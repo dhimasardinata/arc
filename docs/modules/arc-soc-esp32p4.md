@@ -1,6 +1,6 @@
-# `arc/soc/target.hpp`
+# `arc/soc/esp32p4.hpp`
 
-Short target-selection constants.
+ESP32-P4 target facts.
 
 ## Fit
 
@@ -10,7 +10,7 @@ Short target-selection constants.
 
 ## Arc Contract
 
-- Header: `arc/soc/target.hpp`
+- Header: `arc/soc/esp32p4.hpp`
 - Module group: Target And Naming Contract
 - CMake feature: `core`
 - Closest example: `.`
@@ -31,12 +31,12 @@ idf_component_register(
 ```
 
 ```cpp
-#include "arc/soc/target.hpp"
+#include "arc/soc/esp32p4.hpp"
 ```
 
 ## Source Landmarks
 
-Source landmarks: `Cap`, `Target`, `p4`, `s31`, `s3`.
+Source landmarks: `Esp32P4`, `Api`, `Arch`.
 
 ## Start From Zero
 

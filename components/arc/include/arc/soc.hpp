@@ -19,12 +19,36 @@ struct Soc {
     static constexpr bool fpu = SOC_CPU_HAS_FPU;
     static constexpr bool simd = SOC_SIMD_INSTRUCTION_SUPPORTED;
 
+#if defined(SOC_WIFI_SUPPORTED)
     static constexpr bool wifi = SOC_WIFI_SUPPORTED;
+#else
+    static constexpr bool wifi = false;
+#endif
+#if defined(SOC_BT_SUPPORTED)
     static constexpr bool bluetooth = SOC_BT_SUPPORTED;
+#else
+    static constexpr bool bluetooth = false;
+#endif
+#if defined(SOC_BLE_SUPPORTED)
     static constexpr bool ble = SOC_BLE_SUPPORTED;
+#else
+    static constexpr bool ble = false;
+#endif
+#if defined(SOC_BLE_50_SUPPORTED)
     static constexpr bool ble5 = SOC_BLE_50_SUPPORTED;
+#else
+    static constexpr bool ble5 = false;
+#endif
+#if defined(SOC_BLE_MESH_SUPPORTED)
     static constexpr bool ble_mesh = SOC_BLE_MESH_SUPPORTED;
+#else
+    static constexpr bool ble_mesh = false;
+#endif
+#if defined(SOC_BLE_DEVICE_PRIVACY_SUPPORTED)
     static constexpr bool ble_privacy = SOC_BLE_DEVICE_PRIVACY_SUPPORTED;
+#else
+    static constexpr bool ble_privacy = false;
+#endif
 
 #if defined(SOC_ETM_SUPPORTED)
     static constexpr bool etm = SOC_ETM_SUPPORTED;
@@ -98,10 +122,22 @@ struct Soc {
     static constexpr bool light_sleep = SOC_LIGHT_SLEEP_SUPPORTED;
     static constexpr bool deep_sleep = SOC_DEEP_SLEEP_SUPPORTED;
     static constexpr bool ulp = SOC_ULP_SUPPORTED;
+#if defined(SOC_ULP_FSM_SUPPORTED)
     static constexpr bool ulp_fsm = SOC_ULP_FSM_SUPPORTED;
+#else
+    static constexpr bool ulp_fsm = false;
+#endif
+#if defined(SOC_RISCV_COPROC_SUPPORTED)
     static constexpr bool ulp_riscv = SOC_RISCV_COPROC_SUPPORTED;
+#else
+    static constexpr bool ulp_riscv = false;
+#endif
     static constexpr bool rtc_fast = SOC_RTC_FAST_MEM_SUPPORTED;
+#if defined(SOC_RTC_SLOW_MEM_SUPPORTED)
     static constexpr bool rtc_slow = SOC_RTC_SLOW_MEM_SUPPORTED;
+#else
+    static constexpr bool rtc_slow = false;
+#endif
     static constexpr bool rtc_gpio = SOC_RTCIO_PIN_COUNT > 0;
     static constexpr bool rtc_io = SOC_RTCIO_INPUT_OUTPUT_SUPPORTED;
     static constexpr bool rtc_hold = SOC_RTCIO_HOLD_SUPPORTED;

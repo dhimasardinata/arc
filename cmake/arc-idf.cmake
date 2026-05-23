@@ -27,8 +27,8 @@ else()
 endif()
 
 string(TOLOWER "${ARC_TARGET}" ARC_TARGET)
-set(ARC_TARGET "${ARC_TARGET}" CACHE STRING "Arc target: esp32s3 or esp32s31" FORCE)
-set_property(CACHE ARC_TARGET PROPERTY STRINGS esp32s3 esp32s31)
+set(ARC_TARGET "${ARC_TARGET}" CACHE STRING "Arc target: esp32s3, esp32p4, or esp32s31" FORCE)
+set_property(CACHE ARC_TARGET PROPERTY STRINGS esp32s3 esp32p4 esp32s31)
 
 set(_arc_req "")
 if(DEFINED IDF_TARGET AND NOT IDF_TARGET STREQUAL "")
@@ -39,13 +39,15 @@ endif()
 
 if(ARC_TARGET STREQUAL "esp32s3")
     set(_arc_idf "esp32s3")
+elseif(ARC_TARGET STREQUAL "esp32p4")
+    set(_arc_idf "esp32p4")
 elseif(ARC_TARGET STREQUAL "esp32s31")
     if(NOT ARC_EXPERIMENTAL_ESP32S31)
         message(FATAL_ERROR "ARC_TARGET=esp32s31 requires -DARC_EXPERIMENTAL_ESP32S31=ON.")
     endif()
     set(_arc_idf "esp32s31")
 else()
-    message(FATAL_ERROR "Unsupported ARC_TARGET='${ARC_TARGET}'. Supported targets: esp32s3, esp32s31.")
+    message(FATAL_ERROR "Unsupported ARC_TARGET='${ARC_TARGET}'. Supported targets: esp32s3, esp32p4, esp32s31.")
 endif()
 
 if(NOT _arc_req STREQUAL "" AND
@@ -59,8 +61,9 @@ set(ENV{IDF_TARGET} "${_arc_idf}")
 function(arc_target target)
     string(TOLOWER "${target}" _arc_need)
     if(NOT _arc_need STREQUAL "esp32s3" AND
+       NOT _arc_need STREQUAL "esp32p4" AND
        NOT _arc_need STREQUAL "esp32s31")
-        message(FATAL_ERROR "arc_target() supports esp32s3 or esp32s31, got '${target}'.")
+        message(FATAL_ERROR "arc_target() supports esp32s3, esp32p4, or esp32s31, got '${target}'.")
     endif()
 
     if(NOT ARC_TARGET STREQUAL _arc_need)

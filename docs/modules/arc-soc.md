@@ -1,6 +1,6 @@
 # `arc/soc.hpp`
 
-Compile-time ESP32-S3 capability map.
+Compile-time ESP32 target capability map.
 
 ## Fit
 

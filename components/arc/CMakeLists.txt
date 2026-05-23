@@ -7,6 +7,8 @@ set(arc_consumer_definitions)
 
 if(ARC_TARGET STREQUAL "esp32s31")
     list(APPEND arc_consumer_definitions ARC_TARGET_ESP32S31=1 ARC_TARGET_NAME="esp32s31")
+elseif(ARC_TARGET STREQUAL "esp32p4")
+    list(APPEND arc_consumer_definitions ARC_TARGET_ESP32P4=1 ARC_TARGET_NAME="esp32p4")
 else()
     list(APPEND arc_component_requires xtensa)
     list(APPEND arc_consumer_definitions ARC_TARGET_ESP32S3=1 ARC_TARGET_NAME="esp32s3")

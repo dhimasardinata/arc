@@ -172,6 +172,13 @@ static_assert(arc::rtos::milliseconds(std::chrono::microseconds{1500}) == 2U);
 static_assert(arc::rtos::milliseconds(std::chrono::milliseconds{-1}) == 0U);
 static_assert(arc::rtos::ticks_ms(2U) == 2U);
 static_assert(arc::rtos::ticks(std::chrono::microseconds{1500}) == 2U);
+static_assert(arc::soc::Esp32P4::cores == 2U);
+static_assert(arc::soc::Esp32P4::mhz == 400U);
+static_assert(!arc::soc::Esp32P4::wifi);
+static_assert(arc::soc::Esp32P4::ethernet_mac);
+static_assert(arc::soc::Esp32P4::dma2d);
+static_assert(arc::soc::has<arc::soc::Cap::ptp, arc::soc::Esp32P4>);
+static_assert(!arc::soc::has<arc::soc::Cap::drive, arc::soc::Esp32P4>);
 static_assert(arc::stack::round_up(std::numeric_limits<std::size_t>::max() - 3U, 8U) ==
               std::numeric_limits<std::size_t>::max());
 static_assert(arc::stack::budget<std::numeric_limits<std::size_t>::max(), 1U, 0U, 0U>() ==
