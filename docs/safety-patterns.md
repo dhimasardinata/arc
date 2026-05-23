@@ -52,8 +52,9 @@ Use the loans at the owner boundary:
 ```cpp
 void control_tick()
 {
-    auto before = ControlCell::snapshot();
-    static_cast<void>(before);
+    const auto before = ControlCell::snapshot();
+    ControlCell::set(ControlState{.tick = before.tick + 1U});
+    arc::set<ControlCell>(ControlState{.tick = before.tick + 2U});
     ControlCell::with_write([](ControlState& state) {
         state.tick += 1U;
     });
@@ -67,7 +68,8 @@ when code prefers the helper at the call site instead of on the owner type. For
 simple reads, `StaticRef::snapshot()` copies out a value without exposing a
 borrowed reference. Scoped callbacks can return `void` or a copied value;
 returning a reference or raw pointer fails the build so the borrow cannot escape
-the callback.
+the callback. `StaticRef::set(value)` and `arc::set<Ref>(value)` cover whole-value
+assignment when a callback would only expose a mutable reference for one store.
 
 ## Shared Task Contract
 
@@ -148,6 +150,7 @@ static_assert(arc::CoreMsgType<CounterMsg>);
 static_assert(CounterMsg::from == arc::Core::core1);
 static_assert(CounterMsg::to == arc::Core::core0);
 counter.set<arc::Core::core1>(42U);
+counter.set(42U);
 auto current = counter.snapshot();
 counter.with([](std::uint32_t& value) {
     value += 1U;

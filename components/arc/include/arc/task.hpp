@@ -216,6 +216,12 @@ public:
         value_ = std::move(value);
     }
 
+    constexpr void set(T value) noexcept(noexcept(std::declval<T&>() = std::move(value)))
+        requires std::assignable_from<T&, T>
+    {
+        set<Owner>(std::move(value));
+    }
+
     template <Core Access, typename Fn>
         requires CoreOwner<Access, Owner> && std::invocable<Fn, T&>
     constexpr decltype(auto) with(Fn&& fn) & noexcept(noexcept(std::invoke(std::forward<Fn>(fn), value_)))

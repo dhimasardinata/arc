@@ -75,6 +75,39 @@ void probe()
 """,
     ),
     Case(
+        name="wrong_core_static_set",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    Cell::set<arc::Core::core0>(State{});
+}
+""",
+    ),
+    Case(
+        name="wrong_core_static_free_set",
+        source="""
+using Cell = arc::StaticRef<&state, arc::Core::core1>;
+
+void probe()
+{
+    arc::set<Cell, arc::Core::core0>(State{});
+}
+""",
+    ),
+    Case(
+        name="const_static_set",
+        source="""
+using ConstCell = arc::StaticRef<&const_state>;
+
+void probe()
+{
+    ConstCell::set(State{});
+}
+""",
+    ),
+    Case(
         name="wrong_core_loan_snapshot",
         source="""
 using Cell = arc::StaticRef<&state, arc::Core::core1>;
@@ -304,6 +337,16 @@ void probe()
 {
     arc::CoreLocal<State, arc::Core::core1> local{};
     (void)local.snapshot<arc::Core::core0>();
+}
+""",
+    ),
+    Case(
+        name="wrong_core_local_set",
+        source="""
+void probe()
+{
+    arc::CoreLocal<State, arc::Core::core1> local{};
+    local.set<arc::Core::core0>(State{});
 }
 """,
     ),

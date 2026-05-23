@@ -1390,11 +1390,11 @@ Arc's component interface enables GCC `-Werror=stack-usage=2048` and `-Werror=fr
 
 Compile-time core ownership tags for state that must not be casually shared across the AMP boundary.
 
-- `CoreLocal<T, Core::core1>` stores the value privately and only exposes owner-gated access such as `snapshot()`, `with(fn)`, `set<Core::core1>(...)`, and `msg<To>()`.
+- `CoreLocal<T, Core::core1>` stores the value privately and only exposes owner-gated access such as `snapshot()`, `set(value)`, `with(fn)`, and `msg<To>()`.
 - `CoreLocalType<T>` and `CoreMsgType<T>` let templates require core-local slots or addressed core messages directly.
 - `CoreLocal::can_access<Core>()` and `with(fn)` keep common owner checks and short scoped mutations readable without repeating the owner core.
 - `CoreLocal::Msg<To>` and `CoreLocal::Incoming<From>` name outbound and inbound `CoreMsg` contracts without repeating the payload and owner core.
-- `with<Core>(fn)`, `msg<Core, To>()`, and `accept<Core>(msg)` remain available when a call site should spell the access core explicitly.
+- `set<Core>(value)`, `with<Core>(fn)`, `msg<Core, To>()`, and `accept<Core>(msg)` remain available when a call site should spell the access core explicitly.
 - `CoreLocal::with<Core>(fn)` and `CoreMsg::with<Core>(fn)` callbacks may return `void` or an ordinary value, but not a reference or raw pointer.
 - `snapshot()` copies the current value through the encoded owner core, avoiding a borrowed reference for simple reads.
 - `msg<To>()` creates a copied message from the owner core to the destination core, and `accept(msg)` applies a message addressed to the local core.
@@ -1414,6 +1414,7 @@ around as a raw pointer or reference.
 - `StaticRef::Read`, `StaticRef::Write`, `can_read<Core>()`, and `can_write<Core>()` keep common compile-contracts short enough for examples and static assertions.
 - `StaticRef::Reads<ReadRefs...>` and `StaticRef::Edit<ReadRefs...>` name owner-anchored loan-pack contracts without repeating the writer owner type.
 - `StaticRef::snapshot()` and `arc::snapshot<Ref>()` copy through the declared owner core, avoiding a borrowed reference for simple reads.
+- `StaticRef::set(value)` and `arc::set<Ref>(value)` replace the whole static value through the declared owner core without exposing a mutable reference.
 - `arc::snapshots<Refs...>()` copies several read-only static refs into a tuple through the inferred owner core.
 - `StaticRef::snapshots<ReadRefs...>()` copies this owner plus other read-only refs through the inferred owner core.
 - `StaticRef::snapshots<Core, ReadRefs...>()` keeps the explicit-core form for read-only copy-out packs.

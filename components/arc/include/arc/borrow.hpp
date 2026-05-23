@@ -383,6 +383,13 @@ struct StaticRef {
         return *Object;
     }
 
+    template <Core Access = Owner>
+        requires CoreAccess<Access, Owner> && writable && std::assignable_from<raw_type&, value_type>
+    static constexpr void set(value_type value) noexcept(noexcept(std::declval<raw_type&>() = std::move(value)))
+    {
+        *Object = std::move(value);
+    }
+
     template <typename FirstReadRef, typename... ReadRefs>
         requires detail::StaticMemberReadAccess<Owner, Read, FirstReadRef, ReadRefs...> &&
         detail::StaticMemberSnapshotValues<StaticRef, FirstReadRef, ReadRefs...>
@@ -500,6 +507,13 @@ template <StaticRefType Ref, Core Access = Ref::owner>
 [[nodiscard]] constexpr typename Ref::value_type snapshot() noexcept(noexcept(Ref::template snapshot<Access>()))
 {
     return Ref::template snapshot<Access>();
+}
+
+template <StaticRefType Ref, Core Access = Ref::owner>
+    requires requires(typename Ref::value_type value) { Ref::template set<Access>(std::move(value)); }
+constexpr void set(typename Ref::value_type value) noexcept(noexcept(Ref::template set<Access>(std::move(value))))
+{
+    Ref::template set<Access>(std::move(value));
 }
 
 template <StaticRefType... Refs>

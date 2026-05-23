@@ -953,6 +953,12 @@ concept HasCoreSnapshot = requires(const T& local) { local.template snapshot<Acc
 template <typename T>
 concept HasCoreSnapshotInferred = requires(const T& local) { local.snapshot(); };
 
+template <typename T, arc::Core Access>
+concept HasCoreSet = requires(T& local, typename T::value_type value) { local.template set<Access>(value); };
+
+template <typename T>
+concept HasCoreSetInferred = requires(T& local, typename T::value_type value) { local.set(value); };
+
 template <typename T, arc::Core Access, arc::Core To>
 concept HasCoreMsg = requires(const T& local) { local.template msg<Access, To>(); };
 
@@ -989,6 +995,18 @@ concept HasStaticSnapshot = requires { T::template snapshot<Access>(); };
 
 template <typename T>
 concept HasStaticSnapshotInferred = requires { T::snapshot(); };
+
+template <typename T, arc::Core Access>
+concept HasStaticSet = requires(typename T::value_type value) { T::template set<Access>(value); };
+
+template <typename T>
+concept HasStaticSetInferred = requires(typename T::value_type value) { T::set(value); };
+
+template <typename T, arc::Core Access>
+concept HasStaticFreeSet = requires(typename T::value_type value) { arc::set<T, Access>(value); };
+
+template <typename T>
+concept HasStaticFreeSetInferred = requires(typename T::value_type value) { arc::set<T>(value); };
 
 template <typename Ref, typename ReadRef>
 concept HasStaticMemberSnapshots = requires { Ref::template snapshots<ReadRef>(); };
@@ -1235,6 +1253,9 @@ void test_core_local()
     static_assert(HasCoreSnapshot<Core1Counter, arc::Core::core1>);
     static_assert(!HasCoreSnapshot<Core1Counter, arc::Core::core0>);
     static_assert(HasCoreSnapshotInferred<Core1Counter>);
+    static_assert(HasCoreSet<Core1Counter, arc::Core::core1>);
+    static_assert(!HasCoreSet<Core1Counter, arc::Core::core0>);
+    static_assert(HasCoreSetInferred<Core1Counter>);
     static_assert(HasCoreMsg<Core1Counter, arc::Core::core1, arc::Core::core0>);
     static_assert(!HasCoreMsg<Core1Counter, arc::Core::core0, arc::Core::core0>);
     static_assert(HasCoreMsgTo<Core1Counter, arc::Core::core0>);
@@ -1243,6 +1264,8 @@ void test_core_local()
     expect(counter.get<arc::Core::core1>() == 41U, "CoreLocal owner reads local state");
     counter.set<arc::Core::core1>(42U);
     expect(counter.get<arc::Core::core1>() == 42U, "CoreLocal owner writes local state");
+    counter.set(42U);
+    expect(counter.get<arc::Core::core1>() == 42U, "CoreLocal inferred set writes local state");
     expect(counter.snapshot<arc::Core::core1>() == 42U, "CoreLocal owner snapshots local state");
     const auto scoped = counter.with<arc::Core::core1>([](std::uint32_t& value) {
         value += 1U;
@@ -1346,7 +1369,15 @@ void test_static_borrow()
     static_assert(HasStaticSnapshot<Cell, arc::Core::core1>);
     static_assert(!HasStaticSnapshot<Cell, arc::Core::core0>);
     static_assert(HasStaticSnapshotInferred<Cell>);
+    static_assert(HasStaticSet<Cell, arc::Core::core1>);
+    static_assert(!HasStaticSet<Cell, arc::Core::core0>);
+    static_assert(HasStaticSetInferred<Cell>);
+    static_assert(HasStaticFreeSet<Cell, arc::Core::core1>);
+    static_assert(!HasStaticFreeSet<Cell, arc::Core::core0>);
+    static_assert(HasStaticFreeSetInferred<Cell>);
     static_assert(!ConstCell::writable);
+    static_assert(!HasStaticSetInferred<ConstCell>);
+    static_assert(!HasStaticFreeSetInferred<ConstCell>);
     static_assert(Read::mode == arc::BorrowMode::read);
     static_assert(Write::mode == arc::BorrowMode::mut);
     static_assert(arc::StaticLoanType<Read>);
@@ -1438,6 +1469,15 @@ void test_static_borrow()
         write.get<arc::Core::core1>().value = 12U;
     }
     expect(borrow_fixture.value == 12U, "StaticRef mutable loan writes static storage");
+
+    Cell::set<arc::Core::core1>(BorrowFixture{13U});
+    expect(borrow_fixture.value == 13U, "StaticRef explicit set replaces static storage");
+    Cell::set(BorrowFixture{14U});
+    expect(borrow_fixture.value == 14U, "StaticRef inferred set replaces static storage");
+    arc::set<Cell, arc::Core::core1>(BorrowFixture{14U});
+    expect(borrow_fixture.value == 14U, "StaticRef explicit free set replaces static storage");
+    arc::set<Cell>(BorrowFixture{14U});
+    expect(borrow_fixture.value == 14U, "StaticRef inferred free set replaces static storage");
 
     Cell::with_write([](BorrowFixture& state) {
         state.value = 14U;
