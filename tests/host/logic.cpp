@@ -9138,11 +9138,17 @@ void test_hive_goal_surfaces()
         std::span<const int, 4>{coeffs},
         std::span<const int, 4>{static_cast<const int*>(nullptr), samples.size()});
     constexpr auto dense_spec = arc::hls::DenseSpec<4, 2>::hls_spec();
+    constexpr auto silicon_plan = arc::hls::silicon_plan<
+        arc::hls::DenseSpec<4, 2>,
+        arc::hls::DenseSpec<2, 1>>(arc::hls::SiliconTarget::efpga);
     expect(fir.has_value() && *fir == 20 && dot.has_value() && *dot == 20 &&
                !null_fir.has_value() && !null_dot.has_value() &&
                dense_spec.static_bounds && dense_spec.heapless &&
-               dense_spec.latency_cycles == 8U,
-           "HLS helpers expose fixed-bound heapless kernel metadata");
+               dense_spec.latency_cycles == 8U &&
+               silicon_plan.target == arc::hls::SiliconTarget::efpga &&
+               silicon_plan.kernels == 2U && silicon_plan.latency_cycles == 10U &&
+               silicon_plan.synthesizable,
+           "HLS helpers expose fixed-bound heapless kernel metadata and silicon plans");
 }
 
 void test_refinit()

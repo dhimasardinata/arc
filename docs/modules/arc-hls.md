@@ -1,6 +1,6 @@
 # `arc/hls.hpp`
 
-HLS-shaped fixed-loop kernel helpers.
+HLS-shaped fixed-loop kernels and silicon-plan metadata.
 
 ## Fit
 
@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `KernelSpec`, `StaticLoop`, `DenseSpec`, `Interface`.
+Source landmarks: `KernelSpec`, `SiliconTarget`, `SiliconPlan`, `StaticLoop`, `DenseSpec`, `Interface`.
 
 ## Start From Zero
 

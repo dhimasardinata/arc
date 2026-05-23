@@ -1227,6 +1227,21 @@ Hot-loop math helpers for the compute plane.
 
 Use this when Core 1 is doing signal work and you want aligned buffers plus tight, vector-friendly loops without a heavyweight DSP framework.
 
+### `arc::hls`
+
+Fixed-bound kernel metadata for code that should stay friendly to HLS or RTL
+planning flows.
+
+- `KernelSpec` records input/output counts, latency cycles, interface shape, static-bound status, and heapless status.
+- `StaticKernel<T>` accepts types that expose `T::hls_spec() -> KernelSpec`.
+- `silicon_plan<Kernels...>(target)` produces a constexpr `SiliconPlan` with kernel count, total latency, target, and whether every kernel is static-bound and heapless.
+- `StaticLoop<N>::run(fn)` keeps loop trip counts visible to the type system.
+- `fir<T, N>(coeffs, samples)` and `dot<T, N>(lhs, rhs)` are fixed-extent examples that reject null spans.
+
+Use this to attach synthesis-oriented metadata to fixed-shape DSP, ML, or
+control kernels before a board-specific toolchain decides whether to keep them
+on CPU, hand them to HLS, or map them into hardware fabric.
+
 ### `arc::hil::DigitalTwin<T, States, Inputs, Outputs>`
 
 Fixed plant stepping for HIL and predictive simulation.

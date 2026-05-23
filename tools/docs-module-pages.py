@@ -179,6 +179,7 @@ SPECIAL_LANDMARKS = {
         "MigrationFrame",
         "Migrator",
     ],
+    "arc/hls.hpp": ["KernelSpec", "SiliconTarget", "SiliconPlan", "StaticLoop", "DenseSpec", "Interface"],
     "arc/proof.hpp": ["Kind", "Claim", "Fact", "ProofFact", "Pack"],
 }
 

@@ -73,7 +73,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/ecs.hpp` | Structure-of-arrays style entity/control data helpers. | [Open](/modules/arc-ecs) |
 | `arc/foc.hpp` | BLDC field-oriented control and motor-control helpers. | [Open](/modules/arc-foc) |
 | `arc/hil.hpp` | HIL-facing helper types and evidence surfaces. | [Open](/modules/arc-hil) |
-| `arc/hls.hpp` | HLS-shaped fixed-loop kernel helpers. | [Open](/modules/arc-hls) |
+| `arc/hls.hpp` | HLS-shaped fixed-loop kernels and silicon-plan metadata. | [Open](/modules/arc-hls) |
 | `arc/hyper_matrix.hpp` | Fixed probability tensor fusion for swarm observations. | [Open](/modules/arc-hyper_matrix) |
 | `arc/isp.hpp` | Caller-buffer camera ISP kernels. | [Open](/modules/arc-isp) |
 | `arc/kalman.hpp` | Deterministic Kalman correction helpers. | [Open](/modules/arc-kalman) |

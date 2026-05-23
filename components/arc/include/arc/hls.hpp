@@ -35,10 +35,53 @@ struct KernelSpec {
     bool heapless{true};
 };
 
+enum class SiliconTarget : std::uint8_t {
+    hls,
+    efpga,
+    rtl,
+};
+
+struct SiliconPlan {
+    SiliconTarget target{SiliconTarget::hls};
+    std::uint32_t kernels{};
+    std::uint32_t latency_cycles{};
+    bool static_bounds{};
+    bool heapless{};
+    bool synthesizable{};
+};
+
 template <typename T>
 concept StaticKernel = requires {
     { T::hls_spec() } -> std::same_as<KernelSpec>;
 };
+
+template <StaticKernel... Kernels>
+[[nodiscard]] consteval std::uint64_t latency() noexcept
+{
+    return (std::uint64_t{} + ... + static_cast<std::uint64_t>(Kernels::hls_spec().latency_cycles));
+}
+
+template <StaticKernel... Kernels>
+[[nodiscard]] consteval SiliconPlan silicon_plan(
+    const SiliconTarget target = SiliconTarget::hls) noexcept
+{
+    static_assert(sizeof...(Kernels) > 0U,
+                  "[ARC ERROR] arc::hls::silicon_plan needs at least one kernel. Action: pass fixed-shape kernel specs.");
+    static_assert(sizeof...(Kernels) <= std::numeric_limits<std::uint32_t>::max(),
+                  "HLS kernel count metadata is stored in uint32_t");
+    static_assert(latency<Kernels...>() <= std::numeric_limits<std::uint32_t>::max(),
+                  "HLS latency metadata is stored in uint32_t");
+    constexpr auto bounds = (true && ... && Kernels::hls_spec().static_bounds);
+    constexpr auto no_heap = (true && ... && Kernels::hls_spec().heapless);
+    return {
+        .target = target,
+        .kernels = static_cast<std::uint32_t>(sizeof...(Kernels)),
+        .latency_cycles = static_cast<std::uint32_t>(latency<Kernels...>()),
+        .static_bounds = bounds,
+        .heapless = no_heap,
+        .synthesizable = bounds && no_heap,
+    };
+}
 
 template <std::size_t Iterations>
 struct StaticLoop {
