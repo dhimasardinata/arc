@@ -48,6 +48,8 @@ class StaticLoan {
                   "[ARC ERROR] arc::StaticLoan needs static storage. Action: construct it through arc::StaticRef.");
 
     using raw_type = std::remove_reference_t<decltype(*Object)>;
+    static_assert(Mode == BorrowMode::read || !std::is_const_v<raw_type>,
+                  "[ARC ERROR] arc::StaticLoan mutable mode cannot wrap const storage. Action: use StaticRef::Read.");
 
 public:
     using value_type = std::remove_cv_t<raw_type>;

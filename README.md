@@ -1416,7 +1416,7 @@ around as a raw pointer or reference.
 - `loans_ok<Loans...>()` lets compile-contract tests check the same alias rule without intentionally failing the build.
 - Access from the wrong core owner is absent from the overload set.
 - Pointer shorthand through `operator->` and `operator*` is only available for `Core::any`; owner-bound loans must name the accessing core through `get<Core>()` or the scoped helpers.
-- `write<...>()` is absent for const storage, so readonly global state cannot be accidentally made mutable.
+- `write<...>()` is absent for const storage, and instantiating a mutable loan over const storage fails with an Arc diagnostic.
 
 Use this when a task, simulator harness, or policy object should receive state
 with its static storage and core owner visible in the C++ type. It is an Arc
