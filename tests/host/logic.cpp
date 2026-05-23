@@ -224,12 +224,28 @@ static_assert(sizeof(decltype(arc::claim_token<1, 2, 3>())) == sizeof(std::uint6
 static_assert(arc::claim_token<1, 2, 3>() != arc::claim_token<1, 2, 4>());
 static_assert(arc::claim_proof<1, 2, 3>() != arc::claim_proof<1, 2, 4>());
 using BoardPins = arc::Pins<2, 4, -1, 18>;
+struct HostTopology {
+    using pins = BoardPins;
+};
 static_assert(BoardPins::count == 4U);
 static_assert(BoardPins::has<4>());
 static_assert(!BoardPins::has<5>());
 static_assert(!BoardPins::has<-1>());
 static_assert(BoardPins::index<18>() == 3U);
 static_assert(BoardPins::index<5>() == BoardPins::npos);
+static_assert(arc::Topology<HostTopology>);
+using HostTopologyGraph = arc::TopologyGraph<
+    HostTopology,
+    arc::PinRoute<2, 4, 10U>,
+    arc::PinRoute<4, 18, 20U>>;
+static_assert(HostTopologyGraph::pin_count == 4U);
+static_assert(HostTopologyGraph::edge_count == 2U);
+static_assert(HostTopologyGraph::valid());
+static_assert(HostTopologyGraph::edges[0].from == 0U);
+static_assert(HostTopologyGraph::edges[0].to == 1U);
+static_assert(HostTopologyGraph::edges[0].signal == 10U);
+static_assert(decltype(arc::topology_manifest<HostTopology>())::pins[3] == 18);
+static_assert(decltype(arc::topology_graph<HostTopology, arc::PinRoute<2, 18>>())::edges[0].to == 3U);
 static_assert(arc::Result<int>{2}.and_then([](int value) { return arc::Result<int>{value + 1}; }).value() == 3);
 static_assert(arc::status_code(arc::ok()) == ESP_OK);
 
