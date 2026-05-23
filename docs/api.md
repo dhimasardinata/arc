@@ -1142,6 +1142,18 @@ Compile-time hardware graph planner for descriptor-to-descriptor peripheral chai
 
 Use this when board policy wants a camera-to-transform-to-sink path expressed once while keeping the actual register trigger setup outside Arc. `AxiGraph` proves topology and descriptor continuity; runtime throughput still needs hardware capture on the target board.
 
+### `arc::Scrub<Regions>`
+
+Bounded background memory scrubber for fixed IRAM, DRAM, PSRAM, or code/data windows.
+
+- `watch(index, bytes, tag)` records a span pointer, byte length, tag, and CRC-32 seal.
+- `scan<Policy>()` checks one registered region from the rotating cursor and returns a `ScrubSample`.
+- `step<Policy>(budget)` runs a bounded number of scans for a low-priority static task.
+- On mismatch, `scan` stores `last`, calls optional `Policy::capture(fault)` plus optional `Policy::halt(fault)` or `Policy::halt()`, and returns `ESP_ERR_INVALID_STATE`.
+- `refresh(index)` intentionally reseals a region after legitimate writes.
+
+Use this for safety cases that need silent-memory-corruption detection without heap state. Register only stable regions, run `step()` from non-realtime background work, and treat a mismatch as product policy rather than automatically mutating the seal.
+
 ### Placement aliases
 
 Arc also exposes short placement aliases in `arc/place.hpp`:

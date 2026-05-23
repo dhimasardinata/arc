@@ -12,6 +12,7 @@
 #include "arc/place.hpp"
 #include "arc/pmr.hpp"
 #include "arc/prefetch.hpp"
+#include "arc/scrub.hpp"
 
 #if __has_include("esp_async_memcpy.h")
 #include "arc/copy.hpp"

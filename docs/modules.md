@@ -34,7 +34,7 @@ These headers are the main entry points for readers and subset builds.
 | Header | Use it for |
 | --- | --- |
 | `arc/core.hpp` | Core task shape, topology, init, GPIO, timing, queues, text, and basic storage-neutral substrate pieces. |
-| `arc/memory.hpp` | Capability buffers, cache ownership, DMA copy, descriptor chains, AXI graphs, pipelines, and placement helpers. |
+| `arc/memory.hpp` | Capability buffers, cache ownership, DMA copy, descriptor chains, AXI graphs, pipelines, scrubbing, and placement helpers. |
 | `arc/net_codecs.hpp` | URI, streams, fixed records, CRDTs, BFT votes, MQTT, WebSocket, CoAP, and small HTTP server helpers without owning Wi-Fi. |
 | `arc/math.hpp` | DSP, SIMD, fixed matrices, Kalman, motion, ML, and control math surfaces. |
 | `arc/crypto.hpp` | AES, SHA, HMAC, signatures, MPI, XTS, Kyber, Paillier, PUF, secure boot, and related security helpers. |
@@ -107,6 +107,7 @@ Reach for these whenever a pointer crosses a hardware or core boundary.
 | `arc/distributed_mmu.hpp` | Remote span fault planning and deterministic cache-line fetch policy. |
 | `arc/place.hpp` | Section-placement aliases such as `ARC_HOT`, `ARC_DMA`, and `ARC_RTC`. |
 | `arc/prefetch.hpp` | Explicit read/write prefetch hints for long memory walks. |
+| `arc/scrub.hpp` | CRC sealing and background scan state for fixed memory regions. |
 | `arc/pmr.hpp` | Capability-aware polymorphic memory-resource hooks. |
 
 ## Lock-Free Lanes

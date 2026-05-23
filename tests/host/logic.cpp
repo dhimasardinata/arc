@@ -115,6 +115,7 @@
 #include "arc/stream.hpp"
 #include "arc/secure_update.hpp"
 #include "arc/sdr.hpp"
+#include "arc/scrub.hpp"
 #include "arc/simd.hpp"
 #include "arc/sdio_slave.hpp"
 #include "arc/snn.hpp"
@@ -8183,6 +8184,60 @@ void test_current_goal_surfaces()
            "SecureBoot exposes state revoke and digest hooks");
 }
 
+struct ScrubPolicy {
+    static inline arc::ScrubFault last{};
+    static inline std::size_t captures{};
+    static inline std::size_t halts{};
+
+    static void capture(const arc::ScrubFault& fault) noexcept
+    {
+        last = fault;
+        ++captures;
+    }
+
+    static void halt() noexcept
+    {
+        ++halts;
+    }
+};
+
+void test_memory_scrub()
+{
+    std::array<std::byte, 4> iram{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+    std::array<std::byte, 4> dram{std::byte{5}, std::byte{6}, std::byte{7}, std::byte{8}};
+    arc::Scrub<3> scrub{};
+
+    expect(!scrub.watch(0U, {}, 1U), "Scrub rejects empty region");
+    expect(!scrub.watch(3U, std::as_bytes(std::span{iram}), 1U), "Scrub rejects out-of-range region");
+    expect(scrub.watch(0U, std::as_bytes(std::span{iram}), 0x10U).has_value(), "Scrub seals IRAM span");
+    expect(scrub.watch(1U, std::as_bytes(std::span{dram}), 0x20U).has_value(), "Scrub seals DRAM span");
+
+    const auto expected_iram = arc::Scrub<3>::crc32(std::as_bytes(std::span{iram}));
+    const auto first = scrub.scan();
+    expect(first.has_value() && first->index == 0U && first->tag == 0x10U && first->crc == expected_iram,
+           "Scrub scans sealed region");
+    const auto scanned = scrub.step(2U);
+    expect(scanned.has_value() && *scanned == 2U, "Scrub step obeys bounded budget");
+    const auto zero_budget = scrub.step(0U);
+    expect(!zero_budget && zero_budget.error() == ESP_ERR_INVALID_ARG, "Scrub rejects zero budget");
+
+    dram[2] = std::byte{0xAA};
+    ScrubPolicy::last = {};
+    ScrubPolicy::captures = 0U;
+    ScrubPolicy::halts = 0U;
+    const auto fault = scrub.scan<ScrubPolicy>();
+    expect(!fault && fault.error() == ESP_ERR_INVALID_STATE, "Scrub rejects changed memory");
+    expect(ScrubPolicy::captures == 1U && ScrubPolicy::halts == 1U && ScrubPolicy::last.index == 1U &&
+               ScrubPolicy::last.tag == 0x20U && ScrubPolicy::last.expected != ScrubPolicy::last.actual,
+           "Scrub reports mismatch to capture and halt hooks");
+
+    expect(scrub.refresh(1U).has_value(), "Scrub refresh reseals legitimate writes");
+    scrub.cursor = 1U;
+    const auto recovered = scrub.scan();
+    expect(recovered.has_value() && recovered->index == 1U && recovered->crc == scrub.regions[1].seal,
+           "Scrub scans refreshed region");
+}
+
 void test_hive_goal_surfaces()
 {
     using Matrix = arc::swarm::HyperMatrix<2, 1, 1, 1, 1, 1>;
@@ -8503,6 +8558,7 @@ int main()
     test_goal_wave_surfaces();
     test_resilient_edge_goal_surfaces();
     test_current_goal_surfaces();
+    test_memory_scrub();
     test_hive_goal_surfaces();
     test_task_arena();
     test_refinit();
