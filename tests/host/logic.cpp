@@ -201,6 +201,8 @@ static_assert(arc::soc::Esp32P4::dma2d);
 static_assert(arc::soc::Esp32P4::ppa);
 static_assert(arc::soc::Esp32P4::jpeg);
 static_assert(arc::soc::Esp32P4::h264);
+static_assert(arc::soc::has<arc::soc::Cap::mask, arc::soc::Esp32S31>);
+static_assert(arc::soc::has<arc::soc::Cap::mask, arc::soc::Esp32P4>);
 static_assert(arc::soc::has<arc::soc::Cap::ptp, arc::soc::Esp32P4>);
 static_assert(arc::soc::has<arc::soc::Cap::ethernet, arc::soc::Esp32P4>);
 static_assert(arc::soc::has<arc::soc::Cap::dma2d, arc::soc::Esp32P4>);

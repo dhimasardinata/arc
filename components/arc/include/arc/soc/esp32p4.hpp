@@ -40,7 +40,7 @@ struct Esp32P4 {
     static constexpr bool mipi_dsi = true;
     static constexpr bool jpeg = true;
     static constexpr bool h264 = true;
-    static constexpr bool mask = false;
+    static constexpr bool mask = true;
     static constexpr bool trax = false;
 
     struct Api {
