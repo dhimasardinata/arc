@@ -4532,6 +4532,45 @@ void test_simd_ml_pipeline()
                !arc::ml::TfLiteFlatbuffer::parse(
                    std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), tflite_model.size()}),
            "ML validates TFLite flatbuffer boundary metadata");
+    arc::ml::GraphPlan<3, 3> graph_plan{
+        .nodes = {
+            arc::ml::GraphNode{
+                .op = arc::ml::GraphOp::input,
+                .output = 1U,
+            },
+            arc::ml::GraphNode{
+                .op = arc::ml::GraphOp::dense_s8,
+                .input = 1U,
+                .output = 2U,
+                .scratch_bytes = 16U,
+            },
+            arc::ml::GraphNode{
+                .op = arc::ml::GraphOp::relu,
+                .input = 2U,
+                .output = 3U,
+            },
+        },
+        .tensors = {
+            arc::ml::GraphTensor{.id = 1U, .bytes = 4U, .rank = 1U, .shape = {4U}},
+            arc::ml::GraphTensor{.id = 2U, .bytes = 1U, .rank = 1U, .shape = {1U}},
+            arc::ml::GraphTensor{.id = 3U, .bytes = 1U, .rank = 1U, .shape = {1U}},
+        },
+        .node_count = 3U,
+        .tensor_count = 3U,
+    };
+    const auto graph_stats = graph_plan.validate();
+    expect(graph_stats.has_value() &&
+               graph_stats->nodes == 3U &&
+               graph_stats->tensors == 3U &&
+               graph_stats->tensor_bytes == 6U &&
+               graph_stats->scratch_bytes == 16U,
+           "ML graph plan validates heapless schedule");
+    auto duplicate_graph = graph_plan;
+    duplicate_graph.tensors[1].id = duplicate_graph.tensors[0].id;
+    expect(!duplicate_graph.validate(), "ML graph plan rejects duplicate tensor ids");
+    auto unordered_graph = graph_plan;
+    unordered_graph.nodes[1].input = 3U;
+    expect(!unordered_graph.validate(), "ML graph plan rejects unproduced inputs");
     expect(conv.eval(std::span<const std::int8_t, 9>{conv_in}, std::span(conv_out)).has_value(), "Conv2D S8 eval");
     expect(conv_out[0] == 12 && conv_out[1] == 16 && conv_out[2] == 24 && conv_out[3] == 28, "Conv2D S8 output");
     expect(!conv.eval(

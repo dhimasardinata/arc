@@ -98,6 +98,120 @@ private:
     }
 };
 
+enum class GraphOp : std::uint8_t {
+    input,
+    dense,
+    dense_s8,
+    conv2d_s8,
+    depthwise_s8,
+    max_pool,
+    relu,
+    custom,
+};
+
+struct GraphTensor {
+    static constexpr std::uint8_t max_rank = 4U;
+
+    std::uint16_t id{};
+    std::uint32_t bytes{};
+    std::uint8_t rank{};
+    std::array<std::uint16_t, max_rank> shape{};
+};
+
+struct GraphNode {
+    static constexpr std::uint16_t none = std::numeric_limits<std::uint16_t>::max();
+
+    GraphOp op{};
+    std::uint16_t input{none};
+    std::uint16_t aux{none};
+    std::uint16_t output{none};
+    std::uint32_t scratch_bytes{};
+};
+
+struct GraphStats {
+    std::size_t nodes{};
+    std::size_t tensors{};
+    std::uint32_t tensor_bytes{};
+    std::uint32_t scratch_bytes{};
+};
+
+template <std::size_t MaxNodes, std::size_t MaxTensors>
+struct GraphPlan {
+    static_assert(MaxNodes > 0U, "[ARC ERROR] arc::ml::GraphPlan needs at least one node.");
+    static_assert(MaxTensors > 0U, "[ARC ERROR] arc::ml::GraphPlan needs at least one tensor.");
+
+    std::array<GraphNode, MaxNodes> nodes{};
+    std::array<GraphTensor, MaxTensors> tensors{};
+    std::size_t node_count{};
+    std::size_t tensor_count{};
+
+    [[nodiscard]] Result<GraphStats> validate() const noexcept
+    {
+        if (node_count == 0U || node_count > MaxNodes || tensor_count == 0U || tensor_count > MaxTensors) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        GraphStats stats{.nodes = node_count, .tensors = tensor_count};
+        std::array<bool, MaxTensors> produced{};
+        for (std::size_t i = 0U; i < tensor_count; ++i) {
+            const auto& tensor = tensors[i];
+            if (tensor.bytes == 0U || tensor.rank == 0U || tensor.rank > GraphTensor::max_rank) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            for (std::uint8_t dim = 0U; dim < tensor.rank; ++dim) {
+                if (tensor.shape[dim] == 0U) {
+                    return fail(ESP_ERR_INVALID_ARG);
+                }
+            }
+            for (std::size_t other = i + 1U; other < tensor_count; ++other) {
+                if (tensor.id == tensors[other].id) {
+                    return fail(ESP_ERR_INVALID_ARG);
+                }
+            }
+            if (stats.tensor_bytes > std::numeric_limits<std::uint32_t>::max() - tensor.bytes) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            stats.tensor_bytes += tensor.bytes;
+        }
+
+        for (std::size_t i = 0U; i < node_count; ++i) {
+            const auto& node = nodes[i];
+            const auto out = tensor_index(node.output);
+            if (!out || produced[*out]) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            if (node.aux != GraphNode::none && !tensor_index(node.aux)) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            if (node.op != GraphOp::input) {
+                const auto in = tensor_index(node.input);
+                if (!in || !produced[*in] || node.input == node.output || node.aux == node.output) {
+                    return fail(ESP_ERR_INVALID_ARG);
+                }
+            }
+            produced[*out] = true;
+            if (node.scratch_bytes > stats.scratch_bytes) {
+                stats.scratch_bytes = node.scratch_bytes;
+            }
+        }
+        return stats;
+    }
+
+private:
+    [[nodiscard]] Result<std::size_t> tensor_index(const std::uint16_t id) const noexcept
+    {
+        if (id == GraphNode::none) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        for (std::size_t i = 0U; i < tensor_count; ++i) {
+            if (tensors[i].id == id) {
+                return i;
+            }
+        }
+        return fail(ESP_ERR_INVALID_ARG);
+    }
+};
+
 template <typename Graph>
 struct Core1Inference {
     using Context = typename Graph::Context;
