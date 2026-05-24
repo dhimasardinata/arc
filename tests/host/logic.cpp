@@ -9803,13 +9803,29 @@ void test_hive_goal_surfaces()
     const auto planned = block.has_value()
         ? arc::cnc::GCode::plan_linear<2>(*block, {0.0F, 0.0F}, 10.0F, cnc_steps)
         : arc::Result<std::span<const arc::MotionStep<2>>>{arc::fail(ESP_ERR_INVALID_STATE)};
+    const auto corner = arc::cnc::GCode::lookahead<2>(
+        {.delta = {10.0F, 0.0F}, .feed = 1200.0F},
+        {.delta = {0.0F, 10.0F}, .feed = 900.0F},
+        {.min_feed = 100.0F, .max_jerk = 300.0F});
+    const auto straight = arc::cnc::GCode::lookahead<2>(
+        {.delta = {10.0F, 0.0F}, .feed = 1200.0F},
+        {.delta = {20.0F, 0.0F}, .feed = 900.0F},
+        {.min_feed = 100.0F, .max_jerk = 300.0F});
+    const auto tool_offset = arc::cnc::GCode::offset<3>({1.0F, 2.0F, 3.0F}, {0.5F, -0.25F, 1.0F});
+    const auto bad_offset = arc::cnc::GCode::offset<1>(
+        {std::numeric_limits<float>::quiet_NaN()},
+        {0.0F});
     expect(corexy.delta[0] == 1200 && corexy.delta[1] == 400 && corexy.ticks_step == 2U &&
                delta.has_value() && delta->delta[0] > 0 &&
                five.delta[0] == 10 && five.delta[4] == 10 &&
                block.has_value() && block->command == arc::cnc::Command::linear &&
                block->line == 7U && block->has_axis[0] && block->axis[0] == 10.0F &&
                !bad_block.has_value() && !huge_g_block.has_value() && !null_g_block.has_value() &&
-               planned.has_value() && planned->size() == 100U,
+               planned.has_value() && planned->size() == 100U &&
+               corner.has_value() && corner->limited && corner->corner_feed == 300.0F &&
+               straight.has_value() && !straight->limited && straight->corner_feed == 900.0F &&
+               tool_offset.has_value() && (*tool_offset)[0] == 1.5F && (*tool_offset)[1] == 1.75F &&
+               (*tool_offset)[2] == 4.0F && !bad_offset,
            "CNC kinematics and zero-allocation G-code feed MotionPlan");
 
     const std::array<int, 4> coeffs{1, 2, 3, 4};

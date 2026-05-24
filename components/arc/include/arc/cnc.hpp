@@ -35,6 +35,22 @@ struct GCodeBlock {
     std::uint32_t line{};
 };
 
+template <std::size_t Axes>
+struct LookaheadMove {
+    std::array<float, Axes> delta{};
+    float feed{};
+};
+
+struct LookaheadConfig {
+    float min_feed{1.0F};
+    float max_jerk{600.0F};
+};
+
+struct LookaheadPlan {
+    float corner_feed{};
+    bool limited{};
+};
+
 struct CoreXYConfig {
     float steps_mm{80.0F};
     std::uint32_t ticks_step{1U};
@@ -208,6 +224,65 @@ struct GCode {
             segment.delta[axis] = Kinematics::round_i32((target - current[axis]) * steps_mm);
         }
         return MotionPlan<Axes>::line(out, segment);
+    }
+
+    template <std::size_t Axes>
+    [[nodiscard]] static Result<LookaheadPlan> lookahead(
+        const LookaheadMove<Axes> previous,
+        const LookaheadMove<Axes> next,
+        const LookaheadConfig config = {}) noexcept
+    {
+        if (!finite(previous.feed) || !finite(next.feed) || !finite(config.min_feed) ||
+            !finite(config.max_jerk) || previous.feed <= 0.0F || next.feed <= 0.0F ||
+            config.min_feed < 0.0F || config.max_jerk <= 0.0F) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        auto dot = 0.0F;
+        auto prev_len2 = 0.0F;
+        auto next_len2 = 0.0F;
+        for (std::size_t axis = 0U; axis < Axes; ++axis) {
+            if (!finite(previous.delta[axis]) || !finite(next.delta[axis])) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            dot += previous.delta[axis] * next.delta[axis];
+            prev_len2 += previous.delta[axis] * previous.delta[axis];
+            next_len2 += next.delta[axis] * next.delta[axis];
+        }
+        if (prev_len2 <= 0.0F || next_len2 <= 0.0F) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        const auto limit = previous.feed < next.feed ? previous.feed : next.feed;
+        auto cos_angle = dot / std::sqrt(prev_len2 * next_len2);
+        cos_angle = cos_angle < -1.0F ? -1.0F : (cos_angle > 1.0F ? 1.0F : cos_angle);
+        const auto turn = 1.0F - cos_angle;
+        auto corner = limit;
+        if (turn > 0.000001F) {
+            const auto jerk_cap = config.max_jerk / turn;
+            corner = jerk_cap < limit ? jerk_cap : limit;
+            corner = corner < config.min_feed ? config.min_feed : corner;
+            corner = corner > limit ? limit : corner;
+        }
+        return LookaheadPlan{
+            .corner_feed = corner,
+            .limited = corner < limit,
+        };
+    }
+
+    template <std::size_t Axes>
+    [[nodiscard]] static Result<std::array<float, Axes>> offset(
+        const std::array<float, Axes> target,
+        const std::array<float, Axes> tool) noexcept
+    {
+        std::array<float, Axes> out{};
+        for (std::size_t axis = 0U; axis < Axes; ++axis) {
+            if (!finite(target[axis]) || !finite(tool[axis])) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            out[axis] = target[axis] + tool[axis];
+        }
+        return out;
     }
 
 private:
