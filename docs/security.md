@@ -14,7 +14,6 @@ The workflow scans:
 
 - `c-cpp`, using `build-mode: none` so public headers, host C++ tests, and C/C++
   support code are analyzed without downloading ESP-IDF or building firmware;
-- `javascript-typescript`, covering the VitePress documentation tooling;
 - `python`, covering repo tools and documentation generators.
 
 It enables the CodeQL `security-extended` and `security-and-quality` query
