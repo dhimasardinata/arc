@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `arc/aes.hpp`, `arc/blackbox.hpp`, `arc/cert_bundle.hpp`, `arc/cloak.hpp`, `arc/crypto_dma.hpp`, `arc/hmac.hpp`, `arc/kyber.hpp`, `arc/nvs_crypto.hpp`.
+Source landmarks: `arc/aes.hpp`, `arc/blackbox.hpp`, `arc/cert_bundle.hpp`, `arc/cloak.hpp`, `arc/crypto_dma.hpp`, `arc/crypto_selftest.hpp`, `arc/hmac.hpp`, `arc/kyber.hpp`.
 
 ## Start From Zero
 

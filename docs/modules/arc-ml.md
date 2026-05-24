@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Core1Inference`, `Tensor`, `Dense`, `QuantDenseS8`, `Conv2dS8`, `DepthwiseConv2dS8`, `MaxPool2d`, `Context`.
+Source landmarks: `TfLiteModelView`, `TfLiteFlatbuffer`, `GraphTensor`, `GraphNode`, `GraphStats`, `GraphPlan`, `Core1Inference`, `Tensor`, `Dense`, `QuantDenseS8`.
 
 ## Start From Zero
 

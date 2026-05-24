@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `DigitalTwinSample`, `DigitalTwin`, `Plant`, `State`, `Model`, `InputVec`, `OutputVec`, `Sample`.
+Source landmarks: `DigitalTwinSample`, `DigitalTwinTrajectory`, `DigitalTwin`, `Plant`, `State`, `Model`, `InputVec`, `OutputVec`, `Sample`, `Trajectory`.
 
 ## Start From Zero
 

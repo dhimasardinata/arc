@@ -19,3 +19,12 @@ The GitHub Pages site uses the official VitePress default theme and the official
 - [VitePress local search](https://vitepress.dev/reference/default-theme-search)
 - [VitePress edit link](https://vitepress.dev/reference/default-theme-edit-link)
 - [GitHub Pages custom workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
+
+## Security Automation References
+
+Repository security automation follows GitHub's official CodeQL and Dependabot configuration docs:
+
+- [CodeQL code scanning for compiled languages](https://docs.github.com/en/code-security/concepts/code-scanning/codeql/about-codeql-code-scanning-for-compiled-languages)
+- [CodeQL build options and steps](https://docs.github.com/en/code-security/reference/code-scanning/codeql/codeql-build-options-and-steps-for-compiled-languages)
+- [Dependabot version updates](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/configuring-dependabot-version-updates)
+- [Keeping GitHub Actions up to date with Dependabot](https://docs.github.com/en/github/administering-a-repository/keeping-your-actions-up-to-date-with-github-dependabot)

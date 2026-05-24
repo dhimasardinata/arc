@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `TimeSyncSample`, `TimeSyncHwSample`, `TimeSyncConfig`, `TimeSyncStats`, `PtpSample`, `PtpConfig`, `PtpStats`, `TimeSync`, `PtpClock`.
+Source landmarks: `TimeSyncSample`, `TimeSyncHwSample`, `TimeSyncConfig`, `TimeSyncStats`, `PtpSample`, `PtpHwSample`, `PtpConfig`, `PtpStats`, `TimeSync`, `PtpClock`.
 
 ## Start From Zero
 

@@ -96,6 +96,26 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9", workflow)
         self.assertIn("actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128", workflow)
 
+    def test_codeql_workflow_scans_source_without_firmware_build(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
+
+        self.assertIn("security-events: write", workflow)
+        self.assertIn("language: [c-cpp, javascript-typescript, python]", workflow)
+        self.assertIn("build-mode: none", workflow)
+        self.assertIn("queries: +security-extended,security-and-quality", workflow)
+        self.assertIn("github/codeql-action/init@dc73d59c2d7bd4f8194098a91219eeee6d8a1719", workflow)
+        self.assertIn("github/codeql-action/analyze@dc73d59c2d7bd4f8194098a91219eeee6d8a1719", workflow)
+        self.assertNotIn("idf.py build", workflow)
+
+    def test_dependabot_covers_actions_and_docs_dependencies(self) -> None:
+        config = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+
+        self.assertIn('package-ecosystem: "github-actions"', config)
+        self.assertIn('package-ecosystem: "npm"', config)
+        self.assertIn('directory: "/"', config)
+        self.assertIn('interval: "weekly"', config)
+        self.assertIn("docs-dependencies", config)
+
 
 if __name__ == "__main__":
     unittest.main()

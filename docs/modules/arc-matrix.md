@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Matrix`, `Lqr`, `AdaptConfig`, `AdaptSample`, `Adapted`, `A`, `B`, `Q`, `R`, `P`.
+Source landmarks: `Matrix`, `Lqr`, `AdaptConfig`, `AdaptSample`, `Adapted`, `RecoverConfig`, `Recovery`, `A`, `B`, `Q`.
 
 ## Start From Zero
 

@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Pins`.
+Source landmarks: `Pins`, `TopologyEdge`, `PinRoute`, `TopologyManifest`, `TopologyGraph`, `PinSet`.
 
 ## Start From Zero
 

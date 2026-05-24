@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `PerfettoWriter`.
+Source landmarks: `PerfettoWriter`, `PerfettoStream`.
 
 ## Start From Zero
 

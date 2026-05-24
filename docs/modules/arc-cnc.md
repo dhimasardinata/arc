@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `GCodeBlock`, `CoreXYConfig`, `DeltaConfig`, `Kinematics`, `GCode`, `Command`.
+Source landmarks: `GCodeBlock`, `LookaheadMove`, `LookaheadConfig`, `LookaheadPlan`, `CoreXYConfig`, `DeltaConfig`, `Kinematics`, `GCode`, `Command`.
 
 ## Start From Zero
 

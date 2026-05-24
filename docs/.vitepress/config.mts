@@ -14,6 +14,7 @@ export default defineConfig({
       { text: "Modules", link: "/modules" },
       { text: "API", link: "/api" },
       { text: "Examples", link: "/examples" },
+      { text: "Security", link: "/security" },
       { text: "License", link: "/licensing" },
       { text: "Benchmarks", link: "/benchmarking" },
       { text: "Safety", link: "/safety-case" },
@@ -34,6 +35,7 @@ export default defineConfig({
           { text: "Module Page Index", link: "/module-pages" },
           { text: "API Reference", link: "/api" },
           { text: "Examples", link: "/examples" },
+          { text: "Security Automation", link: "/security" },
           { text: "API Naming", link: "/api-naming" }
         ]
       },

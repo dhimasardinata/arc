@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `DmaDesc`, `DmaChain`, `OwnedDmaChain`.
+Source landmarks: `DmaDesc`, `DmaChain`, `DmaContract`, `OwnedDmaChain`.
 
 ## Start From Zero
 

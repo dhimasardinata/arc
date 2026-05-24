@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Spsc`, `Producer`, `Consumer`, `Endpoints`, `Audit`, `Ring`, `Lane`, `Checked`, `CheckedSpsc`, `CheckedRing`.
+Source landmarks: `Spsc`, `Producer`, `Consumer`, `Endpoints`, `Audit`, `Return`, `Ring`, `Lane`, `Checked`, `CheckedSpsc`.
 
 ## Start From Zero
 

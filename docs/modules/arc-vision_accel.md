@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Rect`, `InFrame`, `OutFrame`, `PpaSrm`, `PpaFill`, `PpaBlend`, `JpegEncode`, `H264Encode`, `JpegEncoder`, `H264Encoder`.
+Source landmarks: `Rect`, `InFrame`, `OutFrame`, `StagedFrame`, `PpaSrm`, `PpaFill`, `PpaBlend`, `JpegEncode`, `H264Encode`, `JpegEncoder`.
 
 ## Start From Zero
 
