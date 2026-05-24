@@ -9490,6 +9490,45 @@ void test_current_goal_surfaces()
         });
     expect(chosen.has_value() && *chosen == 1U && near(forecast_state.x[0], 1.0F),
            "DigitalTwin chooses the lowest-cost forecast without mutating live state");
+    std::array<Twin::Trajectory, 3> trajectory_scratch{};
+    arc::Mpsc<Twin::Trajectory, 4> trajectory_queue{};
+    const auto published_trajectory = Twin::publish<3U, 2U>(
+        forecast_state,
+        forecast_model,
+        std::span<const Twin::InputVec, candidate_inputs.size()>{candidate_inputs},
+        std::span<Twin::Trajectory, trajectory_scratch.size()>{trajectory_scratch},
+        trajectory_queue,
+        [](const std::size_t, const std::size_t, const Twin::OutputVec& output) noexcept {
+            return output[0] * output[0];
+        });
+    Twin::Trajectory first_point{};
+    Twin::Trajectory second_point{};
+    Twin::Trajectory third_point{};
+    expect(published_trajectory.has_value() &&
+               *published_trajectory == trajectory_scratch.size() &&
+               trajectory_scratch[0].candidate == 1U &&
+               trajectory_scratch[2].step == 2U &&
+               trajectory_queue.try_pop(first_point) &&
+               trajectory_queue.try_pop(second_point) &&
+               trajectory_queue.try_pop(third_point) &&
+               first_point.candidate == 1U &&
+               first_point.step == 0U &&
+               near(first_point.input[0], 0.0F) &&
+               near(first_point.output[0], 1.0F) &&
+               near(third_point.output[0], 1.0F),
+           "DigitalTwin publishes chosen future trajectory to MPSC");
+    expect(!Twin::publish<3U, 2U>(
+               forecast_state,
+               forecast_model,
+               std::span<const Twin::InputVec, candidate_inputs.size()>{candidate_inputs},
+               std::span<Twin::Trajectory, trajectory_scratch.size()>{
+                   static_cast<Twin::Trajectory*>(nullptr),
+                   trajectory_scratch.size()},
+               trajectory_queue,
+               [](const std::size_t, const std::size_t, const Twin::OutputVec& output) noexcept {
+                   return output[0];
+               }),
+           "DigitalTwin publish rejects null trajectory scratch");
 
     const auto drive_cb = +[](const int left, const int right) noexcept -> arc::Status {
         cli_drive_left = left;
