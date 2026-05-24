@@ -317,6 +317,7 @@ rules stay above Arc.
 | `arc/hotpatch.hpp` | Executable payload loading and IRAM detour policy hooks. |
 | `arc/chaos.hpp` | Bounded fault injection and postmortem logging. |
 | `arc/crypto_dma.hpp` | Hardware-to-hardware crypto descriptor job planning. |
+| `arc/crypto_selftest.hpp` | Caller-owned KAT-style crypto self-test workspaces. |
 | `arc/interrupt_matrix.hpp` | Direct interrupt routing contracts. |
 | `arc/provisioning.hpp` | Provisioning-state wrappers. |
 

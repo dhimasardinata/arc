@@ -39,6 +39,7 @@
 #include "arc/crdt.hpp"
 #include "arc/csi.hpp"
 #include "arc/crypto_dma.hpp"
+#include "arc/crypto_selftest.hpp"
 #include "arc/dsp.hpp"
 #include "arc/digital_twin.hpp"
 #include "arc/distributed_mmu.hpp"
@@ -7552,6 +7553,9 @@ void test_goal_wave_surfaces()
     expect(Kem::encapsulate(public_key, coins, ciphertext, shared).has_value(), "Kyber zero-alloc encapsulate");
     expect(Kem::decapsulate(secret_key, ciphertext, opened).has_value() && opened == shared, "Kyber zero-alloc decapsulate");
     expect(ciphertext[0] != ciphertext[1] && shared[0] != 0U, "Kyber KEM fills buffers");
+    static arc::crypto::KyberSelfTest<Kem> kyber_selftest{};
+    const auto kyber_report = arc::crypto::SelfTest::kyber(kyber_selftest);
+    expect(kyber_report.pass() && kyber_report.checks == 8U, "Kyber self-test report");
     expect(!Kem::keypair(
                std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), seed.size()},
                public_key,
@@ -7996,6 +8000,8 @@ void test_resilient_edge_goal_surfaces()
     const auto puf_stats = arc::crypto::Puf::von_neumann(raw_pairs, stable_bits);
     expect(puf_stats.raw_bits == 8U && puf_stats.stable_bits == 2U && puf_stats.ones == 1U && stable_bits[0] == 0b10U,
            "PUF von Neumann extractor");
+    const auto puf_report = arc::crypto::SelfTest::puf();
+    expect(puf_report.pass() && puf_report.checks == 4U, "PUF self-test report");
     const auto null_puf_stats = arc::crypto::Puf::von_neumann(
         std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U},
         stable_bits);
@@ -8347,6 +8353,8 @@ void test_current_goal_surfaces()
         cloak_dummy,
         []() noexcept { return 42; });
     expect(cloaked == 42, "Cloak run returns protected result");
+    const auto cloak_report = arc::crypto::SelfTest::cloak<CloakPolicy>(cloak_dummy);
+    expect(cloak_report.pass() && cloak_report.checks == 3U, "Cloak self-test report");
 
     arc::nav::Eskf<float>::State eskf{};
     const auto predicted = arc::nav::Eskf<float>::predict(
@@ -9390,6 +9398,9 @@ void test_current_goal_surfaces()
                sealed->payload_bytes == flight_record.size() &&
                blackbox_write_bytes == sizeof(*sealed) + flight_record.size(),
            "BlackBox seals Merkle-linked encrypted record");
+    arc::crypto::BlackBoxSelfTest<4> blackbox_selftest{};
+    const auto blackbox_report = arc::crypto::SelfTest::blackbox<BlackBoxHash>(blackbox_selftest);
+    expect(blackbox_report.pass() && blackbox_report.checks == 4U, "BlackBox self-test report");
     expect(!arc::covert::BlackBox::seal<BlackBoxHash, 4>(
                9U,
                std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), flight_record.size()},

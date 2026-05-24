@@ -8,6 +8,7 @@
 #include "arc/cert_bundle.hpp"
 #include "arc/cloak.hpp"
 #include "arc/crypto_dma.hpp"
+#include "arc/crypto_selftest.hpp"
 #include "arc/hmac.hpp"
 #include "arc/kyber.hpp"
 #include "arc/nvs_crypto.hpp"

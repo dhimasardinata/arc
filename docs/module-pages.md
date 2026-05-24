@@ -39,6 +39,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/chaos.hpp` | Bounded fault injection and postmortem logging. | [Open](/modules/arc-chaos) |
 | `arc/cloak.hpp` | Timing/power side-channel policy hooks. | [Open](/modules/arc-cloak) |
 | `arc/crypto_dma.hpp` | Hardware-to-hardware crypto descriptor job planning. | [Open](/modules/arc-crypto_dma) |
+| `arc/crypto_selftest.hpp` | Caller-owned KAT-style crypto self-test workspaces. | [Open](/modules/arc-crypto_selftest) |
 | `arc/hmac.hpp` | eFuse-keyed HMAC and temporary JTAG unlock. | [Open](/modules/arc-hmac) |
 | `arc/hotpatch.hpp` | Executable payload loading and IRAM detour policy hooks. | [Open](/modules/arc-hotpatch) |
 | `arc/hotswap.hpp` | Signed native, BPF, and WASM hot-swap staging policy. | [Open](/modules/arc-hotswap) |
