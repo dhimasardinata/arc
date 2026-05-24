@@ -36,6 +36,13 @@ struct FleetPeer {
     bool online{};
 };
 
+struct SpawnTicket {
+    std::uint16_t peer{};
+    std::size_t bytes{};
+    std::int32_t slack{};
+    std::uint32_t free_cycles{};
+};
+
 struct IdleCore {
     std::uint16_t peer{};
     std::int32_t slack{};
@@ -215,3 +222,49 @@ struct Migrator {
 };
 
 }  // namespace arc::swarm
+
+namespace arc::Fleet {
+
+using AnyIdleCore = swarm::AnyIdleCore;
+using IdleCore = swarm::IdleCore;
+using Peer = swarm::FleetPeer;
+
+}  // namespace arc::Fleet
+
+namespace arc {
+
+template <typename Task, typename Selector = Fleet::AnyIdleCore>
+struct Spawn {
+    static constexpr std::uint32_t process_id = Task::process_id;
+    static_assert(process_id != 0U,
+                  "[ARC ERROR] arc::Spawn task needs a stable non-zero process_id. Action: set Task::process_id.");
+
+    template <typename Policy, std::size_t MaxBytes, std::size_t Peers>
+    [[nodiscard]] static Result<swarm::SpawnTicket> migrate(
+        const std::span<const swarm::FleetPeer, Peers> peers,
+        const swarm::WasmSnapshot snapshot,
+        const std::int32_t min_slack = 0,
+        const std::uint32_t min_cycles = 1U) noexcept
+    {
+        auto target = Selector::select(peers, min_slack, min_cycles);
+        if (!target) {
+            return fail(target.error());
+        }
+        auto frame = swarm::Migrator::snapshot<MaxBytes>(process_id, snapshot);
+        if (!frame) {
+            return fail(frame.error());
+        }
+        auto sent = swarm::Migrator::teleport<Policy>(target->peer, *frame);
+        if (!sent) {
+            return fail(sent.error());
+        }
+        return swarm::SpawnTicket{
+            .peer = target->peer,
+            .bytes = swarm::Migrator::bytes(*frame).size(),
+            .slack = target->slack,
+            .free_cycles = target->free_cycles,
+        };
+    }
+};
+
+}  // namespace arc

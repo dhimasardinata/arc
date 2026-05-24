@@ -166,6 +166,10 @@ struct ReflectedTelemetry {
     std::int16_t temp{};
 };
 
+struct RemoteSpawnTask {
+    static constexpr std::uint32_t process_id = 4U;
+};
+
 ARC_PACK_REFLECT(ReflectedTelemetry, &ReflectedTelemetry::seq, &ReflectedTelemetry::temp);
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size);
@@ -8908,6 +8912,24 @@ void test_current_goal_surfaces()
                migration_process == 3U && migration_ip == 0x200U && migration_sp == 0x100U &&
                resumed_memory[0] == 1U && resumed_memory[3] == 4U,
            "Migrator snapshots, teleports, and resumes WASM process state");
+    static_assert(std::is_same_v<arc::Fleet::AnyIdleCore, arc::swarm::AnyIdleCore>);
+    migration_peer = 0U;
+    migration_bytes = 0U;
+    const auto spawn_ticket = arc::Spawn<RemoteSpawnTask, arc::Fleet::AnyIdleCore>::migrate<MigrationPolicy, 16>(
+        std::span<const arc::swarm::FleetPeer, fleet_peers.size()>{fleet_peers},
+        {
+            .linear_memory = wasm_memory,
+            .stack_pointer = 0x300U,
+            .instruction_pointer = 0x400U,
+            .fuel = 12U,
+        },
+        0,
+        128U);
+    expect(spawn_ticket.has_value() && spawn_ticket->peer == 77U &&
+               spawn_ticket->free_cycles == 256U &&
+               spawn_ticket->bytes == migration_bytes &&
+               migration_peer == 77U,
+           "Spawn migrates task to any idle fleet core");
     expect(!arc::swarm::Migrator::snapshot<16>(
                3U,
                {
