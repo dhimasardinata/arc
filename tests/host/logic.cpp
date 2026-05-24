@@ -4497,6 +4497,40 @@ void test_simd_ml_pipeline()
         .values = std::span<const std::int8_t>{static_cast<const std::int8_t*>(nullptr), conv_w.size()},
     };
     expect(!arc::ml::mapped_weights<std::int8_t, 4>(null_mapped_conv), "ML MmuSpan rejects null mapped weights");
+    const std::array<std::uint8_t, 12> tflite_model{
+        8U,
+        0U,
+        0U,
+        0U,
+        static_cast<std::uint8_t>('T'),
+        static_cast<std::uint8_t>('F'),
+        static_cast<std::uint8_t>('L'),
+        static_cast<std::uint8_t>('3'),
+        0U,
+        0U,
+        0U,
+        0U,
+    };
+    auto bad_tflite = tflite_model;
+    bad_tflite[7] = static_cast<std::uint8_t>('2');
+    const std::array<std::uint8_t, 8> short_tflite{
+        16U,
+        0U,
+        0U,
+        0U,
+        static_cast<std::uint8_t>('T'),
+        static_cast<std::uint8_t>('F'),
+        static_cast<std::uint8_t>('L'),
+        static_cast<std::uint8_t>('3'),
+    };
+    const auto parsed_tflite = arc::ml::TfLiteFlatbuffer::parse(tflite_model);
+    expect(parsed_tflite.has_value() && parsed_tflite->root_offset == 8U &&
+               parsed_tflite->bytes.size() == tflite_model.size() &&
+               !arc::ml::TfLiteFlatbuffer::valid(bad_tflite) &&
+               !arc::ml::TfLiteFlatbuffer::valid(short_tflite) &&
+               !arc::ml::TfLiteFlatbuffer::parse(
+                   std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), tflite_model.size()}),
+           "ML validates TFLite flatbuffer boundary metadata");
     expect(conv.eval(std::span<const std::int8_t, 9>{conv_in}, std::span(conv_out)).has_value(), "Conv2D S8 eval");
     expect(conv_out[0] == 12 && conv_out[1] == 16 && conv_out[2] == 24 && conv_out[3] == 28, "Conv2D S8 output");
     expect(!conv.eval(

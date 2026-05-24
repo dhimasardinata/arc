@@ -52,6 +52,52 @@ template <typename T, std::size_t Count>
     return std::span<const T, Count>{mapped.data(), Count};
 }
 
+struct TfLiteModelView {
+    std::span<const std::uint8_t> bytes{};
+    std::uint32_t root_offset{};
+};
+
+struct TfLiteFlatbuffer {
+    static constexpr std::array<char, 4> ident{'T', 'F', 'L', '3'};
+
+    [[nodiscard]] static Result<TfLiteModelView> parse(
+        const std::span<const std::uint8_t> bytes) noexcept
+    {
+        if (!valid_span(bytes) || bytes.size() < 8U) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        for (std::size_t i = 0U; i < ident.size(); ++i) {
+            if (bytes[4U + i] != static_cast<std::uint8_t>(ident[i])) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+        }
+
+        const auto root = u32le(bytes);
+        if (root < 8U || root >= bytes.size()) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        return TfLiteModelView{
+            .bytes = bytes,
+            .root_offset = root,
+        };
+    }
+
+    [[nodiscard]] static bool valid(const std::span<const std::uint8_t> bytes) noexcept
+    {
+        return parse(bytes).has_value();
+    }
+
+private:
+    [[nodiscard]] static constexpr std::uint32_t u32le(
+        const std::span<const std::uint8_t> bytes) noexcept
+    {
+        return static_cast<std::uint32_t>(bytes[0]) |
+            (static_cast<std::uint32_t>(bytes[1]) << 8U) |
+            (static_cast<std::uint32_t>(bytes[2]) << 16U) |
+            (static_cast<std::uint32_t>(bytes[3]) << 24U);
+    }
+};
+
 template <typename Graph>
 struct Core1Inference {
     using Context = typename Graph::Context;
