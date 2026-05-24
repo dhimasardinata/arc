@@ -5462,6 +5462,23 @@ void test_trace_provision_ethernet_flashoff_hil_ecs()
     const auto null_eth = eth.push(std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(nullptr), 1U});
     expect(eth.pop(popped) && popped.size == frame.size() && popped.bytes[5] == 5U && !null_eth,
            "Ethernet frame pop");
+    arc::net::EthernetRing<arc::cache_line * 2U, 2> eth_dma{};
+    alignas(arc::cache_line) std::array<std::uint8_t, arc::cache_line * 2U> dma_frame{};
+    dma_frame[0] = 0x21U;
+    dma_frame[dma_frame.size() - 1U] = 0x84U;
+    using EthernetCopy = arc::Copy<2>;
+    EthernetCopy::StrictTicket eth_ticket{};
+    expect(eth_dma.push_strict<EthernetCopy>(std::span<const std::uint8_t>{dma_frame}, &eth_ticket),
+           "Ethernet strict DMA frame push");
+    arc::net::EthernetRing<arc::cache_line * 2U, 2>::Frame dma_popped{};
+    expect(eth_dma.pop(dma_popped) &&
+               dma_popped.size == dma_frame.size() &&
+               dma_popped.bytes[0] == 0x21U &&
+               dma_popped.bytes[dma_frame.size() - 1U] == 0x84U &&
+               eth_ticket.dst != nullptr &&
+               eth_ticket.bytes == dma_frame.size() &&
+               eth_ticket.cache_bytes == dma_frame.size(),
+           "Ethernet strict DMA ticket");
 
     arc::net::TsnSchedule<3> tsn{.cycle_ns = 1'000'000U, .base_ns = 10'000U};
     expect(tsn.set(0U, {.offset_ns = 0U, .duration_ns = 100'000U, .guard_ns = 10'000U, .traffic = 3U}).has_value() &&
@@ -7150,6 +7167,32 @@ void test_pru_isp_vision()
         .height = 4U,
         .format = arc::vision::Pixel::yuv420,
     };
+    alignas(arc::cache_line) std::array<std::uint8_t, 192> yuv_dma_src{};
+    alignas(arc::cache_line) std::array<std::uint8_t, 192> yuv_dma_scratch{};
+    yuv_dma_src[0] = 0x33U;
+    yuv_dma_src[yuv_dma_src.size() - 1U] = 0xccU;
+    const arc::vision::InFrame yuv_dma_frame{
+        .data = std::span<const std::uint8_t>{yuv_dma_src},
+        .width = 16U,
+        .height = 8U,
+        .format = arc::vision::Pixel::yuv420,
+    };
+    const arc::vision::OutFrame yuv_dma_out{
+        .data = std::span<std::uint8_t>{yuv_dma_scratch},
+        .width = 16U,
+        .height = 8U,
+        .format = arc::vision::Pixel::yuv420,
+    };
+    using VisionCopy = arc::Copy<2>;
+    VisionCopy::StrictTicket vision_ticket{};
+    const auto staged_yuv = arc::vision::stage_strict<VisionCopy>(vision_ticket, yuv_dma_frame, yuv_dma_out);
+    expect(staged_yuv.has_value() &&
+               staged_yuv->bytes == yuv_dma_src.size() &&
+               staged_yuv->frame.data.data() == yuv_dma_scratch.data() &&
+               yuv_dma_scratch[0] == 0x33U &&
+               yuv_dma_scratch[yuv_dma_scratch.size() - 1U] == 0xccU &&
+               vision_ticket.bytes == yuv_dma_src.size(),
+           "Vision accelerator stages strict DMA frame");
     const auto h264 = arc::vision::H264Encoder<4U, 4U, 400'000U>::frame(yuv_frame, std::span(h264_bytes));
     expect(h264.validate().has_value() &&
                arc::vision::H264Encoder<4U, 4U, 400'000U>::encode(vision_policy, yuv_frame, std::span(h264_bytes))

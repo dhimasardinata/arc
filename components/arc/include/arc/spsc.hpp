@@ -226,6 +226,32 @@ struct Spsc {
         return true;
     }
 
+    template <typename Fn>
+    [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_push_with(Fn&& fn) noexcept(
+        noexcept(std::declval<Fn&>()(std::declval<T&>())))
+    {
+        const auto head = load_relaxed(&head_);
+        const auto next = increment(head);
+        if (next == shadow_tail_) {
+            shadow_tail_ = load_acquire(&tail_);
+            if (next == shadow_tail_) {
+                return false;
+            }
+        }
+
+        assume(head < Capacity);
+        using Return = std::invoke_result_t<Fn&, T&>;
+        if constexpr (std::is_same_v<Return, bool>) {
+            if (!std::forward<Fn>(fn)(buffer_[head])) {
+                return false;
+            }
+        } else {
+            std::forward<Fn>(fn)(buffer_[head]);
+        }
+        store_release(&head_, next);
+        return true;
+    }
+
     template <typename U, std::size_t Extent>
         requires(std::is_same_v<std::remove_cv_t<U>, T>)
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline std::size_t push(

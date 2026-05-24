@@ -1,5 +1,6 @@
 #pragma once
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -172,6 +173,15 @@ template <typename Policy, typename Plan>
     }
 }
 
+template <typename CopyEngine>
+concept StrictCopyEngine = requires(
+    typename CopyEngine::StrictTicket& ticket,
+    std::span<std::uint8_t> dst,
+    std::span<const std::uint8_t> src) {
+    { CopyEngine::send_strict(ticket, dst, src) } -> std::same_as<esp_err_t>;
+    { CopyEngine::finish_coherent(ticket) } -> std::same_as<esp_err_t>;
+};
+
 }  // namespace detail
 
 [[nodiscard]] constexpr bool compressed(const Pixel value) noexcept
@@ -265,6 +275,53 @@ template <typename Policy, typename Plan>
         return Status{fail(ESP_ERR_INVALID_ARG)};
     }
     return ok();
+}
+
+struct StagedFrame {
+    InFrame frame{};
+    std::size_t bytes{};
+};
+
+template <detail::StrictCopyEngine CopyEngine>
+[[nodiscard]] Result<StagedFrame> stage_strict(
+    typename CopyEngine::StrictTicket& ticket,
+    const InFrame source,
+    const OutFrame scratch) noexcept
+{
+    ARC_CHECK(validate(source));
+    ARC_CHECK(validate(scratch));
+    if (source.width != scratch.width || source.height != scratch.height ||
+        source.stride != scratch.stride || source.format != scratch.format) {
+        return fail(ESP_ERR_INVALID_ARG);
+    }
+
+    const auto needed = frame_bytes(source.width, source.height, source.format, source.stride);
+    if (!needed) {
+        return fail(needed.error());
+    }
+    if (source.data.size() < *needed || scratch.data.size() < *needed) {
+        return fail(ESP_ERR_INVALID_ARG);
+    }
+
+    const auto src = source.data.first(*needed);
+    auto dst = scratch.data.first(*needed);
+    if (const auto sent = CopyEngine::send_strict(ticket, dst, src); sent != ESP_OK) {
+        return fail(sent);
+    }
+    if (const auto done = CopyEngine::finish_coherent(ticket); done != ESP_OK) {
+        return fail(done);
+    }
+
+    return ok(StagedFrame{
+        .frame = InFrame{
+            .data = std::span<const std::uint8_t>{scratch.data.data(), *needed},
+            .width = scratch.width,
+            .height = scratch.height,
+            .stride = scratch.stride,
+            .format = scratch.format,
+        },
+        .bytes = *needed,
+    });
 }
 
 struct PpaSrm {
