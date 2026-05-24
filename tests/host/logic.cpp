@@ -6131,13 +6131,16 @@ void test_probe_stats()
         10'000U,
         arc::proof::Deadline<17U, 10'000U>,
         arc::proof::NoHeap<17U>,
+        arc::proof::NoDivide<17U>,
         arc::proof::StaticLife<17U>,
         arc::proof::Deadline<18U, 20'000U>>;
     static_assert(ControlProof::cycles == 10'000U);
-    static_assert(ControlProof::count == 4U);
+    static_assert(ControlProof::count == 5U);
     static_assert(ControlProof::has<arc::proof::Kind::deadline>());
     static_assert(ControlProof::has<arc::proof::Kind::deadline, 17U>());
     static_assert(ControlProof::has<arc::proof::Kind::deadline, 18U>());
+    static_assert(ControlProof::has<arc::proof::Kind::no_divide, 17U>());
+    static_assert(!ControlProof::has<arc::proof::Kind::no_divide, 18U>());
     static_assert(!ControlProof::has<arc::proof::Kind::no_heap, 18U>());
     static_assert(!ControlProof::has<arc::proof::Kind::no_null>());
     static_assert(ControlProof::bound<arc::proof::Kind::deadline>() == 20'000U);
@@ -6147,7 +6150,8 @@ void test_probe_stats()
     static_assert(ControlProof::bound<arc::proof::Kind::no_heap, 18U>() == 0U);
     constexpr auto proof_claims = ControlProof::claims();
     static_assert(proof_claims[0].kind == arc::proof::Kind::deadline);
-    static_assert(proof_claims[2].kind == arc::proof::Kind::static_life);
+    static_assert(proof_claims[2].kind == arc::proof::Kind::no_divide);
+    static_assert(proof_claims[3].kind == arc::proof::Kind::static_life);
     using ControlCertificate = arc::proof::Certificate<ControlProof, 2U>;
     constexpr auto cert_header = ControlCertificate::header();
     static_assert(cert_header.magic == arc::proof::Certificate<ControlProof>::magic);
@@ -6157,6 +6161,7 @@ void test_probe_stats()
     static_assert(ControlCertificate::covers<
                   arc::proof::Kind::deadline,
                   arc::proof::Kind::no_heap,
+                  arc::proof::Kind::no_divide,
                   arc::proof::Kind::static_life>());
     using AnalysisProof = arc::proof::Pack<
         5'000U,
@@ -6166,18 +6171,19 @@ void test_probe_stats()
     using AnalysisCertificate = arc::proof::Certificate<AnalysisProof, 3U>;
     using SafetyEvidence = arc::proof::SafetyCase<ControlCertificate, AnalysisCertificate>;
     static_assert(SafetyEvidence::certificates == 2U);
-    static_assert(SafetyEvidence::total_claims == 7U);
+    static_assert(SafetyEvidence::total_claims == 8U);
     static_assert(SafetyEvidence::max_cycles == 10'000U);
     static_assert(SafetyEvidence::covers<
                   arc::proof::Kind::deadline,
                   arc::proof::Kind::no_heap,
                   arc::proof::Kind::no_block,
                   arc::proof::Kind::no_null,
+                  arc::proof::Kind::no_divide,
                   arc::proof::Kind::misra_subset>());
     constexpr auto safety_headers = SafetyEvidence::headers();
-    static_assert(safety_headers[0].claims == 4U);
+    static_assert(safety_headers[0].claims == 5U);
     static_assert(safety_headers[1].version == 3U);
-    expect(proof_claims.size() == 4U && proof_claims[1].subject == 17U && proof_claims[3].subject == 18U,
+    expect(proof_claims.size() == 5U && proof_claims[1].subject == 17U && proof_claims[4].subject == 18U,
            "Proof pack carries compile-time workload claims");
 
     arc::CycleStats cycles{};

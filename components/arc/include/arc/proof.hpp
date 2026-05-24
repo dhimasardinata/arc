@@ -12,6 +12,7 @@ enum class Kind : std::uint8_t {
     no_heap,
     no_block,
     no_null,
+    no_divide,
     static_life,
     misra_subset,
 };
@@ -55,6 +56,9 @@ using NoBlock = Fact<Kind::no_block, Subject>;
 
 template <std::uint32_t Subject>
 using NoNull = Fact<Kind::no_null, Subject>;
+
+template <std::uint32_t Subject>
+using NoDivide = Fact<Kind::no_divide, Subject>;
 
 template <std::uint32_t Subject>
 using StaticLife = Fact<Kind::static_life, Subject>;
