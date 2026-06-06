@@ -231,6 +231,17 @@ if ! grep -qF 'docs/security.md' SECURITY.md || ! grep -qF 'private vulnerabilit
     die "SECURITY.md must point to detailed security automation docs and private reporting"
 fi
 
+if [[ ! -f CONTRIBUTING.md ]]; then
+    die "CONTRIBUTING.md must define the repository contribution path"
+fi
+
+if ! grep -qF './tools/check-repo.sh' CONTRIBUTING.md \
+    || ! grep -qF 'docs/api-naming.md' CONTRIBUTING.md \
+    || ! grep -qF 'SECURITY.md' CONTRIBUTING.md \
+    || ! grep -qF 'ARC_EXPERIMENTAL_ESP32S31=ON' CONTRIBUTING.md; then
+    die "CONTRIBUTING.md must cover validation, API naming, security, and experimental target policy"
+fi
+
 if [[ ! -f .github/pull_request_template.md ]]; then
     die "pull request template must keep review evidence consistent"
 fi

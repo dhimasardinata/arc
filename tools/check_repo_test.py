@@ -25,6 +25,8 @@ class CheckRepoToolTest(unittest.TestCase):
 
         self.assertIn("root SECURITY.md must define the GitHub-facing disclosure policy", text)
         self.assertIn("private vulnerability reporting", text)
+        self.assertIn("CONTRIBUTING.md must define the repository contribution path", text)
+        self.assertIn("CONTRIBUTING.md must cover validation, API naming, security", text)
         self.assertIn("pull request template must keep review evidence consistent", text)
         self.assertIn("Target hardware or host-only scope", text)
         self.assertIn(".github/ISSUE_TEMPLATE/bug_report.yml", text)
