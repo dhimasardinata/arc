@@ -12,6 +12,8 @@ from typing import Any, NamedTuple
 ROOT = Path(__file__).resolve().parents[1]
 SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<value>[^#\s]+)?(?P<tail>.*)$")
+PERSIST_RE = re.compile(r"^\s*persist-credentials:\s*(?P<value>[^#\s]+)")
+CHECKOUT_ACTION = "actions/checkout@"
 
 
 class UsesRef(NamedTuple):
@@ -19,6 +21,7 @@ class UsesRef(NamedTuple):
     line: int
     value: str
     comment: str
+    persist_credentials: str | None
 
 
 def workflow_files(root: Path) -> list[Path]:
@@ -37,16 +40,53 @@ def relpath(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
+def leading_spaces(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def step_indent(lines: list[str], index: int) -> int:
+    line = lines[index]
+    if line.lstrip().startswith("- "):
+        return leading_spaces(line)
+    for cursor in range(index - 1, -1, -1):
+        if lines[cursor].lstrip().startswith("- "):
+            return leading_spaces(lines[cursor])
+    return leading_spaces(line)
+
+
+def step_block(lines: list[str], index: int) -> list[str]:
+    indent = step_indent(lines, index)
+    block: list[str] = []
+    for line in lines[index + 1 :]:
+        if line.strip() and line.lstrip().startswith("- ") and leading_spaces(line) <= indent:
+            break
+        block.append(line)
+    return block
+
+
+def checkout_persist_credentials(lines: list[str], index: int, value: str) -> str | None:
+    if not value.startswith(CHECKOUT_ACTION):
+        return None
+    for line in step_block(lines, index):
+        match = PERSIST_RE.match(line)
+        if match:
+            return match.group("value").strip("\"'").lower()
+    return None
+
+
 def parse_uses(path: Path, root: Path) -> list[UsesRef]:
     refs: list[UsesRef] = []
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
         match = USES_RE.match(line)
         if not match:
             continue
         value = match.group("value") or ""
         tail = match.group("tail") or ""
         comment = tail.split("#", 1)[1].strip() if "#" in tail else ""
-        refs.append(UsesRef(relpath(path, root), line_number, value, comment))
+        refs.append(
+            UsesRef(relpath(path, root), index + 1, value, comment, checkout_persist_credentials(lines, index, value))
+        )
     return refs
 
 
@@ -80,6 +120,8 @@ def validate_ref(ref: UsesRef) -> list[str]:
         problems.append(f"{label} must pin to a full 40-character commit SHA")
     if not ref.comment:
         problems.append(f"{label} must include a trailing version comment")
+    if ref.value.startswith(CHECKOUT_ACTION) and ref.persist_credentials != "false":
+        problems.append(f"{label} must set persist-credentials: false")
     return problems
 
 
@@ -102,6 +144,7 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
                 "line": ref.line,
                 "uses": ref.value,
                 "comment": ref.comment,
+                "persist_credentials": ref.persist_credentials,
             }
             for ref in refs
         ],

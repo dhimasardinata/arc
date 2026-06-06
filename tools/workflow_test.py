@@ -29,6 +29,12 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("./tools/workflow-pins-check.py --format json", check_repo)
         self.assertIn("workflow action pin check failed", check_repo)
 
+    def test_checkout_steps_do_not_persist_github_tokens(self) -> None:
+        for workflow in (ROOT / ".github" / "workflows").glob("*.yml"):
+            text = workflow.read_text(encoding="utf-8")
+            if "actions/checkout@" in text:
+                self.assertIn("persist-credentials: false", text, workflow.name)
+
     def test_changed_project_plan_runs_before_expensive_setup(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
 

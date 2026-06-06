@@ -43,7 +43,10 @@ and `tools/sync-idf.sh`.
 `tools/workflow-pins-check.py --format json` backs that review path by rejecting
 remote workflow actions that are not pinned to full commit SHA refs. Each remote
 action line also keeps a trailing version comment so maintainers can review the
-human release track without trusting a mutable tag.
+human release track without trusting a mutable tag. The same check requires
+`actions/checkout` steps to set `persist-credentials: false`, because Arc
+workflows do not need to leave the GitHub token in the local Git config after
+checkout.
 
 `tools/npm-lock-check.py --format json` verifies that the docs `package-lock.json`
 is npm lockfile v3, matches the root dependency declarations in `package.json`,
