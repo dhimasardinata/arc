@@ -85,6 +85,7 @@ python3 tools/release-evidence.py --format json >/dev/null || die "release evide
 ./tools/workflow-pins-check.py --format json >/dev/null || die "workflow action pin check failed"
 ./tools/workflow-policy-check.py --format json >/dev/null || die "workflow policy check failed"
 ./tools/npm-lock-check.py --format json >/dev/null || die "npm lockfile evidence check failed"
+./tools/secret-scan-check.py --format json >/dev/null || die "secret scan evidence check failed"
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"
 
 while IFS= read -r file; do
@@ -329,6 +330,10 @@ if [[ ! -x tools/npm-lock-check.py ]]; then
     die "npm lockfile evidence tool must stay executable"
 fi
 
+if [[ ! -x tools/secret-scan-check.py ]]; then
+    die "secret scan evidence tool must stay executable"
+fi
+
 if [[ ! -x tools/source-manifest.py ]]; then
     die "source manifest tool must stay executable"
 fi
@@ -427,7 +432,7 @@ fi
 if ! grep -qE 'name: Repository evidence bundle' .github/workflows/build.yml; then
     die "build workflow must emit repository evidence artifacts"
 fi
-for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins workflow-policy npm-lock; do
+for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins workflow-policy npm-lock secret-scan; do
     if ! grep -qF ".arc-artifacts/$evidence_file.json" .github/workflows/build.yml; then
         die "build workflow must publish $evidence_file JSON evidence"
     fi
@@ -446,6 +451,9 @@ if ! grep -qE '\./tools/workflow-policy-check\.py --format json > \.arc-artifact
 fi
 if ! grep -qE '\./tools/npm-lock-check\.py --format json > \.arc-artifacts/npm-lock\.json' .github/workflows/build.yml; then
     die "build workflow must emit npm lockfile evidence"
+fi
+if ! grep -qE '\./tools/secret-scan-check\.py --format json > \.arc-artifacts/secret-scan\.json' .github/workflows/build.yml; then
+    die "build workflow must emit secret scan evidence"
 fi
 if ! grep -qE 'name: Upload repository evidence' .github/workflows/build.yml \
     || ! grep -qE 'name: arc-evidence' .github/workflows/build.yml \
@@ -511,6 +519,7 @@ required_exec=(
     tools/format.sh
     tools/hil-evidence-check.py
     tools/npm-lock-check.py
+    tools/secret-scan-check.py
     tools/source-manifest.py
     tools/third-party-manifest-check.py
     tools/topology-check.py

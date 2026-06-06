@@ -27,8 +27,8 @@ or distributing Arc-derived artifacts.
   release artifact.
 - CI uploads `arc-evidence` with an evidence index, source, third-party,
   safety-case, release metadata, workflow action pin, workflow policy, and npm
-  lockfile JSON for every build. Firmware builds also upload the firmware
-  artifact manifest and evidence index beside binaries.
+  lockfile JSON plus secret-scan evidence for every build. Firmware builds also
+  upload the firmware artifact manifest and evidence index beside binaries.
 - `THIRD_PARTY_NOTICES.md` is the notice checklist for ESP-IDF,
   Arduino-ESP32, documentation tooling, CI dependencies, and bundled product
   dependencies.
@@ -41,6 +41,8 @@ or distributing Arc-derived artifacts.
   concurrency, and job timeouts inside the repository's approved CI policy.
 - `tools/npm-lock-check.py --format json` keeps the docs dependency lockfile
   synchronized with `package.json` and backed by registry integrity hashes.
+- `tools/secret-scan-check.py --format json` rejects high-confidence private
+  keys and service tokens in source-visible files before evidence is published.
 
 ## Security And License Path
 

@@ -171,6 +171,7 @@ jobs:
           ./tools/workflow-pins-check.py --format json > .arc-artifacts/workflow-pins.json
           ./tools/workflow-policy-check.py --format json > .arc-artifacts/workflow-policy.json
           ./tools/npm-lock-check.py --format json > .arc-artifacts/npm-lock.json
+          ./tools/secret-scan-check.py --format json > .arc-artifacts/secret-scan.json
           ./tools/evidence-index.py --format json --output .arc-artifacts/evidence-index.json \
             --require .arc-artifacts/source-manifest.json \
             --require .arc-artifacts/third-party-manifest.json \
@@ -179,13 +180,15 @@ jobs:
             --require .arc-artifacts/workflow-pins.json \
             --require .arc-artifacts/workflow-policy.json \
             --require .arc-artifacts/npm-lock.json \
+            --require .arc-artifacts/secret-scan.json \
             .arc-artifacts/source-manifest.json \
             .arc-artifacts/third-party-manifest.json \
             .arc-artifacts/safety-case.json \
             .arc-artifacts/release-evidence.json \
             .arc-artifacts/workflow-pins.json \
             .arc-artifacts/workflow-policy.json \
-            .arc-artifacts/npm-lock.json
+            .arc-artifacts/npm-lock.json \
+            .arc-artifacts/secret-scan.json
 
       - name: Upload repository evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -200,6 +203,7 @@ jobs:
             .arc-artifacts/workflow-pins.json
             .arc-artifacts/workflow-policy.json
             .arc-artifacts/npm-lock.json
+            .arc-artifacts/secret-scan.json
           if-no-files-found: error
           retention-days: 30
 

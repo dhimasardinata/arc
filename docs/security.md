@@ -61,6 +61,11 @@ package entry. The JSON output also reports transitive packages with install
 scripts so release review can decide whether that supply-chain surface is
 acceptable for the docs build.
 
+`tools/secret-scan-check.py --format json` scans tracked and non-ignored source
+files for high-confidence private keys and service-token formats before CI
+publishes release evidence. It is a leak guard, not a substitute for private
+vulnerability reporting or product key custody review.
+
 ## What Still Needs Human Review
 
 CodeQL and Dependabot are repository hygiene gates, not certification evidence.
