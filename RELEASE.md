@@ -28,6 +28,9 @@ for firmware, security, safety, or licensing claims.
 - `./tools/sbom.py --format json` before publishing a source archive, firmware
   image, docs site, or customer evidence bundle that needs SPDX 2.3 dependency
   inventory
+- `./tools/provenance.py --format json <artifact...>` before publishing an
+  evidence or firmware bundle that needs in-toto/SLSA provenance for hashed
+  subjects
 - `npm run docs:build` when docs or docs-site configuration changed
 - `./tools/third-party-manifest-check.py --format json` before relying on
   third-party notice coverage
@@ -71,13 +74,13 @@ evidence that still covers the changed surface.
 ## Publish Record
 
 Store the release note, validation commands, firmware logs, benchmark output,
-HIL evidence, source manifest JSON, firmware artifact manifest JSON, and known
-limitations together. Link the exact commit, tag, or artifact bundle so future
-regressions can be traced back to source.
+HIL evidence, source manifest JSON, firmware artifact manifest JSON,
+provenance JSON, and known limitations together. Link the exact commit, tag, or
+artifact bundle so future regressions can be traced back to source.
 
 CI uploads `arc-evidence` for every build with an evidence index, source
 manifest, third-party manifest, safety-case JSON, release-evidence JSON,
 workflow action pin evidence, workflow policy evidence, npm lockfile evidence,
-secret-scan evidence, and SPDX SBOM evidence.
+secret-scan evidence, SPDX SBOM evidence, and in-toto provenance evidence.
 Firmware builds also upload `arc-binaries` with the firmware artifact manifest
 and its validated evidence index beside the binaries.

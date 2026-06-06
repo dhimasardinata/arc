@@ -66,6 +66,12 @@ files for high-confidence private keys and service-token formats before CI
 publishes release evidence. It is a leak guard, not a substitute for private
 vulnerability reporting or product key custody review.
 
+`tools/provenance.py --format json` emits in-toto/SLSA provenance over the
+evidence subjects that CI publishes. It records the Arc commit, GitHub Actions
+context when present, and SHA-256 digests for the evidence files so a release
+review can trace an artifact bundle back to source without trusting artifact
+names alone.
+
 ## What Still Needs Human Review
 
 CodeQL and Dependabot are repository hygiene gates, not certification evidence.

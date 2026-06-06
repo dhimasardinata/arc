@@ -104,6 +104,12 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("./tools/sbom.py --format json --output .arc-artifacts/sbom.spdx.json", workflow)
         self.assertIn("--require .arc-artifacts/sbom.spdx.json", workflow)
         self.assertIn(".arc-artifacts/sbom.spdx.json", workflow)
+        self.assertIn(
+            "./tools/provenance.py --format json --output .arc-artifacts/provenance.intoto.json",
+            workflow,
+        )
+        self.assertIn("--require .arc-artifacts/provenance.intoto.json", workflow)
+        self.assertIn(".arc-artifacts/provenance.intoto.json", workflow)
         self.assertIn("if-no-files-found: error", workflow)
         self.assertIn("retention-days: 30", workflow)
 

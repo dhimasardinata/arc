@@ -30,11 +30,13 @@ or distributing Arc-derived artifacts.
   an evidence bundle is published.
 - `tools/sbom.py --format json` emits SPDX 2.3 SBOM evidence from the
   third-party manifest and docs npm lockfile.
+- `tools/provenance.py --format json <artifact...>` emits an in-toto Statement
+  with SLSA provenance metadata and SHA-256 subjects for evidence bundles.
 - CI uploads `arc-evidence` with an evidence index, source, third-party,
   safety-case, release metadata, workflow action pin, workflow policy, and npm
-  lockfile JSON plus secret-scan and SPDX SBOM evidence for every build.
-  Firmware builds also upload the firmware artifact manifest and evidence index
-  beside binaries.
+  lockfile JSON plus secret-scan, SPDX SBOM, and in-toto provenance evidence
+  for every build. Firmware builds also upload the firmware artifact manifest
+  and evidence index beside binaries.
 - `THIRD_PARTY_NOTICES.md` is the notice checklist for ESP-IDF,
   Arduino-ESP32, documentation tooling, CI dependencies, and bundled product
   dependencies.
@@ -51,6 +53,8 @@ or distributing Arc-derived artifacts.
   keys and service tokens in source-visible files before evidence is published.
 - `tools/sbom.py --format json` gives releases a machine-readable SPDX bill of
   materials for Arc, external dependency groups, and locked docs packages.
+- `tools/provenance.py --format json` ties published evidence subjects back to
+  the exact Arc commit and workflow or local build context.
 
 ## Security And License Path
 

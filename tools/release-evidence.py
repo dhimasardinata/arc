@@ -36,6 +36,7 @@ REQUIRED_COMMANDS = [
     "./tools/third-party-manifest-check.py --format json",
     "./tools/evidence-index.py --format json",
     "./tools/sbom.py --format json",
+    "./tools/provenance.py --format json",
     "npm run docs:build",
     "idf.py build",
 ]
