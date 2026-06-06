@@ -54,11 +54,12 @@ pins every job to the reviewed Ubuntu runner image, requires every job to carry
 `timeout-minutes`, rejects direct GitHub expression interpolation inside shell
 scripts, and requires changed-base SHA values to be guarded as 40-hex commits
 before shell steps pass them to `git`. It also rejects combined restore/save
-cache actions and requires cache-save steps to run only on `push`, keeping pull
-requests from writing shared CI caches. The policy keeps the CI Ruff formatter
-install pinned to the same exact version as local fallback formatting. The only
-job-level write permissions allowed by policy are `pages: write` and
-`id-token: write` on the Pages deploy job.
+cache actions, rejects implicit `setup-node` npm caching, and requires cache-save
+steps to run only on `push`, keeping pull requests and manual docs runs from
+writing shared CI caches. The policy keeps the CI Ruff formatter install pinned
+to the same exact version as local fallback formatting. The only job-level write
+permissions allowed by policy are `pages: write` and `id-token: write` on the
+Pages deploy job.
 
 `tools/npm-lock-check.py --format json` verifies that the docs `package-lock.json`
 is npm lockfile v3, matches the root dependency declarations in `package.json`,

@@ -52,6 +52,14 @@ class WorkflowPolicyTest(unittest.TestCase):
                 "github.event_name == 'push'",
                 steps[(".github/workflows/build.yml", "esp32s3", step_name)]["if"],
             )
+        self.assertEqual(
+            steps[(".github/workflows/pages.yml", "build", "Restore npm cache")]["uses"],
+            "actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae",
+        )
+        self.assertIn(
+            "github.event_name == 'push'",
+            steps[(".github/workflows/pages.yml", "build", "Save npm cache")]["if"],
+        )
 
     def test_rejects_pull_request_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -388,6 +396,40 @@ jobs:
         self.assertFalse(evidence["ok"])
         self.assertIn(
             ".github/workflows/build.yml:esp32s3:Save ccache: cache save must be gated to push events",
+            evidence["problems"],
+        )
+
+    def test_rejects_setup_node_implicit_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "pages.yml",
+                """name: pages
+on:
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+          cache: npm
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/pages.yml:build:uses:actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e: setup-node cache must use explicit restore and push-gated save",
             evidence["problems"],
         )
 

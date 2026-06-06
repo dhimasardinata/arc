@@ -585,6 +585,12 @@ if grep -qF 'uses: actions/cache@' .github/workflows/build.yml \
     || ! grep -qF "if: github.event_name == 'push' && steps.firmware-plan.outputs.count != '0' && steps.build-firmware.outputs.cache_ready == '1'" .github/workflows/build.yml; then
     die "build workflow cache writes must be explicit and push-gated"
 fi
+if grep -qF 'cache: npm' .github/workflows/pages.yml \
+    || ! grep -qF 'name: Restore npm cache' .github/workflows/pages.yml \
+    || ! grep -qF 'name: Save npm cache' .github/workflows/pages.yml \
+    || ! grep -qF "if: github.event_name == 'push'" .github/workflows/pages.yml; then
+    die "pages workflow npm cache must be explicit and push-gated"
+fi
 
 if ! grep -qE 'go run tools/clangd-compile-commands\.go --validate-arc-headers' .github/workflows/build.yml; then
     die "build workflow must validate Arc header compile commands"

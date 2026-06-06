@@ -35,6 +35,7 @@ class Step(NamedTuple):
     name: str
     if_expr: str | None
     uses: str | None
+    with_inputs: dict[str, str]
     env: dict[str, str]
     run: str | None
 
@@ -137,6 +138,13 @@ def parse_step_env(step_block: list[str]) -> dict[str, str]:
     return {}
 
 
+def parse_step_with(step_block: list[str]) -> dict[str, str]:
+    for index, line in enumerate(step_block):
+        if re.match(r"^        with:\s*$", line):
+            return mapping_from_block(indented_child_block(step_block, index + 1, 8), 10)
+    return {}
+
+
 def parse_step_run(step_block: list[str]) -> str | None:
     for index, line in enumerate(step_block):
         match = re.match(r"^        run:\s*(.*?)\s*$", line)
@@ -167,7 +175,7 @@ def parse_step_if(step_lines: list[str]) -> str | None:
     for line in step_lines:
         match = re.match(r"^        if:\s*(.+?)\s*$", line)
         if match:
-            return match.group(1).strip("\"'")
+            return match.group(1)
     return None
 
 
@@ -195,6 +203,7 @@ def parse_steps(job_block: list[str]) -> list[Step]:
                 name=name,
                 if_expr=parse_step_if(step_lines),
                 uses=parse_step_uses(step_lines),
+                with_inputs=parse_step_with(step_block),
                 env=parse_step_env(step_block),
                 run=parse_step_run(step_block),
             )
@@ -259,6 +268,7 @@ def workflow_record(path: Path, root: Path) -> dict[str, Any]:
                         "name": step.name,
                         "if": step.if_expr,
                         "uses": step.uses,
+                        "with": step.with_inputs,
                         "env": step.env,
                         "has_run": step.run is not None,
                         "github_expression_in_run": "${{" in (step.run or ""),
@@ -325,6 +335,10 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
                 problems.append(f"{path}:{job_id}:{step_name}: cache use must split restore and push-gated save")
             if uses.startswith("actions/cache/save@") and "github.event_name == 'push'" not in (step["if"] or ""):
                 problems.append(f"{path}:{job_id}:{step_name}: cache save must be gated to push events")
+            if uses.startswith("actions/setup-node@") and "cache" in step["with"]:
+                problems.append(
+                    f"{path}:{job_id}:{step_name}: setup-node cache must use explicit restore and push-gated save"
+                )
     return problems
 
 
