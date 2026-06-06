@@ -268,6 +268,19 @@ if ! grep -qF 'ESP-IDF' THIRD_PARTY_NOTICES.md \
     die "THIRD_PARTY_NOTICES.md must cover firmware, docs, and product notice rules"
 fi
 
+if [[ ! -f docs/governance.md ]]; then
+    die "docs/governance.md must expose repository governance controls"
+fi
+
+if ! grep -qF 'CONTRIBUTING.md' docs/governance.md \
+    || ! grep -qF 'RELEASE.md' docs/governance.md \
+    || ! grep -qF 'SECURITY.md' docs/governance.md \
+    || ! grep -qF 'THIRD_PARTY_NOTICES.md' docs/governance.md \
+    || ! grep -qF '.github/CODEOWNERS' docs/governance.md \
+    || ! grep -qF 'tools/release-evidence.py --format json --require-clean' docs/governance.md; then
+    die "docs/governance.md must link contribution, release, security, notice, ownership, and evidence controls"
+fi
+
 if [[ ! -x tools/release-evidence.py ]]; then
     die "release evidence tool must stay executable"
 fi

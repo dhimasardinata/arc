@@ -33,6 +33,8 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("release evidence tool must stay executable", text)
         self.assertIn("THIRD_PARTY_NOTICES.md must define third-party notice handling", text)
         self.assertIn("THIRD_PARTY_NOTICES.md must cover firmware, docs", text)
+        self.assertIn("docs/governance.md must expose repository governance controls", text)
+        self.assertIn("docs/governance.md must link contribution, release, security", text)
         self.assertIn("pull request template must keep review evidence consistent", text)
         self.assertIn("Target hardware or host-only scope", text)
         self.assertIn(".github/ISSUE_TEMPLATE/bug_report.yml", text)
