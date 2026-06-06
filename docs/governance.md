@@ -54,8 +54,8 @@ or distributing Arc-derived artifacts.
 - `tools/workflow-pins-check.py --format json` keeps GitHub Actions supply-chain
   references immutable by requiring full commit SHA pins and version comments.
 - `tools/workflow-policy-check.py --format json` keeps workflow permissions,
-  concurrency, job timeouts, and shell expression guards inside the
-  repository's approved CI policy.
+  concurrency, job timeouts, formatter pins, and shell expression guards inside
+  the repository's approved CI policy.
 - `tools/npm-lock-check.py --format json` keeps the docs dependency lockfile
   synchronized with `package.json`, backed by registry integrity hashes, and
   limited to reviewed install-script packages.

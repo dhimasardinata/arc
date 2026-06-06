@@ -89,7 +89,7 @@ jobs:
       - name: Ensure format tools
         shell: bash
         run: |
-          python3 -m pip install 'ruff>=0.8,<1'
+          python3 -m pip install 'ruff==0.15.16'
 
       - name: Restore ESP-IDF and tools cache
         id: idf-cache

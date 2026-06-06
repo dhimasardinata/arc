@@ -27,6 +27,7 @@ JOB_PERMISSIONS = {
 }
 ARC_BASE_SHA_EXPR = "${{ github.event.pull_request.base.sha || github.event.before }}"
 ARC_BASE_SHA_HEX_GUARD = '[[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]'
+RUFF_SPEC = "ruff==0.15.16"
 
 
 class Step(NamedTuple):
@@ -139,7 +140,7 @@ def parse_step_run(step_block: list[str]) -> str | None:
             continue
         scalar = match.group(1)
         if scalar and scalar not in {"|", ">"}:
-            return scalar.strip("\"'")
+            return scalar
         run_lines: list[str] = []
         for run_line in indented_child_block(step_block, index + 1, 8):
             if len(run_line) >= 10:
@@ -148,6 +149,13 @@ def parse_step_run(step_block: list[str]) -> str | None:
                 run_lines.append(run_line.strip())
         return "\n".join(run_lines)
     return None
+
+
+def ruff_install_spec(run: str | None) -> str | None:
+    if run is None:
+        return None
+    match = re.search(r"python3 -m pip install ['\"](?P<spec>ruff[^'\"]+)['\"]", run)
+    return match.group("spec") if match else None
 
 
 def parse_steps(job_block: list[str]) -> list[Step]:
@@ -221,6 +229,7 @@ def workflow_record(path: Path, root: Path) -> dict[str, Any]:
                         "arc_base_sha_guarded": ARC_BASE_SHA_HEX_GUARD in (step.run or "")
                         if "ARC_BASE_SHA" in step.env
                         else None,
+                        "ruff_install_spec": ruff_install_spec(step.run),
                     }
                     for step in job.steps
                 ],
@@ -270,6 +279,9 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
                     problems.append(f"{path}:{job_id}:{step_name}: ARC_BASE_SHA expression must stay reviewed")
                 if step["arc_base_sha_guarded"] is not True:
                     problems.append(f"{path}:{job_id}:{step_name}: ARC_BASE_SHA must be guarded as a 40-hex commit")
+            ruff_spec = step["ruff_install_spec"]
+            if ruff_spec is not None and ruff_spec != RUFF_SPEC:
+                problems.append(f"{path}:{job_id}:{step_name}: Ruff install must pin {RUFF_SPEC}")
     return problems
 
 

@@ -17,6 +17,12 @@ class FormatToolTest(unittest.TestCase):
         self.assertIn("ARC_FORMAT_JOBS", text)
         self.assertIn("xargs -0 -r -n 64 -P", text)
 
+    def test_ruff_fallback_spec_is_exact(self) -> None:
+        text = (ROOT / "tools" / "format.sh").read_text(encoding="utf-8")
+
+        self.assertIn("RUFF_SPEC='ruff==0.15.16'", text)
+        self.assertNotIn("ruff>=", text)
+
     def test_default_check_includes_untracked_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

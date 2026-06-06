@@ -22,6 +22,8 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("concurrency:\n  group: build-${{ github.ref }}", workflow)
         self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
         self.assertIn("timeout-minutes: 90", workflow)
+        self.assertIn("python3 -m pip install 'ruff==0.15.16'", workflow)
+        self.assertNotIn("ruff>=", workflow)
 
     def test_workflow_action_refs_have_policy_gate(self) -> None:
         check_repo = (ROOT / "tools" / "check-repo.sh").read_text(encoding="utf-8")

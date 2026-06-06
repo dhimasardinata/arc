@@ -31,6 +31,16 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertEqual(
             jobs[(".github/workflows/pages.yml", "deploy")]["permissions"], {"id-token": "write", "pages": "write"}
         )
+        steps = {
+            (workflow["path"], job["id"], step["name"]): step
+            for workflow in evidence["workflows"]
+            for job in workflow["jobs"]
+            for step in job["steps"]
+        }
+        self.assertEqual(
+            steps[(".github/workflows/build.yml", "esp32s3", "Ensure format tools")]["ruff_install_spec"],
+            workflow_policy_check.RUFF_SPEC,
+        )
 
     def test_rejects_pull_request_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -243,6 +253,38 @@ jobs:
             evidence = workflow_policy_check.collect(root)
 
         self.assertTrue(evidence["ok"], evidence["problems"])
+
+    def test_rejects_mutable_ruff_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ensure format tools
+        run: python3 -m pip install 'ruff>=0.8,<1'
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/build.yml:esp32s3:Ensure format tools: Ruff install must pin ruff==0.15.16",
+            evidence["problems"],
+        )
 
 
 if __name__ == "__main__":

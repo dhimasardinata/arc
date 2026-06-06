@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+RUFF_SPEC='ruff==0.15.16'
+
 mode="write"
 if [[ "${1:-}" == "--check" ]]; then
     mode="check"
@@ -58,9 +60,9 @@ ruff_cmd() {
     elif python3 -m ruff --version >/dev/null 2>&1; then
         printf '%s\0' python3 -m ruff
     elif command -v uvx >/dev/null 2>&1; then
-        printf '%s\0' uvx --from 'ruff>=0.8,<1' ruff
+        printf '%s\0' uvx --from "$RUFF_SPEC" ruff
     elif command -v pipx >/dev/null 2>&1; then
-        printf '%s\0' pipx run --spec 'ruff>=0.8,<1' ruff
+        printf '%s\0' pipx run --spec "$RUFF_SPEC" ruff
     else
         die "missing 'ruff'; install ruff, uvx, or pipx"
     fi

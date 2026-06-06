@@ -438,6 +438,12 @@ if ! grep -qE '\./tools/host-tests\.sh' .github/workflows/build.yml; then
     die "build workflow must run host tests before firmware builds"
 fi
 
+if ! grep -qF "python3 -m pip install 'ruff==0.15.16'" .github/workflows/build.yml \
+    || ! grep -qF "RUFF_SPEC='ruff==0.15.16'" tools/format.sh \
+    || grep -qF 'ruff>=' .github/workflows/build.yml tools/format.sh; then
+    die "CI and local formatter fallbacks must pin Ruff exactly"
+fi
+
 if ! grep -qF '.arc-artifacts/' .gitignore; then
     die ".gitignore must ignore generated CI evidence artifacts"
 fi
