@@ -1,0 +1,69 @@
+name: Arc source or tooling bug
+description: Report a reproducible issue in Arc headers, tools, docs, CI policy, or examples.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for repository bugs that can be reproduced from source, host tools, docs, CI, or example code. Do not include secrets, private keys, certificates, or exploit details here; use `SECURITY.md` for private vulnerability reports.
+  - type: input
+    id: commit
+    attributes:
+      label: Arc commit
+      description: Paste the commit SHA or branch name where you saw the issue.
+      placeholder: a75ab5d
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Public header or API contract
+        - Host tests or tooling
+        - CMake or ESP-IDF integration
+        - Documentation
+        - GitHub Actions or repository policy
+        - Example firmware
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: List exact commands, source paths, inputs, or docs links needed to reproduce it.
+      placeholder: |
+        1. Run ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should Arc do instead?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior or output
+      description: Paste the smallest useful error, log, or diff. Use code fences for command output.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation already run
+      description: Mark commands already tried and include relevant failures.
+      value: |
+        - [ ] `./tools/check-repo.sh`
+        - [ ] `./tools/host-tests.sh`
+        - [ ] `tools/clangd-compile-commands.py --validate-arc-headers`
+        - [ ] relevant `idf.py build`
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include constraints, target assumptions, or links that help triage.

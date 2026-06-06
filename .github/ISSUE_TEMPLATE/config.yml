@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/dhimasardinata/arc/security/policy
+    about: Use the security policy for vulnerability reports, secrets, keys, or exploit details.
+  - name: Troubleshooting guide
+    url: https://github.com/dhimasardinata/arc/blob/main/docs/troubleshooting.md
+    about: Check setup, build, editor, docs, benchmark, and evidence fixes before filing.

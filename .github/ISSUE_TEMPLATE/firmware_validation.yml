@@ -1,0 +1,79 @@
+name: Firmware build or runtime report
+description: Report an ESP32-S3 build, flash, runtime, benchmark, or hardware validation issue.
+title: "firmware: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for firmware behavior that depends on ESP-IDF, board wiring, target configuration, or runtime logs. Keep secrets, Wi-Fi credentials, certificates, and production keys out of public issues.
+  - type: input
+    id: commit
+    attributes:
+      label: Arc commit
+      description: Paste the Arc commit SHA or branch name.
+      placeholder: a75ab5d
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target
+      options:
+        - ESP32-S3
+        - ESP32-S31 experimental
+        - Host-only
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: idf
+    attributes:
+      label: ESP-IDF version and commit
+      description: Include `idf.py --version` output and the ESP-IDF commit if available.
+      placeholder: ESP-IDF v6.0.1, d59a48530db46665ea70e2876738062ee0a9cdc2
+    validations:
+      required: true
+  - type: input
+    id: project
+    attributes:
+      label: Project or example
+      description: Root firmware project or exact example path.
+      placeholder: examples/esp32s3/udp
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: Commands run
+      description: Include environment setup and exact build, flash, monitor, benchmark, or test commands.
+      placeholder: |
+        source ./env.sh
+        idf.py -C examples/esp32s3/udp build
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware and configuration
+      description: Board, wiring, peripherals, partitions, sdkconfig.defaults changes, and relevant Kconfig values.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or evidence
+      description: Paste the smallest useful build error, serial log, benchmark output, or HIL artifact summary.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should the firmware do?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: State whether this affects safety, security, performance claims, or release evidence.

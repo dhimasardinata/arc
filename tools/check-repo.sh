@@ -241,6 +241,22 @@ if ! grep -qF './tools/check-repo.sh' .github/pull_request_template.md \
     die "pull request template must ask for validation, hardware scope, and SDK/config impact"
 fi
 
+for issue_template in .github/ISSUE_TEMPLATE/bug_report.yml .github/ISSUE_TEMPLATE/firmware_validation.yml .github/ISSUE_TEMPLATE/config.yml; do
+    [[ -f "$issue_template" ]] || die "missing GitHub issue template: $issue_template"
+done
+
+if ! grep -qF 'Arc commit' .github/ISSUE_TEMPLATE/bug_report.yml \
+    || ! grep -qF 'Validation already run' .github/ISSUE_TEMPLATE/bug_report.yml \
+    || ! grep -qF 'SECURITY.md' .github/ISSUE_TEMPLATE/bug_report.yml; then
+    die "bug issue template must request commit, validation, and private security routing"
+fi
+
+if ! grep -qF 'ESP-IDF version and commit' .github/ISSUE_TEMPLATE/firmware_validation.yml \
+    || ! grep -qF 'Hardware and configuration' .github/ISSUE_TEMPLATE/firmware_validation.yml \
+    || ! grep -qF 'Logs or evidence' .github/ISSUE_TEMPLATE/firmware_validation.yml; then
+    die "firmware issue template must request SDK version, hardware config, and evidence"
+fi
+
 if ! grep -qF 'permissions:' .github/workflows/build.yml || ! grep -qF '  contents: read' .github/workflows/build.yml; then
     die "build workflow must run with least-privilege contents:read permissions"
 fi
