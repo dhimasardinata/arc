@@ -89,6 +89,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("name: arc-evidence", workflow)
         self.assertIn("./tools/evidence-index.py --format json --output .arc-artifacts/evidence-index.json", workflow)
         self.assertIn(".arc-artifacts/evidence-index.json", workflow)
+        self.assertIn("./tools/evidence-bundle-check.py .arc-artifacts", workflow)
         self.assertIn(".arc-artifacts/source-manifest.json", workflow)
         self.assertIn(".arc-artifacts/third-party-manifest.json", workflow)
         self.assertIn(".arc-artifacts/safety-case.json", workflow)

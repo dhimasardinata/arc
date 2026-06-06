@@ -263,6 +263,7 @@ if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/host-tests.sh' RELEASE.md \
     || ! grep -qF './tools/firmware-manifest.py --format json --require-artifacts' RELEASE.md \
     || ! grep -qF './tools/evidence-index.py --format json' RELEASE.md \
+    || ! grep -qF './tools/evidence-bundle-check.py .arc-artifacts' RELEASE.md \
     || ! grep -qF './tools/sbom.py --format json' RELEASE.md \
     || ! grep -qF './tools/provenance.py --format json' RELEASE.md \
     || ! grep -qF './tools/release-evidence.py --format json --require-clean' RELEASE.md \
@@ -308,6 +309,7 @@ if ! grep -qF 'CONTRIBUTING.md' docs/governance.md \
     || ! grep -qF '.github/CODEOWNERS' docs/governance.md \
     || ! grep -qF 'tools/source-manifest.py --format json --require-clean' docs/governance.md \
     || ! grep -qF 'tools/evidence-index.py --format json' docs/governance.md \
+    || ! grep -qF 'tools/evidence-bundle-check.py .arc-artifacts' docs/governance.md \
     || ! grep -qF 'tools/sbom.py --format json' docs/governance.md \
     || ! grep -qF 'tools/provenance.py --format json' docs/governance.md \
     || ! grep -qF 'tools/release-evidence.py --format json --require-clean' docs/governance.md; then
@@ -324,6 +326,10 @@ fi
 
 if [[ ! -x tools/evidence-index.py ]]; then
     die "evidence index tool must stay executable"
+fi
+
+if [[ ! -x tools/evidence-bundle-check.py ]]; then
+    die "evidence bundle check tool must stay executable"
 fi
 
 if [[ ! -x tools/workflow-pins-check.py ]]; then
@@ -459,6 +465,9 @@ fi
 if ! grep -qE '\./tools/evidence-index\.py --format json --output \.arc-artifacts/evidence-index\.json' .github/workflows/build.yml; then
     die "build workflow must hash repository evidence files"
 fi
+if ! grep -qE '\./tools/evidence-bundle-check\.py \.arc-artifacts' .github/workflows/build.yml; then
+    die "build workflow must verify repository evidence bundle coherence"
+fi
 if ! grep -qE '\./tools/workflow-pins-check\.py --format json > \.arc-artifacts/workflow-pins\.json' .github/workflows/build.yml; then
     die "build workflow must emit workflow action pin evidence"
 fi
@@ -548,6 +557,7 @@ required_exec=(
     tools/arc-projects.py
     tools/ci-build-plan.py
     tools/clangd-compile-commands.py
+    tools/evidence-bundle-check.py
     tools/evidence-index.py
     tools/firmware-manifest.py
     tools/format.sh

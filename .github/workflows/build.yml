@@ -204,6 +204,7 @@ jobs:
             .arc-artifacts/secret-scan.json \
             .arc-artifacts/sbom.spdx.json \
             .arc-artifacts/provenance.intoto.json
+          ./tools/evidence-bundle-check.py .arc-artifacts
 
       - name: Upload repository evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -28,6 +28,9 @@ or distributing Arc-derived artifacts.
 - `tools/evidence-index.py --format json` hashes generated evidence files and
   rejects malformed JSON, `ok: false`, or non-empty `problems` payloads before
   an evidence bundle is published.
+- `tools/evidence-bundle-check.py .arc-artifacts` verifies that the evidence
+  index, provenance subjects, artifact hashes, and commit identities agree
+  before CI uploads the bundle.
 - `tools/sbom.py --format json` emits SPDX 2.3 SBOM evidence from the
   third-party manifest and docs npm lockfile.
 - `tools/provenance.py --format json <artifact...>` emits an in-toto Statement
@@ -55,6 +58,8 @@ or distributing Arc-derived artifacts.
   materials for Arc, external dependency groups, and locked docs packages.
 - `tools/provenance.py --format json` ties published evidence subjects back to
   the exact Arc commit and workflow or local build context.
+- `tools/evidence-bundle-check.py .arc-artifacts` checks that the uploaded
+  evidence bundle is internally coherent instead of only present.
 
 ## Security And License Path
 

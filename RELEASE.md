@@ -25,6 +25,8 @@ for firmware, security, safety, or licensing claims.
 - `./tools/evidence-index.py --format json` over generated evidence files before
   publishing an evidence bundle; the index hashes each file and rejects
   malformed or failed evidence JSON
+- `./tools/evidence-bundle-check.py .arc-artifacts` after the evidence index and
+  provenance files are generated, before uploading or publishing the bundle
 - `./tools/sbom.py --format json` before publishing a source archive, firmware
   image, docs site, or customer evidence bundle that needs SPDX 2.3 dependency
   inventory
