@@ -34,6 +34,7 @@ REQUIRED_COMMANDS = [
     "./tools/firmware-manifest.py --format json --require-artifacts",
     "./tools/source-manifest.py --format json --require-clean",
     "./tools/third-party-manifest-check.py --format json",
+    "./tools/evidence-workflow-check.py --format json",
     "./tools/license-policy-check.py --format json",
     "./tools/evidence-index.py --format json",
     "./tools/evidence-bundle-check.py .arc-artifacts",

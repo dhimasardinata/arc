@@ -81,6 +81,10 @@ names alone.
 hashes, provenance subjects, SBOM commit, release metadata, and source manifest
 all agree before CI uploads the repository evidence bundle.
 
+`tools/evidence-workflow-check.py --format json` verifies that the build
+workflow keeps every repository evidence file generated, included in provenance,
+required by the index, checked as a bundle, and uploaded with explicit retention.
+
 ## What Still Needs Human Review
 
 CodeQL and Dependabot are repository hygiene gates, not certification evidence.

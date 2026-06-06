@@ -30,6 +30,7 @@ class ReleaseEvidenceTest(unittest.TestCase):
         self.assertIn("./tools/firmware-manifest.py --format json --require-artifacts", evidence["required_commands"])
         self.assertIn("./tools/source-manifest.py --format json --require-clean", evidence["required_commands"])
         self.assertIn("./tools/third-party-manifest-check.py --format json", evidence["required_commands"])
+        self.assertIn("./tools/evidence-workflow-check.py --format json", evidence["required_commands"])
         self.assertIn("./tools/license-policy-check.py --format json", evidence["required_commands"])
         self.assertIn("./tools/evidence-index.py --format json", evidence["required_commands"])
         self.assertIn("./tools/evidence-bundle-check.py .arc-artifacts", evidence["required_commands"])

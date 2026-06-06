@@ -31,6 +31,9 @@ or distributing Arc-derived artifacts.
 - `tools/evidence-bundle-check.py .arc-artifacts` verifies that the evidence
   index, provenance subjects, artifact hashes, and commit identities agree
   before CI uploads the bundle.
+- `tools/evidence-workflow-check.py --format json` verifies that the build
+  workflow generates, indexes, signs, checks, and uploads the complete
+  repository evidence contract.
 - `tools/sbom.py --format json` emits SPDX 2.3 SBOM evidence from the
   third-party manifest and docs npm lockfile.
 - `tools/license-policy-check.py --format json` rejects missing or unapproved
@@ -65,6 +68,8 @@ or distributing Arc-derived artifacts.
   the exact Arc commit and workflow or local build context.
 - `tools/evidence-bundle-check.py .arc-artifacts` checks that the uploaded
   evidence bundle is internally coherent instead of only present.
+- `tools/evidence-workflow-check.py --format json` checks that CI keeps the
+  repository evidence upload contract complete.
 
 ## Security And License Path
 

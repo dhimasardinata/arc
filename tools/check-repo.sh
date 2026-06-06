@@ -84,6 +84,7 @@ python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
 python3 tools/release-evidence.py --format json >/dev/null || die "release evidence manifest failed"
 ./tools/workflow-pins-check.py --format json >/dev/null || die "workflow action pin check failed"
 ./tools/workflow-policy-check.py --format json >/dev/null || die "workflow policy check failed"
+./tools/evidence-workflow-check.py --format json >/dev/null || die "evidence workflow contract check failed"
 ./tools/npm-lock-check.py --format json >/dev/null || die "npm lockfile evidence check failed"
 ./tools/license-policy-check.py --format json >/dev/null || die "license policy evidence check failed"
 ./tools/secret-scan-check.py --format json >/dev/null || die "secret scan evidence check failed"
@@ -265,6 +266,7 @@ if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/firmware-manifest.py --format json --require-artifacts' RELEASE.md \
     || ! grep -qF './tools/evidence-index.py --format json' RELEASE.md \
     || ! grep -qF './tools/evidence-bundle-check.py .arc-artifacts' RELEASE.md \
+    || ! grep -qF './tools/evidence-workflow-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/license-policy-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/sbom.py --format json' RELEASE.md \
     || ! grep -qF './tools/provenance.py --format json' RELEASE.md \
@@ -312,6 +314,7 @@ if ! grep -qF 'CONTRIBUTING.md' docs/governance.md \
     || ! grep -qF 'tools/source-manifest.py --format json --require-clean' docs/governance.md \
     || ! grep -qF 'tools/evidence-index.py --format json' docs/governance.md \
     || ! grep -qF 'tools/evidence-bundle-check.py .arc-artifacts' docs/governance.md \
+    || ! grep -qF 'tools/evidence-workflow-check.py --format json' docs/governance.md \
     || ! grep -qF 'tools/license-policy-check.py --format json' docs/governance.md \
     || ! grep -qF 'tools/sbom.py --format json' docs/governance.md \
     || ! grep -qF 'tools/provenance.py --format json' docs/governance.md \
@@ -341,6 +344,10 @@ fi
 
 if [[ ! -x tools/workflow-policy-check.py ]]; then
     die "workflow policy tool must stay executable"
+fi
+
+if [[ ! -x tools/evidence-workflow-check.py ]]; then
+    die "evidence workflow contract tool must stay executable"
 fi
 
 if [[ ! -x tools/npm-lock-check.py ]]; then
@@ -475,6 +482,9 @@ fi
 if ! grep -qE '\./tools/evidence-bundle-check\.py \.arc-artifacts' .github/workflows/build.yml; then
     die "build workflow must verify repository evidence bundle coherence"
 fi
+if ! grep -qE '\./tools/evidence-workflow-check\.py --format json' tools/check-repo.sh; then
+    die "repo check must validate the repository evidence workflow contract"
+fi
 if ! grep -qE '\./tools/workflow-pins-check\.py --format json > \.arc-artifacts/workflow-pins\.json' .github/workflows/build.yml; then
     die "build workflow must emit workflow action pin evidence"
 fi
@@ -572,6 +582,7 @@ required_exec=(
     tools/clangd-compile-commands.py
     tools/evidence-bundle-check.py
     tools/evidence-index.py
+    tools/evidence-workflow-check.py
     tools/firmware-manifest.py
     tools/format.sh
     tools/hil-evidence-check.py
