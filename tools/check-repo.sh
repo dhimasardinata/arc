@@ -83,6 +83,7 @@ python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
 ./tools/third-party-manifest-check.py || die "third-party manifest check failed"
 python3 tools/release-evidence.py --format json >/dev/null || die "release evidence manifest failed"
 ./tools/workflow-pins-check.py --format json >/dev/null || die "workflow action pin check failed"
+./tools/workflow-policy-check.py --format json >/dev/null || die "workflow policy check failed"
 ./tools/npm-lock-check.py --format json >/dev/null || die "npm lockfile evidence check failed"
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"
 
@@ -320,6 +321,10 @@ if [[ ! -x tools/workflow-pins-check.py ]]; then
     die "workflow action pin tool must stay executable"
 fi
 
+if [[ ! -x tools/workflow-policy-check.py ]]; then
+    die "workflow policy tool must stay executable"
+fi
+
 if [[ ! -x tools/npm-lock-check.py ]]; then
     die "npm lockfile evidence tool must stay executable"
 fi
@@ -422,7 +427,7 @@ fi
 if ! grep -qE 'name: Repository evidence bundle' .github/workflows/build.yml; then
     die "build workflow must emit repository evidence artifacts"
 fi
-for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins npm-lock; do
+for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins workflow-policy npm-lock; do
     if ! grep -qF ".arc-artifacts/$evidence_file.json" .github/workflows/build.yml; then
         die "build workflow must publish $evidence_file JSON evidence"
     fi
@@ -435,6 +440,9 @@ if ! grep -qE '\./tools/evidence-index\.py --format json --output \.arc-artifact
 fi
 if ! grep -qE '\./tools/workflow-pins-check\.py --format json > \.arc-artifacts/workflow-pins\.json' .github/workflows/build.yml; then
     die "build workflow must emit workflow action pin evidence"
+fi
+if ! grep -qE '\./tools/workflow-policy-check\.py --format json > \.arc-artifacts/workflow-policy\.json' .github/workflows/build.yml; then
+    die "build workflow must emit workflow policy evidence"
 fi
 if ! grep -qE '\./tools/npm-lock-check\.py --format json > \.arc-artifacts/npm-lock\.json' .github/workflows/build.yml; then
     die "build workflow must emit npm lockfile evidence"
@@ -508,6 +516,7 @@ required_exec=(
     tools/topology-check.py
     tools/tool-tests.sh
     tools/use-after-move-check.sh
+    tools/workflow-policy-check.py
     tools/workflow-pins-check.py
     tools/install-git-hooks.sh
 )

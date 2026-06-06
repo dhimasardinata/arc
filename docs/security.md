@@ -48,6 +48,12 @@ human release track without trusting a mutable tag. The same check requires
 workflows do not need to leave the GitHub token in the local Git config after
 checkout.
 
+`tools/workflow-policy-check.py --format json` records the approved workflow
+permission maps, rejects `pull_request_target`, requires concurrency controls,
+and requires every job to carry `timeout-minutes`. The only job-level write
+permissions allowed by policy are `pages: write` and `id-token: write` on the
+Pages deploy job.
+
 `tools/npm-lock-check.py --format json` verifies that the docs `package-lock.json`
 is npm lockfile v3, matches the root dependency declarations in `package.json`,
 and keeps registry `resolved` URLs plus SHA-512 integrity strings for each

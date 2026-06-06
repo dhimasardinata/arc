@@ -169,6 +169,7 @@ jobs:
           ./tools/safety-case-check.py --format json > .arc-artifacts/safety-case.json
           ./tools/release-evidence.py --format json --require-clean > .arc-artifacts/release-evidence.json
           ./tools/workflow-pins-check.py --format json > .arc-artifacts/workflow-pins.json
+          ./tools/workflow-policy-check.py --format json > .arc-artifacts/workflow-policy.json
           ./tools/npm-lock-check.py --format json > .arc-artifacts/npm-lock.json
           ./tools/evidence-index.py --format json --output .arc-artifacts/evidence-index.json \
             --require .arc-artifacts/source-manifest.json \
@@ -176,12 +177,14 @@ jobs:
             --require .arc-artifacts/safety-case.json \
             --require .arc-artifacts/release-evidence.json \
             --require .arc-artifacts/workflow-pins.json \
+            --require .arc-artifacts/workflow-policy.json \
             --require .arc-artifacts/npm-lock.json \
             .arc-artifacts/source-manifest.json \
             .arc-artifacts/third-party-manifest.json \
             .arc-artifacts/safety-case.json \
             .arc-artifacts/release-evidence.json \
             .arc-artifacts/workflow-pins.json \
+            .arc-artifacts/workflow-policy.json \
             .arc-artifacts/npm-lock.json
 
       - name: Upload repository evidence
@@ -195,6 +198,7 @@ jobs:
             .arc-artifacts/safety-case.json
             .arc-artifacts/release-evidence.json
             .arc-artifacts/workflow-pins.json
+            .arc-artifacts/workflow-policy.json
             .arc-artifacts/npm-lock.json
           if-no-files-found: error
           retention-days: 30

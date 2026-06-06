@@ -95,6 +95,8 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn(".arc-artifacts/release-evidence.json", workflow)
         self.assertIn("./tools/workflow-pins-check.py --format json > .arc-artifacts/workflow-pins.json", workflow)
         self.assertIn(".arc-artifacts/workflow-pins.json", workflow)
+        self.assertIn("./tools/workflow-policy-check.py --format json > .arc-artifacts/workflow-policy.json", workflow)
+        self.assertIn(".arc-artifacts/workflow-policy.json", workflow)
         self.assertIn("./tools/npm-lock-check.py --format json > .arc-artifacts/npm-lock.json", workflow)
         self.assertIn(".arc-artifacts/npm-lock.json", workflow)
         self.assertIn("if-no-files-found: error", workflow)

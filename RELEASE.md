@@ -70,6 +70,7 @@ regressions can be traced back to source.
 
 CI uploads `arc-evidence` for every build with an evidence index, source
 manifest, third-party manifest, safety-case JSON, release-evidence JSON,
-workflow action pin evidence, and npm lockfile evidence.
+workflow action pin evidence, workflow policy evidence, and npm lockfile
+evidence.
 Firmware builds also upload `arc-binaries` with the firmware artifact manifest
 and its evidence index beside the binaries.
