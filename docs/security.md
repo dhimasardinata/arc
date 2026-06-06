@@ -50,9 +50,11 @@ checkout.
 
 `tools/workflow-policy-check.py --format json` records the approved workflow
 permission maps, rejects `pull_request_target`, requires concurrency controls,
-and requires every job to carry `timeout-minutes`. The only job-level write
-permissions allowed by policy are `pages: write` and `id-token: write` on the
-Pages deploy job.
+requires every job to carry `timeout-minutes`, rejects direct GitHub expression
+interpolation inside shell scripts, and requires changed-base SHA values to be
+guarded as 40-hex commits before shell steps pass them to `git`. The only
+job-level write permissions allowed by policy are `pages: write` and
+`id-token: write` on the Pages deploy job.
 
 `tools/npm-lock-check.py --format json` verifies that the docs `package-lock.json`
 is npm lockfile v3, matches the root dependency declarations in `package.json`,

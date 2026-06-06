@@ -39,7 +39,9 @@ jobs:
         run: |
           base_args=()
           if [[ -n "${ARC_BASE_SHA:-}" && ! "$ARC_BASE_SHA" =~ ^0+$ ]]; then
-            if git fetch --no-tags --depth=1 origin "$ARC_BASE_SHA"; then
+            if [[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              echo "base SHA is not a 40-hex commit; building all firmware projects"
+            elif git fetch --no-tags --depth=1 origin "$ARC_BASE_SHA"; then
               base_args+=(--base "$ARC_BASE_SHA")
             else
               echo "base $ARC_BASE_SHA unavailable; building all firmware projects"
@@ -385,15 +387,19 @@ jobs:
         run: |
           extra_args=()
           if [[ -n "${ARC_BASE_SHA:-}" && ! "$ARC_BASE_SHA" =~ ^0+$ ]]; then
-            git fetch --no-tags --depth=1 origin "$ARC_BASE_SHA" || true
-            changed="$(git diff --name-only "$ARC_BASE_SHA" HEAD -- || true)"
-            if grep -qE '^(components/|cmake/|\.clangd|\.zed/|tools/clangd-compile-commands)' <<< "$changed"; then
-              if grep -qE '^components/arc/include/.*\.(h|hh|hpp|hxx)$' <<< "$changed"; then
-                extra_args+=(--changed-arc-headers "$ARC_BASE_SHA")
-              fi
+            if [[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              echo "base SHA is not a 40-hex commit; validating all Arc headers"
             else
-              echo "No clangd-relevant public header or dependency changes; skipping header validation."
-              exit 0
+              git fetch --no-tags --depth=1 origin "$ARC_BASE_SHA" || true
+              changed="$(git diff --name-only "$ARC_BASE_SHA" HEAD -- || true)"
+              if grep -qE '^(components/|cmake/|\.clangd|\.zed/|tools/clangd-compile-commands)' <<< "$changed"; then
+                if grep -qE '^components/arc/include/.*\.(h|hh|hpp|hxx)$' <<< "$changed"; then
+                  extra_args+=(--changed-arc-headers "$ARC_BASE_SHA")
+                fi
+              else
+                echo "No clangd-relevant public header or dependency changes; skipping header validation."
+                exit 0
+              fi
             fi
           fi
           go run tools/clangd-compile-commands.go --validate-arc-headers -o compile_commands.json "${extra_args[@]}"

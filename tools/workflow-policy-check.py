@@ -25,12 +25,21 @@ JOB_PERMISSIONS = {
         "pages": "write",
     },
 }
+ARC_BASE_SHA_EXPR = "${{ github.event.pull_request.base.sha || github.event.before }}"
+ARC_BASE_SHA_HEX_GUARD = '[[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]'
+
+
+class Step(NamedTuple):
+    name: str
+    env: dict[str, str]
+    run: str | None
 
 
 class Job(NamedTuple):
     job_id: str
     timeout_minutes: int | None
     permissions: dict[str, str]
+    steps: list[Step]
 
 
 def workflow_files(root: Path) -> list[Path]:
@@ -95,6 +104,67 @@ def parse_concurrency(lines: list[str]) -> dict[str, str]:
     return mapping_from_block(block, 2)
 
 
+def parse_step_name(line: str, fallback: int) -> str | None:
+    name_match = re.match(r"^      - name:\s*(.+?)\s*$", line)
+    if name_match:
+        return name_match.group(1).strip("\"'")
+    uses_match = re.match(r"^      - uses:\s*(.+?)\s*$", line)
+    if uses_match:
+        return f"uses:{uses_match.group(1).strip()}"
+    if re.match(r"^      -\s+", line):
+        return f"step-{fallback}"
+    return None
+
+
+def indented_child_block(block: list[str], start: int, parent_indent: int) -> list[str]:
+    children: list[str] = []
+    for line in block[start:]:
+        if line.strip() and leading_spaces(line) <= parent_indent:
+            break
+        children.append(line)
+    return children
+
+
+def parse_step_env(step_block: list[str]) -> dict[str, str]:
+    for index, line in enumerate(step_block):
+        if re.match(r"^        env:\s*$", line):
+            return mapping_from_block(indented_child_block(step_block, index + 1, 8), 10)
+    return {}
+
+
+def parse_step_run(step_block: list[str]) -> str | None:
+    for index, line in enumerate(step_block):
+        match = re.match(r"^        run:\s*(.*?)\s*$", line)
+        if not match:
+            continue
+        scalar = match.group(1)
+        if scalar and scalar not in {"|", ">"}:
+            return scalar.strip("\"'")
+        run_lines: list[str] = []
+        for run_line in indented_child_block(step_block, index + 1, 8):
+            if len(run_line) >= 10:
+                run_lines.append(run_line[10:])
+            else:
+                run_lines.append(run_line.strip())
+        return "\n".join(run_lines)
+    return None
+
+
+def parse_steps(job_block: list[str]) -> list[Step]:
+    starts: list[tuple[int, str]] = []
+    for offset, line in enumerate(job_block):
+        name = parse_step_name(line, len(starts) + 1)
+        if name is not None:
+            starts.append((offset, name))
+
+    steps: list[Step] = []
+    for index, (start, name) in enumerate(starts):
+        end = starts[index + 1][0] if index + 1 < len(starts) else len(job_block)
+        step_block = job_block[start + 1 : end]
+        steps.append(Step(name=name, env=parse_step_env(step_block), run=parse_step_run(step_block)))
+    return steps
+
+
 def parse_jobs(lines: list[str]) -> list[Job]:
     jobs_line, block, scalar = top_section(lines, "jobs")
     if jobs_line is None or scalar:
@@ -124,13 +194,14 @@ def parse_jobs(lines: list[str]) -> list[Job]:
                         break
                     permission_block.append(permission_line)
                 permissions = mapping_from_block(permission_block, 6)
-        jobs.append(Job(job_id, timeout, permissions))
+        jobs.append(Job(job_id, timeout, permissions, parse_steps(job_block)))
     return jobs
 
 
 def workflow_record(path: Path, root: Path) -> dict[str, Any]:
     lines = path.read_text(encoding="utf-8").splitlines()
     permissions, permission_scalar = parse_top_permissions(lines)
+    jobs = parse_jobs(lines)
     return {
         "path": relpath(path, root),
         "top_permissions": permissions,
@@ -141,8 +212,20 @@ def workflow_record(path: Path, root: Path) -> dict[str, Any]:
                 "id": job.job_id,
                 "timeout_minutes": job.timeout_minutes,
                 "permissions": job.permissions,
+                "steps": [
+                    {
+                        "name": step.name,
+                        "env": step.env,
+                        "has_run": step.run is not None,
+                        "github_expression_in_run": "${{" in (step.run or ""),
+                        "arc_base_sha_guarded": ARC_BASE_SHA_HEX_GUARD in (step.run or "")
+                        if "ARC_BASE_SHA" in step.env
+                        else None,
+                    }
+                    for step in job.steps
+                ],
             }
-            for job in parse_jobs(lines)
+            for job in jobs
         ],
         "pull_request_target": any(re.match(r"^\s*pull_request_target\s*:", line) for line in lines),
     }
@@ -177,6 +260,16 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
         expected_job_permissions = JOB_PERMISSIONS.get((path, job_id), {})
         if job["permissions"] != expected_job_permissions:
             problems.append(f"{path}:{job_id}: job permissions must be {expected_job_permissions}")
+        for step in job["steps"]:
+            step_name = str(step["name"])
+            env = step["env"]
+            if step["github_expression_in_run"]:
+                problems.append(f"{path}:{job_id}:{step_name}: run block must not interpolate GitHub expressions")
+            if "ARC_BASE_SHA" in env:
+                if env["ARC_BASE_SHA"] != ARC_BASE_SHA_EXPR:
+                    problems.append(f"{path}:{job_id}:{step_name}: ARC_BASE_SHA expression must stay reviewed")
+                if step["arc_base_sha_guarded"] is not True:
+                    problems.append(f"{path}:{job_id}:{step_name}: ARC_BASE_SHA must be guarded as a 40-hex commit")
     return problems
 
 
@@ -200,7 +293,8 @@ def report_text(evidence: dict[str, Any]) -> str:
         f"- workflows: {evidence['workflow_count']}",
     ]
     for workflow in evidence["workflows"]:
-        lines.append(f"  - {workflow['path']}: jobs={len(workflow['jobs'])}")
+        step_count = sum(len(job["steps"]) for job in workflow["jobs"])
+        lines.append(f"  - {workflow['path']}: jobs={len(workflow['jobs'])} steps={step_count}")
     if evidence["problems"]:
         lines.append("- problems:")
         for problem in evidence["problems"]:

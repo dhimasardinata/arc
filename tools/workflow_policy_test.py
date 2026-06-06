@@ -140,6 +140,110 @@ jobs:
         self.assertFalse(evidence["ok"])
         self.assertIn(".github/workflows/pages.yml:build: job permissions must be {}", evidence["problems"])
 
+    def test_rejects_github_expression_in_shell_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: unsafe shell
+        run: echo "${{ github.event.pull_request.title }}"
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/build.yml:esp32s3:unsafe shell: run block must not interpolate GitHub expressions",
+            evidence["problems"],
+        )
+
+    def test_rejects_unreviewed_arc_base_sha_expression(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: plan
+        env:
+          ARC_BASE_SHA: ${{ github.head_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$ARC_BASE_SHA"
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/build.yml:esp32s3:plan: ARC_BASE_SHA expression must stay reviewed",
+            evidence["problems"],
+        )
+        self.assertIn(
+            ".github/workflows/build.yml:esp32s3:plan: ARC_BASE_SHA must be guarded as a 40-hex commit",
+            evidence["problems"],
+        )
+
+    def test_accepts_guarded_arc_base_sha_expression(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: plan
+        env:
+          ARC_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "base SHA is not a 40-hex commit"
+          fi
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertTrue(evidence["ok"], evidence["problems"])
+
 
 if __name__ == "__main__":
     unittest.main()
