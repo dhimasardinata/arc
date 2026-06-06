@@ -1,0 +1,17 @@
+# Default ownership keeps every change reviewable even when a path is new.
+* @dhimasardinata
+
+# Firmware substrate and target policy.
+/components/arc/ @dhimasardinata
+/cmake/ @dhimasardinata
+/main/ @dhimasardinata
+/examples/ @dhimasardinata
+
+# Repository automation, security handling, and release evidence.
+/.github/ @dhimasardinata
+/tools/ @dhimasardinata
+/specs/ @dhimasardinata
+/SECURITY.md @dhimasardinata
+/docs/security.md @dhimasardinata
+/docs/safety-case.md @dhimasardinata
+/docs/production-integration.md @dhimasardinata

@@ -29,6 +29,8 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("Target hardware or host-only scope", text)
         self.assertIn(".github/ISSUE_TEMPLATE/bug_report.yml", text)
         self.assertIn("firmware issue template must request SDK version", text)
+        self.assertIn("CODEOWNERS must route critical Arc changes to the maintainer", text)
+        self.assertIn("CODEOWNERS must cover $owned_path", text)
         self.assertIn("go run tools/arc-audit.go -root . -all", text)
         self.assertIn("./tools/arc-prove.sh", text)
         self.assertIn("./tools/topology-check.py --quiet", text)

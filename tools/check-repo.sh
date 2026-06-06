@@ -257,6 +257,16 @@ if ! grep -qF 'ESP-IDF version and commit' .github/ISSUE_TEMPLATE/firmware_valid
     die "firmware issue template must request SDK version, hardware config, and evidence"
 fi
 
+if [[ ! -f .github/CODEOWNERS ]]; then
+    die "CODEOWNERS must route critical Arc changes to the maintainer"
+fi
+
+for owned_path in '*' '/components/arc/' '/cmake/' '/examples/' '/tools/' '/.github/' '/SECURITY.md' '/docs/security.md' '/docs/safety-case.md'; do
+    if ! grep -qF "$owned_path @dhimasardinata" .github/CODEOWNERS; then
+        die "CODEOWNERS must cover $owned_path"
+    fi
+done
+
 if ! grep -qF 'permissions:' .github/workflows/build.yml || ! grep -qF '  contents: read' .github/workflows/build.yml; then
     die "build workflow must run with least-privilege contents:read permissions"
 fi
