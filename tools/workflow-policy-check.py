@@ -28,6 +28,7 @@ JOB_PERMISSIONS = {
 ARC_BASE_SHA_EXPR = "${{ github.event.pull_request.base.sha || github.event.before }}"
 ARC_BASE_SHA_HEX_GUARD = '[[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]'
 RUFF_SPEC = "ruff==0.15.16"
+RUNNER_IMAGE = "ubuntu-24.04"
 
 
 class Step(NamedTuple):
@@ -38,6 +39,7 @@ class Step(NamedTuple):
 
 class Job(NamedTuple):
     job_id: str
+    runs_on: str | None
     timeout_minutes: int | None
     permissions: dict[str, str]
     steps: list[Step]
@@ -189,9 +191,13 @@ def parse_jobs(lines: list[str]) -> list[Job]:
     for index, (start, job_id) in enumerate(starts):
         end = starts[index + 1][0] if index + 1 < len(starts) else len(block)
         job_block = block[start + 1 : end]
+        runs_on = None
         timeout = None
         permissions: dict[str, str] = {}
         for line_index, line in enumerate(job_block):
+            runner_match = re.match(r"^    runs-on:\s*(.+?)\s*$", line)
+            if runner_match:
+                runs_on = runner_match.group(1).strip("\"'")
             timeout_match = re.match(r"^    timeout-minutes:\s*([0-9]+)\s*$", line)
             if timeout_match:
                 timeout = int(timeout_match.group(1))
@@ -202,7 +208,7 @@ def parse_jobs(lines: list[str]) -> list[Job]:
                         break
                     permission_block.append(permission_line)
                 permissions = mapping_from_block(permission_block, 6)
-        jobs.append(Job(job_id, timeout, permissions, parse_steps(job_block)))
+        jobs.append(Job(job_id, runs_on, timeout, permissions, parse_steps(job_block)))
     return jobs
 
 
@@ -218,6 +224,7 @@ def workflow_record(path: Path, root: Path) -> dict[str, Any]:
         "jobs": [
             {
                 "id": job.job_id,
+                "runs_on": job.runs_on,
                 "timeout_minutes": job.timeout_minutes,
                 "permissions": job.permissions,
                 "steps": [
@@ -264,6 +271,8 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
         problems.append(f"{path}: workflow must define at least one job")
     for job in jobs:
         job_id = str(job["id"])
+        if job["runs_on"] != RUNNER_IMAGE:
+            problems.append(f"{path}:{job_id}: runs-on must pin {RUNNER_IMAGE}")
         if job["timeout_minutes"] is None:
             problems.append(f"{path}:{job_id}: job must define timeout-minutes")
         expected_job_permissions = JOB_PERMISSIONS.get((path, job_id), {})

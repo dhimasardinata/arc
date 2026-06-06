@@ -50,12 +50,13 @@ checkout.
 
 `tools/workflow-policy-check.py --format json` records the approved workflow
 permission maps, rejects `pull_request_target`, requires concurrency controls,
-requires every job to carry `timeout-minutes`, rejects direct GitHub expression
-interpolation inside shell scripts, and requires changed-base SHA values to be
-guarded as 40-hex commits before shell steps pass them to `git`. It also keeps
-the CI Ruff formatter install pinned to the same exact version as local fallback
-formatting. The only job-level write permissions allowed by policy are
-`pages: write` and `id-token: write` on the Pages deploy job.
+pins every job to the reviewed Ubuntu runner image, requires every job to carry
+`timeout-minutes`, rejects direct GitHub expression interpolation inside shell
+scripts, and requires changed-base SHA values to be guarded as 40-hex commits
+before shell steps pass them to `git`. It also keeps the CI Ruff formatter
+install pinned to the same exact version as local fallback formatting. The only
+job-level write permissions allowed by policy are `pages: write` and
+`id-token: write` on the Pages deploy job.
 
 `tools/npm-lock-check.py --format json` verifies that the docs `package-lock.json`
 is npm lockfile v3, matches the root dependency declarations in `package.json`,

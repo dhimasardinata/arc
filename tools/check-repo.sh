@@ -444,6 +444,13 @@ if ! grep -qF "python3 -m pip install 'ruff==0.15.16'" .github/workflows/build.y
     die "CI and local formatter fallbacks must pin Ruff exactly"
 fi
 
+if grep -qF 'runs-on: ubuntu-latest' .github/workflows/*.yml \
+    || ! grep -qF 'runs-on: ubuntu-24.04' .github/workflows/build.yml \
+    || ! grep -qF 'runs-on: ubuntu-24.04' .github/workflows/codeql.yml \
+    || ! grep -qF 'runs-on: ubuntu-24.04' .github/workflows/pages.yml; then
+    die "GitHub workflow runner images must stay pinned to ubuntu-24.04"
+fi
+
 if ! grep -qF '.arc-artifacts/' .gitignore; then
     die ".gitignore must ignore generated CI evidence artifacts"
 fi
