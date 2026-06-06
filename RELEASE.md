@@ -45,6 +45,7 @@ evidence that still covers the changed surface.
 ## Licensing And Notices
 
 - Read `docs/licensing.md`.
+- Review `THIRD_PARTY_NOTICES.md`.
 - Confirm whether the release uses the public AGPL path or a commercial license.
 - Include third-party notices for ESP-IDF, Arduino-as-component, docs tooling, or
   any product-specific dependencies that ship with the release.

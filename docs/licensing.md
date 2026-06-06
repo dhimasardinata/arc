@@ -74,6 +74,10 @@ Those third-party components keep their own license terms. A paid Arc agreement
 does not rewrite upstream terms, and upstream permissive terms do not weaken
 Arc's AGPLv3-only public path for Arc-covered code.
 
+Use `THIRD_PARTY_NOTICES.md` as the repository notice checklist before
+shipping a source archive, firmware image, SDK bundle, benchmark artifact, or
+documentation site that includes upstream material.
+
 The commercial license text in this repository is a policy statement, not an
 automatic grant. The signed agreement controls the actual commercial rights.
 

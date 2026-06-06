@@ -250,8 +250,20 @@ if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/host-tests.sh' RELEASE.md \
     || ! grep -qF 'idf.py build' RELEASE.md \
     || ! grep -qF 'docs/security.md' RELEASE.md \
-    || ! grep -qF 'docs/licensing.md' RELEASE.md; then
+    || ! grep -qF 'docs/licensing.md' RELEASE.md \
+    || ! grep -qF 'THIRD_PARTY_NOTICES.md' RELEASE.md; then
     die "RELEASE.md must cover repository gates, firmware evidence, security, and licensing"
+fi
+
+if [[ ! -f THIRD_PARTY_NOTICES.md ]]; then
+    die "THIRD_PARTY_NOTICES.md must define third-party notice handling"
+fi
+
+if ! grep -qF 'ESP-IDF' THIRD_PARTY_NOTICES.md \
+    || ! grep -qF 'Arduino-ESP32' THIRD_PARTY_NOTICES.md \
+    || ! grep -qF 'VitePress' THIRD_PARTY_NOTICES.md \
+    || ! grep -qF 'Product Release Rule' THIRD_PARTY_NOTICES.md; then
+    die "THIRD_PARTY_NOTICES.md must cover firmware, docs, and product notice rules"
 fi
 
 if [[ ! -f .github/pull_request_template.md ]]; then
