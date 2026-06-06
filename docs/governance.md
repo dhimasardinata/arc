@@ -18,6 +18,8 @@ or distributing Arc-derived artifacts.
 
 - `RELEASE.md` is the release checklist for scope, repository gates, firmware
   evidence, security/safety review, licensing, and publish records.
+- `tools/source-manifest.py --format json --require-clean` emits the tracked
+  source hash manifest for release source archives and artifact bundles.
 - `tools/release-evidence.py --format json --require-clean` emits the
   machine-readable release metadata snapshot before tagging or publishing a
   release artifact.

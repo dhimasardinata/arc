@@ -31,6 +31,8 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("RELEASE.md must cover repository gates, firmware evidence", text)
         self.assertIn("python3 tools/release-evidence.py --format json", text)
         self.assertIn("release evidence tool must stay executable", text)
+        self.assertIn("source manifest check failed", text)
+        self.assertIn("source manifest tool must stay executable", text)
         self.assertIn("THIRD_PARTY_NOTICES.md must define third-party notice handling", text)
         self.assertIn("THIRD_PARTY_NOTICES.md must cover firmware, docs", text)
         self.assertIn("THIRD_PARTY_MANIFEST.json must define machine-checkable dependency notice boundaries", text)

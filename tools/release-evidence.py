@@ -31,6 +31,7 @@ REQUIRED_COMMANDS = [
     "./tools/check-repo.sh",
     "./tools/host-tests.sh",
     "tools/clangd-compile-commands.py --validate-arc-headers",
+    "./tools/source-manifest.py --format json --require-clean",
     "./tools/third-party-manifest-check.py --format json",
     "npm run docs:build",
     "idf.py build",

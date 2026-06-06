@@ -18,6 +18,8 @@ for firmware, security, safety, or licensing claims.
 - `./tools/host-tests.sh` when library behavior changed
 - `tools/clangd-compile-commands.py --validate-arc-headers` when public headers,
   umbrella includes, or component dependencies changed
+- `./tools/source-manifest.py --format json --require-clean` before publishing a
+  release source archive or artifact bundle
 - `npm run docs:build` when docs or docs-site configuration changed
 - `./tools/third-party-manifest-check.py --format json` before relying on
   third-party notice coverage
@@ -59,5 +61,6 @@ evidence that still covers the changed surface.
 ## Publish Record
 
 Store the release note, validation commands, firmware logs, benchmark output,
-HIL evidence, and known limitations together. Link the exact commit, tag, or
-artifact bundle so future regressions can be traced back to source.
+HIL evidence, source manifest JSON, and known limitations together. Link the
+exact commit, tag, or artifact bundle so future regressions can be traced back
+to source.

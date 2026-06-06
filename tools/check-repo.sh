@@ -75,6 +75,7 @@ python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
 ./tools/arc-prove.sh || die "formal spec check failed"
 ./tools/use-after-move-check.sh || die "use-after-move check failed"
 ./tools/safety-case-check.py || die "safety-case evidence check failed"
+./tools/source-manifest.py --format json >/dev/null || die "source manifest check failed"
 ./tools/third-party-manifest-check.py || die "third-party manifest check failed"
 python3 tools/release-evidence.py --format json >/dev/null || die "release evidence manifest failed"
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"
@@ -251,6 +252,7 @@ fi
 if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/host-tests.sh' RELEASE.md \
     || ! grep -qF './tools/release-evidence.py --format json --require-clean' RELEASE.md \
+    || ! grep -qF './tools/source-manifest.py --format json --require-clean' RELEASE.md \
     || ! grep -qF 'idf.py build' RELEASE.md \
     || ! grep -qF 'docs/security.md' RELEASE.md \
     || ! grep -qF 'docs/licensing.md' RELEASE.md \
@@ -290,12 +292,17 @@ if ! grep -qF 'CONTRIBUTING.md' docs/governance.md \
     || ! grep -qF 'THIRD_PARTY_NOTICES.md' docs/governance.md \
     || ! grep -qF 'THIRD_PARTY_MANIFEST.json' docs/governance.md \
     || ! grep -qF '.github/CODEOWNERS' docs/governance.md \
+    || ! grep -qF 'tools/source-manifest.py --format json --require-clean' docs/governance.md \
     || ! grep -qF 'tools/release-evidence.py --format json --require-clean' docs/governance.md; then
     die "docs/governance.md must link contribution, release, security, notice, ownership, and evidence controls"
 fi
 
 if [[ ! -x tools/release-evidence.py ]]; then
     die "release evidence tool must stay executable"
+fi
+
+if [[ ! -x tools/source-manifest.py ]]; then
+    die "source manifest tool must stay executable"
 fi
 
 if [[ ! -x tools/third-party-manifest-check.py ]]; then
@@ -425,6 +432,7 @@ required_exec=(
     tools/clangd-compile-commands.py
     tools/format.sh
     tools/hil-evidence-check.py
+    tools/source-manifest.py
     tools/third-party-manifest-check.py
     tools/topology-check.py
     tools/tool-tests.sh
