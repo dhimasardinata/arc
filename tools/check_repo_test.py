@@ -25,6 +25,8 @@ class CheckRepoToolTest(unittest.TestCase):
 
         self.assertIn("root SECURITY.md must define the GitHub-facing disclosure policy", text)
         self.assertIn("private vulnerability reporting", text)
+        self.assertIn("pull request template must keep review evidence consistent", text)
+        self.assertIn("Target hardware or host-only scope", text)
         self.assertIn("go run tools/arc-audit.go -root . -all", text)
         self.assertIn("./tools/arc-prove.sh", text)
         self.assertIn("./tools/topology-check.py --quiet", text)

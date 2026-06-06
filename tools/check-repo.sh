@@ -231,6 +231,16 @@ if ! grep -qF 'docs/security.md' SECURITY.md || ! grep -qF 'private vulnerabilit
     die "SECURITY.md must point to detailed security automation docs and private reporting"
 fi
 
+if [[ ! -f .github/pull_request_template.md ]]; then
+    die "pull request template must keep review evidence consistent"
+fi
+
+if ! grep -qF './tools/check-repo.sh' .github/pull_request_template.md \
+    || ! grep -qF 'Target hardware or host-only scope' .github/pull_request_template.md \
+    || ! grep -qF 'SDK, CMake, or configuration impact' .github/pull_request_template.md; then
+    die "pull request template must ask for validation, hardware scope, and SDK/config impact"
+fi
+
 if ! grep -qF 'permissions:' .github/workflows/build.yml || ! grep -qF '  contents: read' .github/workflows/build.yml; then
     die "build workflow must run with least-privilege contents:read permissions"
 fi
