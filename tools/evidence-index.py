@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from json import JSONDecodeError
 import subprocess
 import sys
 from pathlib import Path
@@ -36,6 +37,48 @@ def relpath(path: Path) -> str:
         return resolved.as_posix()
 
 
+def json_state(path: Path, name: str) -> tuple[dict[str, Any], list[str]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, JSONDecodeError) as exc:
+        return {
+            "valid": False,
+            "ok": None,
+            "problem_count": None,
+        }, [f"{name}: invalid JSON evidence: {exc}"]
+
+    if not isinstance(payload, dict):
+        return {
+            "valid": True,
+            "ok": None,
+            "problem_count": None,
+        }, [f"{name}: evidence JSON root must be an object"]
+
+    problems: list[str] = []
+    ok = payload.get("ok")
+    if "ok" in payload:
+        if not isinstance(ok, bool):
+            problems.append(f"{name}: evidence ok field must be boolean")
+        elif not ok:
+            problems.append(f"{name}: evidence ok field is false")
+
+    problem_count: int | None = None
+    reported = payload.get("problems")
+    if "problems" in payload:
+        if not isinstance(reported, list):
+            problems.append(f"{name}: evidence problems field must be a list")
+        else:
+            problem_count = len(reported)
+            if reported:
+                problems.append(f"{name}: evidence reports {problem_count} problem(s)")
+
+    return {
+        "valid": True,
+        "ok": ok if isinstance(ok, bool) else None,
+        "problem_count": problem_count,
+    }, problems
+
+
 def collect(paths: list[Path], required: list[str]) -> dict[str, Any]:
     records: list[dict[str, Any]] = []
     problems: list[str] = []
@@ -50,11 +93,14 @@ def collect(paths: list[Path], required: list[str]) -> dict[str, Any]:
         if not path.is_file():
             problems.append(f"missing evidence file: {name}")
             continue
+        state, state_problems = json_state(path, name)
+        problems.extend(state_problems)
         records.append(
             {
                 "path": name,
                 "size": path.stat().st_size,
                 "sha256": sha256(path),
+                "json": state,
             }
         )
 
@@ -80,7 +126,13 @@ def report_text(evidence: dict[str, Any]) -> str:
         f"- files: {evidence['file_count']}",
     ]
     for record in evidence["files"]:
-        lines.append(f"  - {record['path']}: size={record['size']} sha256={record['sha256']}")
+        state = record["json"]
+        details = f"json={'valid' if state['valid'] else 'invalid'}"
+        if state["ok"] is not None:
+            details += f" ok={str(state['ok']).lower()}"
+        if state["problem_count"] is not None:
+            details += f" problems={state['problem_count']}"
+        lines.append(f"  - {record['path']}: size={record['size']} sha256={record['sha256']} {details}")
     if evidence["problems"]:
         lines.append("- problems:")
         for problem in evidence["problems"]:

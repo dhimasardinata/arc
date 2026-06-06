@@ -31,6 +31,7 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("RELEASE.md must cover repository gates, firmware evidence", text)
         self.assertIn("python3 tools/release-evidence.py --format json", text)
         self.assertIn("evidence index check failed", text)
+        self.assertIn("./tools/evidence-index.py --format json", text)
         self.assertIn("evidence index tool must stay executable", text)
         self.assertIn("firmware artifact manifest check failed", text)
         self.assertIn("firmware manifest tool must stay executable", text)

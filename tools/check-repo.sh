@@ -260,6 +260,7 @@ fi
 if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/host-tests.sh' RELEASE.md \
     || ! grep -qF './tools/firmware-manifest.py --format json --require-artifacts' RELEASE.md \
+    || ! grep -qF './tools/evidence-index.py --format json' RELEASE.md \
     || ! grep -qF './tools/release-evidence.py --format json --require-clean' RELEASE.md \
     || ! grep -qF './tools/source-manifest.py --format json --require-clean' RELEASE.md \
     || ! grep -qF 'idf.py build' RELEASE.md \
@@ -302,6 +303,7 @@ if ! grep -qF 'CONTRIBUTING.md' docs/governance.md \
     || ! grep -qF 'THIRD_PARTY_MANIFEST.json' docs/governance.md \
     || ! grep -qF '.github/CODEOWNERS' docs/governance.md \
     || ! grep -qF 'tools/source-manifest.py --format json --require-clean' docs/governance.md \
+    || ! grep -qF 'tools/evidence-index.py --format json' docs/governance.md \
     || ! grep -qF 'tools/release-evidence.py --format json --require-clean' docs/governance.md; then
     die "docs/governance.md must link contribution, release, security, notice, ownership, and evidence controls"
 fi

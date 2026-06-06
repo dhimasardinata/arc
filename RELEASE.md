@@ -22,6 +22,9 @@ for firmware, security, safety, or licensing claims.
   release source archive or artifact bundle
 - `./tools/firmware-manifest.py --format json --require-artifacts` after
   firmware builds and before publishing firmware binaries
+- `./tools/evidence-index.py --format json` over generated evidence files before
+  publishing an evidence bundle; the index hashes each file and rejects
+  malformed or failed evidence JSON
 - `npm run docs:build` when docs or docs-site configuration changed
 - `./tools/third-party-manifest-check.py --format json` before relying on
   third-party notice coverage
@@ -73,4 +76,4 @@ manifest, third-party manifest, safety-case JSON, release-evidence JSON,
 workflow action pin evidence, workflow policy evidence, npm lockfile evidence,
 and secret-scan evidence.
 Firmware builds also upload `arc-binaries` with the firmware artifact manifest
-and its evidence index beside the binaries.
+and its validated evidence index beside the binaries.

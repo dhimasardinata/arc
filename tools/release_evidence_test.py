@@ -30,6 +30,7 @@ class ReleaseEvidenceTest(unittest.TestCase):
         self.assertIn("./tools/firmware-manifest.py --format json --require-artifacts", evidence["required_commands"])
         self.assertIn("./tools/source-manifest.py --format json --require-clean", evidence["required_commands"])
         self.assertIn("./tools/third-party-manifest-check.py --format json", evidence["required_commands"])
+        self.assertIn("./tools/evidence-index.py --format json", evidence["required_commands"])
         self.assertIn("idf.py build", evidence["required_commands"])
 
     def test_json_format_is_machine_readable(self) -> None:

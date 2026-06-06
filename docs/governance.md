@@ -25,6 +25,9 @@ or distributing Arc-derived artifacts.
 - `tools/release-evidence.py --format json --require-clean` emits the
   machine-readable release metadata snapshot before tagging or publishing a
   release artifact.
+- `tools/evidence-index.py --format json` hashes generated evidence files and
+  rejects malformed JSON, `ok: false`, or non-empty `problems` payloads before
+  an evidence bundle is published.
 - CI uploads `arc-evidence` with an evidence index, source, third-party,
   safety-case, release metadata, workflow action pin, workflow policy, and npm
   lockfile JSON plus secret-scan evidence for every build. Firmware builds also

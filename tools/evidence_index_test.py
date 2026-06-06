@@ -33,6 +33,9 @@ class EvidenceIndexTest(unittest.TestCase):
         self.assertTrue(evidence["ok"], evidence["problems"])
         self.assertEqual(evidence["file_count"], 2)
         self.assertRegex(evidence["files"][0]["sha256"], r"^[0-9a-f]{64}$")
+        records = {Path(record["path"]).name: record for record in evidence["files"]}
+        self.assertTrue(records["release-evidence.json"]["json"]["valid"])
+        self.assertEqual(records["source-manifest.json"]["json"]["ok"], True)
 
     def test_rejects_missing_required_path(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
@@ -73,6 +76,53 @@ class EvidenceIndexTest(unittest.TestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["files"][0]["path"], rel)
+            self.assertEqual(payload["files"][0]["json"], {"valid": True, "ok": True, "problem_count": None})
+
+    def test_rejects_malformed_json_evidence(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            evidence_file = Path(tmp) / "bad.json"
+            evidence_file.write_text("{", encoding="utf-8")
+            evidence = evidence_index.collect([evidence_file], [])
+
+        self.assertFalse(evidence["ok"])
+        self.assertEqual(evidence["files"][0]["json"]["valid"], False)
+        self.assertTrue(
+            any("invalid JSON evidence" in problem for problem in evidence["problems"]),
+            evidence["problems"],
+        )
+
+    def test_rejects_failed_evidence_payloads(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            evidence_file = Path(tmp) / "secret-scan.json"
+            evidence_file.write_text(
+                json.dumps({"ok": False, "problems": ["token.txt:1: github-token matched"]}),
+                encoding="utf-8",
+            )
+            evidence = evidence_index.collect([evidence_file], [])
+
+        self.assertFalse(evidence["ok"])
+        self.assertEqual(evidence["files"][0]["json"]["ok"], False)
+        self.assertEqual(evidence["files"][0]["json"]["problem_count"], 1)
+        self.assertIn(
+            f"{evidence_index.relpath(evidence_file)}: evidence ok field is false",
+            evidence["problems"],
+        )
+        self.assertIn(
+            f"{evidence_index.relpath(evidence_file)}: evidence reports 1 problem(s)",
+            evidence["problems"],
+        )
+
+    def test_rejects_non_object_json_evidence(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            evidence_file = Path(tmp) / "list.json"
+            evidence_file.write_text("[]", encoding="utf-8")
+            evidence = evidence_index.collect([evidence_file], [])
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            f"{evidence_index.relpath(evidence_file)}: evidence JSON root must be an object",
+            evidence["problems"],
+        )
 
 
 if __name__ == "__main__":
