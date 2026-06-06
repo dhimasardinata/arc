@@ -5,6 +5,13 @@ product threat modeling, hardware review, key management, or firmware runtime
 testing, but they keep the repository's source and dependency surface visible on
 every normal development path.
 
+## Disclosure Policy
+
+Root `SECURITY.md` is the GitHub-facing disclosure policy. It
+states that `main` is the supported branch, asks reporters to avoid public
+exploit details or credentials, and separates Arc repository fixes from final
+product release decisions.
+
 ## CodeQL Code Scanning
 
 `.github/workflows/codeql.yml` runs GitHub CodeQL on pushes to `main`, pull

@@ -50,7 +50,7 @@ Use this map before opening the full API reference.
 | open one header page directly | [Module Page Index](/module-pages) | generated per-header pages with fit, CMake, source landmarks, and proof path |
 | find exact public names and behavior | [API Reference](/api) | method-level notes mirrored from the source-backed README |
 | pick firmware to build | [Examples](/examples) | one table for ESP32-S3 examples, portable examples, and ESP32-S31 scaffolds |
-| understand repository security automation | [Security Automation](/security) | CodeQL scanning, Dependabot update scope, and release-time human review duties |
+| understand repository security handling | [Security Automation](/security) | disclosure policy, CodeQL scanning, Dependabot update scope, and release-time human review duties |
 | decide license path | [Licensing](/licensing) | Arc public AGPL path and paid commercial policy |
 | publish performance claims | [Benchmarking](/benchmarking) | evidence levels and reporting rules |
 
@@ -62,7 +62,7 @@ Use this map before opening the full API reference.
 4. Read [Safety Patterns](/safety-patterns) before writing shared state or cross-core handoff code.
 5. Read [Production Integration](/production-integration) before moving code into a product tree.
 6. Use [Module Guide](/modules) to choose the smallest header for your problem.
-7. Read [Security Automation](/security) before relying on CI status for release evidence.
+7. Read [Security Automation](/security) and root `SECURITY.md` before relying on CI status for release evidence.
 8. Open that header in [Module Page Index](/module-pages), then check exact names in [API Reference](/api).
 
 ## Documentation Shape
@@ -74,7 +74,7 @@ Arc docs are arranged from decision to evidence:
 - module pages map headers to purpose, dependency, and proof path;
 - integration docs connect target policy, CMake shape, board topology, and evidence level;
 - troubleshooting keeps common setup, build, editor, site, and evidence failures actionable;
-- security automation documents CodeQL, Dependabot, and the human release checks that CI cannot prove;
+- security automation documents the disclosure policy, CodeQL, Dependabot, and the human release checks that CI cannot prove;
 - the glossary keeps Arc vocabulary consistent across the README, site, and generated pages;
 - examples show the buildable firmware surface;
 - API pages keep exact names and ownership behavior available without reading the whole README;

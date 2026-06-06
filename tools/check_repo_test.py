@@ -23,6 +23,8 @@ class CheckRepoToolTest(unittest.TestCase):
     def test_ci_guards_cover_strict_audit_and_header_validation(self) -> None:
         text = (ROOT / "tools" / "check-repo.sh").read_text(encoding="utf-8")
 
+        self.assertIn("root SECURITY.md must define the GitHub-facing disclosure policy", text)
+        self.assertIn("private vulnerability reporting", text)
         self.assertIn("go run tools/arc-audit.go -root . -all", text)
         self.assertIn("./tools/arc-prove.sh", text)
         self.assertIn("./tools/topology-check.py --quiet", text)

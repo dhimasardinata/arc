@@ -3463,6 +3463,7 @@ Arc now ships a build workflow at `.github/workflows/build.yml`.
 
 Security automation lives beside it:
 
+- `SECURITY.md` is the GitHub-facing disclosure policy for private reports, supported branches, and release ownership boundaries.
 - `.github/workflows/codeql.yml` runs CodeQL code scanning on pushes to `main`, pull requests, a weekly schedule, and manual dispatch. It scans `c-cpp` with `build-mode: none` so the source-level C/C++ scan does not need an ESP-IDF firmware build, and it also scans the repo tooling `python` surface with the `security-extended` and `security-and-quality` query suites.
 - `.github/dependabot.yml` opens weekly grouped update PRs for GitHub Actions and npm docs dependencies. ESP-IDF remains pinned and updated through the Arc build workflow and `tools/sync-idf.sh`, not by Dependabot.
 - `docs/security.md` is the short operator page for CodeQL scope, Dependabot scope, and the human security review that still belongs to each product release.

@@ -223,6 +223,14 @@ if ! grep -qE '\./tools/ci-build-plan\.py --buildable' .github/workflows/build.y
     die "build workflow must plan changed firmware projects through tools/ci-build-plan.py"
 fi
 
+if [[ ! -f SECURITY.md ]]; then
+    die "root SECURITY.md must define the GitHub-facing disclosure policy"
+fi
+
+if ! grep -qF 'docs/security.md' SECURITY.md || ! grep -qF 'private vulnerability reporting' SECURITY.md; then
+    die "SECURITY.md must point to detailed security automation docs and private reporting"
+fi
+
 if ! grep -qF 'permissions:' .github/workflows/build.yml || ! grep -qF '  contents: read' .github/workflows/build.yml; then
     die "build workflow must run with least-privilege contents:read permissions"
 fi
