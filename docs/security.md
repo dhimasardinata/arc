@@ -93,6 +93,8 @@ all agree before CI uploads the repository evidence bundle.
 `tools/evidence-workflow-check.py --format json` verifies that the build
 workflow keeps every repository evidence file generated, included in provenance,
 required by the index, checked as a bundle, and uploaded with explicit retention.
+It also checks that firmware binary uploads include the firmware manifest and
+firmware evidence index under the same strict missing-file and retention policy.
 
 ## What Still Needs Human Review
 

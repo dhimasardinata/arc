@@ -97,6 +97,30 @@ def workflow_body() -> str:
                 .arc-artifacts/provenance.intoto.json
               if-no-files-found: error
               retention-days: 30
+
+          - name: Firmware artifact manifest
+            if: steps.firmware-plan.outputs.count != '0'
+            shell: bash
+            run: |
+              ./tools/firmware-manifest.py --format json --require-artifacts --output .arc-artifacts/firmware-manifest.json
+              ./tools/evidence-index.py --format json --output .arc-artifacts/firmware-evidence-index.json \\
+                --require .arc-artifacts/firmware-manifest.json \\
+                .arc-artifacts/firmware-manifest.json
+
+          - name: Upload binaries
+            if: steps.firmware-plan.outputs.count != '0'
+            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+            with:
+              name: arc-binaries
+              path: |
+                build/*.bin
+                build/*.elf
+                examples/**/build/*.bin
+                examples/**/build/*.elf
+                .arc-artifacts/firmware-evidence-index.json
+                .arc-artifacts/firmware-manifest.json
+              if-no-files-found: error
+              retention-days: 30
     """
 
 
@@ -107,6 +131,12 @@ class EvidenceWorkflowCheckTest(unittest.TestCase):
         self.assertTrue(evidence["ok"], evidence["problems"])
         self.assertEqual(evidence["generated"], list(evidence_workflow_check.EXPECTED_GENERATED))
         self.assertEqual(evidence["uploaded"], list(evidence_workflow_check.EXPECTED_UPLOADED))
+        self.assertEqual(evidence["firmware_generated"], list(evidence_workflow_check.EXPECTED_FIRMWARE_GENERATED))
+        self.assertEqual(evidence["firmware_uploaded"], list(evidence_workflow_check.EXPECTED_FIRMWARE_UPLOADED))
+        self.assertEqual(
+            evidence["firmware_binary_patterns"],
+            list(evidence_workflow_check.EXPECTED_FIRMWARE_BINARY_PATTERNS),
+        )
 
     def test_accepts_synthetic_workflow_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -177,6 +207,59 @@ class EvidenceWorkflowCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn(
             "repository evidence bundle check: must run after evidence-index generation",
+            evidence["problems"],
+        )
+
+    def test_rejects_missing_firmware_upload_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                workflow_body().replace(
+                    "                .arc-artifacts/firmware-manifest.json\n              if-no-files-found: error\n",
+                    "              if-no-files-found: error\n",
+                    1,
+                ),
+            )
+
+            evidence = evidence_workflow_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware evidence upload paths: missing required artifact: firmware-manifest.json",
+            evidence["problems"],
+        )
+
+    def test_rejects_missing_firmware_binary_pattern(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(root, workflow_body().replace("                examples/**/build/*.elf\n", "", 1))
+
+            evidence = evidence_workflow_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware binary upload patterns: missing required artifact: examples/**/build/*.elf",
+            evidence["problems"],
+        )
+
+    def test_rejects_firmware_upload_without_build_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                workflow_body().replace(
+                    "          - name: Upload binaries\n            if: steps.firmware-plan.outputs.count != '0'\n",
+                    "          - name: Upload binaries\n",
+                    1,
+                ),
+            )
+
+            evidence = evidence_workflow_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware evidence upload: must be gated on selected firmware builds",
             evidence["problems"],
         )
 
