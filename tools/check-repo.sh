@@ -76,6 +76,9 @@ python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
 ./tools/use-after-move-check.sh || die "use-after-move check failed"
 ./tools/safety-case-check.py || die "safety-case evidence check failed"
 ./tools/firmware-manifest.py --format json >/dev/null || die "firmware artifact manifest check failed"
+./tools/evidence-index.py --format json \
+    --require THIRD_PARTY_MANIFEST.json \
+    THIRD_PARTY_MANIFEST.json >/dev/null || die "evidence index check failed"
 ./tools/source-manifest.py --format json >/dev/null || die "source manifest check failed"
 ./tools/third-party-manifest-check.py || die "third-party manifest check failed"
 python3 tools/release-evidence.py --format json >/dev/null || die "release evidence manifest failed"
@@ -307,6 +310,10 @@ if [[ ! -x tools/firmware-manifest.py ]]; then
     die "firmware manifest tool must stay executable"
 fi
 
+if [[ ! -x tools/evidence-index.py ]]; then
+    die "evidence index tool must stay executable"
+fi
+
 if [[ ! -x tools/source-manifest.py ]]; then
     die "source manifest tool must stay executable"
 fi
@@ -410,6 +417,12 @@ for evidence_file in source-manifest third-party-manifest safety-case release-ev
         die "build workflow must publish $evidence_file JSON evidence"
     fi
 done
+if ! grep -qF '.arc-artifacts/evidence-index.json' .github/workflows/build.yml; then
+    die "build workflow must publish repository evidence index"
+fi
+if ! grep -qE '\./tools/evidence-index\.py --format json --output \.arc-artifacts/evidence-index\.json' .github/workflows/build.yml; then
+    die "build workflow must hash repository evidence files"
+fi
 if ! grep -qE 'name: Upload repository evidence' .github/workflows/build.yml \
     || ! grep -qE 'name: arc-evidence' .github/workflows/build.yml \
     || ! grep -qE 'if-no-files-found: error' .github/workflows/build.yml \
@@ -421,6 +434,9 @@ if ! grep -qE '\./tools/firmware-manifest\.py --format json --require-artifacts 
 fi
 if ! grep -qF '.arc-artifacts/firmware-manifest.json' .github/workflows/build.yml; then
     die "build workflow must upload the firmware artifact manifest with binaries"
+fi
+if ! grep -qF '.arc-artifacts/firmware-evidence-index.json' .github/workflows/build.yml; then
+    die "build workflow must upload the firmware evidence index with binaries"
 fi
 workflow_step_before "name: Plan firmware builds" "name: Ensure host tools" \
     "build workflow must plan changed firmware projects before host tool setup"
@@ -470,6 +486,7 @@ required_exec=(
     tools/arc-projects.py
     tools/ci-build-plan.py
     tools/clangd-compile-commands.py
+    tools/evidence-index.py
     tools/firmware-manifest.py
     tools/format.sh
     tools/hil-evidence-check.py

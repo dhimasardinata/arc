@@ -167,12 +167,22 @@ jobs:
           ./tools/third-party-manifest-check.py --format json > .arc-artifacts/third-party-manifest.json
           ./tools/safety-case-check.py --format json > .arc-artifacts/safety-case.json
           ./tools/release-evidence.py --format json --require-clean > .arc-artifacts/release-evidence.json
+          ./tools/evidence-index.py --format json --output .arc-artifacts/evidence-index.json \
+            --require .arc-artifacts/source-manifest.json \
+            --require .arc-artifacts/third-party-manifest.json \
+            --require .arc-artifacts/safety-case.json \
+            --require .arc-artifacts/release-evidence.json \
+            .arc-artifacts/source-manifest.json \
+            .arc-artifacts/third-party-manifest.json \
+            .arc-artifacts/safety-case.json \
+            .arc-artifacts/release-evidence.json
 
       - name: Upload repository evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: arc-evidence
           path: |
+            .arc-artifacts/evidence-index.json
             .arc-artifacts/source-manifest.json
             .arc-artifacts/third-party-manifest.json
             .arc-artifacts/safety-case.json
@@ -323,6 +333,9 @@ jobs:
         shell: bash
         run: |
           ./tools/firmware-manifest.py --format json --require-artifacts --output .arc-artifacts/firmware-manifest.json
+          ./tools/evidence-index.py --format json --output .arc-artifacts/firmware-evidence-index.json \
+            --require .arc-artifacts/firmware-manifest.json \
+            .arc-artifacts/firmware-manifest.json
 
       - name: Validate clangd database
         if: steps.firmware-plan.outputs.count != '0'
@@ -355,6 +368,7 @@ jobs:
             build/*.elf
             examples/**/build/*.bin
             examples/**/build/*.elf
+            .arc-artifacts/firmware-evidence-index.json
             .arc-artifacts/firmware-manifest.json
           if-no-files-found: error
           retention-days: 30
