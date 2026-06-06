@@ -45,6 +45,13 @@ remote workflow actions that are not pinned to full commit SHA refs. Each remote
 action line also keeps a trailing version comment so maintainers can review the
 human release track without trusting a mutable tag.
 
+`tools/npm-lock-check.py --format json` verifies that the docs `package-lock.json`
+is npm lockfile v3, matches the root dependency declarations in `package.json`,
+and keeps registry `resolved` URLs plus SHA-512 integrity strings for each
+package entry. The JSON output also reports transitive packages with install
+scripts so release review can decide whether that supply-chain surface is
+acceptable for the docs build.
+
 ## What Still Needs Human Review
 
 CodeQL and Dependabot are repository hygiene gates, not certification evidence.
