@@ -44,9 +44,9 @@ and `tools/sync-idf.sh`.
 remote workflow actions that are not pinned to full commit SHA refs. Each remote
 action line also keeps a trailing version comment so maintainers can review the
 human release track without trusting a mutable tag. The same check requires
-`actions/checkout` steps to set `persist-credentials: false`, because Arc
-workflows do not need to leave the GitHub token in the local Git config after
-checkout.
+`actions/checkout` steps to set `persist-credentials: false` and
+`fetch-depth: 1`, because Arc workflows do not need to leave the GitHub token in
+the local Git config or fetch full history for normal CI paths.
 
 `tools/workflow-policy-check.py --format json` records the approved workflow
 permission maps, rejects `pull_request_target`, requires concurrency controls,

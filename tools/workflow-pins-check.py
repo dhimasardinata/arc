@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<value>[^#\s]+)?(?P<tail>.*)$")
 PERSIST_RE = re.compile(r"^\s*persist-credentials:\s*(?P<value>[^#\s]+)")
+FETCH_DEPTH_RE = re.compile(r"^\s*fetch-depth:\s*(?P<value>[^#\s]+)")
 CHECKOUT_ACTION = "actions/checkout@"
 
 
@@ -22,6 +23,7 @@ class UsesRef(NamedTuple):
     value: str
     comment: str
     persist_credentials: str | None
+    fetch_depth: str | None
 
 
 def workflow_files(root: Path) -> list[Path]:
@@ -74,6 +76,16 @@ def checkout_persist_credentials(lines: list[str], index: int, value: str) -> st
     return None
 
 
+def checkout_fetch_depth(lines: list[str], index: int, value: str) -> str | None:
+    if not value.startswith(CHECKOUT_ACTION):
+        return None
+    for line in step_block(lines, index):
+        match = FETCH_DEPTH_RE.match(line)
+        if match:
+            return match.group("value").strip("\"'")
+    return None
+
+
 def parse_uses(path: Path, root: Path) -> list[UsesRef]:
     refs: list[UsesRef] = []
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -85,7 +97,14 @@ def parse_uses(path: Path, root: Path) -> list[UsesRef]:
         tail = match.group("tail") or ""
         comment = tail.split("#", 1)[1].strip() if "#" in tail else ""
         refs.append(
-            UsesRef(relpath(path, root), index + 1, value, comment, checkout_persist_credentials(lines, index, value))
+            UsesRef(
+                relpath(path, root),
+                index + 1,
+                value,
+                comment,
+                checkout_persist_credentials(lines, index, value),
+                checkout_fetch_depth(lines, index, value),
+            )
         )
     return refs
 
@@ -122,6 +141,8 @@ def validate_ref(ref: UsesRef) -> list[str]:
         problems.append(f"{label} must include a trailing version comment")
     if ref.value.startswith(CHECKOUT_ACTION) and ref.persist_credentials != "false":
         problems.append(f"{label} must set persist-credentials: false")
+    if ref.value.startswith(CHECKOUT_ACTION) and ref.fetch_depth != "1":
+        problems.append(f"{label} must set fetch-depth: 1")
     return problems
 
 
@@ -145,6 +166,7 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
                 "uses": ref.value,
                 "comment": ref.comment,
                 "persist_credentials": ref.persist_credentials,
+                "fetch_depth": ref.fetch_depth,
             }
             for ref in refs
         ],

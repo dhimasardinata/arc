@@ -38,6 +38,7 @@ class WorkflowTest(unittest.TestCase):
             text = workflow.read_text(encoding="utf-8")
             if "actions/checkout@" in text:
                 self.assertIn("persist-credentials: false", text, workflow.name)
+                self.assertIn("fetch-depth: 1", text, workflow.name)
 
     def test_changed_project_plan_runs_before_expensive_setup(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")

@@ -35,6 +35,7 @@ jobs:
       - uses: actions/checkout@{SHA} # v6.0.2
         with:
           persist-credentials: false
+          fetch-depth: 1
       - name: codeql
         uses: github/codeql-action/init@{SHA} # v4
       - uses: ./.github/actions/local
@@ -47,6 +48,7 @@ jobs:
         self.assertEqual(evidence["workflow_count"], 1)
         self.assertEqual(evidence["ref_count"], 3)
         self.assertEqual(evidence["refs"][0]["persist_credentials"], "false")
+        self.assertEqual(evidence["refs"][0]["fetch_depth"], "1")
 
     def test_rejects_mutable_action_tags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -156,6 +158,29 @@ jobs:
         self.assertFalse(evidence["ok"])
         self.assertIn(
             f".github/workflows/build.yml:5: uses actions/checkout@{SHA} must set persist-credentials: false",
+            evidence["problems"],
+        )
+
+    def test_rejects_checkout_without_fetch_depth_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                f"""name: build
+jobs:
+  test:
+    steps:
+      - uses: actions/checkout@{SHA} # v6.0.2
+        with:
+          persist-credentials: false
+""",
+            )
+
+            evidence = workflow_pins_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            f".github/workflows/build.yml:5: uses actions/checkout@{SHA} must set fetch-depth: 1",
             evidence["problems"],
         )
 
