@@ -195,6 +195,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("timeout-minutes: 20", workflow)
         self.assertIn("timeout-minutes: 10", workflow)
         self.assertIn("actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e", workflow)
+        self.assertIn("if: github.ref == 'refs/heads/main'", workflow)
         self.assertIn("name: Restore npm cache", workflow)
         self.assertIn("name: Save npm cache", workflow)
         self.assertIn("uses: actions/cache/restore@", workflow)

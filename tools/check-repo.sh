@@ -591,6 +591,9 @@ if grep -qF 'cache: npm' .github/workflows/pages.yml \
     || ! grep -qF "if: github.event_name == 'push'" .github/workflows/pages.yml; then
     die "pages workflow npm cache must be explicit and push-gated"
 fi
+if ! grep -qF "if: github.ref == 'refs/heads/main'" .github/workflows/pages.yml; then
+    die "pages workflow deploy job must be guarded to main"
+fi
 
 if ! grep -qE 'go run tools/clangd-compile-commands\.go --validate-arc-headers' .github/workflows/build.yml; then
     die "build workflow must validate Arc header compile commands"

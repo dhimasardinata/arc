@@ -33,6 +33,10 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertEqual(
             jobs[(".github/workflows/pages.yml", "deploy")]["permissions"], {"id-token": "write", "pages": "write"}
         )
+        self.assertEqual(
+            jobs[(".github/workflows/pages.yml", "deploy")]["if"],
+            workflow_policy_check.PAGES_DEPLOY_REF_GUARD,
+        )
         steps = {
             (workflow["path"], job["id"], step["name"]): step
             for workflow in evidence["workflows"]
@@ -430,6 +434,38 @@ jobs:
         self.assertFalse(evidence["ok"])
         self.assertIn(
             ".github/workflows/pages.yml:build:uses:actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e: setup-node cache must use explicit restore and push-gated save",
+            evidence["problems"],
+        )
+
+    def test_rejects_pages_deploy_without_main_ref_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "pages.yml",
+                """name: pages
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      pages: write
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/pages.yml:deploy: Pages deploy job must be guarded to refs/heads/main",
             evidence["problems"],
         )
 

@@ -29,6 +29,7 @@ ARC_BASE_SHA_EXPR = "${{ github.event.pull_request.base.sha || github.event.befo
 ARC_BASE_SHA_HEX_GUARD = '[[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]'
 RUFF_SPEC = "ruff==0.15.16"
 RUNNER_IMAGE = "ubuntu-24.04"
+PAGES_DEPLOY_REF_GUARD = "github.ref == 'refs/heads/main'"
 
 
 class Step(NamedTuple):
@@ -42,6 +43,7 @@ class Step(NamedTuple):
 
 class Job(NamedTuple):
     job_id: str
+    if_expr: str | None
     runs_on: str | None
     timeout_minutes: int | None
     permissions: dict[str, str]
@@ -227,10 +229,14 @@ def parse_jobs(lines: list[str]) -> list[Job]:
     for index, (start, job_id) in enumerate(starts):
         end = starts[index + 1][0] if index + 1 < len(starts) else len(block)
         job_block = block[start + 1 : end]
+        if_expr = None
         runs_on = None
         timeout = None
         permissions: dict[str, str] = {}
         for line_index, line in enumerate(job_block):
+            if_match = re.match(r"^    if:\s*(.+?)\s*$", line)
+            if if_match:
+                if_expr = if_match.group(1)
             runner_match = re.match(r"^    runs-on:\s*(.+?)\s*$", line)
             if runner_match:
                 runs_on = runner_match.group(1).strip("\"'")
@@ -244,7 +250,7 @@ def parse_jobs(lines: list[str]) -> list[Job]:
                         break
                     permission_block.append(permission_line)
                 permissions = mapping_from_block(permission_block, 6)
-        jobs.append(Job(job_id, runs_on, timeout, permissions, parse_steps(job_block)))
+        jobs.append(Job(job_id, if_expr, runs_on, timeout, permissions, parse_steps(job_block)))
     return jobs
 
 
@@ -260,6 +266,7 @@ def workflow_record(path: Path, root: Path) -> dict[str, Any]:
         "jobs": [
             {
                 "id": job.job_id,
+                "if": job.if_expr,
                 "runs_on": job.runs_on,
                 "timeout_minutes": job.timeout_minutes,
                 "permissions": job.permissions,
@@ -317,6 +324,8 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
         expected_job_permissions = JOB_PERMISSIONS.get((path, job_id), {})
         if job["permissions"] != expected_job_permissions:
             problems.append(f"{path}:{job_id}: job permissions must be {expected_job_permissions}")
+        if (path, job_id) == (".github/workflows/pages.yml", "deploy") and job["if"] != PAGES_DEPLOY_REF_GUARD:
+            problems.append(f"{path}:{job_id}: Pages deploy job must be guarded to refs/heads/main")
         for step in job["steps"]:
             step_name = str(step["name"])
             env = step["env"]
