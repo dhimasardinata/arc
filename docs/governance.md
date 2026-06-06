@@ -25,6 +25,9 @@ or distributing Arc-derived artifacts.
 - `tools/release-evidence.py --format json --require-clean` emits the
   machine-readable release metadata snapshot before tagging or publishing a
   release artifact.
+- CI uploads `arc-evidence` with source, third-party, safety-case, and release
+  metadata JSON for every build. Firmware builds also upload the firmware
+  artifact manifest beside binaries.
 - `THIRD_PARTY_NOTICES.md` is the notice checklist for ESP-IDF,
   Arduino-ESP32, documentation tooling, CI dependencies, and bundled product
   dependencies.

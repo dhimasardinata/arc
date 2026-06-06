@@ -67,3 +67,8 @@ Store the release note, validation commands, firmware logs, benchmark output,
 HIL evidence, source manifest JSON, firmware artifact manifest JSON, and known
 limitations together. Link the exact commit, tag, or artifact bundle so future
 regressions can be traced back to source.
+
+CI uploads `arc-evidence` for every build with the source manifest,
+third-party manifest, safety-case JSON, and release-evidence JSON. Firmware
+builds also upload `arc-binaries` with the firmware artifact manifest beside
+the binaries.

@@ -375,6 +375,10 @@ if ! grep -qE '\./tools/host-tests\.sh' .github/workflows/build.yml; then
     die "build workflow must run host tests before firmware builds"
 fi
 
+if ! grep -qF '.arc-artifacts/' .gitignore; then
+    die ".gitignore must ignore generated CI evidence artifacts"
+fi
+
 if ! grep -qE 'go run tools/arc-audit\.go -root \. -all' tools/check-repo.sh; then
     die "repo check must run the strict all-entry realtime audit"
 fi
@@ -398,6 +402,20 @@ fi
 if ! grep -qE '\./tools/host-bench\.sh' .github/workflows/build.yml; then
     die "build workflow must run host benchmarks before firmware builds"
 fi
+if ! grep -qE 'name: Repository evidence bundle' .github/workflows/build.yml; then
+    die "build workflow must emit repository evidence artifacts"
+fi
+for evidence_file in source-manifest third-party-manifest safety-case release-evidence; do
+    if ! grep -qF ".arc-artifacts/$evidence_file.json" .github/workflows/build.yml; then
+        die "build workflow must publish $evidence_file JSON evidence"
+    fi
+done
+if ! grep -qE 'name: Upload repository evidence' .github/workflows/build.yml \
+    || ! grep -qE 'name: arc-evidence' .github/workflows/build.yml \
+    || ! grep -qE 'if-no-files-found: error' .github/workflows/build.yml \
+    || ! grep -qE 'retention-days: 30' .github/workflows/build.yml; then
+    die "build workflow must upload repository evidence with explicit retention"
+fi
 if ! grep -qE '\./tools/firmware-manifest\.py --format json --require-artifacts --output \.arc-artifacts/firmware-manifest\.json' .github/workflows/build.yml; then
     die "build workflow must emit a firmware artifact hash manifest"
 fi
@@ -412,6 +430,12 @@ workflow_step_before "name: Host benchmarks" "name: Build firmware" \
     "build workflow must run host benchmarks before firmware builds"
 workflow_step_before "name: Plan firmware builds" "name: Build firmware" \
     "build workflow must plan changed firmware projects before firmware builds"
+workflow_step_before "name: Repo sanity" "name: Repository evidence bundle" \
+    "build workflow must generate repository evidence after repo sanity"
+workflow_step_before "name: Repository evidence bundle" "name: Host tests" \
+    "build workflow must publish repository evidence before host tests"
+workflow_step_before "name: Repository evidence bundle" "name: Upload repository evidence" \
+    "build workflow must upload generated repository evidence"
 workflow_step_before "name: Build firmware" "name: Firmware artifact manifest" \
     "build workflow must hash firmware artifacts after building them"
 workflow_step_before "name: Firmware artifact manifest" "name: Upload binaries" \

@@ -159,6 +159,27 @@ jobs:
           chmod +x tools/check-repo.sh
           ./tools/check-repo.sh
 
+      - name: Repository evidence bundle
+        shell: bash
+        run: |
+          mkdir -p .arc-artifacts
+          ./tools/source-manifest.py --format json --require-clean > .arc-artifacts/source-manifest.json
+          ./tools/third-party-manifest-check.py --format json > .arc-artifacts/third-party-manifest.json
+          ./tools/safety-case-check.py --format json > .arc-artifacts/safety-case.json
+          ./tools/release-evidence.py --format json --require-clean > .arc-artifacts/release-evidence.json
+
+      - name: Upload repository evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: arc-evidence
+          path: |
+            .arc-artifacts/source-manifest.json
+            .arc-artifacts/third-party-manifest.json
+            .arc-artifacts/safety-case.json
+            .arc-artifacts/release-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Host tests
         shell: bash
         run: |
@@ -335,6 +356,8 @@ jobs:
             examples/**/build/*.bin
             examples/**/build/*.elf
             .arc-artifacts/firmware-manifest.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Save firmware build cache
         if: steps.firmware-plan.outputs.count != '0' && steps.build-firmware.outputs.cache_ready == '1'

@@ -15,6 +15,7 @@ arduino-esp32/
 .cache/
 .arc-build-projects
 .arc-build-cache/
+.arc-artifacts/
 node_modules/
 docs/.vitepress/cache/
 docs/.vitepress/dist/

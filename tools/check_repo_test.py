@@ -35,6 +35,7 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("release evidence tool must stay executable", text)
         self.assertIn("source manifest check failed", text)
         self.assertIn("source manifest tool must stay executable", text)
+        self.assertIn("generated CI evidence artifacts", text)
         self.assertIn("THIRD_PARTY_NOTICES.md must define third-party notice handling", text)
         self.assertIn("THIRD_PARTY_NOTICES.md must cover firmware, docs", text)
         self.assertIn("THIRD_PARTY_MANIFEST.json must define machine-checkable dependency notice boundaries", text)
@@ -63,8 +64,13 @@ class CheckRepoToolTest(unittest.TestCase):
         )
         self.assertIn('workflow_step_before "name: Host benchmarks" "name: Build firmware"', text)
         self.assertIn('workflow_step_before "name: Plan firmware builds" "name: Build firmware"', text)
+        self.assertIn('workflow_step_before "name: Repo sanity" "name: Repository evidence bundle"', text)
+        self.assertIn(
+            'workflow_step_before "name: Repository evidence bundle" "name: Upload repository evidence"', text
+        )
         self.assertIn('workflow_step_before "name: Build firmware" "name: Firmware artifact manifest"', text)
         self.assertIn('workflow_step_before "name: Firmware artifact manifest" "name: Upload binaries"', text)
+        self.assertIn("build workflow must upload repository evidence with explicit retention", text)
         self.assertIn("Restore firmware build cache", text)
         self.assertIn("\\./tools/ci-build-plan\\.py --buildable", text)
 

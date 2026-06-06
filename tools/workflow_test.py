@@ -59,6 +59,29 @@ class WorkflowTest(unittest.TestCase):
         self.assertLess(sanity, build_firmware)
         self.assertNotIn("name: Host realtime audit", workflow)
 
+    def test_repository_evidence_bundle_is_uploaded(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        sanity = line_of(workflow, "name: Repo sanity")
+        evidence = line_of(workflow, "name: Repository evidence bundle")
+        upload = line_of(workflow, "name: Upload repository evidence")
+        host_tests = line_of(workflow, "name: Host tests")
+
+        self.assertGreater(sanity, 0)
+        self.assertGreater(evidence, 0)
+        self.assertGreater(upload, 0)
+        self.assertGreater(host_tests, 0)
+        self.assertLess(sanity, evidence)
+        self.assertLess(evidence, upload)
+        self.assertLess(evidence, host_tests)
+        self.assertIn("name: arc-evidence", workflow)
+        self.assertIn(".arc-artifacts/source-manifest.json", workflow)
+        self.assertIn(".arc-artifacts/third-party-manifest.json", workflow)
+        self.assertIn(".arc-artifacts/safety-case.json", workflow)
+        self.assertIn(".arc-artifacts/release-evidence.json", workflow)
+        self.assertIn("if-no-files-found: error", workflow)
+        self.assertIn("retention-days: 30", workflow)
+
     def test_changed_project_plan_gates_firmware_builds(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
 
@@ -103,6 +126,8 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("./tools/firmware-manifest.py --format json --require-artifacts", workflow)
         self.assertIn("--output .arc-artifacts/firmware-manifest.json", workflow)
         self.assertIn(".arc-artifacts/firmware-manifest.json", workflow)
+        self.assertIn("if-no-files-found: error", workflow)
+        self.assertIn("retention-days: 30", workflow)
 
     def test_header_validation_uses_go_helper_with_public_header_gate(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
