@@ -18,6 +18,16 @@ DEPENDENCY_FIELDS = (
     "peerDependencies",
 )
 REGISTRY_PREFIX = "https://registry.npmjs.org/"
+INSTALL_SCRIPT_ALLOWLIST: dict[str, dict[str, str]] = {
+    "esbuild": {
+        "version": "0.27.7",
+        "reason": "Docs bundler selected by VitePress; lockfile pins registry URL and SHA-512 integrity.",
+    },
+    "fsevents": {
+        "version": "2.3.3",
+        "reason": "Optional macOS watcher dependency; lockfile marks it darwin-only and optional.",
+    },
+}
 
 
 def load_json(path: Path) -> Any:
@@ -87,6 +97,34 @@ def validate_package(path: str, package: Any) -> list[str]:
     return problems
 
 
+def allowlist_records() -> list[dict[str, str]]:
+    return [
+        {"name": name, "version": policy["version"], "reason": policy["reason"]}
+        for name, policy in sorted(INSTALL_SCRIPT_ALLOWLIST.items())
+    ]
+
+
+def validate_install_script_policy(label: str, package: dict[str, Any]) -> tuple[list[str], dict[str, str] | None]:
+    policy = INSTALL_SCRIPT_ALLOWLIST.get(label)
+    if policy is None:
+        return [f"{label}: install script is not in reviewed docs npm allowlist"], None
+
+    version = package.get("version")
+    if version != policy["version"]:
+        return [
+            f"{label}: install script version {version or '<missing>'} must match reviewed version {policy['version']}"
+        ], None
+
+    return (
+        [],
+        {
+            "name": label,
+            "version": policy["version"],
+            "reason": policy["reason"],
+        },
+    )
+
+
 def collect(package_json_path: Path = PACKAGE_JSON, package_lock_path: Path = PACKAGE_LOCK) -> dict[str, Any]:
     package_json = load_json(package_json_path)
     package_lock = load_json(package_lock_path)
@@ -95,26 +133,41 @@ def collect(package_json_path: Path = PACKAGE_JSON, package_lock_path: Path = PA
     packages = package_lock.get("packages", {}) if isinstance(package_lock, dict) else {}
     package_records: list[dict[str, Any]] = []
     install_script_packages: list[str] = []
+    allowed_install_script_packages: list[dict[str, str]] = []
+    unexpected_install_script_packages: list[str] = []
     integrity_count = 0
     registry_count = 0
     if isinstance(packages, dict):
         for path, package in sorted(packages.items()):
-            problems.extend(validate_package(str(path), package))
-            if not isinstance(package, dict) or path == "":
+            path_text = str(path)
+            problems.extend(validate_package(path_text, package))
+            if not isinstance(package, dict) or path_text == "":
                 continue
+            name = package_name(path_text)
+            install_script = package.get("hasInstallScript") is True
+            policy = INSTALL_SCRIPT_ALLOWLIST.get(name)
             if package.get("integrity"):
                 integrity_count += 1
             if isinstance(package.get("resolved"), str) and package["resolved"].startswith(REGISTRY_PREFIX):
                 registry_count += 1
-            if package.get("hasInstallScript") is True:
-                install_script_packages.append(package_name(str(path)))
-            if str(path).startswith("node_modules/"):
+            if install_script:
+                install_script_packages.append(name)
+                script_problems, allowed_record = validate_install_script_policy(name, package)
+                problems.extend(script_problems)
+                if allowed_record is None:
+                    unexpected_install_script_packages.append(name)
+                else:
+                    allowed_install_script_packages.append(allowed_record)
+            if path_text.startswith("node_modules/"):
                 package_records.append(
                     {
-                        "name": package_name(str(path)),
+                        "name": name,
                         "version": package.get("version"),
                         "integrity": bool(package.get("integrity")),
-                        "install_script": package.get("hasInstallScript") is True,
+                        "install_script": install_script,
+                        "install_script_allowed": install_script
+                        and policy is not None
+                        and package.get("version") == policy["version"],
                     }
                 )
 
@@ -126,6 +179,9 @@ def collect(package_json_path: Path = PACKAGE_JSON, package_lock_path: Path = PA
         "integrity_count": integrity_count,
         "dependency_counts": dependency_counts,
         "install_script_packages": install_script_packages,
+        "install_script_allowlist": allowlist_records(),
+        "allowed_install_script_packages": allowed_install_script_packages,
+        "unexpected_install_script_packages": unexpected_install_script_packages,
         "packages": package_records,
         "ok": not problems,
         "problems": problems,
@@ -143,8 +199,18 @@ def report_text(evidence: dict[str, Any]) -> str:
     ]
     if evidence["install_script_packages"]:
         lines.append("- install scripts:")
+        packages = {package["name"]: package for package in evidence["packages"]}
+        allowlist = {entry["name"]: entry for entry in evidence["install_script_allowlist"]}
         for name in evidence["install_script_packages"]:
-            lines.append(f"  - {name}")
+            package = packages.get(name, {})
+            version = package.get("version", "<missing>")
+            policy = allowlist.get(name)
+            if policy and version == policy["version"]:
+                lines.append(f"  - {name}@{version} (reviewed)")
+            elif policy:
+                lines.append(f"  - {name}@{version} (review required; expected {policy['version']})")
+            else:
+                lines.append(f"  - {name}@{version} (review required)")
     if evidence["problems"]:
         lines.append("- problems:")
         for problem in evidence["problems"]:

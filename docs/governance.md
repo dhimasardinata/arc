@@ -53,7 +53,8 @@ or distributing Arc-derived artifacts.
 - `tools/workflow-policy-check.py --format json` keeps workflow permissions,
   concurrency, and job timeouts inside the repository's approved CI policy.
 - `tools/npm-lock-check.py --format json` keeps the docs dependency lockfile
-  synchronized with `package.json` and backed by registry integrity hashes.
+  synchronized with `package.json`, backed by registry integrity hashes, and
+  limited to reviewed install-script packages.
 - `tools/license-policy-check.py --format json` keeps docs npm dependency
   licenses inside Arc's approved release policy.
 - `tools/secret-scan-check.py --format json` rejects high-confidence private

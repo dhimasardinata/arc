@@ -62,6 +62,44 @@ class NpmLockCheckTest(unittest.TestCase):
         self.assertEqual(evidence["package_count"], 1)
         self.assertEqual(evidence["integrity_count"], 1)
 
+    def test_accepts_reviewed_install_scripts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_json = root / "package.json"
+            package_lock = root / "package-lock.json"
+            write_json(package_json, {"name": "arc-docs"})
+            write_json(
+                package_lock,
+                {
+                    "name": "arc-docs",
+                    "lockfileVersion": 3,
+                    "packages": {
+                        "": {"name": "arc-docs"},
+                        "node_modules/esbuild": {
+                            "version": "0.27.7",
+                            "resolved": "https://registry.npmjs.org/esbuild/-/esbuild-0.27.7.tgz",
+                            "integrity": "sha512-test",
+                            "hasInstallScript": True,
+                        },
+                        "node_modules/fsevents": {
+                            "version": "2.3.3",
+                            "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
+                            "integrity": "sha512-test",
+                            "hasInstallScript": True,
+                        },
+                    },
+                },
+            )
+
+            evidence = npm_lock_check.collect(package_json, package_lock)
+
+        self.assertTrue(evidence["ok"], evidence["problems"])
+        self.assertEqual(evidence["install_script_packages"], ["esbuild", "fsevents"])
+        self.assertEqual(
+            [package["name"] for package in evidence["allowed_install_script_packages"]],
+            ["esbuild", "fsevents"],
+        )
+
     def test_rejects_unsynchronized_root_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -142,6 +180,69 @@ class NpmLockCheckTest(unittest.TestCase):
 
         self.assertFalse(evidence["ok"])
         self.assertIn("vitepress: integrity must be a sha512 npm integrity string", evidence["problems"])
+
+    def test_rejects_unreviewed_install_script(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_json = root / "package.json"
+            package_lock = root / "package-lock.json"
+            write_json(package_json, {"name": "arc-docs"})
+            write_json(
+                package_lock,
+                {
+                    "name": "arc-docs",
+                    "lockfileVersion": 3,
+                    "packages": {
+                        "": {"name": "arc-docs"},
+                        "node_modules/build-helper": {
+                            "version": "1.0.0",
+                            "resolved": "https://registry.npmjs.org/build-helper/-/build-helper-1.0.0.tgz",
+                            "integrity": "sha512-test",
+                            "hasInstallScript": True,
+                        },
+                    },
+                },
+            )
+
+            evidence = npm_lock_check.collect(package_json, package_lock)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("build-helper", evidence["unexpected_install_script_packages"])
+        self.assertIn(
+            "build-helper: install script is not in reviewed docs npm allowlist",
+            evidence["problems"],
+        )
+
+    def test_rejects_reviewed_install_script_version_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_json = root / "package.json"
+            package_lock = root / "package-lock.json"
+            write_json(package_json, {"name": "arc-docs"})
+            write_json(
+                package_lock,
+                {
+                    "name": "arc-docs",
+                    "lockfileVersion": 3,
+                    "packages": {
+                        "": {"name": "arc-docs"},
+                        "node_modules/esbuild": {
+                            "version": "0.27.8",
+                            "resolved": "https://registry.npmjs.org/esbuild/-/esbuild-0.27.8.tgz",
+                            "integrity": "sha512-test",
+                            "hasInstallScript": True,
+                        },
+                    },
+                },
+            )
+
+            evidence = npm_lock_check.collect(package_json, package_lock)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "esbuild: install script version 0.27.8 must match reviewed version 0.27.7",
+            evidence["problems"],
+        )
 
 
 if __name__ == "__main__":

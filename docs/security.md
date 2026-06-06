@@ -57,9 +57,9 @@ Pages deploy job.
 `tools/npm-lock-check.py --format json` verifies that the docs `package-lock.json`
 is npm lockfile v3, matches the root dependency declarations in `package.json`,
 and keeps registry `resolved` URLs plus SHA-512 integrity strings for each
-package entry. The JSON output also reports transitive packages with install
-scripts so release review can decide whether that supply-chain surface is
-acceptable for the docs build.
+package entry. Transitive packages with install scripts must match Arc's
+reviewed docs allowlist and exact reviewed versions, so a dependency update that
+adds or changes install-time code fails before release evidence is uploaded.
 
 `tools/license-policy-check.py --format json` validates the docs dependency
 license declarations from `package-lock.json` against Arc's approved npm
