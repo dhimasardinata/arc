@@ -43,6 +43,8 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("THIRD_PARTY_MANIFEST.json must define machine-checkable dependency notice boundaries", text)
         self.assertIn("third-party manifest check failed", text)
         self.assertIn("third-party manifest tool must stay executable", text)
+        self.assertIn("workflow action pin check failed", text)
+        self.assertIn("workflow action pin tool must stay executable", text)
         self.assertIn("docs/governance.md must expose repository governance controls", text)
         self.assertIn("docs/governance.md must link contribution, release, security", text)
         self.assertIn("pull request template must keep review evidence consistent", text)

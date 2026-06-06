@@ -82,6 +82,7 @@ python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
 ./tools/source-manifest.py --format json >/dev/null || die "source manifest check failed"
 ./tools/third-party-manifest-check.py || die "third-party manifest check failed"
 python3 tools/release-evidence.py --format json >/dev/null || die "release evidence manifest failed"
+./tools/workflow-pins-check.py --format json >/dev/null || die "workflow action pin check failed"
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"
 
 while IFS= read -r file; do
@@ -314,6 +315,10 @@ if [[ ! -x tools/evidence-index.py ]]; then
     die "evidence index tool must stay executable"
 fi
 
+if [[ ! -x tools/workflow-pins-check.py ]]; then
+    die "workflow action pin tool must stay executable"
+fi
+
 if [[ ! -x tools/source-manifest.py ]]; then
     die "source manifest tool must stay executable"
 fi
@@ -462,10 +467,6 @@ for cache_guard in 'name: Restore firmware build cache' 'name: Save firmware bui
     fi
 done
 
-if grep -nE 'uses:[[:space:]]+actions/[^@[:space:]]+@v[0-9]+([[:space:]#]|$)' .github/workflows/*.yml; then
-    die "GitHub Actions must be pinned to full commit SHA refs, not mutable version tags"
-fi
-
 if ! grep -qE 'go run tools/clangd-compile-commands\.go --validate-arc-headers' .github/workflows/build.yml; then
     die "build workflow must validate Arc header compile commands"
 fi
@@ -495,6 +496,7 @@ required_exec=(
     tools/topology-check.py
     tools/tool-tests.sh
     tools/use-after-move-check.sh
+    tools/workflow-pins-check.py
     tools/install-git-hooks.sh
 )
 load_arc_projects example_dirs --examples

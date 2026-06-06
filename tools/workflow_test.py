@@ -23,6 +23,12 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
         self.assertIn("timeout-minutes: 90", workflow)
 
+    def test_workflow_action_refs_have_policy_gate(self) -> None:
+        check_repo = (ROOT / "tools" / "check-repo.sh").read_text(encoding="utf-8")
+
+        self.assertIn("./tools/workflow-pins-check.py --format json", check_repo)
+        self.assertIn("workflow action pin check failed", check_repo)
+
     def test_changed_project_plan_runs_before_expensive_setup(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
 

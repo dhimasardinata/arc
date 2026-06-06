@@ -34,6 +34,8 @@ or distributing Arc-derived artifacts.
 - `THIRD_PARTY_MANIFEST.json` plus
   `tools/third-party-manifest-check.py --format json` keeps the repository's
   dependency notice boundary machine-checkable.
+- `tools/workflow-pins-check.py --format json` keeps GitHub Actions supply-chain
+  references immutable by requiring full commit SHA pins and version comments.
 
 ## Security And License Path
 
