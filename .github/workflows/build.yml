@@ -167,15 +167,18 @@ jobs:
           ./tools/third-party-manifest-check.py --format json > .arc-artifacts/third-party-manifest.json
           ./tools/safety-case-check.py --format json > .arc-artifacts/safety-case.json
           ./tools/release-evidence.py --format json --require-clean > .arc-artifacts/release-evidence.json
+          ./tools/workflow-pins-check.py --format json > .arc-artifacts/workflow-pins.json
           ./tools/evidence-index.py --format json --output .arc-artifacts/evidence-index.json \
             --require .arc-artifacts/source-manifest.json \
             --require .arc-artifacts/third-party-manifest.json \
             --require .arc-artifacts/safety-case.json \
             --require .arc-artifacts/release-evidence.json \
+            --require .arc-artifacts/workflow-pins.json \
             .arc-artifacts/source-manifest.json \
             .arc-artifacts/third-party-manifest.json \
             .arc-artifacts/safety-case.json \
-            .arc-artifacts/release-evidence.json
+            .arc-artifacts/release-evidence.json \
+            .arc-artifacts/workflow-pins.json
 
       - name: Upload repository evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -187,6 +190,7 @@ jobs:
             .arc-artifacts/third-party-manifest.json
             .arc-artifacts/safety-case.json
             .arc-artifacts/release-evidence.json
+            .arc-artifacts/workflow-pins.json
           if-no-files-found: error
           retention-days: 30
 

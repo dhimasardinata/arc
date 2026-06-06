@@ -417,7 +417,7 @@ fi
 if ! grep -qE 'name: Repository evidence bundle' .github/workflows/build.yml; then
     die "build workflow must emit repository evidence artifacts"
 fi
-for evidence_file in source-manifest third-party-manifest safety-case release-evidence; do
+for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins; do
     if ! grep -qF ".arc-artifacts/$evidence_file.json" .github/workflows/build.yml; then
         die "build workflow must publish $evidence_file JSON evidence"
     fi
@@ -427,6 +427,9 @@ if ! grep -qF '.arc-artifacts/evidence-index.json' .github/workflows/build.yml; 
 fi
 if ! grep -qE '\./tools/evidence-index\.py --format json --output \.arc-artifacts/evidence-index\.json' .github/workflows/build.yml; then
     die "build workflow must hash repository evidence files"
+fi
+if ! grep -qE '\./tools/workflow-pins-check\.py --format json > \.arc-artifacts/workflow-pins\.json' .github/workflows/build.yml; then
+    die "build workflow must emit workflow action pin evidence"
 fi
 if ! grep -qE 'name: Upload repository evidence' .github/workflows/build.yml \
     || ! grep -qE 'name: arc-evidence' .github/workflows/build.yml \

@@ -45,6 +45,7 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("third-party manifest tool must stay executable", text)
         self.assertIn("workflow action pin check failed", text)
         self.assertIn("workflow action pin tool must stay executable", text)
+        self.assertIn("build workflow must emit workflow action pin evidence", text)
         self.assertIn("docs/governance.md must expose repository governance controls", text)
         self.assertIn("docs/governance.md must link contribution, release, security", text)
         self.assertIn("pull request template must keep review evidence consistent", text)
