@@ -140,16 +140,24 @@ class WorkflowTest(unittest.TestCase):
 
         restore_cache = line_of(workflow, "name: Restore firmware build cache")
         build_firmware = line_of(workflow, "name: Build firmware")
+        save_ccache = line_of(workflow, "name: Save ccache")
         save_cache = line_of(workflow, "name: Save firmware build cache")
 
         self.assertGreater(restore_cache, 0)
         self.assertGreater(build_firmware, 0)
+        self.assertGreater(save_ccache, 0)
         self.assertGreater(save_cache, 0)
         self.assertLess(restore_cache, build_firmware)
+        self.assertLess(build_firmware, save_ccache)
         self.assertLess(build_firmware, save_cache)
         self.assertIn(".arc-build-cache", workflow)
         self.assertIn("ARC_BUILD_CACHE_MAX_PROJECTS", workflow)
         self.assertIn("cache_ready", workflow)
+        self.assertIn("name: Restore ccache", workflow)
+        self.assertIn("uses: actions/cache/restore@", workflow)
+        self.assertIn("uses: actions/cache/save@", workflow)
+        self.assertNotIn("uses: actions/cache@", workflow)
+        self.assertIn("github.event_name == 'push' && steps.firmware-plan.outputs.count != '0'", workflow)
 
     def test_firmware_artifact_manifest_is_uploaded_with_binaries(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")

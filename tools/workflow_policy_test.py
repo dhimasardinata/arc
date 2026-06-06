@@ -43,6 +43,15 @@ class WorkflowPolicyTest(unittest.TestCase):
             steps[(".github/workflows/build.yml", "esp32s3", "Ensure format tools")]["ruff_install_spec"],
             workflow_policy_check.RUFF_SPEC,
         )
+        self.assertEqual(
+            steps[(".github/workflows/build.yml", "esp32s3", "Restore ccache")]["uses"],
+            "actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae",
+        )
+        for step_name in ("Save ESP-IDF and tools cache", "Save ccache", "Save firmware build cache"):
+            self.assertIn(
+                "github.event_name == 'push'",
+                steps[(".github/workflows/build.yml", "esp32s3", step_name)]["if"],
+            )
 
     def test_rejects_pull_request_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -314,6 +323,71 @@ jobs:
         self.assertFalse(evidence["ok"])
         self.assertIn(
             ".github/workflows/build.yml:esp32s3:Ensure format tools: Ruff install must pin ruff==0.15.16",
+            evidence["problems"],
+        )
+
+    def test_rejects_combined_cache_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Cache ccache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/build.yml:esp32s3:Cache ccache: cache use must split restore and push-gated save",
+            evidence["problems"],
+        )
+
+    def test_rejects_cache_save_without_push_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Save ccache
+        if: steps.firmware-plan.outputs.count != '0'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/build.yml:esp32s3:Save ccache: cache save must be gated to push events",
             evidence["problems"],
         )
 

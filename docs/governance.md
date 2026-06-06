@@ -56,7 +56,7 @@ or distributing Arc-derived artifacts.
   bounded checkout settings.
 - `tools/workflow-policy-check.py --format json` keeps workflow permissions,
   concurrency, runner image pins, job timeouts, formatter pins, and shell
-  expression guards inside the repository's approved CI policy.
+  expression/cache-write guards inside the repository's approved CI policy.
 - `tools/npm-lock-check.py --format json` keeps the docs dependency lockfile
   synchronized with `package.json`, backed by registry integrity hashes, and
   limited to reviewed install-script packages.

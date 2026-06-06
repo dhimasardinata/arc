@@ -104,9 +104,9 @@ jobs:
             ${{ runner.os }}-esp-idf-${{ env.ARC_IDF_REF }}-${{ env.ARC_IDF_TARGET }}-
             ${{ runner.os }}-esp-idf-${{ env.ARC_IDF_VERSION }}-${{ env.ARC_IDF_TARGET }}-
 
-      - name: Cache ccache
+      - name: Restore ccache
         if: steps.firmware-plan.outputs.count != '0'
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.ccache
           key: ${{ runner.os }}-ccache-${{ env.ARC_IDF_REF }}-py${{ env.ARC_PYTHON }}-${{ hashFiles('components/**/*.hpp', 'components/**/*.cpp', 'examples/**/CMakeLists.txt', 'examples/**/sdkconfig.defaults', 'cmake/**/*.cmake') }}
@@ -147,7 +147,7 @@ jobs:
           fi
 
       - name: Save ESP-IDF and tools cache
-        if: steps.firmware-plan.outputs.count != '0' && steps.idf-cache.outputs.cache-hit != 'true'
+        if: github.event_name == 'push' && steps.firmware-plan.outputs.count != '0' && steps.idf-cache.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -370,6 +370,14 @@ jobs:
           echo "cache_ready=$cache_ready" >> "$GITHUB_OUTPUT"
           ccache --show-stats || true
 
+      - name: Save ccache
+        if: github.event_name == 'push' && steps.firmware-plan.outputs.count != '0'
+        continue-on-error: true
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ env.ARC_IDF_REF }}-py${{ env.ARC_PYTHON }}-${{ hashFiles('components/**/*.hpp', 'components/**/*.cpp', 'examples/**/CMakeLists.txt', 'examples/**/sdkconfig.defaults', 'cmake/**/*.cmake') }}
+
       - name: Firmware artifact manifest
         if: steps.firmware-plan.outputs.count != '0'
         shell: bash
@@ -420,7 +428,7 @@ jobs:
           retention-days: 30
 
       - name: Save firmware build cache
-        if: steps.firmware-plan.outputs.count != '0' && steps.build-firmware.outputs.cache_ready == '1'
+        if: github.event_name == 'push' && steps.firmware-plan.outputs.count != '0' && steps.build-firmware.outputs.cache_ready == '1'
         continue-on-error: true
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:

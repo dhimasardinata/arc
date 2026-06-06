@@ -577,6 +577,14 @@ for cache_guard in 'name: Restore firmware build cache' 'name: Save firmware bui
         die "build workflow must cache selected firmware build directories for incremental CI"
     fi
 done
+if grep -qF 'uses: actions/cache@' .github/workflows/build.yml \
+    || ! grep -qF 'name: Restore ccache' .github/workflows/build.yml \
+    || ! grep -qF 'name: Save ccache' .github/workflows/build.yml \
+    || ! grep -qF "if: github.event_name == 'push' && steps.firmware-plan.outputs.count != '0'" .github/workflows/build.yml \
+    || ! grep -qF "if: github.event_name == 'push' && steps.firmware-plan.outputs.count != '0' && steps.idf-cache.outputs.cache-hit != 'true'" .github/workflows/build.yml \
+    || ! grep -qF "if: github.event_name == 'push' && steps.firmware-plan.outputs.count != '0' && steps.build-firmware.outputs.cache_ready == '1'" .github/workflows/build.yml; then
+    die "build workflow cache writes must be explicit and push-gated"
+fi
 
 if ! grep -qE 'go run tools/clangd-compile-commands\.go --validate-arc-headers' .github/workflows/build.yml; then
     die "build workflow must validate Arc header compile commands"

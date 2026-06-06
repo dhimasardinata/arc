@@ -33,6 +33,8 @@ RUNNER_IMAGE = "ubuntu-24.04"
 
 class Step(NamedTuple):
     name: str
+    if_expr: str | None
+    uses: str | None
     env: dict[str, str]
     run: str | None
 
@@ -153,6 +155,22 @@ def parse_step_run(step_block: list[str]) -> str | None:
     return None
 
 
+def parse_step_uses(step_lines: list[str]) -> str | None:
+    for line in step_lines:
+        match = re.match(r"^(?:      - uses:|        uses:)\s*(.+?)\s*$", line)
+        if match:
+            return match.group(1).split("#", 1)[0].strip()
+    return None
+
+
+def parse_step_if(step_lines: list[str]) -> str | None:
+    for line in step_lines:
+        match = re.match(r"^        if:\s*(.+?)\s*$", line)
+        if match:
+            return match.group(1).strip("\"'")
+    return None
+
+
 def ruff_install_spec(run: str | None) -> str | None:
     if run is None:
         return None
@@ -170,8 +188,17 @@ def parse_steps(job_block: list[str]) -> list[Step]:
     steps: list[Step] = []
     for index, (start, name) in enumerate(starts):
         end = starts[index + 1][0] if index + 1 < len(starts) else len(job_block)
+        step_lines = job_block[start:end]
         step_block = job_block[start + 1 : end]
-        steps.append(Step(name=name, env=parse_step_env(step_block), run=parse_step_run(step_block)))
+        steps.append(
+            Step(
+                name=name,
+                if_expr=parse_step_if(step_lines),
+                uses=parse_step_uses(step_lines),
+                env=parse_step_env(step_block),
+                run=parse_step_run(step_block),
+            )
+        )
     return steps
 
 
@@ -230,6 +257,8 @@ def workflow_record(path: Path, root: Path) -> dict[str, Any]:
                 "steps": [
                     {
                         "name": step.name,
+                        "if": step.if_expr,
+                        "uses": step.uses,
                         "env": step.env,
                         "has_run": step.run is not None,
                         "github_expression_in_run": "${{" in (step.run or ""),
@@ -291,6 +320,11 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
             ruff_spec = step["ruff_install_spec"]
             if ruff_spec is not None and ruff_spec != RUFF_SPEC:
                 problems.append(f"{path}:{job_id}:{step_name}: Ruff install must pin {RUFF_SPEC}")
+            uses = step["uses"] or ""
+            if uses.startswith("actions/cache@"):
+                problems.append(f"{path}:{job_id}:{step_name}: cache use must split restore and push-gated save")
+            if uses.startswith("actions/cache/save@") and "github.event_name == 'push'" not in (step["if"] or ""):
+                problems.append(f"{path}:{job_id}:{step_name}: cache save must be gated to push events")
     return problems
 
 
