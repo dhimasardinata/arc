@@ -4,9 +4,17 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   esp32s3:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       ARC_IDF_VERSION: v6.0.1
       ARC_IDF_REF: d59a48530db46665ea70e2876738062ee0a9cdc2

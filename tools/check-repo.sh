@@ -223,6 +223,22 @@ if ! grep -qE '\./tools/ci-build-plan\.py --buildable' .github/workflows/build.y
     die "build workflow must plan changed firmware projects through tools/ci-build-plan.py"
 fi
 
+if ! grep -qF 'permissions:' .github/workflows/build.yml || ! grep -qF '  contents: read' .github/workflows/build.yml; then
+    die "build workflow must run with least-privilege contents:read permissions"
+fi
+
+if ! grep -qF 'group: build-${{ github.ref }}' .github/workflows/build.yml; then
+    die "build workflow must serialize runs per ref"
+fi
+
+if ! grep -qF "cancel-in-progress: \${{ github.event_name == 'pull_request' }}" .github/workflows/build.yml; then
+    die "build workflow must cancel only superseded pull-request runs"
+fi
+
+if ! grep -qE '^[[:space:]]+timeout-minutes: 90$' .github/workflows/build.yml; then
+    die "build workflow must bound the firmware job with timeout-minutes"
+fi
+
 if grep -qE 'find examples -mindepth .*CMakeLists\.txt' .github/workflows/build.yml; then
     die "build workflow must not duplicate raw example project discovery"
 fi

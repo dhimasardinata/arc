@@ -15,6 +15,14 @@ def line_of(text: str, needle: str) -> int:
 
 
 class WorkflowTest(unittest.TestCase):
+    def test_build_workflow_uses_least_privilege_and_bounded_runs(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        self.assertIn("permissions:\n  contents: read", workflow)
+        self.assertIn("concurrency:\n  group: build-${{ github.ref }}", workflow)
+        self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
+        self.assertIn("timeout-minutes: 90", workflow)
+
     def test_changed_project_plan_runs_before_expensive_setup(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
 
@@ -91,6 +99,8 @@ class WorkflowTest(unittest.TestCase):
 
         self.assertIn("npm ci", workflow)
         self.assertIn("npm run docs:build", workflow)
+        self.assertIn("timeout-minutes: 20", workflow)
+        self.assertIn("timeout-minutes: 10", workflow)
         self.assertIn("actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e", workflow)
         self.assertIn("actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d", workflow)
         self.assertIn("actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9", workflow)
@@ -100,7 +110,10 @@ class WorkflowTest(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
 
         self.assertIn("security-events: write", workflow)
+        self.assertIn("concurrency:\n  group: codeql-${{ github.ref }}", workflow)
+        self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
         self.assertIn("language: [c-cpp, python]", workflow)
+        self.assertIn("timeout-minutes: 30", workflow)
         self.assertIn("build-mode: none", workflow)
         self.assertIn("queries: +security-extended,security-and-quality", workflow)
         self.assertIn("github/codeql-action/init@dc73d59c2d7bd4f8194098a91219eeee6d8a1719", workflow)
