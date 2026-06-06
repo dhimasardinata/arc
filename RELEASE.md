@@ -20,6 +20,8 @@ for firmware, security, safety, or licensing claims.
   umbrella includes, or component dependencies changed
 - `./tools/source-manifest.py --format json --require-clean` before publishing a
   release source archive or artifact bundle
+- `./tools/firmware-manifest.py --format json --require-artifacts` after
+  firmware builds and before publishing firmware binaries
 - `npm run docs:build` when docs or docs-site configuration changed
 - `./tools/third-party-manifest-check.py --format json` before relying on
   third-party notice coverage
@@ -32,6 +34,7 @@ For firmware-facing releases, capture:
 
 - root `idf.py build` result;
 - at least one relevant `idf.py -C examples/... build` result;
+- firmware artifact manifest with SHA-256 for each `.bin` and `.elf`;
 - serial logs, benchmark output, HIL artifact, or reason runtime evidence is not
   applicable;
 - target chip, board, partitions, sdkconfig defaults, and external fixtures.
@@ -61,6 +64,6 @@ evidence that still covers the changed surface.
 ## Publish Record
 
 Store the release note, validation commands, firmware logs, benchmark output,
-HIL evidence, source manifest JSON, and known limitations together. Link the
-exact commit, tag, or artifact bundle so future regressions can be traced back
-to source.
+HIL evidence, source manifest JSON, firmware artifact manifest JSON, and known
+limitations together. Link the exact commit, tag, or artifact bundle so future
+regressions can be traced back to source.

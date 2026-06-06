@@ -297,6 +297,12 @@ jobs:
           echo "cache_ready=$cache_ready" >> "$GITHUB_OUTPUT"
           ccache --show-stats || true
 
+      - name: Firmware artifact manifest
+        if: steps.firmware-plan.outputs.count != '0'
+        shell: bash
+        run: |
+          ./tools/firmware-manifest.py --format json --require-artifacts --output .arc-artifacts/firmware-manifest.json
+
       - name: Validate clangd database
         if: steps.firmware-plan.outputs.count != '0'
         shell: bash
@@ -328,6 +334,7 @@ jobs:
             build/*.elf
             examples/**/build/*.bin
             examples/**/build/*.elf
+            .arc-artifacts/firmware-manifest.json
 
       - name: Save firmware build cache
         if: steps.firmware-plan.outputs.count != '0' && steps.build-firmware.outputs.cache_ready == '1'

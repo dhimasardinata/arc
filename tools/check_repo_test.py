@@ -30,6 +30,8 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("RELEASE.md must define release evidence requirements", text)
         self.assertIn("RELEASE.md must cover repository gates, firmware evidence", text)
         self.assertIn("python3 tools/release-evidence.py --format json", text)
+        self.assertIn("firmware artifact manifest check failed", text)
+        self.assertIn("firmware manifest tool must stay executable", text)
         self.assertIn("release evidence tool must stay executable", text)
         self.assertIn("source manifest check failed", text)
         self.assertIn("source manifest tool must stay executable", text)
@@ -61,6 +63,8 @@ class CheckRepoToolTest(unittest.TestCase):
         )
         self.assertIn('workflow_step_before "name: Host benchmarks" "name: Build firmware"', text)
         self.assertIn('workflow_step_before "name: Plan firmware builds" "name: Build firmware"', text)
+        self.assertIn('workflow_step_before "name: Build firmware" "name: Firmware artifact manifest"', text)
+        self.assertIn('workflow_step_before "name: Firmware artifact manifest" "name: Upload binaries"', text)
         self.assertIn("Restore firmware build cache", text)
         self.assertIn("\\./tools/ci-build-plan\\.py --buildable", text)
 

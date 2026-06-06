@@ -88,6 +88,22 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("ARC_BUILD_CACHE_MAX_PROJECTS", workflow)
         self.assertIn("cache_ready", workflow)
 
+    def test_firmware_artifact_manifest_is_uploaded_with_binaries(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        build_firmware = line_of(workflow, "name: Build firmware")
+        manifest = line_of(workflow, "name: Firmware artifact manifest")
+        upload = line_of(workflow, "name: Upload binaries")
+
+        self.assertGreater(build_firmware, 0)
+        self.assertGreater(manifest, 0)
+        self.assertGreater(upload, 0)
+        self.assertLess(build_firmware, manifest)
+        self.assertLess(manifest, upload)
+        self.assertIn("./tools/firmware-manifest.py --format json --require-artifacts", workflow)
+        self.assertIn("--output .arc-artifacts/firmware-manifest.json", workflow)
+        self.assertIn(".arc-artifacts/firmware-manifest.json", workflow)
+
     def test_header_validation_uses_go_helper_with_public_header_gate(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
 

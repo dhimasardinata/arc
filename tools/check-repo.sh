@@ -75,6 +75,7 @@ python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
 ./tools/arc-prove.sh || die "formal spec check failed"
 ./tools/use-after-move-check.sh || die "use-after-move check failed"
 ./tools/safety-case-check.py || die "safety-case evidence check failed"
+./tools/firmware-manifest.py --format json >/dev/null || die "firmware artifact manifest check failed"
 ./tools/source-manifest.py --format json >/dev/null || die "source manifest check failed"
 ./tools/third-party-manifest-check.py || die "third-party manifest check failed"
 python3 tools/release-evidence.py --format json >/dev/null || die "release evidence manifest failed"
@@ -251,6 +252,7 @@ fi
 
 if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/host-tests.sh' RELEASE.md \
+    || ! grep -qF './tools/firmware-manifest.py --format json --require-artifacts' RELEASE.md \
     || ! grep -qF './tools/release-evidence.py --format json --require-clean' RELEASE.md \
     || ! grep -qF './tools/source-manifest.py --format json --require-clean' RELEASE.md \
     || ! grep -qF 'idf.py build' RELEASE.md \
@@ -299,6 +301,10 @@ fi
 
 if [[ ! -x tools/release-evidence.py ]]; then
     die "release evidence tool must stay executable"
+fi
+
+if [[ ! -x tools/firmware-manifest.py ]]; then
+    die "firmware manifest tool must stay executable"
 fi
 
 if [[ ! -x tools/source-manifest.py ]]; then
@@ -392,6 +398,12 @@ fi
 if ! grep -qE '\./tools/host-bench\.sh' .github/workflows/build.yml; then
     die "build workflow must run host benchmarks before firmware builds"
 fi
+if ! grep -qE '\./tools/firmware-manifest\.py --format json --require-artifacts --output \.arc-artifacts/firmware-manifest\.json' .github/workflows/build.yml; then
+    die "build workflow must emit a firmware artifact hash manifest"
+fi
+if ! grep -qF '.arc-artifacts/firmware-manifest.json' .github/workflows/build.yml; then
+    die "build workflow must upload the firmware artifact manifest with binaries"
+fi
 workflow_step_before "name: Plan firmware builds" "name: Ensure host tools" \
     "build workflow must plan changed firmware projects before host tool setup"
 workflow_step_before "name: Plan firmware builds" "name: Restore ESP-IDF and tools cache" \
@@ -400,6 +412,10 @@ workflow_step_before "name: Host benchmarks" "name: Build firmware" \
     "build workflow must run host benchmarks before firmware builds"
 workflow_step_before "name: Plan firmware builds" "name: Build firmware" \
     "build workflow must plan changed firmware projects before firmware builds"
+workflow_step_before "name: Build firmware" "name: Firmware artifact manifest" \
+    "build workflow must hash firmware artifacts after building them"
+workflow_step_before "name: Firmware artifact manifest" "name: Upload binaries" \
+    "build workflow must upload firmware hashes beside binaries"
 for cache_guard in 'name: Restore firmware build cache' 'name: Save firmware build cache' '\.arc-build-cache' 'cache_ready'; do
     if ! grep -qE "$cache_guard" .github/workflows/build.yml; then
         die "build workflow must cache selected firmware build directories for incremental CI"
@@ -430,6 +446,7 @@ required_exec=(
     tools/arc-projects.py
     tools/ci-build-plan.py
     tools/clangd-compile-commands.py
+    tools/firmware-manifest.py
     tools/format.sh
     tools/hil-evidence-check.py
     tools/source-manifest.py

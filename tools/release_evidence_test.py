@@ -27,6 +27,7 @@ class ReleaseEvidenceTest(unittest.TestCase):
         self.assertTrue(paths["THIRD_PARTY_NOTICES.md"]["sha256"])
         self.assertTrue(paths["THIRD_PARTY_MANIFEST.json"]["sha256"])
         self.assertIn("./tools/check-repo.sh", evidence["required_commands"])
+        self.assertIn("./tools/firmware-manifest.py --format json --require-artifacts", evidence["required_commands"])
         self.assertIn("./tools/source-manifest.py --format json --require-clean", evidence["required_commands"])
         self.assertIn("./tools/third-party-manifest-check.py --format json", evidence["required_commands"])
         self.assertIn("idf.py build", evidence["required_commands"])
