@@ -39,7 +39,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: none
-          dependency-caching: true
+          dependency-caching: false
           queries: +security-extended,security-and-quality
 
       - name: Initialize CodeQL
@@ -47,7 +47,7 @@ jobs:
         uses: github/codeql-action/init@dc73d59c2d7bd4f8194098a91219eeee6d8a1719 # v4
         with:
           languages: ${{ matrix.language }}
-          dependency-caching: true
+          dependency-caching: false
           queries: +security-extended,security-and-quality
 
       - name: Perform CodeQL analysis

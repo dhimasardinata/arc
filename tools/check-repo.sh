@@ -594,6 +594,10 @@ fi
 if ! grep -qF "if: github.ref == 'refs/heads/main'" .github/workflows/pages.yml; then
     die "pages workflow deploy job must be guarded to main"
 fi
+if grep -qF 'dependency-caching: true' .github/workflows/codeql.yml \
+    || ! grep -qF 'dependency-caching: false' .github/workflows/codeql.yml; then
+    die "codeql workflow dependency caching must stay disabled"
+fi
 
 if ! grep -qE 'go run tools/clangd-compile-commands\.go --validate-arc-headers' .github/workflows/build.yml; then
     die "build workflow must validate Arc header compile commands"

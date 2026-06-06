@@ -64,6 +64,11 @@ class WorkflowPolicyTest(unittest.TestCase):
             "github.event_name == 'push'",
             steps[(".github/workflows/pages.yml", "build", "Save npm cache")]["if"],
         )
+        for step_name in ("Initialize CodeQL for C/C++", "Initialize CodeQL"):
+            self.assertEqual(
+                steps[(".github/workflows/codeql.yml", "analyze", step_name)]["with"]["dependency-caching"],
+                workflow_policy_check.CODEQL_DEPENDENCY_CACHING,
+            )
 
     def test_rejects_pull_request_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -466,6 +471,43 @@ jobs:
         self.assertFalse(evidence["ok"])
         self.assertIn(
             ".github/workflows/pages.yml:deploy: Pages deploy job must be guarded to refs/heads/main",
+            evidence["problems"],
+        )
+
+    def test_rejects_codeql_dependency_caching(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "codeql.yml",
+                """name: codeql
+on:
+  push:
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+concurrency:
+  group: codeql
+  cancel-in-progress: true
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@dc73d59c2d7bd4f8194098a91219eeee6d8a1719
+        with:
+          languages: python
+          dependency-caching: true
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/codeql.yml:analyze:Initialize CodeQL: CodeQL dependency caching must stay disabled",
             evidence["problems"],
         )
 

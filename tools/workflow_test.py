@@ -217,6 +217,8 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("language: [c-cpp, python]", workflow)
         self.assertIn("timeout-minutes: 30", workflow)
         self.assertIn("build-mode: none", workflow)
+        self.assertIn("dependency-caching: false", workflow)
+        self.assertNotIn("dependency-caching: true", workflow)
         self.assertIn("queries: +security-extended,security-and-quality", workflow)
         self.assertIn("github/codeql-action/init@dc73d59c2d7bd4f8194098a91219eeee6d8a1719", workflow)
         self.assertIn("github/codeql-action/analyze@dc73d59c2d7bd4f8194098a91219eeee6d8a1719", workflow)

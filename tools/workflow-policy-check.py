@@ -30,6 +30,7 @@ ARC_BASE_SHA_HEX_GUARD = '[[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]'
 RUFF_SPEC = "ruff==0.15.16"
 RUNNER_IMAGE = "ubuntu-24.04"
 PAGES_DEPLOY_REF_GUARD = "github.ref == 'refs/heads/main'"
+CODEQL_DEPENDENCY_CACHING = "false"
 
 
 class Step(NamedTuple):
@@ -348,6 +349,11 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
                 problems.append(
                     f"{path}:{job_id}:{step_name}: setup-node cache must use explicit restore and push-gated save"
                 )
+            if (
+                uses.startswith("github/codeql-action/init@")
+                and step["with"].get("dependency-caching") != CODEQL_DEPENDENCY_CACHING
+            ):
+                problems.append(f"{path}:{job_id}:{step_name}: CodeQL dependency caching must stay disabled")
     return problems
 
 
