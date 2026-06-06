@@ -22,6 +22,12 @@ for firmware, security, safety, or licensing claims.
   release source archive or artifact bundle
 - `./tools/firmware-manifest.py --format json --require-artifacts` after
   firmware builds and before publishing firmware binaries
+- `./tools/safety-case-check.py --format json` before publishing safety,
+  hardware-risk, or release-process claims
+- `./tools/workflow-pins-check.py --format json` before relying on GitHub
+  Actions supply-chain pinning
+- `./tools/workflow-policy-check.py --format json` before relying on workflow
+  permissions, runner, timeout, formatter, or shell-expression policy
 - `./tools/evidence-index.py --format json` over generated evidence files before
   publishing an evidence bundle; the index hashes each file and rejects
   malformed or failed evidence JSON
@@ -32,8 +38,12 @@ for firmware, security, safety, or licensing claims.
 - `./tools/sbom.py --format json` before publishing a source archive, firmware
   image, docs site, or customer evidence bundle that needs SPDX 2.3 dependency
   inventory
+- `./tools/npm-lock-check.py --format json` before relying on docs dependency
+  lockfile integrity or install-script review
 - `./tools/license-policy-check.py --format json` before publishing docs or
   evidence bundles that include npm dependency metadata
+- `./tools/secret-scan-check.py --format json` before uploading release
+  evidence or source-visible artifacts
 - `./tools/provenance.py --format json <artifact...>` before publishing an
   evidence or firmware bundle that needs in-toto/SLSA provenance for hashed
   subjects

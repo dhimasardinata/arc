@@ -264,10 +264,15 @@ fi
 if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/host-tests.sh' RELEASE.md \
     || ! grep -qF './tools/firmware-manifest.py --format json --require-artifacts' RELEASE.md \
+    || ! grep -qF './tools/safety-case-check.py --format json' RELEASE.md \
+    || ! grep -qF './tools/workflow-pins-check.py --format json' RELEASE.md \
+    || ! grep -qF './tools/workflow-policy-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/evidence-index.py --format json' RELEASE.md \
     || ! grep -qF './tools/evidence-bundle-check.py .arc-artifacts' RELEASE.md \
     || ! grep -qF './tools/evidence-workflow-check.py --format json' RELEASE.md \
+    || ! grep -qF './tools/npm-lock-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/license-policy-check.py --format json' RELEASE.md \
+    || ! grep -qF './tools/secret-scan-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/sbom.py --format json' RELEASE.md \
     || ! grep -qF './tools/provenance.py --format json' RELEASE.md \
     || ! grep -qF './tools/release-evidence.py --format json --require-clean' RELEASE.md \
