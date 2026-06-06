@@ -86,6 +86,7 @@ python3 tools/release-evidence.py --format json >/dev/null || die "release evide
 ./tools/workflow-policy-check.py --format json >/dev/null || die "workflow policy check failed"
 ./tools/npm-lock-check.py --format json >/dev/null || die "npm lockfile evidence check failed"
 ./tools/secret-scan-check.py --format json >/dev/null || die "secret scan evidence check failed"
+./tools/sbom.py --format json >/dev/null || die "SBOM generation failed"
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"
 
 while IFS= read -r file; do
@@ -261,6 +262,7 @@ if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/host-tests.sh' RELEASE.md \
     || ! grep -qF './tools/firmware-manifest.py --format json --require-artifacts' RELEASE.md \
     || ! grep -qF './tools/evidence-index.py --format json' RELEASE.md \
+    || ! grep -qF './tools/sbom.py --format json' RELEASE.md \
     || ! grep -qF './tools/release-evidence.py --format json --require-clean' RELEASE.md \
     || ! grep -qF './tools/source-manifest.py --format json --require-clean' RELEASE.md \
     || ! grep -qF 'idf.py build' RELEASE.md \
@@ -304,6 +306,7 @@ if ! grep -qF 'CONTRIBUTING.md' docs/governance.md \
     || ! grep -qF '.github/CODEOWNERS' docs/governance.md \
     || ! grep -qF 'tools/source-manifest.py --format json --require-clean' docs/governance.md \
     || ! grep -qF 'tools/evidence-index.py --format json' docs/governance.md \
+    || ! grep -qF 'tools/sbom.py --format json' docs/governance.md \
     || ! grep -qF 'tools/release-evidence.py --format json --require-clean' docs/governance.md; then
     die "docs/governance.md must link contribution, release, security, notice, ownership, and evidence controls"
 fi
@@ -338,6 +341,10 @@ fi
 
 if [[ ! -x tools/source-manifest.py ]]; then
     die "source manifest tool must stay executable"
+fi
+
+if [[ ! -x tools/sbom.py ]]; then
+    die "SBOM tool must stay executable"
 fi
 
 if [[ ! -x tools/third-party-manifest-check.py ]]; then
@@ -457,6 +464,15 @@ fi
 if ! grep -qE '\./tools/secret-scan-check\.py --format json > \.arc-artifacts/secret-scan\.json' .github/workflows/build.yml; then
     die "build workflow must emit secret scan evidence"
 fi
+if ! grep -qE '\./tools/sbom\.py --format json --output \.arc-artifacts/sbom\.spdx\.json' .github/workflows/build.yml; then
+    die "build workflow must emit SPDX SBOM evidence"
+fi
+if ! grep -qF '.arc-artifacts/sbom.spdx.json' .github/workflows/build.yml; then
+    die "build workflow must upload SPDX SBOM evidence"
+fi
+if ! grep -qF -- '--require .arc-artifacts/sbom.spdx.json' .github/workflows/build.yml; then
+    die "build workflow must index SPDX SBOM evidence"
+fi
 if ! grep -qE 'name: Upload repository evidence' .github/workflows/build.yml \
     || ! grep -qE 'name: arc-evidence' .github/workflows/build.yml \
     || ! grep -qE 'if-no-files-found: error' .github/workflows/build.yml \
@@ -522,6 +538,7 @@ required_exec=(
     tools/hil-evidence-check.py
     tools/npm-lock-check.py
     tools/secret-scan-check.py
+    tools/sbom.py
     tools/source-manifest.py
     tools/third-party-manifest-check.py
     tools/topology-check.py

@@ -101,6 +101,9 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn(".arc-artifacts/npm-lock.json", workflow)
         self.assertIn("./tools/secret-scan-check.py --format json > .arc-artifacts/secret-scan.json", workflow)
         self.assertIn(".arc-artifacts/secret-scan.json", workflow)
+        self.assertIn("./tools/sbom.py --format json --output .arc-artifacts/sbom.spdx.json", workflow)
+        self.assertIn("--require .arc-artifacts/sbom.spdx.json", workflow)
+        self.assertIn(".arc-artifacts/sbom.spdx.json", workflow)
         self.assertIn("if-no-files-found: error", workflow)
         self.assertIn("retention-days: 30", workflow)
 

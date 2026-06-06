@@ -80,6 +80,9 @@ documentation site that includes upstream material.
 Use `THIRD_PARTY_MANIFEST.json` and
 `./tools/third-party-manifest-check.py --format json` when the release record
 needs a machine-readable dependency notice boundary.
+Use `./tools/sbom.py --format json` when the release record also needs SPDX 2.3
+SBOM evidence for Arc, external dependency groups, and locked docs npm
+packages.
 
 The commercial license text in this repository is a policy statement, not an
 automatic grant. The signed agreement controls the actual commercial rights.

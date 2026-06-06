@@ -25,6 +25,9 @@ for firmware, security, safety, or licensing claims.
 - `./tools/evidence-index.py --format json` over generated evidence files before
   publishing an evidence bundle; the index hashes each file and rejects
   malformed or failed evidence JSON
+- `./tools/sbom.py --format json` before publishing a source archive, firmware
+  image, docs site, or customer evidence bundle that needs SPDX 2.3 dependency
+  inventory
 - `npm run docs:build` when docs or docs-site configuration changed
 - `./tools/third-party-manifest-check.py --format json` before relying on
   third-party notice coverage
@@ -60,6 +63,7 @@ evidence that still covers the changed surface.
 - Review `THIRD_PARTY_NOTICES.md`.
 - Validate `THIRD_PARTY_MANIFEST.json` with
   `./tools/third-party-manifest-check.py --format json`.
+- Generate SPDX 2.3 SBOM evidence with `./tools/sbom.py --format json`.
 - Confirm whether the release uses the public AGPL path or a commercial license.
 - Include third-party notices for ESP-IDF, Arduino-as-component, docs tooling, or
   any product-specific dependencies that ship with the release.
@@ -74,6 +78,6 @@ regressions can be traced back to source.
 CI uploads `arc-evidence` for every build with an evidence index, source
 manifest, third-party manifest, safety-case JSON, release-evidence JSON,
 workflow action pin evidence, workflow policy evidence, npm lockfile evidence,
-and secret-scan evidence.
+secret-scan evidence, and SPDX SBOM evidence.
 Firmware builds also upload `arc-binaries` with the firmware artifact manifest
 and its validated evidence index beside the binaries.
