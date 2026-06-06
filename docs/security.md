@@ -61,6 +61,11 @@ package entry. The JSON output also reports transitive packages with install
 scripts so release review can decide whether that supply-chain surface is
 acceptable for the docs build.
 
+`tools/license-policy-check.py --format json` validates the docs dependency
+license declarations from `package-lock.json` against Arc's approved npm
+license set. It fails missing, malformed, or unapproved license expressions
+before CI uploads release evidence.
+
 `tools/secret-scan-check.py --format json` scans tracked and non-ignored source
 files for high-confidence private keys and service-token formats before CI
 publishes release evidence. It is a leak guard, not a substitute for private

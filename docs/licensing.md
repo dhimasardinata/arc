@@ -83,6 +83,9 @@ needs a machine-readable dependency notice boundary.
 Use `./tools/sbom.py --format json` when the release record also needs SPDX 2.3
 SBOM evidence for Arc, external dependency groups, and locked docs npm
 packages.
+Use `./tools/license-policy-check.py --format json` before publishing docs or
+evidence bundles so missing or unapproved npm package license declarations stop
+the release path.
 
 The commercial license text in this repository is a policy statement, not an
 automatic grant. The signed agreement controls the actual commercial rights.

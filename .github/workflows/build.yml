@@ -171,6 +171,7 @@ jobs:
           ./tools/workflow-pins-check.py --format json > .arc-artifacts/workflow-pins.json
           ./tools/workflow-policy-check.py --format json > .arc-artifacts/workflow-policy.json
           ./tools/npm-lock-check.py --format json > .arc-artifacts/npm-lock.json
+          ./tools/license-policy-check.py --format json > .arc-artifacts/license-policy.json
           ./tools/secret-scan-check.py --format json > .arc-artifacts/secret-scan.json
           ./tools/sbom.py --format json --output .arc-artifacts/sbom.spdx.json
           ./tools/provenance.py --format json --output .arc-artifacts/provenance.intoto.json \
@@ -181,6 +182,7 @@ jobs:
             .arc-artifacts/workflow-pins.json \
             .arc-artifacts/workflow-policy.json \
             .arc-artifacts/npm-lock.json \
+            .arc-artifacts/license-policy.json \
             .arc-artifacts/secret-scan.json \
             .arc-artifacts/sbom.spdx.json
           ./tools/evidence-index.py --format json --output .arc-artifacts/evidence-index.json \
@@ -191,6 +193,7 @@ jobs:
             --require .arc-artifacts/workflow-pins.json \
             --require .arc-artifacts/workflow-policy.json \
             --require .arc-artifacts/npm-lock.json \
+            --require .arc-artifacts/license-policy.json \
             --require .arc-artifacts/secret-scan.json \
             --require .arc-artifacts/sbom.spdx.json \
             --require .arc-artifacts/provenance.intoto.json \
@@ -201,6 +204,7 @@ jobs:
             .arc-artifacts/workflow-pins.json \
             .arc-artifacts/workflow-policy.json \
             .arc-artifacts/npm-lock.json \
+            .arc-artifacts/license-policy.json \
             .arc-artifacts/secret-scan.json \
             .arc-artifacts/sbom.spdx.json \
             .arc-artifacts/provenance.intoto.json
@@ -219,6 +223,7 @@ jobs:
             .arc-artifacts/workflow-pins.json
             .arc-artifacts/workflow-policy.json
             .arc-artifacts/npm-lock.json
+            .arc-artifacts/license-policy.json
             .arc-artifacts/secret-scan.json
             .arc-artifacts/sbom.spdx.json
             .arc-artifacts/provenance.intoto.json

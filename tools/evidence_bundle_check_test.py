@@ -48,6 +48,7 @@ def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | Non
         "workflow-pins.json": {"ok": True, "problems": []},
         "workflow-policy.json": {"ok": True, "problems": []},
         "npm-lock.json": {"ok": True, "problems": []},
+        "license-policy.json": {"ok": True, "problems": []},
         "secret-scan.json": {"ok": True, "problems": []},
         "sbom.spdx.json": {
             "spdxVersion": "SPDX-2.3",

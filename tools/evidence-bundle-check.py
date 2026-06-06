@@ -22,6 +22,7 @@ EXPECTED_INDEXED = (
     "workflow-pins.json",
     "workflow-policy.json",
     "npm-lock.json",
+    "license-policy.json",
     "secret-scan.json",
     SBOM_NAME,
     PROVENANCE_NAME,

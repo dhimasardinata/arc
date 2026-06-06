@@ -85,6 +85,7 @@ python3 tools/release-evidence.py --format json >/dev/null || die "release evide
 ./tools/workflow-pins-check.py --format json >/dev/null || die "workflow action pin check failed"
 ./tools/workflow-policy-check.py --format json >/dev/null || die "workflow policy check failed"
 ./tools/npm-lock-check.py --format json >/dev/null || die "npm lockfile evidence check failed"
+./tools/license-policy-check.py --format json >/dev/null || die "license policy evidence check failed"
 ./tools/secret-scan-check.py --format json >/dev/null || die "secret scan evidence check failed"
 ./tools/sbom.py --format json >/dev/null || die "SBOM generation failed"
 ./tools/provenance.py --format json THIRD_PARTY_MANIFEST.json >/dev/null || die "provenance generation failed"
@@ -264,6 +265,7 @@ if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/firmware-manifest.py --format json --require-artifacts' RELEASE.md \
     || ! grep -qF './tools/evidence-index.py --format json' RELEASE.md \
     || ! grep -qF './tools/evidence-bundle-check.py .arc-artifacts' RELEASE.md \
+    || ! grep -qF './tools/license-policy-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/sbom.py --format json' RELEASE.md \
     || ! grep -qF './tools/provenance.py --format json' RELEASE.md \
     || ! grep -qF './tools/release-evidence.py --format json --require-clean' RELEASE.md \
@@ -310,6 +312,7 @@ if ! grep -qF 'CONTRIBUTING.md' docs/governance.md \
     || ! grep -qF 'tools/source-manifest.py --format json --require-clean' docs/governance.md \
     || ! grep -qF 'tools/evidence-index.py --format json' docs/governance.md \
     || ! grep -qF 'tools/evidence-bundle-check.py .arc-artifacts' docs/governance.md \
+    || ! grep -qF 'tools/license-policy-check.py --format json' docs/governance.md \
     || ! grep -qF 'tools/sbom.py --format json' docs/governance.md \
     || ! grep -qF 'tools/provenance.py --format json' docs/governance.md \
     || ! grep -qF 'tools/release-evidence.py --format json --require-clean' docs/governance.md; then
@@ -342,6 +345,10 @@ fi
 
 if [[ ! -x tools/npm-lock-check.py ]]; then
     die "npm lockfile evidence tool must stay executable"
+fi
+
+if [[ ! -x tools/license-policy-check.py ]]; then
+    die "license policy evidence tool must stay executable"
 fi
 
 if [[ ! -x tools/secret-scan-check.py ]]; then
@@ -454,7 +461,7 @@ fi
 if ! grep -qE 'name: Repository evidence bundle' .github/workflows/build.yml; then
     die "build workflow must emit repository evidence artifacts"
 fi
-for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins workflow-policy npm-lock secret-scan; do
+for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins workflow-policy npm-lock license-policy secret-scan; do
     if ! grep -qF ".arc-artifacts/$evidence_file.json" .github/workflows/build.yml; then
         die "build workflow must publish $evidence_file JSON evidence"
     fi
@@ -476,6 +483,12 @@ if ! grep -qE '\./tools/workflow-policy-check\.py --format json > \.arc-artifact
 fi
 if ! grep -qE '\./tools/npm-lock-check\.py --format json > \.arc-artifacts/npm-lock\.json' .github/workflows/build.yml; then
     die "build workflow must emit npm lockfile evidence"
+fi
+if ! grep -qE '\./tools/license-policy-check\.py --format json > \.arc-artifacts/license-policy\.json' .github/workflows/build.yml; then
+    die "build workflow must emit license policy evidence"
+fi
+if ! grep -qF -- '--require .arc-artifacts/license-policy.json' .github/workflows/build.yml; then
+    die "build workflow must index license policy evidence"
 fi
 if ! grep -qE '\./tools/secret-scan-check\.py --format json > \.arc-artifacts/secret-scan\.json' .github/workflows/build.yml; then
     die "build workflow must emit secret scan evidence"
@@ -562,6 +575,7 @@ required_exec=(
     tools/firmware-manifest.py
     tools/format.sh
     tools/hil-evidence-check.py
+    tools/license-policy-check.py
     tools/npm-lock-check.py
     tools/provenance.py
     tools/secret-scan-check.py
