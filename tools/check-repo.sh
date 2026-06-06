@@ -75,6 +75,7 @@ python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
 ./tools/arc-prove.sh || die "formal spec check failed"
 ./tools/use-after-move-check.sh || die "use-after-move check failed"
 ./tools/safety-case-check.py || die "safety-case evidence check failed"
+python3 tools/release-evidence.py --format json >/dev/null || die "release evidence manifest failed"
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"
 
 while IFS= read -r file; do
@@ -248,6 +249,7 @@ fi
 
 if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/host-tests.sh' RELEASE.md \
+    || ! grep -qF './tools/release-evidence.py --format json --require-clean' RELEASE.md \
     || ! grep -qF 'idf.py build' RELEASE.md \
     || ! grep -qF 'docs/security.md' RELEASE.md \
     || ! grep -qF 'docs/licensing.md' RELEASE.md \
@@ -264,6 +266,10 @@ if ! grep -qF 'ESP-IDF' THIRD_PARTY_NOTICES.md \
     || ! grep -qF 'VitePress' THIRD_PARTY_NOTICES.md \
     || ! grep -qF 'Product Release Rule' THIRD_PARTY_NOTICES.md; then
     die "THIRD_PARTY_NOTICES.md must cover firmware, docs, and product notice rules"
+fi
+
+if [[ ! -x tools/release-evidence.py ]]; then
+    die "release evidence tool must stay executable"
 fi
 
 if [[ ! -f .github/pull_request_template.md ]]; then

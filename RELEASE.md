@@ -19,6 +19,8 @@ for firmware, security, safety, or licensing claims.
 - `tools/clangd-compile-commands.py --validate-arc-headers` when public headers,
   umbrella includes, or component dependencies changed
 - `npm run docs:build` when docs or docs-site configuration changed
+- `./tools/release-evidence.py --format json --require-clean` before tagging or
+  publishing a release artifact
 
 ## Firmware Evidence
 
