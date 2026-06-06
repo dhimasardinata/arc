@@ -242,6 +242,18 @@ if ! grep -qF './tools/check-repo.sh' CONTRIBUTING.md \
     die "CONTRIBUTING.md must cover validation, API naming, security, and experimental target policy"
 fi
 
+if [[ ! -f RELEASE.md ]]; then
+    die "RELEASE.md must define release evidence requirements"
+fi
+
+if ! grep -qF './tools/check-repo.sh' RELEASE.md \
+    || ! grep -qF './tools/host-tests.sh' RELEASE.md \
+    || ! grep -qF 'idf.py build' RELEASE.md \
+    || ! grep -qF 'docs/security.md' RELEASE.md \
+    || ! grep -qF 'docs/licensing.md' RELEASE.md; then
+    die "RELEASE.md must cover repository gates, firmware evidence, security, and licensing"
+fi
+
 if [[ ! -f .github/pull_request_template.md ]]; then
     die "pull request template must keep review evidence consistent"
 fi
