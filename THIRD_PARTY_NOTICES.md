@@ -4,6 +4,9 @@ Arc's own source in this repository is licensed through `LICENSE`, `COPYING`,
 and `COMMERCIAL-LICENSE.md`. Third-party software keeps its own license terms.
 This file is the maintainer-facing notice checklist for source releases and
 product bundles; it does not replace product-specific legal review.
+`THIRD_PARTY_MANIFEST.json` is the machine-checkable companion that lists the
+repository's dependency groups, where they come from, and when notices must be
+attached to a release artifact.
 
 ## Repository Source
 
@@ -42,4 +45,5 @@ site derived from Arc:
 2. Include that component's license and notice text.
 3. Keep Arc's AGPL or signed commercial-license notices separate from upstream
    notices.
-4. Record the notice review in the release evidence described by `RELEASE.md`.
+4. Run `./tools/third-party-manifest-check.py --format json` and keep its
+   output with the release evidence described by `RELEASE.md`.

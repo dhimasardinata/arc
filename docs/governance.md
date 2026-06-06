@@ -24,6 +24,9 @@ or distributing Arc-derived artifacts.
 - `THIRD_PARTY_NOTICES.md` is the notice checklist for ESP-IDF,
   Arduino-ESP32, documentation tooling, CI dependencies, and bundled product
   dependencies.
+- `THIRD_PARTY_MANIFEST.json` plus
+  `tools/third-party-manifest-check.py --format json` keeps the repository's
+  dependency notice boundary machine-checkable.
 
 ## Security And License Path
 

@@ -17,6 +17,7 @@ POLICY_FILES = [
     "SECURITY.md",
     "CONTRIBUTING.md",
     "THIRD_PARTY_NOTICES.md",
+    "THIRD_PARTY_MANIFEST.json",
     ".github/CODEOWNERS",
     ".github/pull_request_template.md",
     ".github/ISSUE_TEMPLATE/bug_report.yml",
@@ -30,6 +31,7 @@ REQUIRED_COMMANDS = [
     "./tools/check-repo.sh",
     "./tools/host-tests.sh",
     "tools/clangd-compile-commands.py --validate-arc-headers",
+    "./tools/third-party-manifest-check.py --format json",
     "npm run docs:build",
     "idf.py build",
 ]

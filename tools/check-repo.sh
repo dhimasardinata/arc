@@ -75,6 +75,7 @@ python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
 ./tools/arc-prove.sh || die "formal spec check failed"
 ./tools/use-after-move-check.sh || die "use-after-move check failed"
 ./tools/safety-case-check.py || die "safety-case evidence check failed"
+./tools/third-party-manifest-check.py || die "third-party manifest check failed"
 python3 tools/release-evidence.py --format json >/dev/null || die "release evidence manifest failed"
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"
 
@@ -268,6 +269,17 @@ if ! grep -qF 'ESP-IDF' THIRD_PARTY_NOTICES.md \
     die "THIRD_PARTY_NOTICES.md must cover firmware, docs, and product notice rules"
 fi
 
+if [[ ! -f THIRD_PARTY_MANIFEST.json ]]; then
+    die "THIRD_PARTY_MANIFEST.json must define machine-checkable dependency notice boundaries"
+fi
+
+if ! grep -qF 'ESP-IDF' THIRD_PARTY_MANIFEST.json \
+    || ! grep -qF 'Arduino-ESP32' THIRD_PARTY_MANIFEST.json \
+    || ! grep -qF 'VitePress and npm dependencies' THIRD_PARTY_MANIFEST.json \
+    || ! grep -qF 'notice_required_when' THIRD_PARTY_MANIFEST.json; then
+    die "THIRD_PARTY_MANIFEST.json must cover firmware, docs, and notice trigger metadata"
+fi
+
 if [[ ! -f docs/governance.md ]]; then
     die "docs/governance.md must expose repository governance controls"
 fi
@@ -276,6 +288,7 @@ if ! grep -qF 'CONTRIBUTING.md' docs/governance.md \
     || ! grep -qF 'RELEASE.md' docs/governance.md \
     || ! grep -qF 'SECURITY.md' docs/governance.md \
     || ! grep -qF 'THIRD_PARTY_NOTICES.md' docs/governance.md \
+    || ! grep -qF 'THIRD_PARTY_MANIFEST.json' docs/governance.md \
     || ! grep -qF '.github/CODEOWNERS' docs/governance.md \
     || ! grep -qF 'tools/release-evidence.py --format json --require-clean' docs/governance.md; then
     die "docs/governance.md must link contribution, release, security, notice, ownership, and evidence controls"
@@ -283,6 +296,10 @@ fi
 
 if [[ ! -x tools/release-evidence.py ]]; then
     die "release evidence tool must stay executable"
+fi
+
+if [[ ! -x tools/third-party-manifest-check.py ]]; then
+    die "third-party manifest tool must stay executable"
 fi
 
 if [[ ! -f .github/pull_request_template.md ]]; then
@@ -408,6 +425,7 @@ required_exec=(
     tools/clangd-compile-commands.py
     tools/format.sh
     tools/hil-evidence-check.py
+    tools/third-party-manifest-check.py
     tools/topology-check.py
     tools/tool-tests.sh
     tools/use-after-move-check.sh

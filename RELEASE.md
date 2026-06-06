@@ -19,6 +19,8 @@ for firmware, security, safety, or licensing claims.
 - `tools/clangd-compile-commands.py --validate-arc-headers` when public headers,
   umbrella includes, or component dependencies changed
 - `npm run docs:build` when docs or docs-site configuration changed
+- `./tools/third-party-manifest-check.py --format json` before relying on
+  third-party notice coverage
 - `./tools/release-evidence.py --format json --require-clean` before tagging or
   publishing a release artifact
 
@@ -48,6 +50,8 @@ evidence that still covers the changed surface.
 
 - Read `docs/licensing.md`.
 - Review `THIRD_PARTY_NOTICES.md`.
+- Validate `THIRD_PARTY_MANIFEST.json` with
+  `./tools/third-party-manifest-check.py --format json`.
 - Confirm whether the release uses the public AGPL path or a commercial license.
 - Include third-party notices for ESP-IDF, Arduino-as-component, docs tooling, or
   any product-specific dependencies that ship with the release.

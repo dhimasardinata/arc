@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "policy_file": "THIRD_PARTY_NOTICES.md",
+  "components": [
+    {
+      "name": "Arduino-ESP32",
+      "category": "optional firmware framework",
+      "usage": "Optional Arduino-as-component benchmark and example comparison path.",
+      "source": "Local ignored checkout from tools/ensure-frameworks.sh or ARC_ARDUINO_PATH.",
+      "bundled_in_repository": false,
+      "repository_state": "external checkout, not Arc-covered source",
+      "notice_terms": ["Arduino-ESP32"],
+      "notice_required_when": [
+        "Arduino-as-component sources, binaries, or benchmark bundles ship with a deliverable"
+      ]
+    },
+    {
+      "name": "ESP-IDF",
+      "category": "firmware SDK",
+      "usage": "Firmware build substrate, component headers, drivers, FreeRTOS, lwIP, mbedTLS, NimBLE, and storage stacks.",
+      "source": "Pinned ESP-IDF checkout installed outside this repository by env.sh, CI, or tools/sync-idf.sh.",
+      "bundled_in_repository": false,
+      "repository_state": "external SDK, not Arc-covered source",
+      "notice_terms": ["ESP-IDF", "Espressif"],
+      "notice_required_when": [
+        "firmware images, SDK bundles, source packages, or validation artifacts include ESP-IDF material"
+      ]
+    },
+    {
+      "name": "GitHub Actions",
+      "category": "CI automation",
+      "usage": "Pinned workflow actions build docs, run CodeQL, and upload CI or Pages artifacts.",
+      "source": "Commit-pinned action references in .github/workflows/.",
+      "bundled_in_repository": false,
+      "repository_state": "remote CI action providers, not vendored source",
+      "notice_terms": ["GitHub Actions"],
+      "notice_required_when": [
+        "workflow action source, action binaries, or hosted action artifacts are bundled into a deliverable"
+      ]
+    },
+    {
+      "name": "Toolchains, Python packages, Go tools, and host OS packages",
+      "category": "host build and validation tools",
+      "usage": "Compilers, Python helpers, Go tools, host shells, and OS packages used to build or validate Arc.",
+      "source": "Installed separately by the developer machine, CI image, ESP-IDF tooling, or host package manager.",
+      "bundled_in_repository": false,
+      "repository_state": "external host tools, not Arc-covered source",
+      "notice_terms": ["Toolchains", "Python packages", "Go tools", "host OS packages"],
+      "notice_required_when": [
+        "toolchains, Python packages, Go binaries, or host package contents are redistributed with a deliverable"
+      ]
+    },
+    {
+      "name": "VitePress and npm dependencies",
+      "category": "documentation tooling",
+      "usage": "Builds the docs site from package.json and package-lock.json.",
+      "source": "npm dependencies restored from package-lock.json.",
+      "bundled_in_repository": false,
+      "repository_state": "node_modules is ignored; lockfile is tracked for reproducibility",
+      "notice_terms": ["VitePress", "npm dependencies"],
+      "notice_required_when": [
+        "the built docs site is distributed together with npm dependency source or bundled runtime assets"
+      ]
+    }
+  ]
+}
