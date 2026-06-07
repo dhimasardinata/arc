@@ -80,7 +80,8 @@ For firmware-facing releases, capture:
 - firmware provenance tying the firmware manifest to the release commit and
   evidence toolchain;
 - firmware evidence check output proving the firmware manifest, provenance,
-  SLSA predicate metadata, evidence index, and binary hashes agree;
+  SLSA predicate metadata, ordered provenance timestamps, evidence index, and
+  binary hashes agree;
 - serial logs, benchmark output, HIL artifact, or reason runtime evidence is not
   applicable;
 - target chip, board, partitions, sdkconfig defaults, and external fixtures.

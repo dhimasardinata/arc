@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import hashlib
 import json
 import subprocess
@@ -394,6 +395,21 @@ def byproduct_records(provenance: dict[str, Any], problems: list[str]) -> dict[s
     return records
 
 
+def parse_metadata_time(value: Any, field: str, problems: list[str]) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        problems.append(f"provenance.intoto.json: metadata {field} must be present")
+        return None
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        problems.append(f"provenance.intoto.json: metadata {field} must be ISO-8601")
+        return None
+    if stamp.tzinfo is None or stamp.utcoffset() is None:
+        problems.append(f"provenance.intoto.json: metadata {field} must include timezone")
+        return None
+    return stamp
+
+
 def check_provenance_predicate(provenance: dict[str, Any], problems: list[str]) -> None:
     predicate = provenance.get("predicate")
     if not isinstance(predicate, dict):
@@ -430,9 +446,12 @@ def check_provenance_predicate(provenance: dict[str, Any], problems: list[str]) 
     if not isinstance(metadata, dict):
         problems.append("provenance.intoto.json: metadata must be an object")
         metadata = {}
-    for field in ("invocationId", "startedOn", "finishedOn"):
-        if not isinstance(metadata.get(field), str) or not metadata[field]:
-            problems.append(f"provenance.intoto.json: metadata {field} must be present")
+    if not isinstance(metadata.get("invocationId"), str) or not metadata["invocationId"]:
+        problems.append("provenance.intoto.json: metadata invocationId must be present")
+    started = parse_metadata_time(metadata.get("startedOn"), "startedOn", problems)
+    finished = parse_metadata_time(metadata.get("finishedOn"), "finishedOn", problems)
+    if started is not None and finished is not None and finished < started:
+        problems.append("provenance.intoto.json: metadata finishedOn must not be before startedOn")
 
 
 def check_commit_coherence(

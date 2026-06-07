@@ -395,6 +395,30 @@ class EvidenceBundleCheckTest(unittest.TestCase):
         self.assertIn("provenance.intoto.json: metadata invocationId must be present", evidence["problems"])
         self.assertIn(f"provenance.intoto.json: {bad_byproduct} byproduct sha256 mismatch", evidence["problems"])
 
+    def test_rejects_invalid_provenance_metadata_time(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "provenance.intoto.json").read_text(encoding="utf-8"))
+            provenance["predicate"]["runDetails"]["metadata"]["startedOn"] = "2026-01-01T00:00:00"
+            write_json(bundle / "provenance.intoto.json", provenance)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("provenance.intoto.json: metadata startedOn must include timezone", evidence["problems"])
+
+    def test_rejects_reversed_provenance_metadata_time(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "provenance.intoto.json").read_text(encoding="utf-8"))
+            metadata = provenance["predicate"]["runDetails"]["metadata"]
+            metadata["startedOn"] = "2026-01-02T00:00:00+00:00"
+            metadata["finishedOn"] = "2026-01-01T00:00:00+00:00"
+            write_json(bundle / "provenance.intoto.json", provenance)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("provenance.intoto.json: metadata finishedOn must not be before startedOn", evidence["problems"])
+
     def test_rejects_missing_provenance_byproduct(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             bundle = make_bundle(Path(tmp))
