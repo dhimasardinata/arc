@@ -41,6 +41,7 @@ jobs:
             ${{ runner.os }}-node24-npm-
 
       - name: Install docs dependencies
+        shell: bash
         run: npm ci
 
       - name: Configure Pages
@@ -49,6 +50,7 @@ jobs:
       - name: Build VitePress docs
         env:
           ARC_DOCS_BASE: /arc/
+        shell: bash
         run: npm run docs:build
 
       - name: Save npm cache

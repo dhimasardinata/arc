@@ -37,6 +37,7 @@ class Step(NamedTuple):
     name: str
     if_expr: str | None
     uses: str | None
+    shell: str | None
     with_inputs: dict[str, str]
     env: dict[str, str]
     run: str | None
@@ -182,6 +183,14 @@ def parse_step_if(step_lines: list[str]) -> str | None:
     return None
 
 
+def parse_step_shell(step_lines: list[str]) -> str | None:
+    for line in step_lines:
+        match = re.match(r"^        shell:\s*(.+?)\s*$", line)
+        if match:
+            return match.group(1).strip("\"'")
+    return None
+
+
 def ruff_install_spec(run: str | None) -> str | None:
     if run is None:
         return None
@@ -206,6 +215,7 @@ def parse_steps(job_block: list[str]) -> list[Step]:
                 name=name,
                 if_expr=parse_step_if(step_lines),
                 uses=parse_step_uses(step_lines),
+                shell=parse_step_shell(step_lines),
                 with_inputs=parse_step_with(step_block),
                 env=parse_step_env(step_block),
                 run=parse_step_run(step_block),
@@ -276,6 +286,7 @@ def workflow_record(path: Path, root: Path) -> dict[str, Any]:
                         "name": step.name,
                         "if": step.if_expr,
                         "uses": step.uses,
+                        "shell": step.shell,
                         "with": step.with_inputs,
                         "env": step.env,
                         "has_run": step.run is not None,
@@ -330,6 +341,8 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
         for step in job["steps"]:
             step_name = str(step["name"])
             env = step["env"]
+            if step["has_run"] and step["shell"] != "bash":
+                problems.append(f"{path}:{job_id}:{step_name}: run step must set shell: bash")
             if step["github_expression_in_run"]:
                 problems.append(f"{path}:{job_id}:{step_name}: run block must not interpolate GitHub expressions")
             if "ARC_BASE_SHA" in env:

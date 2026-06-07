@@ -51,9 +51,10 @@ the local Git config or fetch full history for normal CI paths.
 `tools/workflow-policy-check.py --format json` records the approved workflow
 permission maps, rejects `pull_request_target`, requires concurrency controls,
 pins every job to the reviewed Ubuntu runner image, requires every job to carry
-`timeout-minutes`, rejects direct GitHub expression interpolation inside shell
-scripts, and requires changed-base SHA values to be guarded as 40-hex commits
-before shell steps pass them to `git`. It also rejects combined restore/save
+`timeout-minutes`, requires run steps to set `shell: bash`, rejects direct GitHub
+expression interpolation inside shell scripts, and requires changed-base SHA
+values to be guarded as 40-hex commits before shell steps pass them to `git`.
+It also rejects combined restore/save
 cache actions, rejects implicit `setup-node` npm caching, and requires cache-save
 steps to run only on `push`, keeping pull requests and manual docs runs from
 writing shared CI caches. It also requires CodeQL dependency caching to stay

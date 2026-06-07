@@ -190,6 +190,7 @@ class WorkflowTest(unittest.TestCase):
 
         self.assertIn("npm ci", workflow)
         self.assertIn("npm run docs:build", workflow)
+        self.assertIn("shell: bash", workflow)
         self.assertIn("runs-on: ubuntu-24.04", workflow)
         self.assertNotIn("runs-on: ubuntu-latest", workflow)
         self.assertIn("timeout-minutes: 20", workflow)

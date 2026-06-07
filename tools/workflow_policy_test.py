@@ -47,6 +47,9 @@ class WorkflowPolicyTest(unittest.TestCase):
             steps[(".github/workflows/build.yml", "esp32s3", "Ensure format tools")]["ruff_install_spec"],
             workflow_policy_check.RUFF_SPEC,
         )
+        for step in steps.values():
+            if step["has_run"]:
+                self.assertEqual(step["shell"], "bash")
         self.assertEqual(
             steps[(".github/workflows/build.yml", "esp32s3", "Restore ccache")]["uses"],
             "actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae",
@@ -300,6 +303,7 @@ jobs:
       - name: plan
         env:
           ARC_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        shell: bash
         run: |
           if [[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
             echo "base SHA is not a 40-hex commit"
@@ -340,6 +344,38 @@ jobs:
         self.assertFalse(evidence["ok"])
         self.assertIn(
             ".github/workflows/build.yml:esp32s3:Ensure format tools: Ruff install must pin ruff==0.15.16",
+            evidence["problems"],
+        )
+
+    def test_rejects_run_step_without_bash_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "pages.yml",
+                """name: pages
+on:
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Install docs dependencies
+        run: npm ci
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/pages.yml:build:Install docs dependencies: run step must set shell: bash",
             evidence["problems"],
         )
 
