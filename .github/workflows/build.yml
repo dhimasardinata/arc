@@ -37,7 +37,7 @@ jobs:
         env:
           ARC_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          set -eo pipefail
+          set -euo pipefail
           base_args=()
           if [[ -n "${ARC_BASE_SHA:-}" && ! "$ARC_BASE_SHA" =~ ^0+$ ]]; then
             if [[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
@@ -65,7 +65,7 @@ jobs:
         env:
           ARC_FIRMWARE_COUNT: ${{ steps.firmware-plan.outputs.count }}
         run: |
-          set -eo pipefail
+          set -euo pipefail
           missing=()
           command -v git >/dev/null || missing+=(git)
           command -v g++ >/dev/null || missing+=(g++)
@@ -91,7 +91,7 @@ jobs:
       - name: Ensure format tools
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           python3 -m pip install 'ruff==0.15.16'
 
       - name: Restore ESP-IDF and tools cache
@@ -131,7 +131,7 @@ jobs:
         if: steps.firmware-plan.outputs.count != '0'
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           if [[ -d "$HOME/esp-idf/.git" ]]; then
             git -C "$HOME/esp-idf" remote set-url origin https://github.com/espressif/esp-idf.git
           else
@@ -163,14 +163,14 @@ jobs:
       - name: Repo sanity
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           chmod +x tools/check-repo.sh
           ./tools/check-repo.sh
 
       - name: Repository evidence bundle
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           mkdir -p .arc-artifacts
           ./tools/source-manifest.py --format json --require-clean > .arc-artifacts/source-manifest.json
           ./tools/third-party-manifest-check.py --format json > .arc-artifacts/third-party-manifest.json
@@ -247,20 +247,20 @@ jobs:
       - name: Host tests
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           chmod +x tools/host-tests.sh
           ./tools/host-tests.sh
 
       - name: Host schema generator
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           go run tools/arc-gen.go -root .
 
       - name: Host formal specs
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           chmod +x tools/arc-prove.sh
           ./tools/arc-prove.sh
 
@@ -268,7 +268,7 @@ jobs:
         if: steps.firmware-plan.outputs.count != '0'
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           chmod +x tools/host-bench.sh
           chmod +x tools/framework-compare.sh
           ./tools/host-bench.sh
@@ -281,7 +281,7 @@ jobs:
         env:
           ARC_BUILD_CACHE_MAX_PROJECTS: "4"
         run: |
-          set -eo pipefail
+          set -euo pipefail
           export ARC_IDF_PATH="$HOME/esp-idf"
           export IDF_CCACHE_ENABLE=1
           export CCACHE_BASEDIR="$PWD"
@@ -399,7 +399,7 @@ jobs:
         if: steps.firmware-plan.outputs.count != '0'
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           ./tools/firmware-manifest.py --format json --require-artifacts --output .arc-artifacts/firmware-manifest.json
           ./tools/evidence-index.py --format json --output .arc-artifacts/firmware-evidence-index.json \
             --require .arc-artifacts/firmware-manifest.json \
@@ -411,7 +411,7 @@ jobs:
         env:
           ARC_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          set -eo pipefail
+          set -euo pipefail
           extra_args=()
           if [[ -n "${ARC_BASE_SHA:-}" && ! "$ARC_BASE_SHA" =~ ^0+$ ]]; then
             if [[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then

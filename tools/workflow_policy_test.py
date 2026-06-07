@@ -493,7 +493,7 @@ jobs:
           ARC_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         shell: bash
         run: |
-          set -eo pipefail
+          set -euo pipefail
           if [[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
             echo "base SHA is not a 40-hex commit"
           fi
@@ -599,7 +599,43 @@ jobs:
 
         self.assertFalse(evidence["ok"])
         self.assertIn(
-            ".github/workflows/build.yml:esp32s3:Repo sanity: multiline bash run must start with set -eo pipefail",
+            ".github/workflows/build.yml:esp32s3:Repo sanity: multiline bash run must start with set -euo pipefail",
+            evidence["problems"],
+        )
+
+    def test_rejects_multiline_run_without_nounset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Repo sanity
+        shell: bash
+        run: |
+          set -eo pipefail
+          chmod +x tools/check-repo.sh
+          ./tools/check-repo.sh
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/build.yml:esp32s3:Repo sanity: multiline bash run must start with set -euo pipefail",
             evidence["problems"],
         )
 
@@ -724,7 +760,7 @@ jobs:
         shell: bash
         continue-on-error: true
         run: |
-          set -eo pipefail
+          set -euo pipefail
           ./tools/host-tests.sh
 """,
             )

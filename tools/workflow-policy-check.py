@@ -57,7 +57,7 @@ RUFF_SPEC = "ruff==0.15.16"
 RUNNER_IMAGE = "ubuntu-24.04"
 PAGES_DEPLOY_REF_GUARD = "github.ref == 'refs/heads/main'"
 CODEQL_DEPENDENCY_CACHING = "false"
-BASH_STRICT_PREAMBLE = "set -eo pipefail"
+BASH_STRICT_PREAMBLE = "set -euo pipefail"
 
 
 class Step(NamedTuple):
@@ -503,7 +503,7 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
             if step["has_run"] and step["shell"] != "bash":
                 problems.append(f"{path}:{job_id}:{step_name}: run step must set shell: bash")
             if step["run_block"] and step["bash_strict_preamble"] is not True:
-                problems.append(f"{path}:{job_id}:{step_name}: multiline bash run must start with set -eo pipefail")
+                problems.append(f"{path}:{job_id}:{step_name}: multiline bash run must start with set -euo pipefail")
             if step["github_expression_in_run"]:
                 problems.append(f"{path}:{job_id}:{step_name}: run block must not interpolate GitHub expressions")
             if "ARC_BASE_SHA" in env:
