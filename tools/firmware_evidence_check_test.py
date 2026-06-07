@@ -92,6 +92,7 @@ def make_bundle(base: Path, *, commit: str = "b" * 40) -> Path:
                 "buildDefinition": {
                     "buildType": "local://arc/tools/provenance.py",
                     "externalParameters": {
+                        "branch": "main",
                         "commit": commit,
                         "subjects": [rel(subject)],
                     },
@@ -271,6 +272,20 @@ class FirmwareEvidenceCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn(
             "firmware-manifest.json: branch must match firmware-evidence-index.json branch", evidence["problems"]
+        )
+
+    def test_rejects_provenance_branch_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "firmware-provenance.intoto.json").read_text(encoding="utf-8"))
+            provenance["predicate"]["buildDefinition"]["externalParameters"]["branch"] = "release"
+            write_json(bundle / "firmware-provenance.intoto.json", provenance)
+            evidence = firmware_evidence_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware-provenance.intoto.json: branch must match firmware-evidence-index.json branch",
+            evidence["problems"],
         )
 
     def test_rejects_index_size_mismatch(self) -> None:

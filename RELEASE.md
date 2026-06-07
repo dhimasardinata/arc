@@ -77,11 +77,11 @@ For firmware-facing releases, capture:
 - root `idf.py build` result;
 - at least one relevant `idf.py -C examples/... build` result;
 - firmware artifact manifest with SHA-256 for each `.bin` and `.elf`;
-- firmware provenance tying the firmware manifest to the release commit and
+- firmware provenance tying the firmware manifest to the release commit, branch, and
   evidence toolchain;
 - firmware evidence check output proving the firmware manifest, provenance,
-  SLSA predicate metadata, ordered provenance timestamps, evidence index, and
-  binary hashes agree;
+  SLSA predicate metadata, ordered provenance timestamps, commit/branch identity,
+  evidence index, and binary hashes agree;
 - serial logs, benchmark output, HIL artifact, or reason runtime evidence is not
   applicable;
 - target chip, board, partitions, sdkconfig defaults, and external fixtures.

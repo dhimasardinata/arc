@@ -321,11 +321,17 @@ def check_commit_coherence(
     return commit
 
 
-def check_branch_coherence(index: dict[str, Any], manifest: dict[str, Any], problems: list[str]) -> str | None:
+def check_branch_coherence(
+    index: dict[str, Any], manifest: dict[str, Any], provenance: dict[str, Any], problems: list[str]
+) -> str | None:
     branch = index.get("branch")
     values = {
         INDEX_NAME: branch,
         MANIFEST_NAME: manifest.get("branch"),
+        PROVENANCE_NAME: provenance.get("predicate", {})
+        .get("buildDefinition", {})
+        .get("externalParameters", {})
+        .get("branch"),
     }
     if not isinstance(branch, str) or not branch:
         problems.append(f"{INDEX_NAME}: branch must be present")
@@ -414,7 +420,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
         check_provenance_predicate(provenance, problems)
     firmware_artifact_count = check_manifest_artifacts(manifest, problems) if manifest else 0
     commit = check_commit_coherence(index, manifest, provenance, problems) if index else None
-    branch = check_branch_coherence(index, manifest, problems) if index else None
+    branch = check_branch_coherence(index, manifest, provenance, problems) if index else None
 
     return {
         "artifact_dir": str(artifact_dir),

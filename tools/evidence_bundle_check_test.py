@@ -157,6 +157,7 @@ def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | Non
                 "buildDefinition": {
                     "buildType": "local://arc/tools/provenance.py",
                     "externalParameters": {
+                        "branch": "main",
                         "commit": commit,
                         "subjects": [item["name"] for item in subjects],
                     },
@@ -262,6 +263,17 @@ class EvidenceBundleCheckTest(unittest.TestCase):
 
         self.assertFalse(evidence["ok"])
         self.assertIn("release-evidence.json: branch must match evidence-index branch", evidence["problems"])
+
+    def test_rejects_provenance_branch_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "provenance.intoto.json").read_text(encoding="utf-8"))
+            provenance["predicate"]["buildDefinition"]["externalParameters"]["branch"] = "release"
+            write_json(bundle / "provenance.intoto.json", provenance)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("provenance.intoto.json: branch must match evidence-index branch", evidence["problems"])
 
     def test_rejects_index_file_count_mismatch(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:

@@ -484,13 +484,21 @@ def check_commit_coherence(
 
 
 def check_branch_coherence(
-    index: dict[str, Any], source: dict[str, Any], release: dict[str, Any], problems: list[str]
+    index: dict[str, Any],
+    provenance: dict[str, Any],
+    source: dict[str, Any],
+    release: dict[str, Any],
+    problems: list[str],
 ) -> str | None:
     branch = index.get("branch")
     values = {
         "evidence-index.json": branch,
         "source-manifest.json": source.get("branch"),
         "release-evidence.json": release.get("branch"),
+        "provenance.intoto.json": provenance.get("predicate", {})
+        .get("buildDefinition", {})
+        .get("externalParameters", {})
+        .get("branch"),
     }
     if not isinstance(branch, str) or not branch:
         problems.append("evidence-index.json: branch must be present")
@@ -629,7 +637,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
     if provenance:
         check_provenance_predicate(provenance, problems)
     commit = check_commit_coherence(index, provenance, source, release, sbom, problems) if index else None
-    branch = check_branch_coherence(index, source, release, problems) if index else None
+    branch = check_branch_coherence(index, provenance, source, release, problems) if index else None
     release_command_count = check_release_commands(release, problems) if release else 0
 
     if source.get("dirty") is not False:
