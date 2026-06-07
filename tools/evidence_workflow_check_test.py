@@ -101,6 +101,7 @@ def workflow_body() -> str:
                 .arc-artifacts/sbom.spdx.json
                 .arc-artifacts/provenance.intoto.json
               if-no-files-found: error
+              include-hidden-files: true
               retention-days: 30
 
           - name: Firmware artifact manifest
@@ -125,6 +126,7 @@ def workflow_body() -> str:
                 .arc-artifacts/firmware-evidence-index.json
                 .arc-artifacts/firmware-manifest.json
               if-no-files-found: error
+              include-hidden-files: true
               retention-days: 30
     """
 
@@ -215,6 +217,19 @@ class EvidenceWorkflowCheckTest(unittest.TestCase):
             evidence["problems"],
         )
 
+    def test_rejects_repository_upload_without_hidden_artifact_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(root, workflow_body().replace("              include-hidden-files: true\n", "", 1))
+
+            evidence = evidence_workflow_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "repository evidence upload: must include hidden .arc-artifacts paths",
+            evidence["problems"],
+        )
+
     def test_rejects_missing_firmware_upload_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -265,6 +280,19 @@ class EvidenceWorkflowCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn(
             "firmware evidence upload: must be gated on selected firmware builds",
+            evidence["problems"],
+        )
+
+    def test_rejects_firmware_upload_without_hidden_artifact_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(root, workflow_body().replace("              include-hidden-files: true\n", "", 2))
+
+            evidence = evidence_workflow_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware evidence upload: must include hidden .arc-artifacts paths",
             evidence["problems"],
         )
 

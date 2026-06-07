@@ -234,6 +234,8 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
             problems.append("repository evidence upload: artifact name must be arc-evidence")
         if "if-no-files-found: error" not in upload_text:
             problems.append("repository evidence upload: if-no-files-found must be error")
+        if "include-hidden-files: true" not in upload_text:
+            problems.append("repository evidence upload: must include hidden .arc-artifacts paths")
         if "retention-days: 30" not in upload_text:
             problems.append("repository evidence upload: retention-days must be 30")
     if firmware_step is not None:
@@ -253,6 +255,8 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
             problems.append("firmware evidence upload: artifact name must be arc-binaries")
         if "if-no-files-found: error" not in upload_text:
             problems.append("firmware evidence upload: if-no-files-found must be error")
+        if "include-hidden-files: true" not in upload_text:
+            problems.append("firmware evidence upload: must include hidden .arc-artifacts paths")
         if "retention-days: 30" not in upload_text:
             problems.append("firmware evidence upload: retention-days must be 30")
 

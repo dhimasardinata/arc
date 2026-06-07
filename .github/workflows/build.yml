@@ -241,6 +241,7 @@ jobs:
             .arc-artifacts/sbom.spdx.json
             .arc-artifacts/provenance.intoto.json
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
 
       - name: Host tests
@@ -443,6 +444,7 @@ jobs:
             .arc-artifacts/firmware-evidence-index.json
             .arc-artifacts/firmware-manifest.json
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
 
       - name: Save firmware build cache
