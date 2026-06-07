@@ -28,7 +28,8 @@ or distributing Arc-derived artifacts.
 - `tools/release-evidence.py --format json --require-clean` emits the
   machine-readable release metadata snapshot, root/GitHub/docs policy file
   hashes, and repo-local executable tool, source command, and npm script
-  reference checks before tagging or publishing a release artifact.
+  reference checks with SHA-256 digests before tagging or publishing a release
+  artifact.
 - `tools/evidence-index.py --format json` hashes generated evidence files and
   rejects outside-repository paths, malformed JSON, `ok: false`, or non-empty
   `problems` payloads before an evidence bundle is published.

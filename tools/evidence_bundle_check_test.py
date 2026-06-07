@@ -59,12 +59,14 @@ def release_payload(commit: str, release_commit: str | None = None) -> dict[str,
                 "path": "tools/check-repo.sh",
                 "exists": True,
                 "executable": True,
+                "sha256": evidence_bundle_check.sha256(ROOT / "tools/check-repo.sh"),
             },
             {
                 "command": commands[1],
                 "kind": "repo_source",
                 "path": "tools/arc-audit.go",
                 "exists": True,
+                "sha256": evidence_bundle_check.sha256(ROOT / "tools/arc-audit.go"),
             },
             {
                 "command": commands[2],
@@ -72,6 +74,7 @@ def release_payload(commit: str, release_commit: str | None = None) -> dict[str,
                 "path": "package.json",
                 "script": "docs:build",
                 "exists": True,
+                "sha256": evidence_bundle_check.sha256(ROOT / "package.json"),
             },
             {
                 "command": commands[3],
@@ -212,6 +215,7 @@ class EvidenceBundleCheckTest(unittest.TestCase):
             release = json.loads((bundle / "release-evidence.json").read_text(encoding="utf-8"))
             release["required_command_records"][0]["executable"] = False
             release["required_command_records"][1]["exists"] = False
+            release["required_command_records"][2]["sha256"] = "0" * 64
             release["required_command_records"].append(
                 {
                     "command": "./tools/extra.py",
@@ -219,6 +223,7 @@ class EvidenceBundleCheckTest(unittest.TestCase):
                     "path": "tools/extra.py",
                     "exists": True,
                     "executable": True,
+                    "sha256": "0" * 64,
                 }
             )
             write_json(bundle / "release-evidence.json", release)
@@ -230,6 +235,7 @@ class EvidenceBundleCheckTest(unittest.TestCase):
             "release-evidence.json: go run tools/arc-audit.go -root . -all repo source must exist",
             evidence["problems"],
         )
+        self.assertIn("release-evidence.json: npm run docs:build npm script sha256 mismatch", evidence["problems"])
         self.assertIn("release-evidence.json: command records must match required_commands order", evidence["problems"])
 
     def test_rejects_incomplete_provenance_predicate(self) -> None:

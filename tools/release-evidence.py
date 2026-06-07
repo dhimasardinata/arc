@@ -113,6 +113,7 @@ def repo_tool_record(command: str, path_text: str) -> dict[str, Any]:
         "path": path_text,
         "exists": exists,
         "executable": executable,
+        "sha256": sha256(path) if exists else None,
     }
 
 
@@ -124,6 +125,7 @@ def repo_source_record(command: str, path_text: str) -> dict[str, Any]:
         "kind": "repo_source",
         "path": path_text,
         "exists": path.is_file(),
+        "sha256": sha256(path) if path.is_file() else None,
     }
 
 
@@ -152,12 +154,15 @@ def command_record(command: str, scripts: dict[str, str] | None = None) -> dict[
         return repo_tool_record(command, parts[0])
     if len(parts) >= 3 and parts[0] == "npm" and parts[1] == "run":
         script = parts[2]
+        package_json = ROOT / "package.json"
+        package_exists = package_json.is_file()
         return {
             "command": command,
             "kind": "npm_script",
             "path": "package.json",
             "script": script,
             "exists": script in scripts,
+            "sha256": sha256(package_json) if package_exists else None,
         }
     return {
         "command": command,
@@ -223,13 +228,16 @@ def print_report(evidence: dict[str, Any]) -> None:
     for record in evidence["required_command_records"]:
         if record["kind"] == "repo_tool":
             state = "ok" if record["exists"] and record["executable"] else "problem"
-            print(f"  - {record['command']}: {state} path={record['path']}")
+            suffix = f" sha256={record['sha256']}" if record["sha256"] else ""
+            print(f"  - {record['command']}: {state} path={record['path']}{suffix}")
         elif record["kind"] == "repo_source":
             state = "ok" if record["exists"] else "problem"
-            print(f"  - {record['command']}: {state} path={record['path']}")
+            suffix = f" sha256={record['sha256']}" if record["sha256"] else ""
+            print(f"  - {record['command']}: {state} path={record['path']}{suffix}")
         elif record["kind"] == "npm_script":
             state = "ok" if record["exists"] else "problem"
-            print(f"  - {record['command']}: {state} script={record['script']}")
+            suffix = f" sha256={record['sha256']}" if record["sha256"] else ""
+            print(f"  - {record['command']}: {state} script={record['script']}{suffix}")
         else:
             print(f"  - {record['command']}: external tool={record.get('tool', record['kind'])}")
     if evidence["problems"]:

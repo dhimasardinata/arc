@@ -64,12 +64,20 @@ class ReleaseEvidenceTest(unittest.TestCase):
         records = {record["command"]: record for record in evidence["required_command_records"]}
         self.assertTrue(records["./tools/check-repo.sh"]["exists"])
         self.assertTrue(records["./tools/check-repo.sh"]["executable"])
+        self.assertEqual(
+            records["./tools/check-repo.sh"]["sha256"], release_evidence.sha256(ROOT / "tools/check-repo.sh")
+        )
         self.assertTrue(records["./tools/format.sh --check"]["executable"])
         self.assertTrue(records["python3 tools/compile-fail-check.py"]["executable"])
         self.assertEqual(records["go run tools/arc-audit.go -root . -all"]["kind"], "repo_source")
         self.assertTrue(records["go run tools/arc-audit.go -root . -all"]["exists"])
+        self.assertEqual(
+            records["go run tools/arc-audit.go -root . -all"]["sha256"],
+            release_evidence.sha256(ROOT / "tools/arc-audit.go"),
+        )
         self.assertEqual(records["npm run docs:build"]["kind"], "npm_script")
         self.assertTrue(records["npm run docs:build"]["exists"])
+        self.assertEqual(records["npm run docs:build"]["sha256"], release_evidence.sha256(ROOT / "package.json"))
         self.assertEqual(records["idf.py build"]["kind"], "external")
         self.assertEqual(evidence["problems"], [])
 
@@ -111,6 +119,7 @@ class ReleaseEvidenceTest(unittest.TestCase):
         self.assertIn("- command checks:", result.stdout)
         self.assertIn("  - ./tools/check-repo.sh: ok path=tools/check-repo.sh", result.stdout)
         self.assertIn("  - npm run docs:build: ok script=docs:build", result.stdout)
+        self.assertIn(" sha256=", result.stdout)
 
     def test_command_records_validate_repo_tools_and_npm_scripts(self) -> None:
         missing_tool = release_evidence.command_record("./tools/no-such-tool.py")

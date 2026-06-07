@@ -279,6 +279,31 @@ def check_commit_coherence(
     return commit
 
 
+def command_record_path(item: dict[str, Any], command: str, label: str, problems: list[str]) -> Path | None:
+    path_text = item.get("path")
+    if not isinstance(path_text, str) or not path_text:
+        problems.append(f"release-evidence.json: {command} {label} must include path")
+        return None
+    resolved = (ROOT / path_text).resolve()
+    try:
+        resolved.relative_to(ROOT)
+    except ValueError:
+        problems.append(f"release-evidence.json: {command} {label} path must stay inside repository")
+        return None
+    return resolved
+
+
+def check_command_sha(item: dict[str, Any], command: str, label: str, path: Path, problems: list[str]) -> None:
+    expected = item.get("sha256")
+    if not isinstance(expected, str) or not expected:
+        problems.append(f"release-evidence.json: {command} {label} must include sha256")
+        return
+    if not path.is_file():
+        return
+    if expected != sha256(path):
+        problems.append(f"release-evidence.json: {command} {label} sha256 mismatch")
+
+
 def check_release_commands(release: dict[str, Any], problems: list[str]) -> int:
     if release.get("ok") is not True:
         problems.append("release-evidence.json: ok must be true")
@@ -313,13 +338,15 @@ def check_release_commands(release: dict[str, Any], problems: list[str]) -> int:
                 problems.append(f"release-evidence.json: {command} repo tool must exist")
             if item.get("executable") is not True:
                 problems.append(f"release-evidence.json: {command} repo tool must be executable")
-            if not isinstance(item.get("path"), str) or not item["path"]:
-                problems.append(f"release-evidence.json: {command} repo tool must include path")
+            path = command_record_path(item, command, "repo tool", problems)
+            if path is not None:
+                check_command_sha(item, command, "repo tool", path, problems)
         elif kind == "repo_source":
             if item.get("exists") is not True:
                 problems.append(f"release-evidence.json: {command} repo source must exist")
-            if not isinstance(item.get("path"), str) or not item["path"]:
-                problems.append(f"release-evidence.json: {command} repo source must include path")
+            path = command_record_path(item, command, "repo source", problems)
+            if path is not None:
+                check_command_sha(item, command, "repo source", path, problems)
         elif kind == "npm_script":
             if item.get("exists") is not True:
                 problems.append(f"release-evidence.json: {command} npm script must exist")
@@ -327,6 +354,9 @@ def check_release_commands(release: dict[str, Any], problems: list[str]) -> int:
                 problems.append(f"release-evidence.json: {command} npm script path must be package.json")
             if not isinstance(item.get("script"), str) or not item["script"]:
                 problems.append(f"release-evidence.json: {command} npm script must include script")
+            path = command_record_path(item, command, "npm script", problems)
+            if path is not None:
+                check_command_sha(item, command, "npm script", path, problems)
         elif kind == "external":
             if not isinstance(item.get("tool"), str) or not item["tool"]:
                 problems.append(f"release-evidence.json: {command} external command must include tool")

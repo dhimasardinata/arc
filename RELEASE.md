@@ -64,7 +64,8 @@ for firmware, security, safety, or licensing claims.
 - `./tools/release-evidence.py --format json --require-clean` before tagging or
   publishing a release artifact; its JSON records root, GitHub, and docs policy
   file hashes and checks that repo-local release commands still point to
-  executable tools, checked source files, or declared npm scripts
+  executable tools, checked source files, or declared npm scripts with matching
+  SHA-256 digests
 
 ## Firmware Evidence
 
