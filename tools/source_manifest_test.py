@@ -78,6 +78,29 @@ class SourceManifestTest(unittest.TestCase):
 
         self.assertNotEqual(source_manifest.tree_sha256(first), source_manifest.tree_sha256(second))
 
+    def test_source_record_accepts_regular_executable_file(self) -> None:
+        problems: list[str] = []
+        record = source_manifest.source_record(
+            source_manifest.TrackedFile("100755", "0" * 40, "tools/source-manifest.py"),
+            problems,
+        )
+
+        self.assertEqual(problems, [])
+        self.assertEqual(record["mode"], "100755")
+        self.assertGreater(record["size"], 0)
+        self.assertRegex(record["sha256"], r"^[0-9a-f]{64}$")
+
+    def test_source_record_rejects_unsupported_git_mode(self) -> None:
+        problems: list[str] = []
+        record = source_manifest.source_record(
+            source_manifest.TrackedFile("120000", "0" * 40, "LICENSE"),
+            problems,
+        )
+
+        self.assertEqual(record["size"], None)
+        self.assertEqual(record["sha256"], None)
+        self.assertIn("unsupported tracked file mode: 120000 LICENSE", problems)
+
 
 if __name__ == "__main__":
     unittest.main()

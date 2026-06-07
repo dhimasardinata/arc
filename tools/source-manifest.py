@@ -11,6 +11,7 @@ from typing import Any, NamedTuple
 
 
 ROOT = Path(__file__).resolve().parents[1]
+REGULAR_FILE_MODES = {"100644", "100755"}
 
 
 class TrackedFile(NamedTuple):
@@ -73,32 +74,31 @@ def tree_sha256(records: list[dict[str, Any]]) -> str:
     return digest.hexdigest()
 
 
+def source_record(item: TrackedFile, problems: list[str]) -> dict[str, Any]:
+    path = ROOT / item.path
+    record: dict[str, Any] = {
+        "path": item.path,
+        "mode": item.mode,
+        "git_object": item.object_id,
+        "size": None,
+        "sha256": None,
+    }
+    if item.mode not in REGULAR_FILE_MODES:
+        problems.append(f"unsupported tracked file mode: {item.mode} {item.path}")
+        return record
+    if not path.is_file():
+        problems.append(f"tracked file missing: {item.path}")
+        return record
+    record["size"] = path.stat().st_size
+    record["sha256"] = sha256(path)
+    return record
+
+
 def collect() -> dict[str, Any]:
     records: list[dict[str, Any]] = []
     problems: list[str] = []
     for item in tracked_files():
-        path = ROOT / item.path
-        if not path.is_file():
-            problems.append(f"tracked file missing: {item.path}")
-            records.append(
-                {
-                    "path": item.path,
-                    "mode": item.mode,
-                    "git_object": item.object_id,
-                    "size": None,
-                    "sha256": None,
-                }
-            )
-            continue
-        records.append(
-            {
-                "path": item.path,
-                "mode": item.mode,
-                "git_object": item.object_id,
-                "size": path.stat().st_size,
-                "sha256": sha256(path),
-            }
-        )
+        records.append(source_record(item, problems))
 
     status = status_lines()
     return {
