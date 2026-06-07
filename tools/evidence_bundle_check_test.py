@@ -38,13 +38,46 @@ def file_record(path: Path) -> dict[str, object]:
     }
 
 
+def release_payload(commit: str, release_commit: str | None = None) -> dict[str, object]:
+    commands = ["./tools/check-repo.sh", "npm run docs:build", "idf.py build"]
+    return {
+        "commit": release_commit or commit,
+        "dirty": False,
+        "ok": True,
+        "problems": [],
+        "status": [],
+        "required_commands": commands,
+        "required_command_records": [
+            {
+                "command": commands[0],
+                "kind": "repo_tool",
+                "path": "tools/check-repo.sh",
+                "exists": True,
+                "executable": True,
+            },
+            {
+                "command": commands[1],
+                "kind": "npm_script",
+                "path": "package.json",
+                "script": "docs:build",
+                "exists": True,
+            },
+            {
+                "command": commands[2],
+                "kind": "external",
+                "tool": "idf.py",
+            },
+        ],
+    }
+
+
 def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | None = None) -> Path:
     base.mkdir(parents=True, exist_ok=True)
     payloads: dict[str, object] = {
         "source-manifest.json": {"commit": commit, "dirty": False, "ok": True, "problems": []},
         "third-party-manifest.json": {"ok": True, "problems": []},
         "safety-case.json": {"ok": True, "problems": []},
-        "release-evidence.json": {"commit": release_commit or commit, "dirty": False, "status": []},
+        "release-evidence.json": release_payload(commit, release_commit),
         "workflow-pins.json": {"ok": True, "problems": []},
         "workflow-policy.json": {"ok": True, "problems": []},
         "dependabot-policy.json": {"ok": True, "problems": []},
@@ -102,6 +135,7 @@ class EvidenceBundleCheckTest(unittest.TestCase):
         self.assertTrue(evidence["ok"], evidence["problems"])
         self.assertEqual(evidence["indexed_count"], len(evidence_bundle_check.EXPECTED_INDEXED))
         self.assertEqual(evidence["provenance_subject_count"], len(evidence_bundle_check.EXPECTED_PROVENANCE_SUBJECTS))
+        self.assertEqual(evidence["release_command_count"], 3)
 
     def test_rejects_hash_mismatch(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
@@ -133,6 +167,27 @@ class EvidenceBundleCheckTest(unittest.TestCase):
 
         self.assertFalse(evidence["ok"])
         self.assertIn("release-evidence.json: commit must match evidence-index commit", evidence["problems"])
+
+    def test_rejects_release_command_record_problem(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            release = json.loads((bundle / "release-evidence.json").read_text(encoding="utf-8"))
+            release["required_command_records"][0]["executable"] = False
+            release["required_command_records"].append(
+                {
+                    "command": "./tools/extra.py",
+                    "kind": "repo_tool",
+                    "path": "tools/extra.py",
+                    "exists": True,
+                    "executable": True,
+                }
+            )
+            write_json(bundle / "release-evidence.json", release)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("release-evidence.json: ./tools/check-repo.sh repo tool must be executable", evidence["problems"])
+        self.assertIn("release-evidence.json: command records must match required_commands order", evidence["problems"])
 
     def test_rejects_missing_provenance_dependency_commit(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:

@@ -207,6 +207,60 @@ def check_commit_coherence(
     return commit
 
 
+def check_release_commands(release: dict[str, Any], problems: list[str]) -> int:
+    if release.get("ok") is not True:
+        problems.append("release-evidence.json: ok must be true")
+    if release.get("problems") not in ([], None):
+        problems.append("release-evidence.json: problems must be empty")
+
+    commands = release.get("required_commands")
+    records = release.get("required_command_records")
+    if not isinstance(commands, list) or not all(isinstance(command, str) for command in commands):
+        problems.append("release-evidence.json: required_commands must be a string list")
+        commands = []
+    if not isinstance(records, list):
+        problems.append("release-evidence.json: required_command_records must be a list")
+        return 0
+
+    record_commands: list[str] = []
+    for item in records:
+        if not isinstance(item, dict):
+            problems.append("release-evidence.json: command record must be an object")
+            continue
+        command = item.get("command")
+        kind = item.get("kind")
+        if not isinstance(command, str) or not command:
+            problems.append("release-evidence.json: command record must include command")
+            continue
+        if not isinstance(kind, str):
+            problems.append(f"release-evidence.json: {command} command record must include kind")
+            continue
+        record_commands.append(command)
+        if kind == "repo_tool":
+            if item.get("exists") is not True:
+                problems.append(f"release-evidence.json: {command} repo tool must exist")
+            if item.get("executable") is not True:
+                problems.append(f"release-evidence.json: {command} repo tool must be executable")
+            if not isinstance(item.get("path"), str) or not item["path"]:
+                problems.append(f"release-evidence.json: {command} repo tool must include path")
+        elif kind == "npm_script":
+            if item.get("exists") is not True:
+                problems.append(f"release-evidence.json: {command} npm script must exist")
+            if item.get("path") != "package.json":
+                problems.append(f"release-evidence.json: {command} npm script path must be package.json")
+            if not isinstance(item.get("script"), str) or not item["script"]:
+                problems.append(f"release-evidence.json: {command} npm script must include script")
+        elif kind == "external":
+            if not isinstance(item.get("tool"), str) or not item["tool"]:
+                problems.append(f"release-evidence.json: {command} external command must include tool")
+        else:
+            problems.append(f"release-evidence.json: {command} command kind is not recognized: {kind}")
+
+    if record_commands != commands:
+        problems.append("release-evidence.json: command records must match required_commands order")
+    return len(record_commands)
+
+
 def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
     artifact_dir = artifact_dir.resolve()
     problems: list[str] = []
@@ -226,6 +280,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
     indexed = indexed_records(index, artifact_dir, problems) if index else {}
     subjects = subject_records(provenance, artifact_dir, problems) if provenance else {}
     commit = check_commit_coherence(index, provenance, source, release, sbom, problems) if index else None
+    release_command_count = check_release_commands(release, problems) if release else 0
 
     if source.get("dirty") is not False:
         problems.append("source-manifest.json: dirty must be false")
@@ -239,6 +294,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
         "commit": commit,
         "indexed_count": len(indexed),
         "provenance_subject_count": len(subjects),
+        "release_command_count": release_command_count,
         "ok": not problems,
         "problems": problems,
     }
@@ -251,6 +307,7 @@ def report_text(evidence: dict[str, Any]) -> str:
         f"- commit: {evidence['commit']}",
         f"- indexed files: {evidence['indexed_count']}",
         f"- provenance subjects: {evidence['provenance_subject_count']}",
+        f"- release commands: {evidence['release_command_count']}",
         f"- problems: {len(evidence['problems'])}",
     ]
     if evidence["problems"]:
