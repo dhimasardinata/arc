@@ -15,9 +15,16 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 
 POLICY_FILES = [
+    "README.md",
     "RELEASE.md",
     "SECURITY.md",
     "CONTRIBUTING.md",
+    "docs/governance.md",
+    "docs/security.md",
+    "docs/safety-case.md",
+    "docs/licensing.md",
+    "docs/hil-test-jig.md",
+    "docs/benchmarking.md",
     "THIRD_PARTY_NOTICES.md",
     "THIRD_PARTY_MANIFEST.json",
     ".github/CODEOWNERS",

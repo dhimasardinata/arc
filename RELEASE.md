@@ -54,9 +54,9 @@ for firmware, security, safety, or licensing claims.
 - `./tools/third-party-manifest-check.py --format json` before relying on
   third-party notice coverage
 - `./tools/release-evidence.py --format json --require-clean` before tagging or
-  publishing a release artifact; its JSON records policy file hashes and checks
-  that repo-local release commands still point to executable tools or declared
-  npm scripts
+  publishing a release artifact; its JSON records root, GitHub, and docs policy
+  file hashes and checks that repo-local release commands still point to
+  executable tools or declared npm scripts
 
 ## Firmware Evidence
 
