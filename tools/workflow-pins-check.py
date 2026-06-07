@@ -15,6 +15,19 @@ USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<value>[^#\s]+)?(?P<tail>.*)$")
 PERSIST_RE = re.compile(r"^\s*persist-credentials:\s*(?P<value>[^#\s]+)")
 FETCH_DEPTH_RE = re.compile(r"^\s*fetch-depth:\s*(?P<value>[^#\s]+)")
 CHECKOUT_ACTION = "actions/checkout@"
+APPROVED_REMOTE_ACTIONS = (
+    "actions/cache/restore",
+    "actions/cache/save",
+    "actions/checkout",
+    "actions/configure-pages",
+    "actions/deploy-pages",
+    "actions/setup-node",
+    "actions/setup-python",
+    "actions/upload-artifact",
+    "actions/upload-pages-artifact",
+    "github/codeql-action/analyze",
+    "github/codeql-action/init",
+)
 
 
 class UsesRef(NamedTuple):
@@ -117,6 +130,10 @@ def docker_digest(value: str) -> bool:
     return value.startswith("docker://") and "@sha256:" in value
 
 
+def remote_action_source(value: str) -> str:
+    return value.rpartition("@")[0] if "@" in value else value
+
+
 def validate_ref(ref: UsesRef) -> list[str]:
     problems: list[str] = []
     label = f"{ref.path}:{ref.line}: uses {ref.value or '<empty>'}"
@@ -130,11 +147,15 @@ def validate_ref(ref: UsesRef) -> list[str]:
             problems.append(f"{label} must pin docker actions by sha256 digest")
         return problems
 
+    source = remote_action_source(ref.value)
+    if source not in APPROVED_REMOTE_ACTIONS:
+        problems.append(f"{label} source {source} is not approved by Arc workflow policy")
+
     if "@" not in ref.value:
         problems.append(f"{label} must include an explicit ref")
         return problems
 
-    _, _, version = ref.value.rpartition("@")
+    version = ref.value.rpartition("@")[2]
     if not SHA_RE.fullmatch(version):
         problems.append(f"{label} must pin to a full 40-character commit SHA")
     if not ref.comment:
@@ -164,6 +185,7 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
                 "path": ref.path,
                 "line": ref.line,
                 "uses": ref.value,
+                "source": remote_action_source(ref.value),
                 "comment": ref.comment,
                 "persist_credentials": ref.persist_credentials,
                 "fetch_depth": ref.fetch_depth,

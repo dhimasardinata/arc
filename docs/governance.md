@@ -56,7 +56,7 @@ or distributing Arc-derived artifacts.
   dependency notice boundary machine-checkable.
 - `tools/workflow-pins-check.py --format json` keeps GitHub Actions supply-chain
   references immutable by requiring full commit SHA pins, version comments, and
-  bounded checkout settings.
+  approved remote action sources plus bounded checkout settings.
 - `tools/workflow-policy-check.py --format json` keeps the approved workflow
   set, trigger maps, permissions, concurrency, runner image pins, job timeouts,
   formatter pins, and shell expression/cache-write guards inside the

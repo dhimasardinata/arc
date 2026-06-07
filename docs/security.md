@@ -47,12 +47,13 @@ open pull requests, and ecosystem-specific groups. CI publishes the result as
 `dependabot-policy.json` in the repository evidence bundle.
 
 `tools/workflow-pins-check.py --format json` backs that review path by rejecting
-remote workflow actions that are not pinned to full commit SHA refs. Each remote
-action line also keeps a trailing version comment so maintainers can review the
-human release track without trusting a mutable tag. The same check requires
-`actions/checkout` steps to set `persist-credentials: false` and
-`fetch-depth: 1`, because Arc workflows do not need to leave the GitHub token in
-the local Git config or fetch full history for normal CI paths.
+remote workflow actions that are not pinned to full commit SHA refs or approved
+by Arc's remote action allowlist. Each remote action line also keeps a trailing
+version comment so maintainers can review the human release track without
+trusting a mutable tag. The same check requires `actions/checkout` steps to set
+`persist-credentials: false` and `fetch-depth: 1`, because Arc workflows do not
+need to leave the GitHub token in the local Git config or fetch full history for
+normal CI paths.
 
 `tools/workflow-policy-check.py --format json` records the approved workflow
 set, trigger maps, and permission maps. It rejects `pull_request_target`,

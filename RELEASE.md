@@ -25,7 +25,7 @@ for firmware, security, safety, or licensing claims.
 - `./tools/safety-case-check.py --format json` before publishing safety,
   hardware-risk, or release-process claims
 - `./tools/workflow-pins-check.py --format json` before relying on GitHub
-  Actions supply-chain pinning
+  Actions supply-chain pinning or the approved remote action allowlist
 - `./tools/workflow-policy-check.py --format json` before relying on workflow
   set, trigger, permission, runner, timeout, formatter, or shell-expression
   policy

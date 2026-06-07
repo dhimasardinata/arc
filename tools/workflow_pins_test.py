@@ -47,6 +47,7 @@ jobs:
         self.assertTrue(evidence["ok"], evidence["problems"])
         self.assertEqual(evidence["workflow_count"], 1)
         self.assertEqual(evidence["ref_count"], 3)
+        self.assertEqual(evidence["refs"][0]["source"], "actions/checkout")
         self.assertEqual(evidence["refs"][0]["persist_credentials"], "false")
         self.assertEqual(evidence["refs"][0]["fetch_depth"], "1")
 
@@ -93,6 +94,27 @@ jobs:
         self.assertFalse(evidence["ok"])
         self.assertIn(
             f".github/workflows/build.yml:5: uses actions/checkout@{SHA} must include a trailing version comment",
+            evidence["problems"],
+        )
+
+    def test_rejects_unapproved_remote_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                f"""name: build
+jobs:
+  test:
+    steps:
+      - uses: third-party/run-anything@{SHA} # v1
+""",
+            )
+
+            evidence = workflow_pins_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            f".github/workflows/build.yml:5: uses third-party/run-anything@{SHA} source third-party/run-anything is not approved by Arc workflow policy",
             evidence["problems"],
         )
 
