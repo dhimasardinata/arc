@@ -104,7 +104,8 @@ artifact bundle so future regressions can be traced back to source.
 CI uploads `arc-evidence` for every build with an evidence index, source
 manifest, third-party manifest, safety-case JSON, release-evidence JSON,
 workflow action pin evidence, workflow policy evidence, npm lockfile evidence,
-Dependabot policy evidence, license policy evidence, secret-scan evidence, SPDX
-SBOM evidence, and in-toto provenance evidence.
+evidence workflow contract evidence, Dependabot policy evidence, license policy
+evidence, secret-scan evidence, SPDX SBOM evidence, and in-toto provenance
+evidence.
 Firmware builds also upload `arc-binaries` with the firmware artifact manifest
 and its validated evidence index beside the binaries.

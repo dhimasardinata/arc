@@ -47,11 +47,11 @@ or distributing Arc-derived artifacts.
   with SLSA provenance metadata and SHA-256 subjects for evidence bundles.
 - CI uploads `arc-evidence` with an evidence index, source, third-party,
   safety-case, release metadata, workflow action pin, workflow policy,
-  Dependabot policy, and npm lockfile JSON plus license policy, secret-scan,
-  SPDX SBOM, and in-toto provenance evidence for every build. Firmware builds
-  also upload the firmware artifact manifest and evidence index beside
-  binaries. Evidence uploads must set `include-hidden-files: true` because the
-  generated evidence lives under `.arc-artifacts/`.
+  evidence workflow, Dependabot policy, and npm lockfile JSON plus license
+  policy, secret-scan, SPDX SBOM, and in-toto provenance evidence for every
+  build. Firmware builds also upload the firmware artifact manifest and evidence
+  index beside binaries. Evidence uploads must set `include-hidden-files: true`
+  because the generated evidence lives under `.arc-artifacts/`.
 - `THIRD_PARTY_NOTICES.md` is the notice checklist for ESP-IDF,
   Arduino-ESP32, documentation tooling, CI dependencies, and bundled product
   dependencies.

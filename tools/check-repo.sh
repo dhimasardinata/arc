@@ -494,7 +494,7 @@ fi
 if ! grep -qE 'name: Repository evidence bundle' .github/workflows/build.yml; then
     die "build workflow must emit repository evidence artifacts"
 fi
-for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins workflow-policy dependabot-policy npm-lock license-policy secret-scan; do
+for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins workflow-policy evidence-workflow dependabot-policy npm-lock license-policy secret-scan; do
     if ! grep -qF ".arc-artifacts/$evidence_file.json" .github/workflows/build.yml; then
         die "build workflow must publish $evidence_file JSON evidence"
     fi
@@ -516,6 +516,12 @@ if ! grep -qE '\./tools/workflow-pins-check\.py --format json > \.arc-artifacts/
 fi
 if ! grep -qE '\./tools/workflow-policy-check\.py --format json > \.arc-artifacts/workflow-policy\.json' .github/workflows/build.yml; then
     die "build workflow must emit workflow policy evidence"
+fi
+if ! grep -qE '\./tools/evidence-workflow-check\.py --format json > \.arc-artifacts/evidence-workflow\.json' .github/workflows/build.yml; then
+    die "build workflow must emit evidence workflow contract evidence"
+fi
+if ! grep -qF -- '--require .arc-artifacts/evidence-workflow.json' .github/workflows/build.yml; then
+    die "build workflow must index evidence workflow contract evidence"
 fi
 if ! grep -qE '\./tools/dependabot-policy-check\.py --format json > \.arc-artifacts/dependabot-policy\.json' .github/workflows/build.yml; then
     die "build workflow must emit dependabot policy evidence"

@@ -38,6 +38,7 @@ def workflow_body() -> str:
               ./tools/release-evidence.py --format json --require-clean > .arc-artifacts/release-evidence.json
               ./tools/workflow-pins-check.py --format json > .arc-artifacts/workflow-pins.json
               ./tools/workflow-policy-check.py --format json > .arc-artifacts/workflow-policy.json
+              ./tools/evidence-workflow-check.py --format json > .arc-artifacts/evidence-workflow.json
               ./tools/dependabot-policy-check.py --format json > .arc-artifacts/dependabot-policy.json
               ./tools/npm-lock-check.py --format json > .arc-artifacts/npm-lock.json
               ./tools/license-policy-check.py --format json > .arc-artifacts/license-policy.json
@@ -50,6 +51,7 @@ def workflow_body() -> str:
                 .arc-artifacts/release-evidence.json \\
                 .arc-artifacts/workflow-pins.json \\
                 .arc-artifacts/workflow-policy.json \\
+                .arc-artifacts/evidence-workflow.json \\
                 .arc-artifacts/dependabot-policy.json \\
                 .arc-artifacts/npm-lock.json \\
                 .arc-artifacts/license-policy.json \\
@@ -62,6 +64,7 @@ def workflow_body() -> str:
                 --require .arc-artifacts/release-evidence.json \\
                 --require .arc-artifacts/workflow-pins.json \\
                 --require .arc-artifacts/workflow-policy.json \\
+                --require .arc-artifacts/evidence-workflow.json \\
                 --require .arc-artifacts/dependabot-policy.json \\
                 --require .arc-artifacts/npm-lock.json \\
                 --require .arc-artifacts/license-policy.json \\
@@ -74,6 +77,7 @@ def workflow_body() -> str:
                 .arc-artifacts/release-evidence.json \\
                 .arc-artifacts/workflow-pins.json \\
                 .arc-artifacts/workflow-policy.json \\
+                .arc-artifacts/evidence-workflow.json \\
                 .arc-artifacts/dependabot-policy.json \\
                 .arc-artifacts/npm-lock.json \\
                 .arc-artifacts/license-policy.json \\
@@ -94,6 +98,7 @@ def workflow_body() -> str:
                 .arc-artifacts/release-evidence.json
                 .arc-artifacts/workflow-pins.json
                 .arc-artifacts/workflow-policy.json
+                .arc-artifacts/evidence-workflow.json
                 .arc-artifacts/dependabot-policy.json
                 .arc-artifacts/npm-lock.json
                 .arc-artifacts/license-policy.json

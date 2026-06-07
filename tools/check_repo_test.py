@@ -53,6 +53,8 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("workflow policy check failed", text)
         self.assertIn("workflow policy tool must stay executable", text)
         self.assertIn("build workflow must emit workflow policy evidence", text)
+        self.assertIn("build workflow must emit evidence workflow contract evidence", text)
+        self.assertIn("build workflow must index evidence workflow contract evidence", text)
         self.assertIn("dependabot policy check failed", text)
         self.assertIn("dependabot policy tool must stay executable", text)
         self.assertIn(".github/dependabot.yml", text)
