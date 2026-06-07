@@ -57,9 +57,10 @@ or distributing Arc-derived artifacts.
 - `tools/workflow-pins-check.py --format json` keeps GitHub Actions supply-chain
   references immutable by requiring full commit SHA pins, version comments, and
   bounded checkout settings.
-- `tools/workflow-policy-check.py --format json` keeps workflow permissions,
-  concurrency, runner image pins, job timeouts, formatter pins, and shell
-  expression/cache-write guards inside the repository's approved CI policy.
+- `tools/workflow-policy-check.py --format json` keeps the approved workflow
+  set, trigger maps, permissions, concurrency, runner image pins, job timeouts,
+  formatter pins, and shell expression/cache-write guards inside the
+  repository's approved CI policy.
 - `tools/dependabot-policy-check.py --format json` keeps Dependabot version
   updates scoped to reviewed GitHub Actions and docs npm dependency lanes.
 - `tools/npm-lock-check.py --format json` keeps the docs dependency lockfile

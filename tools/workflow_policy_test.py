@@ -21,12 +21,98 @@ def write_workflow(root: Path, name: str, body: str) -> None:
     path.write_text(body, encoding="utf-8")
 
 
+def write_minimal_required_workflows(root: Path, *, build_body: str | None = None) -> None:
+    write_workflow(
+        root,
+        "build.yml",
+        build_body
+        or """name: build
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  esp32s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+""",
+    )
+    write_workflow(
+        root,
+        "codeql.yml",
+        """name: codeql
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "24 3 * * 1"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+""",
+    )
+    write_workflow(
+        root,
+        "pages.yml",
+        """name: pages
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pages.yml"
+      - "docs/**"
+      - "README.md"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+""",
+    )
+
+
 class WorkflowPolicyTest(unittest.TestCase):
     def test_accepts_current_workflow_policies(self) -> None:
         evidence = workflow_policy_check.collect(ROOT)
 
         self.assertTrue(evidence["ok"], evidence["problems"])
         self.assertEqual(evidence["workflow_count"], 3)
+        self.assertEqual(
+            [workflow["path"] for workflow in evidence["workflows"]],
+            list(workflow_policy_check.EXPECTED_WORKFLOWS),
+        )
+        triggers = {workflow["path"]: workflow["triggers"] for workflow in evidence["workflows"]}
+        self.assertEqual(
+            tuple(triggers[".github/workflows/build.yml"]["events"]),
+            workflow_policy_check.EXPECTED_TRIGGERS[".github/workflows/build.yml"]["events"],
+        )
+        self.assertEqual(triggers[".github/workflows/codeql.yml"]["events"]["push"]["branches"], ["main"])
+        self.assertEqual(triggers[".github/workflows/codeql.yml"]["events"]["schedule"]["crons"], ["24 3 * * 1"])
+        self.assertEqual(
+            triggers[".github/workflows/pages.yml"]["events"]["push"]["paths"],
+            list(workflow_policy_check.EXPECTED_TRIGGERS[".github/workflows/pages.yml"]["push_paths"]),
+        )
         jobs = {(workflow["path"], job["id"]): job for workflow in evidence["workflows"] for job in workflow["jobs"]}
         for job in jobs.values():
             self.assertEqual(job["runs_on"], workflow_policy_check.RUNNER_IMAGE)
@@ -82,6 +168,98 @@ class WorkflowPolicyTest(unittest.TestCase):
                 steps[(".github/workflows/codeql.yml", "analyze", step_name)]["with"]["dependency-caching"],
                 workflow_policy_check.CODEQL_DEPENDENCY_CACHING,
             )
+
+    def test_rejects_missing_required_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(".github/workflows/codeql.yml: required workflow is missing", evidence["problems"])
+        self.assertIn(".github/workflows/pages.yml: required workflow is missing", evidence["problems"])
+
+    def test_rejects_unapproved_workflow_trigger(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_minimal_required_workflows(
+                root,
+                build_body="""name: build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/build.yml: workflow triggers must be push, pull_request",
+            evidence["problems"],
+        )
+
+    def test_rejects_pages_push_path_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_minimal_required_workflows(root)
+            write_workflow(
+                root,
+                "pages.yml",
+                """name: pages
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/pages.yml: push paths must be .github/workflows/pages.yml, docs/**, README.md, package.json, package-lock.json",
+            evidence["problems"],
+        )
 
     def test_rejects_pull_request_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -294,11 +472,11 @@ jobs:
     def test_accepts_guarded_arc_base_sha_expression(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write_workflow(
+            write_minimal_required_workflows(
                 root,
-                "build.yml",
-                """name: build
+                build_body="""name: build
 on:
+  push:
   pull_request:
 permissions:
   contents: read

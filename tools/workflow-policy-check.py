@@ -10,6 +10,11 @@ from typing import Any, NamedTuple
 
 
 ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_WORKFLOWS = (
+    ".github/workflows/build.yml",
+    ".github/workflows/codeql.yml",
+    ".github/workflows/pages.yml",
+)
 TOP_LEVEL_PERMISSIONS = {
     ".github/workflows/build.yml": {"contents": "read"},
     ".github/workflows/codeql.yml": {
@@ -23,6 +28,27 @@ JOB_PERMISSIONS = {
     (".github/workflows/pages.yml", "deploy"): {
         "id-token": "write",
         "pages": "write",
+    },
+}
+EXPECTED_TRIGGERS = {
+    ".github/workflows/build.yml": {
+        "events": ("push", "pull_request"),
+    },
+    ".github/workflows/codeql.yml": {
+        "events": ("push", "pull_request", "schedule", "workflow_dispatch"),
+        "push_branches": ("main",),
+        "schedule_crons": ("24 3 * * 1",),
+    },
+    ".github/workflows/pages.yml": {
+        "events": ("push", "workflow_dispatch"),
+        "push_branches": ("main",),
+        "push_paths": (
+            ".github/workflows/pages.yml",
+            "docs/**",
+            "README.md",
+            "package.json",
+            "package-lock.json",
+        ),
     },
 }
 ARC_BASE_SHA_EXPR = "${{ github.event.pull_request.base.sha || github.event.before }}"
@@ -115,6 +141,83 @@ def parse_concurrency(lines: list[str]) -> dict[str, str]:
     if scalar:
         return {"value": scalar}
     return mapping_from_block(block, 2)
+
+
+def clean_scalar(value: str) -> str:
+    return value.strip().strip("\"'")
+
+
+def scalar_sequence(value: str) -> list[str]:
+    value = value.strip()
+    if not value:
+        return []
+    if value.startswith("[") and value.endswith("]"):
+        body = value[1:-1].strip()
+        if not body:
+            return []
+        return [clean_scalar(item) for item in body.split(",")]
+    return [clean_scalar(value)]
+
+
+def parse_sequence_key(block: list[str], key: str, indent: int) -> list[str]:
+    pattern = re.compile(rf"^ {{{indent}}}{re.escape(key)}:\s*(.*?)\s*$")
+    item_pattern = re.compile(rf"^ {{{indent + 2},}}-\s*(.+?)\s*$")
+    for index, line in enumerate(block):
+        match = pattern.match(line)
+        if not match:
+            continue
+        scalar = match.group(1).strip()
+        if scalar:
+            return scalar_sequence(scalar)
+        items: list[str] = []
+        for child in block[index + 1 :]:
+            if child.strip() and leading_spaces(child) <= indent:
+                break
+            item_match = item_pattern.match(child)
+            if item_match:
+                items.extend(scalar_sequence(item_match.group(1)))
+        return items
+    return []
+
+
+def parse_trigger_blocks(block: list[str]) -> dict[str, list[str]]:
+    starts: list[tuple[int, str]] = []
+    pattern = re.compile(r"^  ([A-Za-z0-9_-]+):\s*(.*?)\s*$")
+    for offset, line in enumerate(block):
+        match = pattern.match(line)
+        if match:
+            starts.append((offset, match.group(1)))
+
+    triggers: dict[str, list[str]] = {}
+    for index, (start, name) in enumerate(starts):
+        end = starts[index + 1][0] if index + 1 < len(starts) else len(block)
+        triggers[name] = block[start + 1 : end]
+    return triggers
+
+
+def parse_schedule_crons(block: list[str]) -> list[str]:
+    crons: list[str] = []
+    for line in block:
+        match = re.match(r"^\s*-\s+cron:\s*(.+?)\s*$", line)
+        if match:
+            crons.append(clean_scalar(match.group(1)))
+    return crons
+
+
+def parse_triggers(lines: list[str]) -> dict[str, Any]:
+    _, block, scalar = top_section(lines, "on")
+    event_blocks = parse_trigger_blocks(block) if scalar is None else {}
+    return {
+        "scalar": scalar,
+        "events": {
+            name: {
+                "branches": parse_sequence_key(event_block, "branches", 4),
+                "paths": parse_sequence_key(event_block, "paths", 4),
+                "crons": parse_schedule_crons(event_block),
+            }
+            for name, event_block in event_blocks.items()
+        },
+    }
 
 
 def parse_step_name(line: str, fallback: int) -> str | None:
@@ -299,6 +402,7 @@ def workflow_record(path: Path, root: Path) -> dict[str, Any]:
     jobs = parse_jobs(lines)
     return {
         "path": relpath(path, root),
+        "triggers": parse_triggers(lines),
         "top_permissions": permissions,
         "top_permissions_scalar": permission_scalar,
         "concurrency": parse_concurrency(lines),
@@ -342,6 +446,30 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
 
     if record["pull_request_target"]:
         problems.append(f"{path}: pull_request_target is not allowed")
+
+    triggers = record["triggers"]
+    trigger_policy = EXPECTED_TRIGGERS.get(path)
+    if triggers["scalar"]:
+        problems.append(f"{path}: workflow triggers must be an explicit map")
+    if trigger_policy is not None:
+        expected_events = tuple(trigger_policy["events"])
+        actual_events = tuple(triggers["events"].keys())
+        if actual_events != expected_events:
+            problems.append(f"{path}: workflow triggers must be {', '.join(expected_events)}")
+        push = triggers["events"].get("push", {})
+        push_branches = tuple(push.get("branches", []))
+        expected_push_branches = tuple(trigger_policy.get("push_branches", ()))
+        if push_branches != expected_push_branches:
+            problems.append(f"{path}: push branches must be {', '.join(expected_push_branches) or '<all>'}")
+        push_paths = tuple(push.get("paths", []))
+        expected_push_paths = tuple(trigger_policy.get("push_paths", ()))
+        if push_paths != expected_push_paths:
+            problems.append(f"{path}: push paths must be {', '.join(expected_push_paths) or '<all>'}")
+        schedule = triggers["events"].get("schedule", {})
+        schedule_crons = tuple(schedule.get("crons", []))
+        expected_schedule_crons = tuple(trigger_policy.get("schedule_crons", ()))
+        if schedule_crons != expected_schedule_crons:
+            problems.append(f"{path}: schedule cron entries must be {', '.join(expected_schedule_crons) or '<none>'}")
 
     if record["top_permissions_scalar"]:
         problems.append(f"{path}: top-level permissions must be an explicit map")
@@ -414,6 +542,13 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
     root = root.resolve()
     workflows = [workflow_record(path, root) for path in workflow_files(root)]
     problems: list[str] = []
+    actual_paths = tuple(workflow["path"] for workflow in workflows)
+    for path in EXPECTED_WORKFLOWS:
+        if path not in actual_paths:
+            problems.append(f"{path}: required workflow is missing")
+    for path in actual_paths:
+        if path not in EXPECTED_WORKFLOWS:
+            problems.append(f"{path}: workflow is not in the approved workflow set")
     for record in workflows:
         problems.extend(validate_workflow(record))
     return {

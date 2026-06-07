@@ -27,7 +27,8 @@ for firmware, security, safety, or licensing claims.
 - `./tools/workflow-pins-check.py --format json` before relying on GitHub
   Actions supply-chain pinning
 - `./tools/workflow-policy-check.py --format json` before relying on workflow
-  permissions, runner, timeout, formatter, or shell-expression policy
+  set, trigger, permission, runner, timeout, formatter, or shell-expression
+  policy
 - `./tools/dependabot-policy-check.py --format json` before relying on
   Dependabot coverage for GitHub Actions and docs npm dependency updates
 - `./tools/evidence-index.py --format json` over generated evidence files before
