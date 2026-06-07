@@ -15,6 +15,7 @@ DEFAULT_ARTIFACT_DIR = ROOT / ".arc-artifacts"
 INDEX_NAME = "firmware-evidence-index.json"
 MANIFEST_NAME = "firmware-manifest.json"
 PROVENANCE_NAME = "firmware-provenance.intoto.json"
+EXPECTED_SOURCE_DEPENDENCY = "arc-source"
 EXPECTED_SOURCE_URI = "git+https://github.com/dhimasardinata/arc.git"
 EXPECTED_INDEXED = (MANIFEST_NAME, PROVENANCE_NAME)
 EXPECTED_PROVENANCE_SUBJECTS = (MANIFEST_NAME,)
@@ -248,7 +249,7 @@ def provenance_source_dependency(provenance: dict[str, Any]) -> dict[str, Any] |
     if not isinstance(dependencies, list):
         return None
     for item in dependencies:
-        if isinstance(item, dict) and item.get("name") == "arc-source":
+        if isinstance(item, dict) and item.get("name") == EXPECTED_SOURCE_DEPENDENCY:
             return item
     return None
 
@@ -286,6 +287,15 @@ def check_provenance_predicate(provenance: dict[str, Any], problems: list[str]) 
         build = {}
     if not isinstance(build.get("buildType"), str) or not build["buildType"]:
         problems.append(f"{PROVENANCE_NAME}: buildType must be present")
+    dependencies = build.get("resolvedDependencies")
+    if not isinstance(dependencies, list):
+        problems.append(f"{PROVENANCE_NAME}: resolvedDependencies must be a list")
+    else:
+        source_dependencies = [
+            item for item in dependencies if isinstance(item, dict) and item.get("name") == EXPECTED_SOURCE_DEPENDENCY
+        ]
+        if len(dependencies) != 1 or len(source_dependencies) != 1:
+            problems.append(f"{PROVENANCE_NAME}: resolvedDependencies must contain only arc-source")
 
     external = build.get("externalParameters")
     if not isinstance(external, dict):

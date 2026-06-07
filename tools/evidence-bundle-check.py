@@ -16,6 +16,7 @@ DEFAULT_ARTIFACT_DIR = ROOT / ".arc-artifacts"
 INDEX_NAME = "evidence-index.json"
 PROVENANCE_NAME = "provenance.intoto.json"
 SBOM_NAME = "sbom.spdx.json"
+EXPECTED_SOURCE_DEPENDENCY = "arc-source"
 EXPECTED_SOURCE_URI = "git+https://github.com/dhimasardinata/arc.git"
 REGULAR_FILE_MODES = {"100644", "100755"}
 EXPECTED_INDEXED = (
@@ -348,7 +349,7 @@ def provenance_source_dependency(provenance: dict[str, Any]) -> dict[str, Any] |
     if not isinstance(dependencies, list):
         return None
     for item in dependencies:
-        if isinstance(item, dict) and item.get("name") == "arc-source":
+        if isinstance(item, dict) and item.get("name") == EXPECTED_SOURCE_DEPENDENCY:
             return item
     return None
 
@@ -441,6 +442,15 @@ def check_provenance_predicate(provenance: dict[str, Any], problems: list[str]) 
         build = {}
     if not isinstance(build.get("buildType"), str) or not build["buildType"]:
         problems.append("provenance.intoto.json: buildType must be present")
+    dependencies = build.get("resolvedDependencies")
+    if not isinstance(dependencies, list):
+        problems.append("provenance.intoto.json: resolvedDependencies must be a list")
+    else:
+        source_dependencies = [
+            item for item in dependencies if isinstance(item, dict) and item.get("name") == EXPECTED_SOURCE_DEPENDENCY
+        ]
+        if len(dependencies) != 1 or len(source_dependencies) != 1:
+            problems.append("provenance.intoto.json: resolvedDependencies must contain only arc-source")
 
     external = build.get("externalParameters")
     if not isinstance(external, dict):

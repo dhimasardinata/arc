@@ -98,7 +98,7 @@ def make_bundle(base: Path, *, commit: str = "b" * 40) -> Path:
                     },
                     "resolvedDependencies": [
                         {
-                            "name": "arc-source",
+                            "name": firmware_evidence_check.EXPECTED_SOURCE_DEPENDENCY,
                             "uri": firmware_evidence_check.EXPECTED_SOURCE_URI,
                             "digest": {"gitCommit": commit},
                         },
@@ -306,6 +306,26 @@ class FirmwareEvidenceCheckTest(unittest.TestCase):
         self.assertIn(
             "firmware-provenance.intoto.json: resolved dependency uri must be "
             + firmware_evidence_check.EXPECTED_SOURCE_URI,
+            evidence["problems"],
+        )
+
+    def test_rejects_extra_provenance_dependency(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "firmware-provenance.intoto.json").read_text(encoding="utf-8"))
+            provenance["predicate"]["buildDefinition"]["resolvedDependencies"].append(
+                {
+                    "name": "unreviewed-source",
+                    "uri": "git+https://github.com/example/source.git",
+                    "digest": {"gitCommit": "c" * 40},
+                }
+            )
+            write_json(bundle / "firmware-provenance.intoto.json", provenance)
+            evidence = firmware_evidence_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware-provenance.intoto.json: resolvedDependencies must contain only arc-source",
             evidence["problems"],
         )
 

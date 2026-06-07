@@ -167,7 +167,7 @@ def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | Non
                     },
                     "resolvedDependencies": [
                         {
-                            "name": "arc-source",
+                            "name": evidence_bundle_check.EXPECTED_SOURCE_DEPENDENCY,
                             "uri": evidence_bundle_check.EXPECTED_SOURCE_URI,
                             "digest": {"gitCommit": commit},
                         },
@@ -459,6 +459,26 @@ class EvidenceBundleCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn(
             "provenance.intoto.json resolved dependency: commit must match evidence-index commit",
+            evidence["problems"],
+        )
+
+    def test_rejects_extra_provenance_dependency(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "provenance.intoto.json").read_text(encoding="utf-8"))
+            provenance["predicate"]["buildDefinition"]["resolvedDependencies"].append(
+                {
+                    "name": "unreviewed-source",
+                    "uri": "git+https://github.com/example/source.git",
+                    "digest": {"gitCommit": "b" * 40},
+                }
+            )
+            write_json(bundle / "provenance.intoto.json", provenance)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "provenance.intoto.json: resolvedDependencies must contain only arc-source",
             evidence["problems"],
         )
 
