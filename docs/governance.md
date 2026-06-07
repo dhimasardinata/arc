@@ -45,7 +45,8 @@ or distributing Arc-derived artifacts.
   inputs plus missing or unapproved docs npm package license declarations before
   evidence is uploaded.
 - `tools/provenance.py --format json <artifact...>` emits an in-toto Statement
-  with SLSA provenance metadata and SHA-256 subjects for evidence bundles.
+  with SLSA provenance metadata, SHA-256 subjects, and evidence-toolchain
+  byproduct hashes for evidence bundles.
 - CI uploads `arc-evidence` with an evidence index, source, third-party,
   safety-case, release metadata, workflow action pin, workflow policy,
   evidence workflow, Dependabot policy, and npm lockfile JSON plus license
@@ -78,7 +79,8 @@ or distributing Arc-derived artifacts.
 - `tools/sbom.py --format json` gives releases a machine-readable SPDX bill of
   materials for Arc, external dependency groups, and locked docs packages.
 - `tools/provenance.py --format json` ties repository-scoped published evidence
-  subjects back to the exact Arc commit and workflow or local build context.
+  subjects and evidence-toolchain byproducts back to the exact Arc commit and
+  workflow or local build context.
 - `tools/evidence-bundle-check.py .arc-artifacts` checks that the repository-local
   uploaded evidence bundle is internally coherent instead of only present.
 - `tools/evidence-workflow-check.py --format json` checks that CI keeps the

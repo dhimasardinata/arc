@@ -29,10 +29,14 @@ class ProvenanceTest(unittest.TestCase):
 
         self.assertEqual(problems, [])
         self.assertEqual(stats["subject_count"], 1)
+        self.assertEqual(stats["byproduct_count"], len(provenance.EVIDENCE_TOOLCHAIN))
         self.assertEqual(statement["_type"], "https://in-toto.io/Statement/v1")
         self.assertEqual(statement["predicateType"], "https://slsa.dev/provenance/v1")
         self.assertEqual(statement["subject"][0]["name"], provenance.relpath(subject, ROOT))
         self.assertRegex(statement["subject"][0]["digest"]["sha256"], r"^[0-9a-f]{64}$")
+        byproducts = statement["predicate"]["runDetails"]["byproducts"]
+        self.assertEqual([item["name"] for item in byproducts], list(provenance.EVIDENCE_TOOLCHAIN))
+        self.assertRegex(byproducts[0]["digest"]["sha256"], r"^[0-9a-f]{64}$")
         resolved = statement["predicate"]["buildDefinition"]["resolvedDependencies"][0]
         self.assertEqual(resolved["name"], "arc-source")
         self.assertRegex(resolved["digest"]["gitCommit"], r"^[0-9a-f]{40}$")

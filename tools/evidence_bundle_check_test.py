@@ -143,11 +143,12 @@ def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | Non
                     },
                     "byproducts": [
                         {
-                            "name": "tools/provenance.py",
+                            "name": name,
                             "digest": {
-                                "sha256": evidence_bundle_check.sha256(ROOT / "tools" / "provenance.py"),
+                                "sha256": evidence_bundle_check.sha256(ROOT / name),
                             },
                         }
+                        for name in evidence_bundle_check.EXPECTED_PROVENANCE_BYPRODUCTS
                     ],
                 },
             },
@@ -176,6 +177,9 @@ class EvidenceBundleCheckTest(unittest.TestCase):
         self.assertTrue(evidence["ok"], evidence["problems"])
         self.assertEqual(evidence["indexed_count"], len(evidence_bundle_check.EXPECTED_INDEXED))
         self.assertEqual(evidence["provenance_subject_count"], len(evidence_bundle_check.EXPECTED_PROVENANCE_SUBJECTS))
+        self.assertEqual(
+            evidence["provenance_byproduct_count"], len(evidence_bundle_check.EXPECTED_PROVENANCE_BYPRODUCTS)
+        )
         self.assertEqual(evidence["release_command_count"], 4)
 
     def test_rejects_hash_mismatch(self) -> None:
@@ -248,6 +252,7 @@ class EvidenceBundleCheckTest(unittest.TestCase):
             predicate["runDetails"]["builder"]["id"] = ""
             predicate["runDetails"]["metadata"]["invocationId"] = ""
             predicate["runDetails"]["byproducts"][0]["digest"]["sha256"] = "0" * 64
+            bad_byproduct = predicate["runDetails"]["byproducts"][0]["name"]
             write_json(bundle / "provenance.intoto.json", provenance)
             evidence = evidence_bundle_check.collect(bundle)
 
@@ -259,7 +264,20 @@ class EvidenceBundleCheckTest(unittest.TestCase):
         )
         self.assertIn("provenance.intoto.json: builder id must be present", evidence["problems"])
         self.assertIn("provenance.intoto.json: metadata invocationId must be present", evidence["problems"])
-        self.assertIn("provenance.intoto.json: tools/provenance.py byproduct sha256 mismatch", evidence["problems"])
+        self.assertIn(f"provenance.intoto.json: {bad_byproduct} byproduct sha256 mismatch", evidence["problems"])
+
+    def test_rejects_missing_provenance_byproduct(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "provenance.intoto.json").read_text(encoding="utf-8"))
+            provenance["predicate"]["runDetails"]["byproducts"] = [
+                item for item in provenance["predicate"]["runDetails"]["byproducts"] if item["name"] != "tools/sbom.py"
+            ]
+            write_json(bundle / "provenance.intoto.json", provenance)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("provenance.intoto.json: missing required byproduct: tools/sbom.py", evidence["problems"])
 
     def test_rejects_missing_provenance_dependency_commit(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:

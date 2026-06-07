@@ -15,6 +15,23 @@ ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_URL = "https://github.com/dhimasardinata/arc"
 STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 PREDICATE_TYPE = "https://slsa.dev/provenance/v1"
+EVIDENCE_TOOLCHAIN = (
+    "tools/source-manifest.py",
+    "tools/third-party-manifest-check.py",
+    "tools/safety-case-check.py",
+    "tools/release-evidence.py",
+    "tools/workflow-pins-check.py",
+    "tools/workflow-policy-check.py",
+    "tools/evidence-workflow-check.py",
+    "tools/dependabot-policy-check.py",
+    "tools/npm-lock-check.py",
+    "tools/license-policy-check.py",
+    "tools/secret-scan-check.py",
+    "tools/sbom.py",
+    "tools/provenance.py",
+    "tools/evidence-index.py",
+    "tools/evidence-bundle-check.py",
+)
 
 
 def git(args: list[str], root: Path) -> str | None:
@@ -57,6 +74,18 @@ def subject(path: Path, root: Path) -> tuple[dict[str, Any] | None, str | None]:
     }, None
 
 
+def byproduct(path_text: str, root: Path) -> tuple[dict[str, Any] | None, str | None]:
+    path = root / path_text
+    if not path.is_file():
+        return None, f"missing byproduct file: {path_text}"
+    return {
+        "name": path_text,
+        "digest": {
+            "sha256": sha256(path),
+        },
+    }, None
+
+
 def env_map(keys: list[str]) -> dict[str, str]:
     return {key: value for key in keys if (value := os.environ.get(key))}
 
@@ -94,6 +123,7 @@ def collect(root: Path, subjects: list[Path]) -> tuple[dict[str, Any], list[str]
     commit_time = git(["show", "-s", "--format=%cI", "HEAD"], root) or "1970-01-01T00:00:00Z"
     branch = git(["rev-parse", "--abbrev-ref", "HEAD"], root)
     statement_subjects: list[dict[str, Any]] = []
+    tool_byproducts: list[dict[str, Any]] = []
     problems: list[str] = []
 
     for path in subjects:
@@ -103,6 +133,14 @@ def collect(root: Path, subjects: list[Path]) -> tuple[dict[str, Any], list[str]
             continue
         assert record is not None
         statement_subjects.append(record)
+
+    for path_text in EVIDENCE_TOOLCHAIN:
+        record, problem = byproduct(path_text, root)
+        if problem is not None:
+            problems.append(problem)
+            continue
+        assert record is not None
+        tool_byproducts.append(record)
 
     if not statement_subjects:
         problems.append("at least one provenance subject file is required")
@@ -154,14 +192,7 @@ def collect(root: Path, subjects: list[Path]) -> tuple[dict[str, Any], list[str]
                 "startedOn": commit_time,
                 "finishedOn": commit_time,
             },
-            "byproducts": [
-                {
-                    "name": "tools/provenance.py",
-                    "digest": {
-                        "sha256": sha256(ROOT / "tools" / "provenance.py"),
-                    },
-                }
-            ],
+            "byproducts": tool_byproducts,
         },
     }
     statement = {
@@ -172,6 +203,7 @@ def collect(root: Path, subjects: list[Path]) -> tuple[dict[str, Any], list[str]
     }
     stats = {
         "subject_count": len(statement_subjects),
+        "byproduct_count": len(tool_byproducts),
         "problem_count": len(problems),
         "commit": commit,
         "builder": predicate["runDetails"]["builder"]["id"],
@@ -185,6 +217,7 @@ def report_text(stats: dict[str, Any], problems: list[str]) -> str:
         f"- commit: {stats['commit']}",
         f"- builder: {stats['builder']}",
         f"- subjects: {stats['subject_count']}",
+        f"- byproducts: {stats['byproduct_count']}",
         f"- problems: {stats['problem_count']}",
     ]
     if problems:

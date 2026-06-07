@@ -93,14 +93,15 @@ publishes release evidence. It is a leak guard, not a substitute for private
 vulnerability reporting or product key custody review.
 
 `tools/provenance.py --format json` emits in-toto/SLSA provenance over the
-evidence subjects that CI publishes. It records the Arc commit, GitHub Actions
-context when present, and SHA-256 digests for the evidence files so a release
-review can trace an artifact bundle back to source without trusting artifact
-names alone.
+evidence subjects and evidence-toolchain byproducts that CI publishes. It
+records the Arc commit, GitHub Actions context when present, and SHA-256 digests
+for the evidence files and generator tools so a release review can trace an
+artifact bundle back to source without trusting artifact names alone.
 
 `tools/evidence-bundle-check.py .arc-artifacts` verifies that the evidence index
-hashes, provenance subjects, SBOM commit, release metadata, and source manifest
-all agree before CI uploads the repository evidence bundle.
+hashes, provenance subjects, provenance byproducts, SBOM commit, release
+metadata, and source manifest all agree before CI uploads the repository
+evidence bundle.
 
 `tools/evidence-workflow-check.py --format json` verifies that the build
 workflow keeps every repository evidence file generated, included in provenance,

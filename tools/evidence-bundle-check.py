@@ -30,6 +30,23 @@ EXPECTED_INDEXED = (
     PROVENANCE_NAME,
 )
 EXPECTED_PROVENANCE_SUBJECTS = tuple(name for name in EXPECTED_INDEXED if name != PROVENANCE_NAME)
+EXPECTED_PROVENANCE_BYPRODUCTS = (
+    "tools/source-manifest.py",
+    "tools/third-party-manifest-check.py",
+    "tools/safety-case-check.py",
+    "tools/release-evidence.py",
+    "tools/workflow-pins-check.py",
+    "tools/workflow-policy-check.py",
+    "tools/evidence-workflow-check.py",
+    "tools/dependabot-policy-check.py",
+    "tools/npm-lock-check.py",
+    "tools/license-policy-check.py",
+    "tools/secret-scan-check.py",
+    "tools/sbom.py",
+    "tools/provenance.py",
+    "tools/evidence-index.py",
+    "tools/evidence-bundle-check.py",
+)
 
 
 def sha256(path: Path) -> str:
@@ -192,17 +209,44 @@ def provenance_dependency_commit(provenance: dict[str, Any]) -> str | None:
     return None
 
 
-def provenance_byproduct_sha(provenance: dict[str, Any], name: str) -> str | None:
+def byproduct_records(provenance: dict[str, Any], problems: list[str]) -> dict[str, dict[str, Any]]:
     byproducts = provenance.get("predicate", {}).get("runDetails", {}).get("byproducts")
     if not isinstance(byproducts, list):
-        return None
+        problems.append("provenance.intoto.json: byproducts must be a list")
+        return {}
+    records: dict[str, dict[str, Any]] = {}
     for item in byproducts:
-        if isinstance(item, dict) and item.get("name") == name:
-            digest = item.get("digest")
-            if isinstance(digest, dict):
-                value = digest.get("sha256")
-                return value if isinstance(value, str) else None
-    return None
+        if not isinstance(item, dict):
+            problems.append("provenance.intoto.json: byproduct record must be an object")
+            continue
+        name = item.get("name")
+        digest = item.get("digest")
+        if not isinstance(name, str) or not isinstance(digest, dict):
+            problems.append("provenance.intoto.json: byproduct must include name and digest")
+            continue
+        if name in records:
+            problems.append(f"provenance.intoto.json: duplicate byproduct: {name}")
+            continue
+        records[name] = item
+        resolved = (ROOT / name).resolve()
+        try:
+            resolved.relative_to(ROOT)
+        except ValueError:
+            problems.append(f"provenance.intoto.json: {name} byproduct path must stay inside repository")
+            continue
+        if not resolved.is_file():
+            problems.append(f"provenance.intoto.json: byproduct file missing on disk: {name}")
+            continue
+        if digest.get("sha256") != sha256(resolved):
+            problems.append(f"provenance.intoto.json: {name} byproduct sha256 mismatch")
+
+    missing = sorted(set(EXPECTED_PROVENANCE_BYPRODUCTS).difference(records))
+    for name in missing:
+        problems.append(f"provenance.intoto.json: missing required byproduct: {name}")
+    extra = sorted(set(records).difference(EXPECTED_PROVENANCE_BYPRODUCTS))
+    for name in extra:
+        problems.append(f"provenance.intoto.json: unexpected byproduct: {name}")
+    return records
 
 
 def check_provenance_predicate(provenance: dict[str, Any], problems: list[str]) -> None:
@@ -244,10 +288,6 @@ def check_provenance_predicate(provenance: dict[str, Any], problems: list[str]) 
     for field in ("invocationId", "startedOn", "finishedOn"):
         if not isinstance(metadata.get(field), str) or not metadata[field]:
             problems.append(f"provenance.intoto.json: metadata {field} must be present")
-
-    expected_tool_sha = sha256(ROOT / "tools" / "provenance.py")
-    if provenance_byproduct_sha(provenance, "tools/provenance.py") != expected_tool_sha:
-        problems.append("provenance.intoto.json: tools/provenance.py byproduct sha256 mismatch")
 
 
 def check_commit_coherence(
@@ -378,6 +418,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
             "commit": None,
             "indexed_count": 0,
             "provenance_subject_count": 0,
+            "provenance_byproduct_count": 0,
             "release_command_count": 0,
             "ok": False,
             "problems": problems,
@@ -399,6 +440,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
 
     indexed = indexed_records(index, artifact_dir, problems) if index else {}
     subjects = subject_records(provenance, artifact_dir, problems) if provenance else {}
+    byproducts = byproduct_records(provenance, problems) if provenance else {}
     if provenance:
         check_provenance_predicate(provenance, problems)
     commit = check_commit_coherence(index, provenance, source, release, sbom, problems) if index else None
@@ -416,6 +458,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
         "commit": commit,
         "indexed_count": len(indexed),
         "provenance_subject_count": len(subjects),
+        "provenance_byproduct_count": len(byproducts),
         "release_command_count": release_command_count,
         "ok": not problems,
         "problems": problems,
@@ -429,6 +472,7 @@ def report_text(evidence: dict[str, Any]) -> str:
         f"- commit: {evidence['commit']}",
         f"- indexed files: {evidence['indexed_count']}",
         f"- provenance subjects: {evidence['provenance_subject_count']}",
+        f"- provenance byproducts: {evidence['provenance_byproduct_count']}",
         f"- release commands: {evidence['release_command_count']}",
         f"- problems: {len(evidence['problems'])}",
     ]

@@ -57,7 +57,7 @@ for firmware, security, safety, or licensing claims.
   evidence or source-visible artifacts
 - `./tools/provenance.py --format json <artifact...>` before publishing an
   evidence or firmware bundle that needs in-toto/SLSA provenance for hashed
-  subjects
+  subjects and evidence-toolchain byproducts
 - `npm run docs:build` when docs or docs-site configuration changed
 - `./tools/third-party-manifest-check.py --format json` before relying on
   third-party notice coverage
