@@ -302,6 +302,21 @@ def check_commit_coherence(
     return commit
 
 
+def check_branch_coherence(index: dict[str, Any], manifest: dict[str, Any], problems: list[str]) -> str | None:
+    branch = index.get("branch")
+    values = {
+        INDEX_NAME: branch,
+        MANIFEST_NAME: manifest.get("branch"),
+    }
+    if not isinstance(branch, str) or not branch:
+        problems.append(f"{INDEX_NAME}: branch must be present")
+        return None
+    for name, value in values.items():
+        if value != branch:
+            problems.append(f"{name}: branch must match {INDEX_NAME} branch")
+    return branch
+
+
 def check_manifest_artifacts(manifest: dict[str, Any], problems: list[str]) -> int:
     if manifest.get("ok") is not True:
         problems.append(f"{MANIFEST_NAME}: ok must be true")
@@ -355,6 +370,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
         return {
             "artifact_dir": str(requested_dir),
             "commit": None,
+            "branch": None,
             "indexed_count": 0,
             "provenance_subject_count": 0,
             "provenance_byproduct_count": 0,
@@ -379,10 +395,12 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
         check_provenance_predicate(provenance, problems)
     firmware_artifact_count = check_manifest_artifacts(manifest, problems) if manifest else 0
     commit = check_commit_coherence(index, manifest, provenance, problems) if index else None
+    branch = check_branch_coherence(index, manifest, problems) if index else None
 
     return {
         "artifact_dir": str(artifact_dir),
         "commit": commit,
+        "branch": branch,
         "indexed_count": len(indexed),
         "provenance_subject_count": len(subjects),
         "provenance_byproduct_count": len(byproducts),
@@ -397,6 +415,7 @@ def report_text(evidence: dict[str, Any]) -> str:
         "arc firmware evidence check",
         f"- artifact dir: {evidence['artifact_dir']}",
         f"- commit: {evidence['commit']}",
+        f"- branch: {evidence['branch']}",
         f"- indexed files: {evidence['indexed_count']}",
         f"- provenance subjects: {evidence['provenance_subject_count']}",
         f"- provenance byproducts: {evidence['provenance_byproduct_count']}",

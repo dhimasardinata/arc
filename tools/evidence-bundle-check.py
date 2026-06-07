@@ -464,6 +464,24 @@ def check_commit_coherence(
     return commit
 
 
+def check_branch_coherence(
+    index: dict[str, Any], source: dict[str, Any], release: dict[str, Any], problems: list[str]
+) -> str | None:
+    branch = index.get("branch")
+    values = {
+        "evidence-index.json": branch,
+        "source-manifest.json": source.get("branch"),
+        "release-evidence.json": release.get("branch"),
+    }
+    if not isinstance(branch, str) or not branch:
+        problems.append("evidence-index.json: branch must be present")
+        return None
+    for name, value in values.items():
+        if value != branch:
+            problems.append(f"{name}: branch must match evidence-index branch")
+    return branch
+
+
 def command_record_path(item: dict[str, Any], command: str, label: str, problems: list[str]) -> Path | None:
     path_text = item.get("path")
     if not isinstance(path_text, str) or not path_text:
@@ -561,6 +579,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
         return {
             "artifact_dir": str(requested_dir),
             "commit": None,
+            "branch": None,
             "indexed_count": 0,
             "source_file_count": 0,
             "provenance_subject_count": 0,
@@ -591,6 +610,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
     if provenance:
         check_provenance_predicate(provenance, problems)
     commit = check_commit_coherence(index, provenance, source, release, sbom, problems) if index else None
+    branch = check_branch_coherence(index, source, release, problems) if index else None
     release_command_count = check_release_commands(release, problems) if release else 0
 
     if source.get("dirty") is not False:
@@ -603,6 +623,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
     return {
         "artifact_dir": str(artifact_dir),
         "commit": commit,
+        "branch": branch,
         "indexed_count": len(indexed),
         "source_file_count": source_file_count,
         "provenance_subject_count": len(subjects),
@@ -618,6 +639,7 @@ def report_text(evidence: dict[str, Any]) -> str:
         "arc evidence bundle check",
         f"- artifact dir: {evidence['artifact_dir']}",
         f"- commit: {evidence['commit']}",
+        f"- branch: {evidence['branch']}",
         f"- indexed files: {evidence['indexed_count']}",
         f"- source files: {evidence['source_file_count']}",
         f"- provenance subjects: {evidence['provenance_subject_count']}",

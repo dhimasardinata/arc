@@ -82,6 +82,7 @@ def release_payload(commit: str, release_commit: str | None = None) -> dict[str,
     ]
     return {
         "commit": release_commit or commit,
+        "branch": "main",
         "dirty": False,
         "ok": True,
         "problems": [],
@@ -195,6 +196,7 @@ def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | Non
         base / "evidence-index.json",
         {
             "commit": commit,
+            "branch": "main",
             "ok": True,
             "file_count": len(records),
             "problems": [],
@@ -249,6 +251,17 @@ class EvidenceBundleCheckTest(unittest.TestCase):
 
         self.assertFalse(evidence["ok"])
         self.assertIn("release-evidence.json: commit must match evidence-index commit", evidence["problems"])
+
+    def test_rejects_branch_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            release = json.loads((bundle / "release-evidence.json").read_text(encoding="utf-8"))
+            release["branch"] = "release"
+            write_json(bundle / "release-evidence.json", release)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("release-evidence.json: branch must match evidence-index branch", evidence["problems"])
 
     def test_rejects_index_file_count_mismatch(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:

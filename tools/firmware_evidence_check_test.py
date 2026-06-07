@@ -233,6 +233,19 @@ class FirmwareEvidenceCheckTest(unittest.TestCase):
         self.assertIn("firmware-evidence-index.json: file_count must match files length", evidence["problems"])
         self.assertIn("firmware-manifest.json: artifact_count must match artifacts length", evidence["problems"])
 
+    def test_rejects_branch_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            manifest = json.loads((bundle / "firmware-manifest.json").read_text(encoding="utf-8"))
+            manifest["branch"] = "release"
+            write_json(bundle / "firmware-manifest.json", manifest)
+            evidence = firmware_evidence_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware-manifest.json: branch must match firmware-evidence-index.json branch", evidence["problems"]
+        )
+
     def test_rejects_index_size_mismatch(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             bundle = make_bundle(Path(tmp))

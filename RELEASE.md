@@ -123,6 +123,7 @@ workflow action pin evidence, workflow policy evidence, npm lockfile evidence,
 evidence workflow contract evidence, Dependabot policy evidence, license policy
 evidence, secret-scan evidence, SPDX SBOM evidence, and in-toto provenance
 evidence. The repository bundle check validates the source manifest file
-inventory, source tree digest, evidence index, and provenance before upload.
+inventory, source tree digest, evidence index, provenance, and commit/branch
+identity before upload.
 Firmware builds also upload `arc-binaries` with the firmware artifact manifest,
 firmware provenance, and validated firmware evidence index beside the binaries.
