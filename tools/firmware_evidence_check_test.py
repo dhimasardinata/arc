@@ -278,6 +278,17 @@ class FirmwareEvidenceCheckTest(unittest.TestCase):
             "firmware-manifest.json: branch must match firmware-evidence-index.json branch", evidence["problems"]
         )
 
+    def test_rejects_malformed_commit_identity(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp), commit="not-a-full-git-sha")
+            evidence = firmware_evidence_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware-evidence-index.json: commit must be a full lowercase 40-character hex git commit",
+            evidence["problems"],
+        )
+
     def test_rejects_provenance_branch_mismatch(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             bundle = make_bundle(Path(tmp))

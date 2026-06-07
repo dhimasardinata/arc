@@ -257,6 +257,17 @@ class EvidenceBundleCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn("release-evidence.json: commit must match evidence-index commit", evidence["problems"])
 
+    def test_rejects_malformed_commit_identity(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp), commit="not-a-full-git-sha")
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "evidence-index.json: commit must be a full lowercase 40-character hex git commit",
+            evidence["problems"],
+        )
+
     def test_rejects_branch_mismatch(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             bundle = make_bundle(Path(tmp))

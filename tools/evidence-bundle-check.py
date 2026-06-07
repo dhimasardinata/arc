@@ -344,6 +344,10 @@ def commit_from_sbom(sbom: dict[str, Any]) -> str | None:
     return None
 
 
+def is_git_commit(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 40 and all(char in "0123456789abcdef" for char in value)
+
+
 def provenance_source_dependency(provenance: dict[str, Any]) -> dict[str, Any] | None:
     dependencies = provenance.get("predicate", {}).get("buildDefinition", {}).get("resolvedDependencies")
     if not isinstance(dependencies, list):
@@ -508,6 +512,8 @@ def check_commit_coherence(
     if not isinstance(commit, str) or not commit:
         problems.append("evidence-index.json: commit must be present")
         return None
+    if not is_git_commit(commit):
+        problems.append("evidence-index.json: commit must be a full lowercase 40-character hex git commit")
     for name, value in values.items():
         if value != commit:
             problems.append(f"{name}: commit must match evidence-index commit")
