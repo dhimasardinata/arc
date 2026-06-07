@@ -189,6 +189,8 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn(".arc-artifacts/firmware-evidence-index.json", workflow)
         self.assertIn("--output .arc-artifacts/firmware-manifest.json", workflow)
         self.assertIn(".arc-artifacts/firmware-manifest.json", workflow)
+        self.assertIn("--output .arc-artifacts/firmware-provenance.intoto.json", workflow)
+        self.assertIn(".arc-artifacts/firmware-provenance.intoto.json", workflow)
         self.assertIn("if-no-files-found: error", workflow)
         self.assertIn("retention-days: 30", workflow)
 

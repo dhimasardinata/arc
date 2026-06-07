@@ -74,6 +74,8 @@ For firmware-facing releases, capture:
 - root `idf.py build` result;
 - at least one relevant `idf.py -C examples/... build` result;
 - firmware artifact manifest with SHA-256 for each `.bin` and `.elf`;
+- firmware provenance tying the firmware manifest to the release commit and
+  evidence toolchain;
 - serial logs, benchmark output, HIL artifact, or reason runtime evidence is not
   applicable;
 - target chip, board, partitions, sdkconfig defaults, and external fixtures.
@@ -116,5 +118,5 @@ workflow action pin evidence, workflow policy evidence, npm lockfile evidence,
 evidence workflow contract evidence, Dependabot policy evidence, license policy
 evidence, secret-scan evidence, SPDX SBOM evidence, and in-toto provenance
 evidence.
-Firmware builds also upload `arc-binaries` with the firmware artifact manifest
-and its validated evidence index beside the binaries.
+Firmware builds also upload `arc-binaries` with the firmware artifact manifest,
+firmware provenance, and validated firmware evidence index beside the binaries.

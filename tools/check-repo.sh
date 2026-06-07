@@ -579,6 +579,9 @@ fi
 if ! grep -qF '.arc-artifacts/firmware-manifest.json' .github/workflows/build.yml; then
     die "build workflow must upload the firmware artifact manifest with binaries"
 fi
+if ! grep -qF '.arc-artifacts/firmware-provenance.intoto.json' .github/workflows/build.yml; then
+    die "build workflow must upload firmware provenance with binaries"
+fi
 if ! grep -qF '.arc-artifacts/firmware-evidence-index.json' .github/workflows/build.yml; then
     die "build workflow must upload the firmware evidence index with binaries"
 fi

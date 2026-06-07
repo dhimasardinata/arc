@@ -108,8 +108,8 @@ workflow keeps every repository evidence file generated, included in provenance,
 required by the index, checked as a bundle, and only then uploaded with explicit
 retention; CI publishes that contract result as `evidence-workflow.json` beside
 the other repository evidence files. It also checks that firmware binary uploads
-include the firmware manifest and firmware evidence index under the same strict
-ordering, missing-file, and retention policy.
+include the firmware manifest, firmware provenance, and firmware evidence index
+under the same strict ordering, missing-file, and retention policy.
 
 ## What Still Needs Human Review
 

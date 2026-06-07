@@ -33,10 +33,12 @@ EXPECTED_PROVENANCE_SUBJECTS = BASE_EVIDENCE
 EXPECTED_INDEXED = (*BASE_EVIDENCE, PROVENANCE)
 EXPECTED_UPLOADED = (INDEX, *BASE_EVIDENCE, PROVENANCE)
 FIRMWARE_MANIFEST = "firmware-manifest.json"
+FIRMWARE_PROVENANCE = "firmware-provenance.intoto.json"
 FIRMWARE_INDEX = "firmware-evidence-index.json"
-EXPECTED_FIRMWARE_GENERATED = (FIRMWARE_MANIFEST, FIRMWARE_INDEX)
-EXPECTED_FIRMWARE_INDEXED = (FIRMWARE_MANIFEST,)
-EXPECTED_FIRMWARE_UPLOADED = (FIRMWARE_INDEX, FIRMWARE_MANIFEST)
+EXPECTED_FIRMWARE_GENERATED = (FIRMWARE_MANIFEST, FIRMWARE_PROVENANCE, FIRMWARE_INDEX)
+EXPECTED_FIRMWARE_PROVENANCE_SUBJECTS = (FIRMWARE_MANIFEST,)
+EXPECTED_FIRMWARE_INDEXED = (FIRMWARE_MANIFEST, FIRMWARE_PROVENANCE)
+EXPECTED_FIRMWARE_UPLOADED = (FIRMWARE_INDEX, FIRMWARE_MANIFEST, FIRMWARE_PROVENANCE)
 EXPECTED_FIRMWARE_BINARY_PATTERNS = (
     "build/*.bin",
     "build/*.elf",
@@ -212,6 +214,7 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
     indexed = index_inputs(repository_step)
     uploaded = artifact_refs(upload_step.lines if upload_step else [])
     firmware_generated = output_artifacts(firmware_step.lines if firmware_step else [])
+    firmware_subjects = provenance_subjects(firmware_step)
     firmware_required = index_requirements(firmware_step)
     firmware_indexed = index_inputs(firmware_step)
     firmware_uploaded = artifact_refs(firmware_upload_step.lines if firmware_upload_step else [])
@@ -223,6 +226,12 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
     compare_artifacts("repository evidence index inputs", indexed, EXPECTED_INDEXED, problems)
     compare_artifacts("repository evidence upload paths", uploaded, EXPECTED_UPLOADED, problems)
     compare_artifacts("firmware evidence generated outputs", firmware_generated, EXPECTED_FIRMWARE_GENERATED, problems)
+    compare_artifacts(
+        "firmware evidence provenance subjects",
+        firmware_subjects,
+        EXPECTED_FIRMWARE_PROVENANCE_SUBJECTS,
+        problems,
+    )
     compare_artifacts("firmware evidence index requirements", firmware_required, EXPECTED_FIRMWARE_INDEXED, problems)
     compare_artifacts("firmware evidence index inputs", firmware_indexed, EXPECTED_FIRMWARE_INDEXED, problems)
     compare_artifacts("firmware evidence upload paths", firmware_uploaded, EXPECTED_FIRMWARE_UPLOADED, problems)
@@ -250,10 +259,15 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
     if firmware_step is not None:
         index_line = line_index(firmware_step.lines, "./tools/evidence-index.py")
         manifest_line = line_index(firmware_step.lines, "./tools/firmware-manifest.py")
+        provenance_line = line_index(firmware_step.lines, "./tools/provenance.py")
         if manifest_line is None:
             problems.append("firmware evidence manifest: missing firmware-manifest invocation")
-        elif index_line is None or index_line <= manifest_line:
-            problems.append("firmware evidence index: must run after firmware-manifest generation")
+        if provenance_line is None:
+            problems.append("firmware evidence provenance: missing provenance invocation")
+        elif manifest_line is None or provenance_line <= manifest_line:
+            problems.append("firmware evidence provenance: must run after firmware-manifest generation")
+        if index_line is None or provenance_line is None or index_line <= provenance_line:
+            problems.append("firmware evidence index: must run after firmware provenance generation")
     if firmware_upload_step is not None:
         upload_text = "\n".join(firmware_upload_step.lines)
         if "if: steps.firmware-plan.outputs.count != '0'" not in upload_text:
@@ -280,6 +294,7 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
         "expected_indexed": list(EXPECTED_INDEXED),
         "expected_uploaded": list(EXPECTED_UPLOADED),
         "expected_firmware_generated": list(EXPECTED_FIRMWARE_GENERATED),
+        "expected_firmware_provenance_subjects": list(EXPECTED_FIRMWARE_PROVENANCE_SUBJECTS),
         "expected_firmware_indexed": list(EXPECTED_FIRMWARE_INDEXED),
         "expected_firmware_uploaded": list(EXPECTED_FIRMWARE_UPLOADED),
         "expected_firmware_binary_patterns": list(EXPECTED_FIRMWARE_BINARY_PATTERNS),
@@ -289,6 +304,7 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
         "index_inputs": indexed,
         "uploaded": uploaded,
         "firmware_generated": firmware_generated,
+        "firmware_provenance_subjects": firmware_subjects,
         "firmware_index_requirements": firmware_required,
         "firmware_index_inputs": firmware_indexed,
         "firmware_uploaded": firmware_uploaded,
@@ -308,6 +324,7 @@ def report_text(evidence: dict[str, Any]) -> str:
         f"- index inputs: {len(evidence.get('index_inputs', []))}",
         f"- uploaded: {len(evidence.get('uploaded', []))}",
         f"- firmware generated: {len(evidence.get('firmware_generated', []))}",
+        f"- firmware provenance subjects: {len(evidence.get('firmware_provenance_subjects', []))}",
         f"- firmware uploaded: {len(evidence.get('firmware_uploaded', []))}",
         f"- firmware binary patterns: {len(evidence.get('firmware_binary_patterns', []))}",
     ]

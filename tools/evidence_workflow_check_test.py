@@ -114,9 +114,13 @@ def workflow_body() -> str:
             shell: bash
             run: |
               ./tools/firmware-manifest.py --format json --require-artifacts --output .arc-artifacts/firmware-manifest.json
+              ./tools/provenance.py --format json --output .arc-artifacts/firmware-provenance.intoto.json \\
+                .arc-artifacts/firmware-manifest.json
               ./tools/evidence-index.py --format json --output .arc-artifacts/firmware-evidence-index.json \\
                 --require .arc-artifacts/firmware-manifest.json \\
-                .arc-artifacts/firmware-manifest.json
+                --require .arc-artifacts/firmware-provenance.intoto.json \\
+                .arc-artifacts/firmware-manifest.json \\
+                .arc-artifacts/firmware-provenance.intoto.json
 
           - name: Upload binaries
             if: steps.firmware-plan.outputs.count != '0'
@@ -130,6 +134,7 @@ def workflow_body() -> str:
                 examples/**/build/*.elf
                 .arc-artifacts/firmware-evidence-index.json
                 .arc-artifacts/firmware-manifest.json
+                .arc-artifacts/firmware-provenance.intoto.json
               if-no-files-found: error
               include-hidden-files: true
               retention-days: 30
@@ -167,6 +172,10 @@ class EvidenceWorkflowCheckTest(unittest.TestCase):
         self.assertEqual(evidence["generated"], list(evidence_workflow_check.EXPECTED_GENERATED))
         self.assertEqual(evidence["uploaded"], list(evidence_workflow_check.EXPECTED_UPLOADED))
         self.assertEqual(evidence["firmware_generated"], list(evidence_workflow_check.EXPECTED_FIRMWARE_GENERATED))
+        self.assertEqual(
+            evidence["firmware_provenance_subjects"],
+            list(evidence_workflow_check.EXPECTED_FIRMWARE_PROVENANCE_SUBJECTS),
+        )
         self.assertEqual(evidence["firmware_uploaded"], list(evidence_workflow_check.EXPECTED_FIRMWARE_UPLOADED))
         self.assertEqual(
             evidence["firmware_binary_patterns"],
@@ -279,8 +288,9 @@ class EvidenceWorkflowCheckTest(unittest.TestCase):
             write_workflow(
                 root,
                 workflow_body().replace(
-                    "                .arc-artifacts/firmware-manifest.json\n              if-no-files-found: error\n",
-                    "              if-no-files-found: error\n",
+                    "                .arc-artifacts/firmware-manifest.json\n"
+                    "                .arc-artifacts/firmware-provenance.intoto.json\n",
+                    "                .arc-artifacts/firmware-provenance.intoto.json\n",
                     1,
                 ),
             )
@@ -290,6 +300,22 @@ class EvidenceWorkflowCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn(
             "firmware evidence upload paths: missing required artifact: firmware-manifest.json",
+            evidence["problems"],
+        )
+
+    def test_rejects_missing_firmware_provenance_subject(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                workflow_body().replace("                .arc-artifacts/firmware-manifest.json\n", "", 1),
+            )
+
+            evidence = evidence_workflow_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware evidence provenance subjects: missing required artifact: firmware-manifest.json",
             evidence["problems"],
         )
 

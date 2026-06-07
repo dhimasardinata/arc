@@ -406,9 +406,13 @@ jobs:
         run: |
           set -euo pipefail
           ./tools/firmware-manifest.py --format json --require-artifacts --output .arc-artifacts/firmware-manifest.json
+          ./tools/provenance.py --format json --output .arc-artifacts/firmware-provenance.intoto.json \
+            .arc-artifacts/firmware-manifest.json
           ./tools/evidence-index.py --format json --output .arc-artifacts/firmware-evidence-index.json \
             --require .arc-artifacts/firmware-manifest.json \
-            .arc-artifacts/firmware-manifest.json
+            --require .arc-artifacts/firmware-provenance.intoto.json \
+            .arc-artifacts/firmware-manifest.json \
+            .arc-artifacts/firmware-provenance.intoto.json
 
       - name: Validate clangd database
         if: steps.firmware-plan.outputs.count != '0'
@@ -448,6 +452,7 @@ jobs:
             examples/**/build/*.elf
             .arc-artifacts/firmware-evidence-index.json
             .arc-artifacts/firmware-manifest.json
+            .arc-artifacts/firmware-provenance.intoto.json
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 30
