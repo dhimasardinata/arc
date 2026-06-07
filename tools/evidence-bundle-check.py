@@ -168,6 +168,8 @@ def indexed_records(index: dict[str, Any], artifact_dir: Path, problems: list[st
         if not full.is_file():
             problems.append(f"evidence-index.json: indexed file missing on disk: {name}")
             continue
+        if item.get("size") != full.stat().st_size:
+            problems.append(f"evidence-index.json: {name} size mismatch")
         expected_sha = item.get("sha256")
         actual_sha = sha256(full)
         if expected_sha != actual_sha:

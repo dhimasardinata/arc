@@ -33,13 +33,13 @@ or distributing Arc-derived artifacts.
   hashes, and repo-local executable tool, source command, and npm script
   reference checks with SHA-256 digests before tagging or publishing a release
   artifact.
-- `tools/evidence-index.py --format json` hashes generated evidence files and
-  rejects outside-repository paths, malformed JSON, `ok: false`, or non-empty
-  `problems` payloads before an evidence bundle is published.
+- `tools/evidence-index.py --format json` records generated evidence file sizes
+  and hashes, and rejects outside-repository paths, malformed JSON, `ok: false`,
+  or non-empty `problems` payloads before an evidence bundle is published.
 - `tools/evidence-bundle-check.py .arc-artifacts` verifies that the evidence
-  index, source manifest inventory, source tree digest, provenance subjects,
-  SLSA predicate metadata, artifact hashes, release command checks, and commit
-  identities agree before CI uploads the bundle.
+  index sizes and hashes, source manifest inventory, source tree digest,
+  provenance subjects, SLSA predicate metadata, artifact hashes, release command
+  checks, and commit identities agree before CI uploads the bundle.
 - `tools/evidence-workflow-check.py --format json` verifies that the build
   workflow generates, indexes, signs, checks, and uploads the complete
   repository evidence contract and firmware artifact evidence.

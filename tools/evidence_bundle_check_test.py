@@ -261,6 +261,18 @@ class EvidenceBundleCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn("evidence-index.json: file_count must match files length", evidence["problems"])
 
+    def test_rejects_index_size_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            index = json.loads((bundle / "evidence-index.json").read_text(encoding="utf-8"))
+            index["files"][0]["size"] = 99
+            name = Path(index["files"][0]["path"]).name
+            write_json(bundle / "evidence-index.json", index)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(f"evidence-index.json: {name} size mismatch", evidence["problems"])
+
     def test_rejects_source_manifest_record_drift(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             bundle = make_bundle(Path(tmp))

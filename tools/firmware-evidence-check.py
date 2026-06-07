@@ -125,6 +125,8 @@ def indexed_records(index: dict[str, Any], artifact_dir: Path, problems: list[st
         if not full.is_file():
             problems.append(f"{INDEX_NAME}: indexed file missing on disk: {name}")
             continue
+        if item.get("size") != full.stat().st_size:
+            problems.append(f"{INDEX_NAME}: {name} size mismatch")
         if item.get("sha256") != sha256(full):
             problems.append(f"{INDEX_NAME}: {name} sha256 mismatch")
         state = item.get("json")

@@ -99,9 +99,9 @@ for the evidence files and generator tools so a release review can trace an
 artifact bundle back to source without trusting artifact names alone.
 
 `tools/evidence-bundle-check.py .arc-artifacts` verifies that the evidence index
-hashes, source manifest file inventory, source tree digest, provenance subjects,
-provenance byproducts, SBOM commit, and release metadata all agree before CI
-uploads the repository evidence bundle.
+sizes and hashes, source manifest file inventory, source tree digest,
+provenance subjects, provenance byproducts, SBOM commit, and release metadata
+all agree before CI uploads the repository evidence bundle.
 
 `tools/evidence-workflow-check.py --format json` verifies that the build
 workflow keeps every repository evidence file generated, included in provenance,
