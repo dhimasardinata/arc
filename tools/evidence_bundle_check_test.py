@@ -38,6 +38,41 @@ def file_record(path: Path) -> dict[str, object]:
     }
 
 
+def source_payload(commit: str) -> dict[str, object]:
+    output = subprocess.check_output(["git", "ls-files", "--stage", "-z"], cwd=ROOT)
+    records: list[dict[str, object]] = []
+    for raw in output.split(b"\0"):
+        if not raw:
+            continue
+        meta, _, path = raw.partition(b"\t")
+        parts = meta.decode().split()
+        path_text = path.decode()
+        if parts[0] not in evidence_bundle_check.REGULAR_FILE_MODES:
+            continue
+        source_path = ROOT / path_text
+        records.append(
+            {
+                "path": path_text,
+                "mode": parts[0],
+                "git_object": parts[1],
+                "size": source_path.stat().st_size,
+                "sha256": evidence_bundle_check.sha256(source_path),
+            }
+        )
+    records.sort(key=lambda item: str(item["path"]))
+    return {
+        "commit": commit,
+        "branch": "main",
+        "dirty": False,
+        "status": [],
+        "file_count": len(records),
+        "tree_sha256": evidence_bundle_check.source_tree_sha256(records),
+        "files": records,
+        "ok": True,
+        "problems": [],
+    }
+
+
 def release_payload(commit: str, release_commit: str | None = None) -> dict[str, object]:
     commands = [
         "./tools/check-repo.sh",
@@ -88,7 +123,7 @@ def release_payload(commit: str, release_commit: str | None = None) -> dict[str,
 def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | None = None) -> Path:
     base.mkdir(parents=True, exist_ok=True)
     payloads: dict[str, object] = {
-        "source-manifest.json": {"commit": commit, "dirty": False, "ok": True, "problems": []},
+        "source-manifest.json": source_payload(commit),
         "third-party-manifest.json": {"ok": True, "problems": []},
         "safety-case.json": {"ok": True, "problems": []},
         "release-evidence.json": release_payload(commit, release_commit),
@@ -161,6 +196,7 @@ def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | Non
         {
             "commit": commit,
             "ok": True,
+            "file_count": len(records),
             "problems": [],
             "files": records,
         },
@@ -176,6 +212,7 @@ class EvidenceBundleCheckTest(unittest.TestCase):
 
         self.assertTrue(evidence["ok"], evidence["problems"])
         self.assertEqual(evidence["indexed_count"], len(evidence_bundle_check.EXPECTED_INDEXED))
+        self.assertEqual(evidence["source_file_count"], len(evidence_bundle_check.git_tracked_regular_files([])))
         self.assertEqual(evidence["provenance_subject_count"], len(evidence_bundle_check.EXPECTED_PROVENANCE_SUBJECTS))
         self.assertEqual(
             evidence["provenance_byproduct_count"], len(evidence_bundle_check.EXPECTED_PROVENANCE_BYPRODUCTS)
@@ -212,6 +249,61 @@ class EvidenceBundleCheckTest(unittest.TestCase):
 
         self.assertFalse(evidence["ok"])
         self.assertIn("release-evidence.json: commit must match evidence-index commit", evidence["problems"])
+
+    def test_rejects_index_file_count_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            index = json.loads((bundle / "evidence-index.json").read_text(encoding="utf-8"))
+            index["file_count"] = 99
+            write_json(bundle / "evidence-index.json", index)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("evidence-index.json: file_count must match files length", evidence["problems"])
+
+    def test_rejects_source_manifest_record_drift(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            source = json.loads((bundle / "source-manifest.json").read_text(encoding="utf-8"))
+            source["files"][0]["sha256"] = "0" * 64
+            write_json(bundle / "source-manifest.json", source)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "source-manifest.json: " + source["files"][0]["path"] + " sha256 mismatch",
+            evidence["problems"],
+        )
+        self.assertIn("source-manifest.json: tree_sha256 mismatch", evidence["problems"])
+
+    def test_rejects_missing_source_manifest_record(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            source = json.loads((bundle / "source-manifest.json").read_text(encoding="utf-8"))
+            removed = source["files"].pop(0)
+            source["file_count"] = len(source["files"])
+            source["tree_sha256"] = evidence_bundle_check.source_tree_sha256(source["files"])
+            write_json(bundle / "source-manifest.json", source)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "source-manifest.json: missing tracked file record: " + removed["path"],
+            evidence["problems"],
+        )
+
+    def test_rejects_source_manifest_summary_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            source = json.loads((bundle / "source-manifest.json").read_text(encoding="utf-8"))
+            source["file_count"] = 99
+            source["tree_sha256"] = "0" * 64
+            write_json(bundle / "source-manifest.json", source)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("source-manifest.json: file_count must match files length", evidence["problems"])
+        self.assertIn("source-manifest.json: tree_sha256 mismatch", evidence["problems"])
 
     def test_rejects_release_command_record_problem(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:

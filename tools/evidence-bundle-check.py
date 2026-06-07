@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ DEFAULT_ARTIFACT_DIR = ROOT / ".arc-artifacts"
 INDEX_NAME = "evidence-index.json"
 PROVENANCE_NAME = "provenance.intoto.json"
 SBOM_NAME = "sbom.spdx.json"
+REGULAR_FILE_MODES = {"100644", "100755"}
 EXPECTED_INDEXED = (
     "source-manifest.json",
     "third-party-manifest.json",
@@ -56,6 +58,48 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(65536), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def source_tree_sha256(records: list[dict[str, Any]]) -> str:
+    digest = hashlib.sha256()
+    for record in records:
+        digest.update(str(record.get("mode")).encode())
+        digest.update(b"\0")
+        digest.update(str(record.get("path")).encode())
+        digest.update(b"\0")
+        digest.update(str(record.get("sha256")).encode())
+        digest.update(b"\0")
+        digest.update(str(record.get("size")).encode())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def git_tracked_regular_files(problems: list[str]) -> dict[str, dict[str, str]]:
+    try:
+        output = subprocess.check_output(["git", "ls-files", "--stage", "-z"], cwd=ROOT, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        problems.append(f"source-manifest.json: cannot list tracked files: {exc}")
+        return {}
+
+    records: dict[str, dict[str, str]] = {}
+    for raw in output.split(b"\0"):
+        if not raw:
+            continue
+        meta, _, path = raw.partition(b"\t")
+        parts = meta.decode().split()
+        if len(parts) < 3:
+            problems.append(f"source-manifest.json: cannot parse tracked file entry: {raw!r}")
+            continue
+        path_text = path.decode()
+        mode = parts[0]
+        if mode not in REGULAR_FILE_MODES:
+            problems.append(f"source-manifest.json: unsupported tracked file mode: {mode} {path_text}")
+            continue
+        records[path_text] = {
+            "mode": mode,
+            "git_object": parts[1],
+        }
+    return records
 
 
 def load_json(path: Path, problems: list[str]) -> Any:
@@ -102,6 +146,8 @@ def indexed_records(index: dict[str, Any], artifact_dir: Path, problems: list[st
     if not isinstance(files, list):
         problems.append("evidence-index.json: files must be a list")
         return records
+    if index.get("file_count") != len(files):
+        problems.append("evidence-index.json: file_count must match files length")
     for item in files:
         if not isinstance(item, dict):
             problems.append("evidence-index.json: file record must be an object")
@@ -142,6 +188,100 @@ def indexed_records(index: dict[str, Any], artifact_dir: Path, problems: list[st
     for name in extra:
         problems.append(f"evidence-index.json: unexpected indexed evidence: {name}")
     return records
+
+
+def source_record_path(path_text: str, problems: list[str]) -> Path | None:
+    if Path(path_text).is_absolute():
+        problems.append(f"source-manifest.json: source path must be repository-relative: {path_text}")
+        return None
+    resolved = (ROOT / path_text).resolve()
+    try:
+        resolved.relative_to(ROOT)
+    except ValueError:
+        problems.append(f"source-manifest.json: source path must stay inside repository: {path_text}")
+        return None
+    return resolved
+
+
+def current_file_mode(path: Path) -> str:
+    return "100755" if path.stat().st_mode & 0o111 else "100644"
+
+
+def check_source_manifest(source: dict[str, Any], problems: list[str]) -> int:
+    if source.get("ok") is not True:
+        problems.append("source-manifest.json: ok must be true")
+    if source.get("problems") not in ([], None):
+        problems.append("source-manifest.json: problems must be empty")
+    if source.get("status") not in ([], None):
+        problems.append("source-manifest.json: status must be empty")
+
+    files = source.get("files")
+    if not isinstance(files, list):
+        problems.append("source-manifest.json: files must be a list")
+        return 0
+    if source.get("file_count") != len(files):
+        problems.append("source-manifest.json: file_count must match files length")
+    if not files:
+        problems.append("source-manifest.json: files must not be empty")
+
+    tracked = git_tracked_regular_files(problems)
+    seen: set[str] = set()
+    ordered_paths: list[str] = []
+    valid_records: list[dict[str, Any]] = []
+    for item in files:
+        if not isinstance(item, dict):
+            problems.append("source-manifest.json: file record must be an object")
+            continue
+        path_text = item.get("path")
+        if not isinstance(path_text, str) or not path_text:
+            problems.append("source-manifest.json: file record path must be a string")
+            continue
+        if path_text in seen:
+            problems.append(f"source-manifest.json: duplicate source file: {path_text}")
+            continue
+        seen.add(path_text)
+        ordered_paths.append(path_text)
+        valid_records.append(item)
+
+        path = source_record_path(path_text, problems)
+        tracked_record = tracked.get(path_text)
+        if tracked and tracked_record is None:
+            problems.append(f"source-manifest.json: unexpected source file record: {path_text}")
+        mode = item.get("mode")
+        if mode not in REGULAR_FILE_MODES:
+            problems.append(f"source-manifest.json: {path_text} mode must be a regular file mode")
+        elif tracked_record is not None and mode != tracked_record["mode"]:
+            problems.append(f"source-manifest.json: {path_text} mode mismatch")
+
+        git_object = item.get("git_object")
+        if not isinstance(git_object, str) or not git_object:
+            problems.append(f"source-manifest.json: {path_text} git_object must be present")
+        elif tracked_record is not None and git_object != tracked_record["git_object"]:
+            problems.append(f"source-manifest.json: {path_text} git_object mismatch")
+
+        if path is None:
+            continue
+        if not path.is_file():
+            problems.append(f"source-manifest.json: source file missing on disk: {path_text}")
+            continue
+        if mode in REGULAR_FILE_MODES and current_file_mode(path) != mode:
+            problems.append(f"source-manifest.json: {path_text} filesystem mode mismatch")
+        if item.get("size") != path.stat().st_size:
+            problems.append(f"source-manifest.json: {path_text} size mismatch")
+        if item.get("sha256") != sha256(path):
+            problems.append(f"source-manifest.json: {path_text} sha256 mismatch")
+
+    if ordered_paths != sorted(ordered_paths):
+        problems.append("source-manifest.json: files must be sorted by path")
+    for path_text in sorted(set(tracked).difference(seen)):
+        problems.append(f"source-manifest.json: missing tracked file record: {path_text}")
+
+    tree_digest = source.get("tree_sha256")
+    if not isinstance(tree_digest, str) or not tree_digest:
+        problems.append("source-manifest.json: tree_sha256 must be present")
+    elif source_tree_sha256(valid_records) != tree_digest:
+        problems.append("source-manifest.json: tree_sha256 mismatch")
+    return len(valid_records)
 
 
 def subject_records(provenance: dict[str, Any], artifact_dir: Path, problems: list[str]) -> dict[str, dict[str, Any]]:
@@ -418,6 +558,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
             "artifact_dir": str(requested_dir),
             "commit": None,
             "indexed_count": 0,
+            "source_file_count": 0,
             "provenance_subject_count": 0,
             "provenance_byproduct_count": 0,
             "release_command_count": 0,
@@ -440,6 +581,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
     sbom = expect_object(load_json(artifact_dir / SBOM_NAME, problems), SBOM_NAME, problems)
 
     indexed = indexed_records(index, artifact_dir, problems) if index else {}
+    source_file_count = check_source_manifest(source, problems) if source else 0
     subjects = subject_records(provenance, artifact_dir, problems) if provenance else {}
     byproducts = byproduct_records(provenance, problems) if provenance else {}
     if provenance:
@@ -458,6 +600,7 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
         "artifact_dir": str(artifact_dir),
         "commit": commit,
         "indexed_count": len(indexed),
+        "source_file_count": source_file_count,
         "provenance_subject_count": len(subjects),
         "provenance_byproduct_count": len(byproducts),
         "release_command_count": release_command_count,
@@ -472,6 +615,7 @@ def report_text(evidence: dict[str, Any]) -> str:
         f"- artifact dir: {evidence['artifact_dir']}",
         f"- commit: {evidence['commit']}",
         f"- indexed files: {evidence['indexed_count']}",
+        f"- source files: {evidence['source_file_count']}",
         f"- provenance subjects: {evidence['provenance_subject_count']}",
         f"- provenance byproducts: {evidence['provenance_byproduct_count']}",
         f"- release commands: {evidence['release_command_count']}",

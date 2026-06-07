@@ -45,7 +45,8 @@ for firmware, security, safety, or licensing claims.
   publishing an evidence bundle; the index hashes each file and rejects
   malformed or failed evidence JSON
 - `./tools/evidence-bundle-check.py .arc-artifacts` after the evidence index and
-  provenance files are generated, before uploading or publishing the bundle
+  provenance files are generated, before uploading or publishing the bundle; the
+  check verifies the source manifest inventory against the checked-out files
 - `./tools/evidence-workflow-check.py --format json` before relying on CI
   repository evidence upload coverage
 - `./tools/sbom.py --format json` before publishing a source archive, firmware
@@ -121,6 +122,7 @@ manifest, third-party manifest, safety-case JSON, release-evidence JSON,
 workflow action pin evidence, workflow policy evidence, npm lockfile evidence,
 evidence workflow contract evidence, Dependabot policy evidence, license policy
 evidence, secret-scan evidence, SPDX SBOM evidence, and in-toto provenance
-evidence.
+evidence. The repository bundle check validates the source manifest file
+inventory, source tree digest, evidence index, and provenance before upload.
 Firmware builds also upload `arc-binaries` with the firmware artifact manifest,
 firmware provenance, and validated firmware evidence index beside the binaries.

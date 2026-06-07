@@ -37,8 +37,9 @@ or distributing Arc-derived artifacts.
   rejects outside-repository paths, malformed JSON, `ok: false`, or non-empty
   `problems` payloads before an evidence bundle is published.
 - `tools/evidence-bundle-check.py .arc-artifacts` verifies that the evidence
-  index, provenance subjects, SLSA predicate metadata, artifact hashes, release
-  command checks, and commit identities agree before CI uploads the bundle.
+  index, source manifest inventory, source tree digest, provenance subjects,
+  SLSA predicate metadata, artifact hashes, release command checks, and commit
+  identities agree before CI uploads the bundle.
 - `tools/evidence-workflow-check.py --format json` verifies that the build
   workflow generates, indexes, signs, checks, and uploads the complete
   repository evidence contract and firmware artifact evidence.
@@ -86,7 +87,8 @@ or distributing Arc-derived artifacts.
   subjects and evidence-toolchain byproducts back to the exact Arc commit and
   workflow or local build context.
 - `tools/evidence-bundle-check.py .arc-artifacts` checks that the repository-local
-  uploaded evidence bundle is internally coherent instead of only present.
+  uploaded evidence bundle is internally coherent, including the source manifest
+  file inventory, instead of only present.
 - `tools/evidence-workflow-check.py --format json` checks that CI keeps the
   repository and firmware evidence generation-before-upload contracts complete.
 
