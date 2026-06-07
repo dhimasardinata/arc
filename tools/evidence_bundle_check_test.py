@@ -252,6 +252,33 @@ class EvidenceBundleCheckTest(unittest.TestCase):
             evidence["problems"],
         )
 
+    def test_rejects_artifact_dir_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as outside_tmp:
+            evidence = evidence_bundle_check.collect(Path(outside_tmp))
+
+        self.assertFalse(evidence["ok"])
+        self.assertEqual(evidence["indexed_count"], 0)
+        self.assertIn(f"artifact directory must stay inside repository: {outside_tmp}", evidence["problems"])
+
+    def test_cli_reports_missing_artifact_dir_as_json(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            missing = Path(tmp) / "missing-bundle"
+            result = subprocess.run(
+                [str(TOOL), "--format", "json", str(missing)],
+                cwd=ROOT,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["artifact_dir"], str(missing.resolve()))
+        self.assertIn(f"artifact directory is missing: {missing.relative_to(ROOT).as_posix()}", payload["problems"])
+        self.assertIn("arc evidence bundle check failed", result.stderr)
+
     def test_cli_fails_for_incomplete_bundle(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             bundle = make_bundle(Path(tmp))

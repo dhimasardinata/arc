@@ -52,6 +52,19 @@ def artifact_path(artifact_dir: Path, name: str) -> str:
     return (artifact_dir / name).relative_to(ROOT).as_posix() if (artifact_dir / name).is_relative_to(ROOT) else name
 
 
+def repo_artifact_dir(path: Path, problems: list[str]) -> Path | None:
+    resolved = path.resolve()
+    try:
+        rel = resolved.relative_to(ROOT).as_posix()
+    except ValueError:
+        problems.append(f"artifact directory must stay inside repository: {path}")
+        return None
+    if not resolved.is_dir():
+        problems.append(f"artifact directory is missing: {rel}")
+        return None
+    return resolved
+
+
 def expect_object(payload: Any, name: str, problems: list[str]) -> dict[str, Any]:
     if isinstance(payload, dict):
         return payload
@@ -320,8 +333,21 @@ def check_release_commands(release: dict[str, Any], problems: list[str]) -> int:
 
 
 def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
-    artifact_dir = artifact_dir.resolve()
     problems: list[str] = []
+    requested_dir = artifact_dir.resolve()
+    checked_dir = repo_artifact_dir(artifact_dir, problems)
+    if checked_dir is None:
+        return {
+            "artifact_dir": str(requested_dir),
+            "commit": None,
+            "indexed_count": 0,
+            "provenance_subject_count": 0,
+            "release_command_count": 0,
+            "ok": False,
+            "problems": problems,
+        }
+
+    artifact_dir = checked_dir
     required = (INDEX_NAME, *EXPECTED_INDEXED)
     for name in required:
         if not (artifact_dir / name).is_file():
