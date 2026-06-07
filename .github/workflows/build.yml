@@ -413,6 +413,7 @@ jobs:
             --require .arc-artifacts/firmware-provenance.intoto.json \
             .arc-artifacts/firmware-manifest.json \
             .arc-artifacts/firmware-provenance.intoto.json
+          ./tools/firmware-evidence-check.py .arc-artifacts
 
       - name: Validate clangd database
         if: steps.firmware-plan.outputs.count != '0'

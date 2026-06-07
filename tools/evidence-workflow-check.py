@@ -260,6 +260,7 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
         index_line = line_index(firmware_step.lines, "./tools/evidence-index.py")
         manifest_line = line_index(firmware_step.lines, "./tools/firmware-manifest.py")
         provenance_line = line_index(firmware_step.lines, "./tools/provenance.py")
+        check_line = line_index(firmware_step.lines, "./tools/firmware-evidence-check.py .arc-artifacts")
         if manifest_line is None:
             problems.append("firmware evidence manifest: missing firmware-manifest invocation")
         if provenance_line is None:
@@ -268,6 +269,10 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
             problems.append("firmware evidence provenance: must run after firmware-manifest generation")
         if index_line is None or provenance_line is None or index_line <= provenance_line:
             problems.append("firmware evidence index: must run after firmware provenance generation")
+        if check_line is None:
+            problems.append("firmware evidence check: missing firmware-evidence-check invocation")
+        elif index_line is None or check_line <= index_line:
+            problems.append("firmware evidence check: must run after firmware evidence-index generation")
     if firmware_upload_step is not None:
         upload_text = "\n".join(firmware_upload_step.lines)
         if "if: steps.firmware-plan.outputs.count != '0'" not in upload_text:

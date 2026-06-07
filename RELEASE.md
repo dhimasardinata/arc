@@ -30,6 +30,8 @@ for firmware, security, safety, or licensing claims.
   release source archive or artifact bundle
 - `./tools/firmware-manifest.py --format json --require-artifacts` after
   firmware builds and before publishing firmware binaries
+- `./tools/firmware-evidence-check.py .arc-artifacts` after firmware manifest,
+  provenance, and evidence index generation, before publishing firmware binaries
 - `./tools/safety-case-check.py --format json` before publishing safety,
   hardware-risk, or release-process claims
 - `./tools/workflow-pins-check.py --format json` before relying on GitHub
@@ -76,6 +78,8 @@ For firmware-facing releases, capture:
 - firmware artifact manifest with SHA-256 for each `.bin` and `.elf`;
 - firmware provenance tying the firmware manifest to the release commit and
   evidence toolchain;
+- firmware evidence check output proving the firmware manifest, provenance,
+  evidence index, and binary hashes agree;
 - serial logs, benchmark output, HIL artifact, or reason runtime evidence is not
   applicable;
 - target chip, board, partitions, sdkconfig defaults, and external fixtures.

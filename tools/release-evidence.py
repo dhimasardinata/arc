@@ -51,6 +51,7 @@ REQUIRED_COMMANDS = [
     "tools/clangd-compile-commands.py --validate-arc-headers",
     "./tools/source-manifest.py --format json --require-clean",
     "./tools/firmware-manifest.py --format json --require-artifacts",
+    "./tools/firmware-evidence-check.py .arc-artifacts",
     "./tools/safety-case-check.py --format json",
     "./tools/third-party-manifest-check.py --format json",
     "./tools/workflow-pins-check.py --format json",

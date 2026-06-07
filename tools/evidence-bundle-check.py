@@ -34,6 +34,7 @@ EXPECTED_PROVENANCE_BYPRODUCTS = (
     "tools/source-manifest.py",
     "tools/third-party-manifest-check.py",
     "tools/safety-case-check.py",
+    "tools/firmware-evidence-check.py",
     "tools/release-evidence.py",
     "tools/workflow-pins-check.py",
     "tools/workflow-policy-check.py",

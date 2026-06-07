@@ -25,6 +25,9 @@ or distributing Arc-derived artifacts.
   bundles.
 - `tools/firmware-manifest.py --format json --require-artifacts` emits
   repository-scoped SHA-256 evidence for firmware `.bin` and `.elf` outputs.
+- `tools/firmware-evidence-check.py .arc-artifacts` verifies firmware manifest,
+  firmware provenance, firmware evidence index, and binary hashes before the
+  binary bundle is uploaded.
 - `tools/release-evidence.py --format json --require-clean` emits the
   machine-readable release metadata snapshot, root/GitHub/docs policy file
   hashes, and repo-local executable tool, source command, and npm script

@@ -121,6 +121,7 @@ def workflow_body() -> str:
                 --require .arc-artifacts/firmware-provenance.intoto.json \\
                 .arc-artifacts/firmware-manifest.json \\
                 .arc-artifacts/firmware-provenance.intoto.json
+              ./tools/firmware-evidence-check.py .arc-artifacts
 
           - name: Upload binaries
             if: steps.firmware-plan.outputs.count != '0'
@@ -351,6 +352,19 @@ class EvidenceWorkflowCheckTest(unittest.TestCase):
             "firmware evidence upload: must be gated on selected firmware builds",
             evidence["problems"],
         )
+
+    def test_rejects_missing_firmware_evidence_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                workflow_body().replace("              ./tools/firmware-evidence-check.py .arc-artifacts\n", "", 1),
+            )
+
+            evidence = evidence_workflow_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("firmware evidence check: missing firmware-evidence-check invocation", evidence["problems"])
 
     def test_rejects_firmware_upload_without_hidden_artifact_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

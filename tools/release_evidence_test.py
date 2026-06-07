@@ -45,6 +45,7 @@ class ReleaseEvidenceTest(unittest.TestCase):
         self.assertIn("./tools/use-after-move-check.sh", evidence["required_commands"])
         self.assertIn("go run tools/arc-audit.go -root . -all", evidence["required_commands"])
         self.assertIn("./tools/firmware-manifest.py --format json --require-artifacts", evidence["required_commands"])
+        self.assertIn("./tools/firmware-evidence-check.py .arc-artifacts", evidence["required_commands"])
         self.assertIn("./tools/source-manifest.py --format json --require-clean", evidence["required_commands"])
         self.assertIn("./tools/safety-case-check.py --format json", evidence["required_commands"])
         self.assertIn("./tools/third-party-manifest-check.py --format json", evidence["required_commands"])

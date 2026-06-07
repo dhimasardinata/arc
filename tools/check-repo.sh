@@ -273,6 +273,7 @@ if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF 'go run tools/arc-audit.go -root . -all' RELEASE.md \
     || ! grep -qF './tools/host-tests.sh' RELEASE.md \
     || ! grep -qF './tools/firmware-manifest.py --format json --require-artifacts' RELEASE.md \
+    || ! grep -qF './tools/firmware-evidence-check.py .arc-artifacts' RELEASE.md \
     || ! grep -qF './tools/safety-case-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/workflow-pins-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/workflow-policy-check.py --format json' RELEASE.md \
@@ -582,6 +583,9 @@ fi
 if ! grep -qF '.arc-artifacts/firmware-provenance.intoto.json' .github/workflows/build.yml; then
     die "build workflow must upload firmware provenance with binaries"
 fi
+if ! grep -qE '\./tools/firmware-evidence-check\.py \.arc-artifacts' .github/workflows/build.yml; then
+    die "build workflow must check firmware evidence before binary upload"
+fi
 if ! grep -qF '.arc-artifacts/firmware-evidence-index.json' .github/workflows/build.yml; then
     die "build workflow must upload the firmware evidence index with binaries"
 fi
@@ -653,6 +657,7 @@ required_exec=(
     tools/evidence-bundle-check.py
     tools/evidence-index.py
     tools/evidence-workflow-check.py
+    tools/firmware-evidence-check.py
     tools/firmware-manifest.py
     tools/format.sh
     tools/hil-evidence-check.py
