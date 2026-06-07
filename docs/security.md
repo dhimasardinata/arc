@@ -58,9 +58,11 @@ guarded as 40-hex commits before shell steps pass them to `git`.
 It also rejects combined restore/save
 cache actions, rejects implicit `setup-node` npm caching, and requires cache-save
 steps to run only on `push`, keeping pull requests and manual docs runs from
-writing shared CI caches. It also requires CodeQL dependency caching to stay
-disabled, so CodeQL scanning cannot become another implicit cache writer. The
-policy keeps the CI Ruff formatter install pinned
+writing shared CI caches. Cache-save steps must be explicitly non-blocking with
+`continue-on-error: true`, and no other workflow step may mask failures that
+way. It also requires CodeQL dependency caching to stay disabled, so CodeQL
+scanning cannot become another implicit cache writer. The policy keeps the CI
+Ruff formatter install pinned
 to the same exact version as local fallback formatting. The only job-level write
 permissions allowed by policy are `pages: write` and `id-token: write` on the
 Pages deploy job, and that deployment job must be guarded to the `main` branch.

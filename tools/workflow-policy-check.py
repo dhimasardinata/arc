@@ -39,6 +39,7 @@ class Step(NamedTuple):
     if_expr: str | None
     uses: str | None
     shell: str | None
+    continue_on_error: str | None
     with_inputs: dict[str, str]
     env: dict[str, str]
     run_block: bool
@@ -201,6 +202,14 @@ def parse_step_shell(step_lines: list[str]) -> str | None:
     return None
 
 
+def parse_step_continue_on_error(step_lines: list[str]) -> str | None:
+    for line in step_lines:
+        match = re.match(r"^        continue-on-error:\s*(.+?)\s*$", line)
+        if match:
+            return match.group(1).strip("\"'")
+    return None
+
+
 def ruff_install_spec(run: str | None) -> str | None:
     if run is None:
         return None
@@ -233,6 +242,7 @@ def parse_steps(job_block: list[str]) -> list[Step]:
                 if_expr=parse_step_if(step_lines),
                 uses=parse_step_uses(step_lines),
                 shell=parse_step_shell(step_lines),
+                continue_on_error=parse_step_continue_on_error(step_lines),
                 with_inputs=parse_step_with(step_block),
                 env=parse_step_env(step_block),
                 run_block=parse_step_run_block(step_block),
@@ -305,6 +315,7 @@ def workflow_record(path: Path, root: Path) -> dict[str, Any]:
                         "if": step.if_expr,
                         "uses": step.uses,
                         "shell": step.shell,
+                        "continue_on_error": step.continue_on_error,
                         "with": step.with_inputs,
                         "env": step.env,
                         "has_run": step.run is not None,
@@ -376,10 +387,17 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
             if ruff_spec is not None and ruff_spec != RUFF_SPEC:
                 problems.append(f"{path}:{job_id}:{step_name}: Ruff install must pin {RUFF_SPEC}")
             uses = step["uses"] or ""
+            continue_on_error = step["continue_on_error"]
+            if continue_on_error is not None and (
+                continue_on_error != "true" or not uses.startswith("actions/cache/save@")
+            ):
+                problems.append(f"{path}:{job_id}:{step_name}: continue-on-error is only allowed on cache saves")
             if uses.startswith("actions/cache@"):
                 problems.append(f"{path}:{job_id}:{step_name}: cache use must split restore and push-gated save")
             if uses.startswith("actions/cache/save@") and "github.event_name == 'push'" not in (step["if"] or ""):
                 problems.append(f"{path}:{job_id}:{step_name}: cache save must be gated to push events")
+            if uses.startswith("actions/cache/save@") and continue_on_error != "true":
+                problems.append(f"{path}:{job_id}:{step_name}: cache save must set continue-on-error: true")
             if uses.startswith("actions/setup-node@") and "cache" in step["with"]:
                 problems.append(
                     f"{path}:{job_id}:{step_name}: setup-node cache must use explicit restore and push-gated save"

@@ -61,6 +61,10 @@ class WorkflowPolicyTest(unittest.TestCase):
                 "github.event_name == 'push'",
                 steps[(".github/workflows/build.yml", "esp32s3", step_name)]["if"],
             )
+            self.assertEqual(
+                steps[(".github/workflows/build.yml", "esp32s3", step_name)]["continue_on_error"],
+                "true",
+            )
         self.assertEqual(
             steps[(".github/workflows/pages.yml", "build", "Restore npm cache")]["uses"],
             "actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae",
@@ -68,6 +72,10 @@ class WorkflowPolicyTest(unittest.TestCase):
         self.assertIn(
             "github.event_name == 'push'",
             steps[(".github/workflows/pages.yml", "build", "Save npm cache")]["if"],
+        )
+        self.assertEqual(
+            steps[(".github/workflows/pages.yml", "build", "Save npm cache")]["continue_on_error"],
+            "true",
         )
         for step_name in ("Initialize CodeQL for C/C++", "Initialize CodeQL"):
             self.assertEqual(
@@ -479,6 +487,75 @@ jobs:
         self.assertFalse(evidence["ok"])
         self.assertIn(
             ".github/workflows/build.yml:esp32s3:Save ccache: cache save must be gated to push events",
+            evidence["problems"],
+        )
+
+    def test_rejects_cache_save_without_continue_on_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Save ccache
+        if: github.event_name == 'push'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/build.yml:esp32s3:Save ccache: cache save must set continue-on-error: true",
+            evidence["problems"],
+        )
+
+    def test_rejects_continue_on_error_outside_cache_save(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Host tests
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -eo pipefail
+          ./tools/host-tests.sh
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/build.yml:esp32s3:Host tests: continue-on-error is only allowed on cache saves",
             evidence["problems"],
         )
 

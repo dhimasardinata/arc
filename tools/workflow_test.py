@@ -159,6 +159,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("uses: actions/cache/save@", workflow)
         self.assertNotIn("uses: actions/cache@", workflow)
         self.assertIn("github.event_name == 'push' && steps.firmware-plan.outputs.count != '0'", workflow)
+        self.assertIn("continue-on-error: true", workflow)
 
     def test_firmware_artifact_manifest_is_uploaded_with_binaries(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
