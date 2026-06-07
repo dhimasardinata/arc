@@ -29,8 +29,8 @@ or distributing Arc-derived artifacts.
   repo-local command reference checks before tagging or publishing a release
   artifact.
 - `tools/evidence-index.py --format json` hashes generated evidence files and
-  rejects malformed JSON, `ok: false`, or non-empty `problems` payloads before
-  an evidence bundle is published.
+  rejects outside-repository paths, malformed JSON, `ok: false`, or non-empty
+  `problems` payloads before an evidence bundle is published.
 - `tools/evidence-bundle-check.py .arc-artifacts` verifies that the evidence
   index, provenance subjects, SLSA predicate metadata, artifact hashes, release
   command checks, and commit identities agree before CI uploads the bundle.

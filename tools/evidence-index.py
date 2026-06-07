@@ -37,6 +37,15 @@ def relpath(path: Path) -> str:
         return resolved.as_posix()
 
 
+def repo_path(path: Path) -> tuple[Path, str | None]:
+    full = path if path.is_absolute() else ROOT / path
+    resolved = full.resolve()
+    try:
+        return full, resolved.relative_to(ROOT).as_posix()
+    except ValueError:
+        return full, None
+
+
 def json_state(path: Path, name: str) -> tuple[dict[str, Any], list[str]]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -84,8 +93,10 @@ def collect(paths: list[Path], required: list[str]) -> dict[str, Any]:
     problems: list[str] = []
     seen: set[str] = set()
     for raw_path in paths:
-        path = raw_path if raw_path.is_absolute() else ROOT / raw_path
-        name = relpath(path)
+        path, name = repo_path(raw_path)
+        if name is None:
+            problems.append(f"evidence path must stay inside repository: {raw_path}")
+            continue
         if name in seen:
             problems.append(f"duplicate evidence path: {name}")
             continue
@@ -104,7 +115,11 @@ def collect(paths: list[Path], required: list[str]) -> dict[str, Any]:
             }
         )
 
-    for name in required:
+    for raw_required in required:
+        _, name = repo_path(Path(raw_required))
+        if name is None:
+            problems.append(f"required evidence path must stay inside repository: {raw_required}")
+            continue
         if name not in seen:
             problems.append(f"required evidence file not indexed: {name}")
 

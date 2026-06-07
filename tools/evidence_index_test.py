@@ -124,6 +124,23 @@ class EvidenceIndexTest(unittest.TestCase):
             evidence["problems"],
         )
 
+    def test_rejects_evidence_path_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence_file = Path(tmp) / "outside.json"
+            evidence_file.write_text('{"ok": true}', encoding="utf-8")
+            evidence = evidence_index.collect([evidence_file], [str(evidence_file)])
+
+        self.assertFalse(evidence["ok"])
+        self.assertEqual(evidence["file_count"], 0)
+        self.assertIn(
+            f"evidence path must stay inside repository: {evidence_file}",
+            evidence["problems"],
+        )
+        self.assertIn(
+            f"required evidence path must stay inside repository: {evidence_file}",
+            evidence["problems"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
