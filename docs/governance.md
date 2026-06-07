@@ -40,8 +40,9 @@ or distributing Arc-derived artifacts.
   repository evidence contract and firmware artifact evidence.
 - `tools/sbom.py --format json` emits SPDX 2.3 SBOM evidence from
   repository-scoped third-party and docs npm lock manifests.
-- `tools/license-policy-check.py --format json` rejects missing or unapproved
-  docs npm package license declarations before evidence is uploaded.
+- `tools/license-policy-check.py --format json` rejects outside-repository
+  inputs plus missing or unapproved docs npm package license declarations before
+  evidence is uploaded.
 - `tools/provenance.py --format json <artifact...>` emits an in-toto Statement
   with SLSA provenance metadata and SHA-256 subjects for evidence bundles.
 - CI uploads `arc-evidence` with an evidence index, source, third-party,

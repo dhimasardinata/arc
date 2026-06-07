@@ -52,7 +52,7 @@ def manifest() -> dict[str, object]:
 
 class LicensePolicyTest(unittest.TestCase):
     def test_accepts_approved_npm_license_expressions(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             lock = root / "package-lock.json"
             third_party = root / "third-party.json"
@@ -66,7 +66,7 @@ class LicensePolicyTest(unittest.TestCase):
         self.assertIn("MIT", evidence["approved_npm_licenses"])
 
     def test_rejects_missing_npm_license(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             lock = root / "package-lock.json"
             third_party = root / "third-party.json"
@@ -78,7 +78,7 @@ class LicensePolicyTest(unittest.TestCase):
         self.assertIn("vitepress: license must be a non-empty SPDX expression", evidence["problems"])
 
     def test_rejects_disallowed_npm_license(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             lock = root / "package-lock.json"
             third_party = root / "third-party.json"
@@ -93,7 +93,7 @@ class LicensePolicyTest(unittest.TestCase):
         )
 
     def test_cli_outputs_json_evidence(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             lock = root / "package-lock.json"
             third_party = root / "third-party.json"
@@ -122,7 +122,7 @@ class LicensePolicyTest(unittest.TestCase):
         self.assertEqual(payload["packages"][0]["license"], "MIT")
 
     def test_cli_fails_for_disallowed_license(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             lock = root / "package-lock.json"
             third_party = root / "third-party.json"
@@ -146,6 +146,54 @@ class LicensePolicyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("LGPL-3.0-only", result.stdout)
         self.assertIn("arc license policy failed", result.stderr)
+
+    def test_rejects_package_lock_path_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as outside_tmp:
+            lock = Path(outside_tmp) / "package-lock.json"
+            write_json(lock, package_lock(("vitepress", "MIT")))
+            evidence = license_policy_check.collect(lock, ROOT / "THIRD_PARTY_MANIFEST.json")
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(f"package-lock.json path must stay inside repository: {lock}", evidence["problems"])
+
+    def test_cli_fails_for_third_party_manifest_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            lock = Path(tmp) / "package-lock.json"
+            third_party = Path(outside_tmp) / "third-party.json"
+            write_json(lock, package_lock(("vitepress", "MIT")))
+            write_json(third_party, manifest())
+            result = subprocess.run(
+                [
+                    str(TOOL),
+                    "--format",
+                    "json",
+                    "--package-lock",
+                    str(lock),
+                    "--third-party-manifest",
+                    str(third_party),
+                ],
+                cwd=ROOT,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertIn("THIRD_PARTY_MANIFEST.json path must stay inside repository", result.stdout)
+        self.assertIn("arc license policy failed", result.stderr)
+
+    def test_reports_missing_input_json(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            missing = Path(tmp) / "missing-package-lock.json"
+            evidence = license_policy_check.collect(missing, ROOT / "THIRD_PARTY_MANIFEST.json")
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            f"package-lock.json file is missing: {missing.relative_to(ROOT).as_posix()}", evidence["problems"]
+        )
 
 
 if __name__ == "__main__":

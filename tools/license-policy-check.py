@@ -35,6 +35,31 @@ def load_json(path: Path) -> Any:
         return json.load(handle)
 
 
+def repo_input_path(root: Path, path: Path, label: str, problems: list[str]) -> Path | None:
+    full = path if path.is_absolute() else root / path
+    resolved = full.resolve()
+    try:
+        rel = resolved.relative_to(root.resolve()).as_posix()
+    except ValueError:
+        problems.append(f"{label} path must stay inside repository: {path}")
+        return None
+    if not resolved.is_file():
+        problems.append(f"{label} file is missing: {rel}")
+        return None
+    return resolved
+
+
+def load_input_json(root: Path, path: Path, label: str, problems: list[str]) -> Any | None:
+    resolved = repo_input_path(root, path, label, problems)
+    if resolved is None:
+        return None
+    try:
+        return load_json(resolved)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        problems.append(f"{label} cannot load JSON: {exc}")
+        return None
+
+
 def package_name(path: str) -> str:
     tail = path.removeprefix("node_modules/")
     parts = tail.split("/")
@@ -65,21 +90,18 @@ def validate_license(name: str, value: Any) -> tuple[str | None, list[str]]:
 def collect(
     package_lock_path: Path = PACKAGE_LOCK,
     third_party_manifest_path: Path = THIRD_PARTY_MANIFEST,
+    root: Path = ROOT,
 ) -> dict[str, Any]:
     problems: list[str] = []
-    package_lock = load_json(package_lock_path)
-    manifest = load_json(third_party_manifest_path)
+    package_lock = load_input_json(root, package_lock_path, "package-lock.json", problems)
+    manifest = load_input_json(root, third_party_manifest_path, "THIRD_PARTY_MANIFEST.json", problems)
     if not isinstance(package_lock, dict):
-        return {
-            "ok": False,
-            "problems": ["package-lock.json root must be a JSON object"],
-            "approved_npm_licenses": sorted(APPROVED_NPM_LICENSES),
-            "package_count": 0,
-            "packages": [],
-            "third_party_components": [],
-        }
+        if package_lock is not None:
+            problems.append("package-lock.json root must be a JSON object")
+        packages = {}
+    else:
+        packages = package_lock.get("packages")
 
-    packages = package_lock.get("packages")
     if not isinstance(packages, dict) or not packages:
         problems.append("package-lock.json packages must be a non-empty object")
         packages = {}
