@@ -30,6 +30,31 @@ def load_json(path: Path) -> Any:
         return json.load(handle)
 
 
+def repo_input_path(root: Path, path: Path, label: str, problems: list[str]) -> Path | None:
+    full = path if path.is_absolute() else root / path
+    resolved = full.resolve()
+    try:
+        rel = resolved.relative_to(root.resolve()).as_posix()
+    except ValueError:
+        problems.append(f"{label} path must stay inside repository: {path}")
+        return None
+    if not resolved.is_file():
+        problems.append(f"{label} file is missing: {rel}")
+        return None
+    return resolved
+
+
+def load_input_json(root: Path, path: Path, label: str, problems: list[str]) -> Any | None:
+    resolved = repo_input_path(root, path, label, problems)
+    if resolved is None:
+        return None
+    try:
+        return load_json(resolved)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        problems.append(f"{label} cannot load JSON: {exc}")
+        return None
+
+
 def safe_id(text: str) -> str:
     value = re.sub(r"[^A-Za-z0-9.-]+", "-", text).strip("-")
     return value or hashlib.sha256(text.encode()).hexdigest()[:12]
@@ -224,8 +249,10 @@ def collect(
     arc = base_package(commit, used)
     packages.append(arc)
 
-    third_party, third_party_problems = third_party_packages(load_json(manifest_path), used)
-    npm, npm_problems = npm_packages(load_json(package_lock_path), used)
+    manifest = load_input_json(root, manifest_path, "THIRD_PARTY_MANIFEST.json", problems)
+    package_lock = load_input_json(root, package_lock_path, "package-lock.json", problems)
+    third_party, third_party_problems = third_party_packages(manifest, used) if manifest is not None else ([], [])
+    npm, npm_problems = npm_packages(package_lock, used) if package_lock is not None else ([], [])
     packages.extend(third_party)
     packages.extend(npm)
     problems.extend(third_party_problems)

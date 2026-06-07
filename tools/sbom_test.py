@@ -164,6 +164,48 @@ class SbomTest(unittest.TestCase):
         self.assertIn("THIRD_PARTY_MANIFEST.json components must be a non-empty list", result.stdout)
         self.assertIn("arc SBOM failed", result.stderr)
 
+    def test_collect_rejects_manifest_path_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as outside_tmp:
+            manifest = Path(outside_tmp) / "third-party.json"
+            manifest.write_text("{}", encoding="utf-8")
+            _, problems, stats = sbom.collect(manifest, ROOT / "package-lock.json")
+
+        self.assertGreater(stats["problem_count"], 0)
+        self.assertIn(f"THIRD_PARTY_MANIFEST.json path must stay inside repository: {manifest}", problems)
+
+    def test_cli_fails_for_package_lock_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            manifest = Path(tmp) / "third-party.json"
+            lock = Path(outside_tmp) / "package-lock.json"
+            write_json(manifest, sample_manifest())
+            write_json(lock, sample_lock())
+            result = subprocess.run(
+                [
+                    str(TOOL),
+                    "--third-party-manifest",
+                    str(manifest),
+                    "--package-lock",
+                    str(lock),
+                ],
+                cwd=ROOT,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("package-lock.json path must stay inside repository", result.stdout)
+        self.assertIn("arc SBOM failed", result.stderr)
+
+    def test_collect_reports_missing_input_json(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            missing = Path(tmp) / "missing-package-lock.json"
+            _, problems, stats = sbom.collect(ROOT / "THIRD_PARTY_MANIFEST.json", missing)
+
+        self.assertGreater(stats["problem_count"], 0)
+        self.assertIn(f"package-lock.json file is missing: {missing.relative_to(ROOT).as_posix()}", problems)
+
 
 if __name__ == "__main__":
     unittest.main()

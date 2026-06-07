@@ -38,8 +38,8 @@ or distributing Arc-derived artifacts.
 - `tools/evidence-workflow-check.py --format json` verifies that the build
   workflow generates, indexes, signs, checks, and uploads the complete
   repository evidence contract and firmware artifact evidence.
-- `tools/sbom.py --format json` emits SPDX 2.3 SBOM evidence from the
-  third-party manifest and docs npm lockfile.
+- `tools/sbom.py --format json` emits SPDX 2.3 SBOM evidence from
+  repository-scoped third-party and docs npm lock manifests.
 - `tools/license-policy-check.py --format json` rejects missing or unapproved
   docs npm package license declarations before evidence is uploaded.
 - `tools/provenance.py --format json <artifact...>` emits an in-toto Statement
