@@ -27,8 +27,8 @@ or distributing Arc-derived artifacts.
   repository-scoped SHA-256 evidence for firmware `.bin` and `.elf` outputs.
 - `tools/release-evidence.py --format json --require-clean` emits the
   machine-readable release metadata snapshot, root/GitHub/docs policy file
-  hashes, and repo-local command reference checks before tagging or publishing a
-  release artifact.
+  hashes, and repo-local executable tool, source command, and npm script
+  reference checks before tagging or publishing a release artifact.
 - `tools/evidence-index.py --format json` hashes generated evidence files and
   rejects outside-repository paths, malformed JSON, `ok: false`, or non-empty
   `problems` payloads before an evidence bundle is published.

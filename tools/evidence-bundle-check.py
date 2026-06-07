@@ -315,6 +315,11 @@ def check_release_commands(release: dict[str, Any], problems: list[str]) -> int:
                 problems.append(f"release-evidence.json: {command} repo tool must be executable")
             if not isinstance(item.get("path"), str) or not item["path"]:
                 problems.append(f"release-evidence.json: {command} repo tool must include path")
+        elif kind == "repo_source":
+            if item.get("exists") is not True:
+                problems.append(f"release-evidence.json: {command} repo source must exist")
+            if not isinstance(item.get("path"), str) or not item["path"]:
+                problems.append(f"release-evidence.json: {command} repo source must include path")
         elif kind == "npm_script":
             if item.get("exists") is not True:
                 problems.append(f"release-evidence.json: {command} npm script must exist")

@@ -39,7 +39,12 @@ def file_record(path: Path) -> dict[str, object]:
 
 
 def release_payload(commit: str, release_commit: str | None = None) -> dict[str, object]:
-    commands = ["./tools/check-repo.sh", "npm run docs:build", "idf.py build"]
+    commands = [
+        "./tools/check-repo.sh",
+        "go run tools/arc-audit.go -root . -all",
+        "npm run docs:build",
+        "idf.py build",
+    ]
     return {
         "commit": release_commit or commit,
         "dirty": False,
@@ -57,13 +62,19 @@ def release_payload(commit: str, release_commit: str | None = None) -> dict[str,
             },
             {
                 "command": commands[1],
+                "kind": "repo_source",
+                "path": "tools/arc-audit.go",
+                "exists": True,
+            },
+            {
+                "command": commands[2],
                 "kind": "npm_script",
                 "path": "package.json",
                 "script": "docs:build",
                 "exists": True,
             },
             {
-                "command": commands[2],
+                "command": commands[3],
                 "kind": "external",
                 "tool": "idf.py",
             },
@@ -162,7 +173,7 @@ class EvidenceBundleCheckTest(unittest.TestCase):
         self.assertTrue(evidence["ok"], evidence["problems"])
         self.assertEqual(evidence["indexed_count"], len(evidence_bundle_check.EXPECTED_INDEXED))
         self.assertEqual(evidence["provenance_subject_count"], len(evidence_bundle_check.EXPECTED_PROVENANCE_SUBJECTS))
-        self.assertEqual(evidence["release_command_count"], 3)
+        self.assertEqual(evidence["release_command_count"], 4)
 
     def test_rejects_hash_mismatch(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
@@ -200,6 +211,7 @@ class EvidenceBundleCheckTest(unittest.TestCase):
             bundle = make_bundle(Path(tmp))
             release = json.loads((bundle / "release-evidence.json").read_text(encoding="utf-8"))
             release["required_command_records"][0]["executable"] = False
+            release["required_command_records"][1]["exists"] = False
             release["required_command_records"].append(
                 {
                     "command": "./tools/extra.py",
@@ -214,6 +226,10 @@ class EvidenceBundleCheckTest(unittest.TestCase):
 
         self.assertFalse(evidence["ok"])
         self.assertIn("release-evidence.json: ./tools/check-repo.sh repo tool must be executable", evidence["problems"])
+        self.assertIn(
+            "release-evidence.json: go run tools/arc-audit.go -root . -all repo source must exist",
+            evidence["problems"],
+        )
         self.assertIn("release-evidence.json: command records must match required_commands order", evidence["problems"])
 
     def test_rejects_incomplete_provenance_predicate(self) -> None:

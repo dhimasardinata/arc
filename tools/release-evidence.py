@@ -39,6 +39,14 @@ POLICY_FILES = [
 
 REQUIRED_COMMANDS = [
     "./tools/check-repo.sh",
+    "./tools/format.sh --check",
+    "./tools/tool-tests.sh",
+    "./tools/profile-manifest-check.py",
+    "./tools/topology-check.py --quiet",
+    "python3 tools/compile-fail-check.py",
+    "./tools/arc-prove.sh",
+    "./tools/use-after-move-check.sh",
+    "go run tools/arc-audit.go -root . -all",
     "./tools/host-tests.sh",
     "tools/clangd-compile-commands.py --validate-arc-headers",
     "./tools/source-manifest.py --format json --require-clean",
@@ -108,6 +116,17 @@ def repo_tool_record(command: str, path_text: str) -> dict[str, Any]:
     }
 
 
+def repo_source_record(command: str, path_text: str) -> dict[str, Any]:
+    path_text = path_text.removeprefix("./")
+    path = ROOT / path_text
+    return {
+        "command": command,
+        "kind": "repo_source",
+        "path": path_text,
+        "exists": path.is_file(),
+    }
+
+
 def command_record(command: str, scripts: dict[str, str] | None = None) -> dict[str, Any]:
     scripts = package_scripts() if scripts is None else scripts
     try:
@@ -127,6 +146,8 @@ def command_record(command: str, scripts: dict[str, str] | None = None) -> dict[
 
     if parts[0] in {"python", "python3"} and len(parts) > 1 and parts[1].removeprefix("./").startswith("tools/"):
         return repo_tool_record(command, parts[1])
+    if len(parts) > 2 and parts[0] == "go" and parts[1] == "run" and parts[2].removeprefix("./").startswith("tools/"):
+        return repo_source_record(command, parts[2])
     if parts[0].removeprefix("./").startswith("tools/"):
         return repo_tool_record(command, parts[0])
     if len(parts) >= 3 and parts[0] == "npm" and parts[1] == "run":
@@ -155,6 +176,8 @@ def command_problem(record: dict[str, Any]) -> str | None:
             return f"{command}: repo tool path missing: {record['path']}"
         if not record["executable"]:
             return f"{command}: repo tool must be executable: {record['path']}"
+    if kind == "repo_source" and not record["exists"]:
+        return f"{command}: repo source path missing: {record['path']}"
     if kind == "npm_script" and not record["exists"]:
         return f"{command}: npm script missing from package.json: {record['script']}"
     return None
@@ -200,6 +223,9 @@ def print_report(evidence: dict[str, Any]) -> None:
     for record in evidence["required_command_records"]:
         if record["kind"] == "repo_tool":
             state = "ok" if record["exists"] and record["executable"] else "problem"
+            print(f"  - {record['command']}: {state} path={record['path']}")
+        elif record["kind"] == "repo_source":
+            state = "ok" if record["exists"] else "problem"
             print(f"  - {record['command']}: {state} path={record['path']}")
         elif record["kind"] == "npm_script":
             state = "ok" if record["exists"] else "problem"

@@ -15,6 +15,14 @@ for firmware, security, safety, or licensing claims.
 ## Required Repository Gates
 
 - `./tools/check-repo.sh`
+- `./tools/format.sh --check`
+- `./tools/tool-tests.sh`
+- `./tools/profile-manifest-check.py`
+- `./tools/topology-check.py --quiet`
+- `python3 tools/compile-fail-check.py`
+- `./tools/arc-prove.sh`
+- `./tools/use-after-move-check.sh`
+- `go run tools/arc-audit.go -root . -all`
 - `./tools/host-tests.sh` when library behavior changed
 - `tools/clangd-compile-commands.py --validate-arc-headers` when public headers,
   umbrella includes, or component dependencies changed
@@ -56,7 +64,7 @@ for firmware, security, safety, or licensing claims.
 - `./tools/release-evidence.py --format json --require-clean` before tagging or
   publishing a release artifact; its JSON records root, GitHub, and docs policy
   file hashes and checks that repo-local release commands still point to
-  executable tools or declared npm scripts
+  executable tools, checked source files, or declared npm scripts
 
 ## Firmware Evidence
 

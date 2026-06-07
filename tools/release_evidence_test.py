@@ -36,6 +36,14 @@ class ReleaseEvidenceTest(unittest.TestCase):
         self.assertTrue(paths["THIRD_PARTY_MANIFEST.json"]["sha256"])
         self.assertTrue(paths[".github/dependabot.yml"]["sha256"])
         self.assertIn("./tools/check-repo.sh", evidence["required_commands"])
+        self.assertIn("./tools/format.sh --check", evidence["required_commands"])
+        self.assertIn("./tools/tool-tests.sh", evidence["required_commands"])
+        self.assertIn("./tools/profile-manifest-check.py", evidence["required_commands"])
+        self.assertIn("./tools/topology-check.py --quiet", evidence["required_commands"])
+        self.assertIn("python3 tools/compile-fail-check.py", evidence["required_commands"])
+        self.assertIn("./tools/arc-prove.sh", evidence["required_commands"])
+        self.assertIn("./tools/use-after-move-check.sh", evidence["required_commands"])
+        self.assertIn("go run tools/arc-audit.go -root . -all", evidence["required_commands"])
         self.assertIn("./tools/firmware-manifest.py --format json --require-artifacts", evidence["required_commands"])
         self.assertIn("./tools/source-manifest.py --format json --require-clean", evidence["required_commands"])
         self.assertIn("./tools/safety-case-check.py --format json", evidence["required_commands"])
@@ -56,6 +64,10 @@ class ReleaseEvidenceTest(unittest.TestCase):
         records = {record["command"]: record for record in evidence["required_command_records"]}
         self.assertTrue(records["./tools/check-repo.sh"]["exists"])
         self.assertTrue(records["./tools/check-repo.sh"]["executable"])
+        self.assertTrue(records["./tools/format.sh --check"]["executable"])
+        self.assertTrue(records["python3 tools/compile-fail-check.py"]["executable"])
+        self.assertEqual(records["go run tools/arc-audit.go -root . -all"]["kind"], "repo_source")
+        self.assertTrue(records["go run tools/arc-audit.go -root . -all"]["exists"])
         self.assertEqual(records["npm run docs:build"]["kind"], "npm_script")
         self.assertTrue(records["npm run docs:build"]["exists"])
         self.assertEqual(records["idf.py build"]["kind"], "external")
@@ -102,6 +114,7 @@ class ReleaseEvidenceTest(unittest.TestCase):
 
     def test_command_records_validate_repo_tools_and_npm_scripts(self) -> None:
         missing_tool = release_evidence.command_record("./tools/no-such-tool.py")
+        missing_source = release_evidence.command_record("go run tools/no-such-tool.go")
         missing_script = release_evidence.command_record(
             "npm run no-such-script", {"docs:build": "vitepress build docs"}
         )
@@ -110,6 +123,10 @@ class ReleaseEvidenceTest(unittest.TestCase):
         self.assertEqual(
             release_evidence.command_problem(missing_tool),
             "./tools/no-such-tool.py: repo tool path missing: tools/no-such-tool.py",
+        )
+        self.assertEqual(
+            release_evidence.command_problem(missing_source),
+            "go run tools/no-such-tool.go: repo source path missing: tools/no-such-tool.go",
         )
         self.assertEqual(
             release_evidence.command_problem(missing_script),

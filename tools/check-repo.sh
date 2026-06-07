@@ -263,6 +263,14 @@ if [[ ! -f RELEASE.md ]]; then
 fi
 
 if ! grep -qF './tools/check-repo.sh' RELEASE.md \
+    || ! grep -qF './tools/format.sh --check' RELEASE.md \
+    || ! grep -qF './tools/tool-tests.sh' RELEASE.md \
+    || ! grep -qF './tools/profile-manifest-check.py' RELEASE.md \
+    || ! grep -qF './tools/topology-check.py --quiet' RELEASE.md \
+    || ! grep -qF 'python3 tools/compile-fail-check.py' RELEASE.md \
+    || ! grep -qF './tools/arc-prove.sh' RELEASE.md \
+    || ! grep -qF './tools/use-after-move-check.sh' RELEASE.md \
+    || ! grep -qF 'go run tools/arc-audit.go -root . -all' RELEASE.md \
     || ! grep -qF './tools/host-tests.sh' RELEASE.md \
     || ! grep -qF './tools/firmware-manifest.py --format json --require-artifacts' RELEASE.md \
     || ! grep -qF './tools/safety-case-check.py --format json' RELEASE.md \
