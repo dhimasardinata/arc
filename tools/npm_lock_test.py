@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,7 +23,7 @@ def write_json(path: Path, payload: object) -> None:
 
 class NpmLockCheckTest(unittest.TestCase):
     def test_accepts_synced_registry_lockfile(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             package_json = root / "package.json"
             package_lock = root / "package-lock.json"
@@ -63,7 +64,7 @@ class NpmLockCheckTest(unittest.TestCase):
         self.assertEqual(evidence["integrity_count"], 1)
 
     def test_accepts_reviewed_install_scripts(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             package_json = root / "package.json"
             package_lock = root / "package-lock.json"
@@ -101,7 +102,7 @@ class NpmLockCheckTest(unittest.TestCase):
         )
 
     def test_rejects_unsynchronized_root_dependencies(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             package_json = root / "package.json"
             package_lock = root / "package-lock.json"
@@ -126,7 +127,7 @@ class NpmLockCheckTest(unittest.TestCase):
         self.assertIn("package-lock.json root devDependencies must match package.json", evidence["problems"])
 
     def test_rejects_non_registry_resolved_packages(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             package_json = root / "package.json"
             package_lock = root / "package-lock.json"
@@ -156,7 +157,7 @@ class NpmLockCheckTest(unittest.TestCase):
         )
 
     def test_rejects_missing_integrity_hashes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             package_json = root / "package.json"
             package_lock = root / "package-lock.json"
@@ -182,7 +183,7 @@ class NpmLockCheckTest(unittest.TestCase):
         self.assertIn("vitepress: integrity must be a sha512 npm integrity string", evidence["problems"])
 
     def test_rejects_unreviewed_install_script(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             package_json = root / "package.json"
             package_lock = root / "package-lock.json"
@@ -214,7 +215,7 @@ class NpmLockCheckTest(unittest.TestCase):
         )
 
     def test_rejects_reviewed_install_script_version_drift(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
             package_json = root / "package.json"
             package_lock = root / "package-lock.json"
@@ -242,6 +243,61 @@ class NpmLockCheckTest(unittest.TestCase):
         self.assertIn(
             "esbuild: install script version 0.27.8 must match reviewed version 0.27.7",
             evidence["problems"],
+        )
+
+    def test_rejects_package_json_path_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as outside_tmp:
+            package_json = Path(outside_tmp) / "package.json"
+            write_json(package_json, {"name": "arc-docs"})
+            evidence = npm_lock_check.collect(package_json, ROOT / "package-lock.json")
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(f"package.json path must stay inside repository: {package_json}", evidence["problems"])
+
+    def test_cli_fails_for_package_lock_path_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            package_json = Path(tmp) / "package.json"
+            package_lock = Path(outside_tmp) / "package-lock.json"
+            write_json(package_json, {"name": "arc-docs"})
+            write_json(
+                package_lock,
+                {
+                    "name": "arc-docs",
+                    "lockfileVersion": 3,
+                    "packages": {"": {"name": "arc-docs"}},
+                },
+            )
+            result = subprocess.run(
+                [
+                    str(TOOL),
+                    "--format",
+                    "json",
+                    "--package-json",
+                    str(package_json),
+                    "--package-lock",
+                    str(package_lock),
+                ],
+                cwd=ROOT,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertIn("package-lock.json path must stay inside repository", result.stdout)
+        self.assertIn("arc npm lock evidence failed", result.stderr)
+
+    def test_reports_missing_input_json(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            missing = Path(tmp) / "missing-package-lock.json"
+            evidence = npm_lock_check.collect(ROOT / "package.json", missing)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            f"package-lock.json file is missing: {missing.relative_to(ROOT).as_posix()}", evidence["problems"]
         )
 
 

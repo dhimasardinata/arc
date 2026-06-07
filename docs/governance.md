@@ -67,8 +67,8 @@ or distributing Arc-derived artifacts.
   expression/cache-write guards inside the repository's approved CI policy.
 - `tools/dependabot-policy-check.py --format json` keeps Dependabot version
   updates scoped to reviewed GitHub Actions and docs npm dependency lanes.
-- `tools/npm-lock-check.py --format json` keeps the docs dependency lockfile
-  synchronized with `package.json`, backed by registry integrity hashes, and
+- `tools/npm-lock-check.py --format json` keeps repository-scoped docs
+  dependency manifests synchronized, backed by registry integrity hashes, and
   limited to reviewed install-script packages.
 - `tools/license-policy-check.py --format json` keeps docs npm dependency
   licenses inside Arc's approved release policy.

@@ -35,6 +35,31 @@ def load_json(path: Path) -> Any:
         return json.load(handle)
 
 
+def repo_input_path(root: Path, path: Path, label: str, problems: list[str]) -> Path | None:
+    full = path if path.is_absolute() else root / path
+    resolved = full.resolve()
+    try:
+        rel = resolved.relative_to(root.resolve()).as_posix()
+    except ValueError:
+        problems.append(f"{label} path must stay inside repository: {path}")
+        return None
+    if not resolved.is_file():
+        problems.append(f"{label} file is missing: {rel}")
+        return None
+    return resolved
+
+
+def load_input_json(root: Path, path: Path, label: str, problems: list[str]) -> Any | None:
+    resolved = repo_input_path(root, path, label, problems)
+    if resolved is None:
+        return None
+    try:
+        return load_json(resolved)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        problems.append(f"{label} cannot load JSON: {exc}")
+        return None
+
+
 def object_or_empty(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -125,10 +150,16 @@ def validate_install_script_policy(label: str, package: dict[str, Any]) -> tuple
     )
 
 
-def collect(package_json_path: Path = PACKAGE_JSON, package_lock_path: Path = PACKAGE_LOCK) -> dict[str, Any]:
-    package_json = load_json(package_json_path)
-    package_lock = load_json(package_lock_path)
-    problems, dependency_counts = validate_root(package_json, package_lock)
+def collect(
+    package_json_path: Path = PACKAGE_JSON,
+    package_lock_path: Path = PACKAGE_LOCK,
+    root: Path = ROOT,
+) -> dict[str, Any]:
+    load_problems: list[str] = []
+    package_json = load_input_json(root, package_json_path, "package.json", load_problems)
+    package_lock = load_input_json(root, package_lock_path, "package-lock.json", load_problems)
+    root_problems, dependency_counts = validate_root(package_json, package_lock)
+    problems = [*load_problems, *root_problems]
 
     packages = package_lock.get("packages", {}) if isinstance(package_lock, dict) else {}
     package_records: list[dict[str, Any]] = []
