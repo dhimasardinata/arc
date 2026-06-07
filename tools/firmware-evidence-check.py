@@ -15,6 +15,7 @@ DEFAULT_ARTIFACT_DIR = ROOT / ".arc-artifacts"
 INDEX_NAME = "firmware-evidence-index.json"
 MANIFEST_NAME = "firmware-manifest.json"
 PROVENANCE_NAME = "firmware-provenance.intoto.json"
+EXPECTED_SOURCE_URI = "git+https://github.com/dhimasardinata/arc.git"
 EXPECTED_INDEXED = (MANIFEST_NAME, PROVENANCE_NAME)
 EXPECTED_PROVENANCE_SUBJECTS = (MANIFEST_NAME,)
 EXPECTED_PROVENANCE_BYPRODUCTS = (
@@ -242,16 +243,34 @@ def parse_metadata_time(value: Any, field: str, problems: list[str]) -> datetime
     return stamp
 
 
-def provenance_dependency_commit(provenance: dict[str, Any]) -> str | None:
+def provenance_source_dependency(provenance: dict[str, Any]) -> dict[str, Any] | None:
     dependencies = provenance.get("predicate", {}).get("buildDefinition", {}).get("resolvedDependencies")
     if not isinstance(dependencies, list):
         return None
     for item in dependencies:
         if isinstance(item, dict) and item.get("name") == "arc-source":
-            digest = item.get("digest")
-            if isinstance(digest, dict):
-                value = digest.get("gitCommit")
-                return value if isinstance(value, str) else None
+            return item
+    return None
+
+
+def provenance_dependency_commit(provenance: dict[str, Any]) -> str | None:
+    dependency = provenance_source_dependency(provenance)
+    if dependency is None:
+        return None
+    digest = dependency.get("digest")
+    if isinstance(digest, dict):
+        value = digest.get("gitCommit")
+        return value if isinstance(value, str) else None
+    return None
+
+
+def provenance_dependency_uri(provenance: dict[str, Any]) -> str | None:
+    dependency = provenance_source_dependency(provenance)
+    if dependency is None:
+        return None
+    value = dependency.get("uri")
+    if isinstance(value, str):
+        return value
     return None
 
 
@@ -279,6 +298,8 @@ def check_provenance_predicate(provenance: dict[str, Any], problems: list[str]) 
     ]
     if external.get("subjects") != subject_names:
         problems.append(f"{PROVENANCE_NAME}: externalParameters subjects must match provenance subjects")
+    if provenance_dependency_uri(provenance) != EXPECTED_SOURCE_URI:
+        problems.append(f"{PROVENANCE_NAME}: resolved dependency uri must be {EXPECTED_SOURCE_URI}")
 
     run = predicate.get("runDetails")
     if not isinstance(run, dict):

@@ -102,7 +102,7 @@ artifact bundle back to source without trusting artifact names alone.
 sizes, hashes, and JSON status records, source manifest file inventory, source
 tree digest, provenance subjects, provenance byproducts, SBOM commit, and
 release metadata, including ordered timezone-aware provenance timestamps and
-commit/branch identity, all agree before CI uploads the repository evidence
+source repository/commit/branch identity, all agree before CI uploads the repository evidence
 bundle.
 
 `tools/evidence-workflow-check.py --format json` verifies that the build

@@ -166,7 +166,11 @@ def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | Non
                         "predicateType": "https://slsa.dev/provenance/v1",
                     },
                     "resolvedDependencies": [
-                        {"name": "arc-source", "digest": {"gitCommit": commit}},
+                        {
+                            "name": "arc-source",
+                            "uri": evidence_bundle_check.EXPECTED_SOURCE_URI,
+                            "digest": {"gitCommit": commit},
+                        },
                     ],
                 },
                 "runDetails": {
@@ -455,6 +459,22 @@ class EvidenceBundleCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn(
             "provenance.intoto.json resolved dependency: commit must match evidence-index commit",
+            evidence["problems"],
+        )
+
+    def test_rejects_provenance_dependency_uri_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "provenance.intoto.json").read_text(encoding="utf-8"))
+            provenance["predicate"]["buildDefinition"]["resolvedDependencies"][0]["uri"] = (
+                "git+https://github.com/example/fork.git"
+            )
+            write_json(bundle / "provenance.intoto.json", provenance)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "provenance.intoto.json: resolved dependency uri must be " + evidence_bundle_check.EXPECTED_SOURCE_URI,
             evidence["problems"],
         )
 

@@ -41,7 +41,7 @@ or distributing Arc-derived artifacts.
   index sizes, hashes, and JSON status records, source manifest inventory,
   source tree digest, provenance subjects, SLSA predicate metadata, artifact
   hashes, release command checks, timezone-aware provenance timestamps, and
-  commit/branch identities agree before CI uploads the bundle.
+  source repository/commit/branch identities agree before CI uploads the bundle.
 - `tools/evidence-workflow-check.py --format json` verifies that the build
   workflow generates, indexes, signs, checks, and uploads the complete
   repository evidence contract and firmware artifact evidence.

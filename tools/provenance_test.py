@@ -39,6 +39,7 @@ class ProvenanceTest(unittest.TestCase):
         self.assertRegex(byproducts[0]["digest"]["sha256"], r"^[0-9a-f]{64}$")
         resolved = statement["predicate"]["buildDefinition"]["resolvedDependencies"][0]
         self.assertEqual(resolved["name"], "arc-source")
+        self.assertEqual(resolved["uri"], "git+https://github.com/dhimasardinata/arc.git")
         self.assertRegex(resolved["digest"]["gitCommit"], r"^[0-9a-f]{40}$")
 
     def test_rejects_missing_subject(self) -> None:

@@ -97,7 +97,11 @@ def make_bundle(base: Path, *, commit: str = "b" * 40) -> Path:
                         "subjects": [rel(subject)],
                     },
                     "resolvedDependencies": [
-                        {"name": "arc-source", "digest": {"gitCommit": commit}},
+                        {
+                            "name": "arc-source",
+                            "uri": firmware_evidence_check.EXPECTED_SOURCE_URI,
+                            "digest": {"gitCommit": commit},
+                        },
                     ],
                 },
                 "runDetails": {
@@ -285,6 +289,23 @@ class FirmwareEvidenceCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn(
             "firmware-provenance.intoto.json: branch must match firmware-evidence-index.json branch",
+            evidence["problems"],
+        )
+
+    def test_rejects_provenance_dependency_uri_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "firmware-provenance.intoto.json").read_text(encoding="utf-8"))
+            provenance["predicate"]["buildDefinition"]["resolvedDependencies"][0]["uri"] = (
+                "git+https://github.com/example/fork.git"
+            )
+            write_json(bundle / "firmware-provenance.intoto.json", provenance)
+            evidence = firmware_evidence_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware-provenance.intoto.json: resolved dependency uri must be "
+            + firmware_evidence_check.EXPECTED_SOURCE_URI,
             evidence["problems"],
         )
 
