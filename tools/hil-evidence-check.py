@@ -14,6 +14,7 @@ DEFAULT_CASES = (
     "can_priority_spam",
     "espnow_stale_recover",
 )
+OUTPUT_FORMATS = ("text", "report", "json")
 
 
 def load_records(path: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
@@ -57,6 +58,60 @@ def check_required(cases: dict[str, dict[str, Any]], required: tuple[str, ...]) 
     return [f"missing required HIL case: {case}" for case in required if case not in cases]
 
 
+def collect(artifact: Path | None, required: tuple[str, ...]) -> dict[str, Any]:
+    cases: dict[str, dict[str, Any]] = {}
+    problems: list[str] = []
+
+    if artifact is None:
+        problems.append("artifact path is required")
+    elif not artifact.is_file():
+        problems.append(f"artifact not found: {artifact}")
+    else:
+        try:
+            cases, problems = load_records(artifact)
+        except (OSError, UnicodeDecodeError) as exc:
+            problems.append(f"{artifact}: cannot read artifact: {exc}")
+        problems.extend(check_required(cases, required))
+
+    return {
+        "artifact": str(artifact) if artifact is not None else None,
+        "required_cases": list(required),
+        "record_count": len(cases),
+        "cases": [cases[name] for name in sorted(cases)],
+        "ok": not problems,
+        "problems": problems,
+    }
+
+
+def report_text(evidence: dict[str, Any]) -> str:
+    lines = [
+        "arc hil evidence check",
+        f"- artifact: {evidence['artifact']}",
+        f"- required cases: {len(evidence['required_cases'])}",
+        f"- records: {evidence['record_count']}",
+        f"- problems: {len(evidence['problems'])}",
+    ]
+    if evidence["required_cases"]:
+        lines.append("- required:")
+        lines.extend(f"  - {case}" for case in evidence["required_cases"])
+    if evidence["cases"]:
+        lines.append("- cases:")
+        for record in evidence["cases"]:
+            lines.append(f"  - {record['case']}: {record['status']}")
+    if evidence["problems"]:
+        lines.append("- problem details:")
+        lines.extend(f"  - {problem}" for problem in evidence["problems"])
+    return "\n".join(lines)
+
+
+def payload_text(evidence: dict[str, Any], output_format: str) -> str:
+    if output_format == "json":
+        return json.dumps(evidence, indent=2, sort_keys=True)
+    if output_format == "report":
+        return report_text(evidence)
+    return f"arc hil evidence check: OK ({len(evidence['required_cases'])} required cases, {evidence['record_count']} records)"
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate Arc HIL JSONL evidence artifacts.")
     parser.add_argument("artifact", nargs="?", type=Path, help="JSONL file captured from the hardware test jig")
@@ -65,6 +120,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="append",
         default=[],
         help="Required case name. Repeat to override the default required set.",
+    )
+    parser.add_argument(
+        "--format",
+        choices=OUTPUT_FORMATS,
+        default="text",
+        help="output style: text status, human report, or JSON evidence",
     )
     parser.add_argument("--list-defaults", action="store_true", help="Print the default required case names.")
     return parser.parse_args(argv)
@@ -78,25 +139,18 @@ def main(argv: list[str] | None = None) -> int:
             print(case)
         return 0
 
-    if args.artifact is None:
-        print("arc hil evidence check failed: artifact path is required", file=sys.stderr)
-        return 1
-
-    if not args.artifact.is_file():
-        print(f"arc hil evidence check failed: artifact not found: {args.artifact}", file=sys.stderr)
-        return 1
-
     required = tuple(args.require) if args.require else DEFAULT_CASES
-    cases, problems = load_records(args.artifact)
-    problems.extend(check_required(cases, required))
+    evidence = collect(args.artifact, required)
 
-    if problems:
+    if args.format in ("json", "report") or evidence["ok"]:
+        print(payload_text(evidence, args.format))
+
+    if evidence["problems"]:
         print("arc hil evidence check failed:", file=sys.stderr)
-        for problem in problems:
+        for problem in evidence["problems"]:
             print(f"- {problem}", file=sys.stderr)
         return 1
 
-    print(f"arc hil evidence check: OK ({len(required)} required cases, {len(cases)} records)")
     return 0
 
 

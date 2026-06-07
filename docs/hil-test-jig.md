@@ -46,4 +46,5 @@ Validate the captured artifact before attaching it to a release or safety review
 
 ```bash
 ./tools/hil-evidence-check.py hil.jsonl
+./tools/hil-evidence-check.py --format json hil.jsonl
 ```
