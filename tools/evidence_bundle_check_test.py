@@ -104,11 +104,37 @@ def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | Non
             "subject": subjects,
             "predicate": {
                 "buildDefinition": {
-                    "externalParameters": {"commit": commit},
+                    "buildType": "local://arc/tools/provenance.py",
+                    "externalParameters": {
+                        "commit": commit,
+                        "subjects": [item["name"] for item in subjects],
+                    },
+                    "internalParameters": {
+                        "tool": "tools/provenance.py",
+                        "predicateType": "https://slsa.dev/provenance/v1",
+                    },
                     "resolvedDependencies": [
                         {"name": "arc-source", "digest": {"gitCommit": commit}},
                     ],
-                }
+                },
+                "runDetails": {
+                    "builder": {
+                        "id": "local://arc/tools/provenance.py",
+                    },
+                    "metadata": {
+                        "invocationId": "local:/tmp/arc:" + commit,
+                        "startedOn": "2026-01-01T00:00:00+00:00",
+                        "finishedOn": "2026-01-01T00:00:00+00:00",
+                    },
+                    "byproducts": [
+                        {
+                            "name": "tools/provenance.py",
+                            "digest": {
+                                "sha256": evidence_bundle_check.sha256(ROOT / "tools" / "provenance.py"),
+                            },
+                        }
+                    ],
+                },
             },
         },
     )
@@ -188,6 +214,29 @@ class EvidenceBundleCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn("release-evidence.json: ./tools/check-repo.sh repo tool must be executable", evidence["problems"])
         self.assertIn("release-evidence.json: command records must match required_commands order", evidence["problems"])
+
+    def test_rejects_incomplete_provenance_predicate(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "provenance.intoto.json").read_text(encoding="utf-8"))
+            predicate = provenance["predicate"]
+            predicate["buildDefinition"]["buildType"] = ""
+            predicate["buildDefinition"]["externalParameters"]["subjects"] = []
+            predicate["runDetails"]["builder"]["id"] = ""
+            predicate["runDetails"]["metadata"]["invocationId"] = ""
+            predicate["runDetails"]["byproducts"][0]["digest"]["sha256"] = "0" * 64
+            write_json(bundle / "provenance.intoto.json", provenance)
+            evidence = evidence_bundle_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("provenance.intoto.json: buildType must be present", evidence["problems"])
+        self.assertIn(
+            "provenance.intoto.json: externalParameters subjects must match provenance subjects",
+            evidence["problems"],
+        )
+        self.assertIn("provenance.intoto.json: builder id must be present", evidence["problems"])
+        self.assertIn("provenance.intoto.json: metadata invocationId must be present", evidence["problems"])
+        self.assertIn("provenance.intoto.json: tools/provenance.py byproduct sha256 mismatch", evidence["problems"])
 
     def test_rejects_missing_provenance_dependency_commit(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:

@@ -178,6 +178,64 @@ def provenance_dependency_commit(provenance: dict[str, Any]) -> str | None:
     return None
 
 
+def provenance_byproduct_sha(provenance: dict[str, Any], name: str) -> str | None:
+    byproducts = provenance.get("predicate", {}).get("runDetails", {}).get("byproducts")
+    if not isinstance(byproducts, list):
+        return None
+    for item in byproducts:
+        if isinstance(item, dict) and item.get("name") == name:
+            digest = item.get("digest")
+            if isinstance(digest, dict):
+                value = digest.get("sha256")
+                return value if isinstance(value, str) else None
+    return None
+
+
+def check_provenance_predicate(provenance: dict[str, Any], problems: list[str]) -> None:
+    predicate = provenance.get("predicate")
+    if not isinstance(predicate, dict):
+        problems.append("provenance.intoto.json: predicate must be an object")
+        return
+
+    build = predicate.get("buildDefinition")
+    if not isinstance(build, dict):
+        problems.append("provenance.intoto.json: buildDefinition must be an object")
+        build = {}
+    if not isinstance(build.get("buildType"), str) or not build["buildType"]:
+        problems.append("provenance.intoto.json: buildType must be present")
+
+    external = build.get("externalParameters")
+    if not isinstance(external, dict):
+        problems.append("provenance.intoto.json: externalParameters must be an object")
+        external = {}
+    subject_names = [
+        item.get("name")
+        for item in provenance.get("subject", [])
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    ]
+    if external.get("subjects") != subject_names:
+        problems.append("provenance.intoto.json: externalParameters subjects must match provenance subjects")
+
+    run = predicate.get("runDetails")
+    if not isinstance(run, dict):
+        problems.append("provenance.intoto.json: runDetails must be an object")
+        run = {}
+    builder = run.get("builder")
+    if not isinstance(builder, dict) or not isinstance(builder.get("id"), str) or not builder["id"]:
+        problems.append("provenance.intoto.json: builder id must be present")
+    metadata = run.get("metadata")
+    if not isinstance(metadata, dict):
+        problems.append("provenance.intoto.json: metadata must be an object")
+        metadata = {}
+    for field in ("invocationId", "startedOn", "finishedOn"):
+        if not isinstance(metadata.get(field), str) or not metadata[field]:
+            problems.append(f"provenance.intoto.json: metadata {field} must be present")
+
+    expected_tool_sha = sha256(ROOT / "tools" / "provenance.py")
+    if provenance_byproduct_sha(provenance, "tools/provenance.py") != expected_tool_sha:
+        problems.append("provenance.intoto.json: tools/provenance.py byproduct sha256 mismatch")
+
+
 def check_commit_coherence(
     index: dict[str, Any],
     provenance: dict[str, Any],
@@ -279,6 +337,8 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
 
     indexed = indexed_records(index, artifact_dir, problems) if index else {}
     subjects = subject_records(provenance, artifact_dir, problems) if provenance else {}
+    if provenance:
+        check_provenance_predicate(provenance, problems)
     commit = check_commit_coherence(index, provenance, source, release, sbom, problems) if index else None
     release_command_count = check_release_commands(release, problems) if release else 0
 
