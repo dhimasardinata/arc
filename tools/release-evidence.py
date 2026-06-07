@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -75,15 +77,98 @@ def file_record(name: str) -> dict[str, Any]:
     }
 
 
+def package_scripts() -> dict[str, str]:
+    package_json = ROOT / "package.json"
+    try:
+        payload = json.loads(package_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    scripts = payload.get("scripts")
+    return scripts if isinstance(scripts, dict) else {}
+
+
+def repo_tool_record(command: str, path_text: str) -> dict[str, Any]:
+    path_text = path_text.removeprefix("./")
+    path = ROOT / path_text
+    exists = path.is_file()
+    executable = exists and os.access(path, os.X_OK)
+    return {
+        "command": command,
+        "kind": "repo_tool",
+        "path": path_text,
+        "exists": exists,
+        "executable": executable,
+    }
+
+
+def command_record(command: str, scripts: dict[str, str] | None = None) -> dict[str, Any]:
+    scripts = package_scripts() if scripts is None else scripts
+    try:
+        parts = shlex.split(command)
+    except ValueError as exc:
+        return {
+            "command": command,
+            "kind": "invalid",
+            "problem": f"cannot parse command: {exc}",
+        }
+    if not parts:
+        return {
+            "command": command,
+            "kind": "invalid",
+            "problem": "command is empty",
+        }
+
+    if parts[0] in {"python", "python3"} and len(parts) > 1 and parts[1].removeprefix("./").startswith("tools/"):
+        return repo_tool_record(command, parts[1])
+    if parts[0].removeprefix("./").startswith("tools/"):
+        return repo_tool_record(command, parts[0])
+    if len(parts) >= 3 and parts[0] == "npm" and parts[1] == "run":
+        script = parts[2]
+        return {
+            "command": command,
+            "kind": "npm_script",
+            "path": "package.json",
+            "script": script,
+            "exists": script in scripts,
+        }
+    return {
+        "command": command,
+        "kind": "external",
+        "tool": parts[0],
+    }
+
+
+def command_problem(record: dict[str, Any]) -> str | None:
+    command = record["command"]
+    kind = record["kind"]
+    if kind == "invalid":
+        return f"{command}: {record['problem']}"
+    if kind == "repo_tool":
+        if not record["exists"]:
+            return f"{command}: repo tool path missing: {record['path']}"
+        if not record["executable"]:
+            return f"{command}: repo tool must be executable: {record['path']}"
+    if kind == "npm_script" and not record["exists"]:
+        return f"{command}: npm script missing from package.json: {record['script']}"
+    return None
+
+
 def collect() -> dict[str, Any]:
     status = git(["status", "--short", "--untracked-files=all"]).splitlines()
+    policy_files = [file_record(name) for name in POLICY_FILES]
+    command_records = [command_record(command) for command in REQUIRED_COMMANDS]
+    problems = [f"missing policy file: {record['path']}" for record in policy_files if not record["exists"]]
+    problems.extend(problem for record in command_records if (problem := command_problem(record)))
     return {
         "commit": git(["rev-parse", "HEAD"]),
         "branch": git(["rev-parse", "--abbrev-ref", "HEAD"]),
         "dirty": bool(status),
         "status": status,
-        "policy_files": [file_record(name) for name in POLICY_FILES],
+        "ok": not problems,
+        "policy_files": policy_files,
         "required_commands": REQUIRED_COMMANDS,
+        "required_command_records": command_records,
+        "problems": problems,
     }
 
 
@@ -104,6 +189,20 @@ def print_report(evidence: dict[str, Any]) -> None:
     print("- required commands:")
     for command in evidence["required_commands"]:
         print(f"  - {command}")
+    print("- command checks:")
+    for record in evidence["required_command_records"]:
+        if record["kind"] == "repo_tool":
+            state = "ok" if record["exists"] and record["executable"] else "problem"
+            print(f"  - {record['command']}: {state} path={record['path']}")
+        elif record["kind"] == "npm_script":
+            state = "ok" if record["exists"] else "problem"
+            print(f"  - {record['command']}: {state} script={record['script']}")
+        else:
+            print(f"  - {record['command']}: external tool={record.get('tool', record['kind'])}")
+    if evidence["problems"]:
+        print("- problems:")
+        for problem in evidence["problems"]:
+            print(f"  - {problem}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -122,16 +221,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     evidence = collect()
-    missing = [record["path"] for record in evidence["policy_files"] if not record["exists"]]
-
     if args.format == "json":
         print(json.dumps(evidence, indent=2, sort_keys=True))
     else:
         print_report(evidence)
 
-    if missing:
+    if evidence["problems"]:
         print(
-            "arc release evidence failed: missing policy files: " + ", ".join(missing),
+            "arc release evidence failed: " + "; ".join(evidence["problems"]),
             file=sys.stderr,
         )
         return 1
