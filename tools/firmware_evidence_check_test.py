@@ -245,6 +245,18 @@ class FirmwareEvidenceCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn(f"firmware-evidence-index.json: {name} size mismatch", evidence["problems"])
 
+    def test_rejects_missing_index_json_state(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            index = json.loads((bundle / "firmware-evidence-index.json").read_text(encoding="utf-8"))
+            index["files"][0].pop("json")
+            name = Path(index["files"][0]["path"]).name
+            write_json(bundle / "firmware-evidence-index.json", index)
+            evidence = firmware_evidence_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(f"firmware-evidence-index.json: {name} JSON state must be an object", evidence["problems"])
+
     def test_cli_reports_missing_bundle_as_json(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             missing = Path(tmp) / ".arc-artifacts"

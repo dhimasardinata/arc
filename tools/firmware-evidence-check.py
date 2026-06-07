@@ -130,7 +130,9 @@ def indexed_records(index: dict[str, Any], artifact_dir: Path, problems: list[st
         if item.get("sha256") != sha256(full):
             problems.append(f"{INDEX_NAME}: {name} sha256 mismatch")
         state = item.get("json")
-        if isinstance(state, dict):
+        if not isinstance(state, dict):
+            problems.append(f"{INDEX_NAME}: {name} JSON state must be an object")
+        else:
             if state.get("valid") is not True:
                 problems.append(f"{INDEX_NAME}: {name} JSON validity must be true")
             if state.get("ok") is False:

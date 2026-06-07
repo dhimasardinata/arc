@@ -42,8 +42,8 @@ for firmware, security, safety, or licensing claims.
 - `./tools/dependabot-policy-check.py --format json` before relying on
   Dependabot coverage for GitHub Actions and docs npm dependency updates
 - `./tools/evidence-index.py --format json` over generated evidence files before
-  publishing an evidence bundle; the index records each file size and hash, and
-  rejects malformed or failed evidence JSON
+  publishing an evidence bundle; the index records each file size, hash, and
+  JSON status, and rejects malformed or failed evidence JSON
 - `./tools/evidence-bundle-check.py .arc-artifacts` after the evidence index and
   provenance files are generated, before uploading or publishing the bundle; the
   check verifies the source manifest inventory against the checked-out files
