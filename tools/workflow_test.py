@@ -24,6 +24,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("runs-on: ubuntu-24.04", workflow)
         self.assertNotIn("runs-on: ubuntu-latest", workflow)
         self.assertIn("timeout-minutes: 90", workflow)
+        self.assertIn("set -eo pipefail", workflow)
         self.assertIn("python3 -m pip install 'ruff==0.15.16'", workflow)
         self.assertNotIn("ruff>=", workflow)
 

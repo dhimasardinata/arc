@@ -31,6 +31,7 @@ RUFF_SPEC = "ruff==0.15.16"
 RUNNER_IMAGE = "ubuntu-24.04"
 PAGES_DEPLOY_REF_GUARD = "github.ref == 'refs/heads/main'"
 CODEQL_DEPENDENCY_CACHING = "false"
+BASH_STRICT_PREAMBLE = "set -eo pipefail"
 
 
 class Step(NamedTuple):
@@ -40,6 +41,7 @@ class Step(NamedTuple):
     shell: str | None
     with_inputs: dict[str, str]
     env: dict[str, str]
+    run_block: bool
     run: str | None
 
 
@@ -167,6 +169,14 @@ def parse_step_run(step_block: list[str]) -> str | None:
     return None
 
 
+def parse_step_run_block(step_block: list[str]) -> bool:
+    for line in step_block:
+        match = re.match(r"^        run:\s*(.*?)\s*$", line)
+        if match:
+            return match.group(1) in {"|", ">"}
+    return False
+
+
 def parse_step_uses(step_lines: list[str]) -> str | None:
     for line in step_lines:
         match = re.match(r"^(?:      - uses:|        uses:)\s*(.+?)\s*$", line)
@@ -198,6 +208,13 @@ def ruff_install_spec(run: str | None) -> str | None:
     return match.group("spec") if match else None
 
 
+def has_bash_strict_preamble(run: str | None) -> bool:
+    if run is None:
+        return False
+    lines = [line.strip() for line in run.splitlines() if line.strip()]
+    return bool(lines) and lines[0] == BASH_STRICT_PREAMBLE
+
+
 def parse_steps(job_block: list[str]) -> list[Step]:
     starts: list[tuple[int, str]] = []
     for offset, line in enumerate(job_block):
@@ -218,6 +235,7 @@ def parse_steps(job_block: list[str]) -> list[Step]:
                 shell=parse_step_shell(step_lines),
                 with_inputs=parse_step_with(step_block),
                 env=parse_step_env(step_block),
+                run_block=parse_step_run_block(step_block),
                 run=parse_step_run(step_block),
             )
         )
@@ -290,6 +308,8 @@ def workflow_record(path: Path, root: Path) -> dict[str, Any]:
                         "with": step.with_inputs,
                         "env": step.env,
                         "has_run": step.run is not None,
+                        "run_block": step.run_block,
+                        "bash_strict_preamble": has_bash_strict_preamble(step.run),
                         "github_expression_in_run": "${{" in (step.run or ""),
                         "arc_base_sha_guarded": ARC_BASE_SHA_HEX_GUARD in (step.run or "")
                         if "ARC_BASE_SHA" in step.env
@@ -343,6 +363,8 @@ def validate_workflow(record: dict[str, Any]) -> list[str]:
             env = step["env"]
             if step["has_run"] and step["shell"] != "bash":
                 problems.append(f"{path}:{job_id}:{step_name}: run step must set shell: bash")
+            if step["run_block"] and step["bash_strict_preamble"] is not True:
+                problems.append(f"{path}:{job_id}:{step_name}: multiline bash run must start with set -eo pipefail")
             if step["github_expression_in_run"]:
                 problems.append(f"{path}:{job_id}:{step_name}: run block must not interpolate GitHub expressions")
             if "ARC_BASE_SHA" in env:

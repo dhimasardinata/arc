@@ -50,6 +50,8 @@ class WorkflowPolicyTest(unittest.TestCase):
         for step in steps.values():
             if step["has_run"]:
                 self.assertEqual(step["shell"], "bash")
+            if step["run_block"]:
+                self.assertTrue(step["bash_strict_preamble"], step["name"])
         self.assertEqual(
             steps[(".github/workflows/build.yml", "esp32s3", "Restore ccache")]["uses"],
             "actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae",
@@ -305,6 +307,7 @@ jobs:
           ARC_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         shell: bash
         run: |
+          set -eo pipefail
           if [[ ! "$ARC_BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
             echo "base SHA is not a 40-hex commit"
           fi
@@ -376,6 +379,41 @@ jobs:
         self.assertFalse(evidence["ok"])
         self.assertIn(
             ".github/workflows/pages.yml:build:Install docs dependencies: run step must set shell: bash",
+            evidence["problems"],
+        )
+
+    def test_rejects_multiline_run_without_strict_preamble(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root,
+                "build.yml",
+                """name: build
+on:
+  push:
+permissions:
+  contents: read
+concurrency:
+  group: build
+  cancel-in-progress: true
+jobs:
+  esp32s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Repo sanity
+        shell: bash
+        run: |
+          chmod +x tools/check-repo.sh
+          ./tools/check-repo.sh
+""",
+            )
+
+            evidence = workflow_policy_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            ".github/workflows/build.yml:esp32s3:Repo sanity: multiline bash run must start with set -eo pipefail",
             evidence["problems"],
         )
 
