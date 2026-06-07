@@ -76,8 +76,8 @@ or distributing Arc-derived artifacts.
   keys and service tokens in source-visible files before evidence is published.
 - `tools/sbom.py --format json` gives releases a machine-readable SPDX bill of
   materials for Arc, external dependency groups, and locked docs packages.
-- `tools/provenance.py --format json` ties published evidence subjects back to
-  the exact Arc commit and workflow or local build context.
+- `tools/provenance.py --format json` ties repository-scoped published evidence
+  subjects back to the exact Arc commit and workflow or local build context.
 - `tools/evidence-bundle-check.py .arc-artifacts` checks that the uploaded
   evidence bundle is internally coherent instead of only present.
 - `tools/evidence-workflow-check.py --format json` checks that CI keeps the

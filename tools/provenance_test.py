@@ -45,6 +45,17 @@ class ProvenanceTest(unittest.TestCase):
         self.assertIn("missing subject file: missing-evidence.json", problems)
         self.assertIn("at least one provenance subject file is required", problems)
 
+    def test_rejects_subject_path_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as outside_tmp:
+            subject = Path(outside_tmp) / "source-manifest.json"
+            subject.write_text('{"ok": true}', encoding="utf-8")
+            statement, problems, stats = provenance.collect(ROOT, [subject])
+
+        self.assertEqual(statement["subject"], [])
+        self.assertEqual(stats["problem_count"], 2)
+        self.assertIn(f"subject path must stay inside repository: {subject}", problems)
+        self.assertIn("at least one provenance subject file is required", problems)
+
     def test_cli_writes_json_statement(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             root = Path(tmp)
@@ -114,6 +125,23 @@ class ProvenanceTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("missing subject file: missing-evidence.json", result.stdout)
+        self.assertIn("arc provenance failed", result.stderr)
+
+    def test_cli_fails_for_subject_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as outside_tmp:
+            subject = Path(outside_tmp) / "source-manifest.json"
+            subject.write_text('{"ok": true}', encoding="utf-8")
+            result = subprocess.run(
+                [str(TOOL), str(subject)],
+                cwd=ROOT,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("subject path must stay inside repository", result.stdout)
         self.assertIn("arc provenance failed", result.stderr)
 
 

@@ -42,13 +42,17 @@ def relpath(path: Path, root: Path) -> str:
 
 def subject(path: Path, root: Path) -> tuple[dict[str, Any] | None, str | None]:
     full = path if path.is_absolute() else root / path
-    name = relpath(full, root)
-    if not full.is_file():
+    resolved = full.resolve()
+    try:
+        name = resolved.relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return None, f"subject path must stay inside repository: {path}"
+    if not resolved.is_file():
         return None, f"missing subject file: {name}"
     return {
         "name": name,
         "digest": {
-            "sha256": sha256(full),
+            "sha256": sha256(resolved),
         },
     }, None
 
