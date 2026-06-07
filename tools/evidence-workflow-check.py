@@ -196,6 +196,14 @@ def collect(root: Path = ROOT) -> dict[str, Any]:
         problems.append(".github/workflows/build.yml: missing Firmware artifact manifest step")
     if firmware_upload_step is None:
         problems.append(".github/workflows/build.yml: missing Upload binaries step")
+    if repository_step is not None and upload_step is not None and upload_step.line <= repository_step.line:
+        problems.append("repository evidence upload: must run after Repository evidence bundle step")
+    if (
+        firmware_step is not None
+        and firmware_upload_step is not None
+        and firmware_upload_step.line <= firmware_step.line
+    ):
+        problems.append("firmware evidence upload: must run after Firmware artifact manifest step")
 
     generated = output_artifacts(repository_step.lines if repository_step else [])
     subjects = provenance_subjects(repository_step)

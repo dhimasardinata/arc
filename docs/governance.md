@@ -81,7 +81,7 @@ or distributing Arc-derived artifacts.
 - `tools/evidence-bundle-check.py .arc-artifacts` checks that the repository-local
   uploaded evidence bundle is internally coherent instead of only present.
 - `tools/evidence-workflow-check.py --format json` checks that CI keeps the
-  repository and firmware evidence upload contracts complete.
+  repository and firmware evidence generation-before-upload contracts complete.
 
 ## Security And License Path
 

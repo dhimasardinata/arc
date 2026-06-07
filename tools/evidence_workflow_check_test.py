@@ -131,6 +131,29 @@ def workflow_body() -> str:
     """
 
 
+def move_step_before(body: str, step_name: str, before_name: str) -> str:
+    lines = textwrap.dedent(body).lstrip().splitlines(keepends=True)
+
+    def bounds(name: str) -> tuple[int, int]:
+        marker = f"- name: {name}"
+        start = next(index for index, line in enumerate(lines) if line.strip() == marker)
+        indent = len(lines[start]) - len(lines[start].lstrip(" "))
+        end = len(lines)
+        for index in range(start + 1, len(lines)):
+            child_indent = len(lines[index]) - len(lines[index].lstrip(" "))
+            if child_indent == indent and lines[index].lstrip().startswith("- name: "):
+                end = index
+                break
+        return start, end
+
+    start, end = bounds(step_name)
+    block = lines[start:end]
+    del lines[start:end]
+    before, _ = bounds(before_name)
+    lines[before:before] = block
+    return "".join(lines)
+
+
 class EvidenceWorkflowCheckTest(unittest.TestCase):
     def test_accepts_current_workflow_contract(self) -> None:
         evidence = evidence_workflow_check.collect(ROOT)
@@ -230,6 +253,21 @@ class EvidenceWorkflowCheckTest(unittest.TestCase):
             evidence["problems"],
         )
 
+    def test_rejects_repository_upload_before_bundle_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(
+                root, move_step_before(workflow_body(), "Upload repository evidence", "Repository evidence bundle")
+            )
+
+            evidence = evidence_workflow_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "repository evidence upload: must run after Repository evidence bundle step",
+            evidence["problems"],
+        )
+
     def test_rejects_missing_firmware_upload_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -293,6 +331,19 @@ class EvidenceWorkflowCheckTest(unittest.TestCase):
         self.assertFalse(evidence["ok"])
         self.assertIn(
             "firmware evidence upload: must include hidden .arc-artifacts paths",
+            evidence["problems"],
+        )
+
+    def test_rejects_firmware_upload_before_manifest_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_workflow(root, move_step_before(workflow_body(), "Upload binaries", "Firmware artifact manifest"))
+
+            evidence = evidence_workflow_check.collect(root)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(
+            "firmware evidence upload: must run after Firmware artifact manifest step",
             evidence["problems"],
         )
 
