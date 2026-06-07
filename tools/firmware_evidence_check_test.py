@@ -197,6 +197,27 @@ class FirmwareEvidenceCheckTest(unittest.TestCase):
             evidence["problems"],
         )
 
+    def test_rejects_incomplete_provenance_predicate(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            bundle = make_bundle(Path(tmp))
+            provenance = json.loads((bundle / "firmware-provenance.intoto.json").read_text(encoding="utf-8"))
+            predicate = provenance["predicate"]
+            predicate["buildDefinition"]["buildType"] = ""
+            predicate["buildDefinition"]["externalParameters"]["subjects"] = []
+            predicate["runDetails"]["builder"]["id"] = ""
+            predicate["runDetails"]["metadata"]["invocationId"] = ""
+            write_json(bundle / "firmware-provenance.intoto.json", provenance)
+            evidence = firmware_evidence_check.collect(bundle)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn("firmware-provenance.intoto.json: buildType must be present", evidence["problems"])
+        self.assertIn(
+            "firmware-provenance.intoto.json: externalParameters subjects must match provenance subjects",
+            evidence["problems"],
+        )
+        self.assertIn("firmware-provenance.intoto.json: builder id must be present", evidence["problems"])
+        self.assertIn("firmware-provenance.intoto.json: metadata invocationId must be present", evidence["problems"])
+
     def test_rejects_stale_summary_counts(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             bundle = make_bundle(Path(tmp))

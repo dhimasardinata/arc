@@ -235,6 +235,47 @@ def provenance_dependency_commit(provenance: dict[str, Any]) -> str | None:
     return None
 
 
+def check_provenance_predicate(provenance: dict[str, Any], problems: list[str]) -> None:
+    predicate = provenance.get("predicate")
+    if not isinstance(predicate, dict):
+        problems.append(f"{PROVENANCE_NAME}: predicate must be an object")
+        return
+
+    build = predicate.get("buildDefinition")
+    if not isinstance(build, dict):
+        problems.append(f"{PROVENANCE_NAME}: buildDefinition must be an object")
+        build = {}
+    if not isinstance(build.get("buildType"), str) or not build["buildType"]:
+        problems.append(f"{PROVENANCE_NAME}: buildType must be present")
+
+    external = build.get("externalParameters")
+    if not isinstance(external, dict):
+        problems.append(f"{PROVENANCE_NAME}: externalParameters must be an object")
+        external = {}
+    subject_names = [
+        item.get("name")
+        for item in provenance.get("subject", [])
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    ]
+    if external.get("subjects") != subject_names:
+        problems.append(f"{PROVENANCE_NAME}: externalParameters subjects must match provenance subjects")
+
+    run = predicate.get("runDetails")
+    if not isinstance(run, dict):
+        problems.append(f"{PROVENANCE_NAME}: runDetails must be an object")
+        run = {}
+    builder = run.get("builder")
+    if not isinstance(builder, dict) or not isinstance(builder.get("id"), str) or not builder["id"]:
+        problems.append(f"{PROVENANCE_NAME}: builder id must be present")
+    metadata = run.get("metadata")
+    if not isinstance(metadata, dict):
+        problems.append(f"{PROVENANCE_NAME}: metadata must be an object")
+        metadata = {}
+    for field in ("invocationId", "startedOn", "finishedOn"):
+        if not isinstance(metadata.get(field), str) or not metadata[field]:
+            problems.append(f"{PROVENANCE_NAME}: metadata {field} must be present")
+
+
 def check_commit_coherence(
     index: dict[str, Any], manifest: dict[str, Any], provenance: dict[str, Any], problems: list[str]
 ) -> str | None:
@@ -330,6 +371,8 @@ def collect(artifact_dir: Path = DEFAULT_ARTIFACT_DIR) -> dict[str, Any]:
     indexed = indexed_records(index, artifact_dir, problems) if index else {}
     subjects = subject_records(provenance, artifact_dir, problems) if provenance else {}
     byproducts = byproduct_records(provenance, problems) if provenance else {}
+    if provenance:
+        check_provenance_predicate(provenance, problems)
     firmware_artifact_count = check_manifest_artifacts(manifest, problems) if manifest else 0
     commit = check_commit_coherence(index, manifest, provenance, problems) if index else None
 

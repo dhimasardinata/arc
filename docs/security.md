@@ -111,7 +111,8 @@ the other repository evidence files. It also checks that firmware binary uploads
 include the firmware manifest, firmware provenance, and firmware evidence index
 under the same strict ordering, missing-file, and retention policy. The firmware
 path also runs `tools/firmware-evidence-check.py .arc-artifacts` before upload
-so stale binary hashes or incomplete firmware provenance fail the workflow.
+so stale binary hashes, incomplete provenance subjects, or incomplete SLSA
+predicate metadata fail the workflow.
 
 ## What Still Needs Human Review
 
