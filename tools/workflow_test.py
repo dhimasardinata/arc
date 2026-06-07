@@ -104,6 +104,12 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn(".arc-artifacts/workflow-pins.json", workflow)
         self.assertIn("./tools/workflow-policy-check.py --format json > .arc-artifacts/workflow-policy.json", workflow)
         self.assertIn(".arc-artifacts/workflow-policy.json", workflow)
+        self.assertIn(
+            "./tools/dependabot-policy-check.py --format json > .arc-artifacts/dependabot-policy.json",
+            workflow,
+        )
+        self.assertIn("--require .arc-artifacts/dependabot-policy.json", workflow)
+        self.assertIn(".arc-artifacts/dependabot-policy.json", workflow)
         self.assertIn("./tools/npm-lock-check.py --format json > .arc-artifacts/npm-lock.json", workflow)
         self.assertIn(".arc-artifacts/npm-lock.json", workflow)
         self.assertIn("./tools/license-policy-check.py --format json > .arc-artifacts/license-policy.json", workflow)

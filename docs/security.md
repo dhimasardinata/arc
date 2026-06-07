@@ -43,7 +43,8 @@ and `tools/sync-idf.sh`.
 `tools/dependabot-policy-check.py --format json` keeps that update policy
 machine-checkable by requiring the GitHub Actions and npm ecosystems, the root
 directory, `main` as the target branch, Monday Asia/Jakarta schedules, bounded
-open pull requests, and ecosystem-specific groups.
+open pull requests, and ecosystem-specific groups. CI publishes the result as
+`dependabot-policy.json` in the repository evidence bundle.
 
 `tools/workflow-pins-check.py --format json` backs that review path by rejecting
 remote workflow actions that are not pinned to full commit SHA refs. Each remote

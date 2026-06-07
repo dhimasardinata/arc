@@ -57,6 +57,8 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("dependabot policy tool must stay executable", text)
         self.assertIn(".github/dependabot.yml", text)
         self.assertIn("tools/dependabot-policy-check.py --format json", text)
+        self.assertIn("build workflow must emit dependabot policy evidence", text)
+        self.assertIn("build workflow must index dependabot policy evidence", text)
         self.assertIn("npm lockfile evidence check failed", text)
         self.assertIn("npm lockfile evidence tool must stay executable", text)
         self.assertIn("build workflow must emit npm lockfile evidence", text)

@@ -268,6 +268,7 @@ if ! grep -qF './tools/check-repo.sh' RELEASE.md \
     || ! grep -qF './tools/safety-case-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/workflow-pins-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/workflow-policy-check.py --format json' RELEASE.md \
+    || ! grep -qF './tools/dependabot-policy-check.py --format json' RELEASE.md \
     || ! grep -qF './tools/evidence-index.py --format json' RELEASE.md \
     || ! grep -qF './tools/evidence-bundle-check.py .arc-artifacts' RELEASE.md \
     || ! grep -qF './tools/evidence-workflow-check.py --format json' RELEASE.md \
@@ -493,7 +494,7 @@ fi
 if ! grep -qE 'name: Repository evidence bundle' .github/workflows/build.yml; then
     die "build workflow must emit repository evidence artifacts"
 fi
-for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins workflow-policy npm-lock license-policy secret-scan; do
+for evidence_file in source-manifest third-party-manifest safety-case release-evidence workflow-pins workflow-policy dependabot-policy npm-lock license-policy secret-scan; do
     if ! grep -qF ".arc-artifacts/$evidence_file.json" .github/workflows/build.yml; then
         die "build workflow must publish $evidence_file JSON evidence"
     fi
@@ -515,6 +516,12 @@ if ! grep -qE '\./tools/workflow-pins-check\.py --format json > \.arc-artifacts/
 fi
 if ! grep -qE '\./tools/workflow-policy-check\.py --format json > \.arc-artifacts/workflow-policy\.json' .github/workflows/build.yml; then
     die "build workflow must emit workflow policy evidence"
+fi
+if ! grep -qE '\./tools/dependabot-policy-check\.py --format json > \.arc-artifacts/dependabot-policy\.json' .github/workflows/build.yml; then
+    die "build workflow must emit dependabot policy evidence"
+fi
+if ! grep -qF -- '--require .arc-artifacts/dependabot-policy.json' .github/workflows/build.yml; then
+    die "build workflow must index dependabot policy evidence"
 fi
 if ! grep -qE '\./tools/npm-lock-check\.py --format json > \.arc-artifacts/npm-lock\.json' .github/workflows/build.yml; then
     die "build workflow must emit npm lockfile evidence"

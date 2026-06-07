@@ -19,6 +19,7 @@ BASE_EVIDENCE = (
     "release-evidence.json",
     "workflow-pins.json",
     "workflow-policy.json",
+    "dependabot-policy.json",
     "npm-lock.json",
     "license-policy.json",
     "secret-scan.json",

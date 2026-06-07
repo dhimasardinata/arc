@@ -28,6 +28,8 @@ for firmware, security, safety, or licensing claims.
   Actions supply-chain pinning
 - `./tools/workflow-policy-check.py --format json` before relying on workflow
   permissions, runner, timeout, formatter, or shell-expression policy
+- `./tools/dependabot-policy-check.py --format json` before relying on
+  Dependabot coverage for GitHub Actions and docs npm dependency updates
 - `./tools/evidence-index.py --format json` over generated evidence files before
   publishing an evidence bundle; the index hashes each file and rejects
   malformed or failed evidence JSON
@@ -99,7 +101,7 @@ artifact bundle so future regressions can be traced back to source.
 CI uploads `arc-evidence` for every build with an evidence index, source
 manifest, third-party manifest, safety-case JSON, release-evidence JSON,
 workflow action pin evidence, workflow policy evidence, npm lockfile evidence,
-license policy evidence, secret-scan evidence, SPDX SBOM evidence, and in-toto
-provenance evidence.
+Dependabot policy evidence, license policy evidence, secret-scan evidence, SPDX
+SBOM evidence, and in-toto provenance evidence.
 Firmware builds also upload `arc-binaries` with the firmware artifact manifest
 and its validated evidence index beside the binaries.

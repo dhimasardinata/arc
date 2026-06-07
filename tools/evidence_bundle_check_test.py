@@ -47,6 +47,7 @@ def make_bundle(base: Path, *, commit: str = "a" * 40, release_commit: str | Non
         "release-evidence.json": {"commit": release_commit or commit, "dirty": False, "status": []},
         "workflow-pins.json": {"ok": True, "problems": []},
         "workflow-policy.json": {"ok": True, "problems": []},
+        "dependabot-policy.json": {"ok": True, "problems": []},
         "npm-lock.json": {"ok": True, "problems": []},
         "license-policy.json": {"ok": True, "problems": []},
         "secret-scan.json": {"ok": True, "problems": []},
