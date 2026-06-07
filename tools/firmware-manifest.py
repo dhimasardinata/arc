@@ -42,10 +42,21 @@ def artifact_kind(path: Path) -> str:
     return "firmware-bin"
 
 
-def find_artifacts(root: Path, search_roots: list[Path]) -> list[Path]:
+def repo_relpath(root: Path, path: Path) -> str | None:
+    try:
+        return path.resolve().relative_to(root).as_posix()
+    except ValueError:
+        return None
+
+
+def find_artifacts(root: Path, search_roots: list[Path]) -> tuple[list[Path], list[str]]:
     artifacts: list[Path] = []
+    problems: list[str] = []
     for search in search_roots:
         base = search if search.is_absolute() else root / search
+        if repo_relpath(root, base) is None:
+            problems.append(f"firmware search root must stay inside repository: {search}")
+            continue
         if not base.exists():
             continue
         if base.is_file() and base.suffix in ARTIFACT_SUFFIXES:
@@ -54,19 +65,34 @@ def find_artifacts(root: Path, search_roots: list[Path]) -> list[Path]:
         if base.is_dir():
             build_dirs = [base]
             if base.name == "examples":
-                build_dirs = [path for path in base.rglob("build") if path.is_dir()]
+                build_dirs = []
+                for path in base.rglob("build"):
+                    if not path.is_dir():
+                        continue
+                    if repo_relpath(root, path) is None:
+                        problems.append(f"firmware build directory must stay inside repository: {path}")
+                        continue
+                    build_dirs.append(path)
             for build_dir in build_dirs:
-                artifacts.extend(
-                    path for path in build_dir.iterdir() if path.is_file() and path.suffix in ARTIFACT_SUFFIXES
-                )
-    return sorted(set(artifacts), key=lambda path: path.relative_to(root).as_posix())
+                for path in build_dir.iterdir():
+                    if not path.is_file() or path.suffix not in ARTIFACT_SUFFIXES:
+                        continue
+                    if repo_relpath(root, path) is None:
+                        problems.append(f"firmware artifact must stay inside repository: {path}")
+                        continue
+                    artifacts.append(path)
+    return sorted(set(artifacts), key=lambda path: repo_relpath(root, path) or path.as_posix()), problems
 
 
 def collect(root: Path, search_roots: list[Path]) -> dict[str, Any]:
     root = root.resolve()
     records: list[dict[str, Any]] = []
-    for path in find_artifacts(root, search_roots):
-        rel = path.relative_to(root).as_posix()
+    artifacts, problems = find_artifacts(root, search_roots)
+    for path in artifacts:
+        rel = repo_relpath(root, path)
+        if rel is None:
+            problems.append(f"firmware artifact must stay inside repository: {path}")
+            continue
         records.append(
             {
                 "path": rel,
@@ -84,6 +110,8 @@ def collect(root: Path, search_roots: list[Path]) -> dict[str, Any]:
         "status": status.splitlines() if status else [],
         "artifact_count": len(records),
         "artifacts": records,
+        "ok": not problems,
+        "problems": problems,
     }
 
 
@@ -101,6 +129,9 @@ def report_text(evidence: dict[str, Any]) -> str:
     ]
     for record in evidence["artifacts"]:
         lines.append(f"  - {record['path']}: {record['kind']} size={record['size']} sha256={record['sha256']}")
+    if evidence["problems"]:
+        lines.append("- problems:")
+        lines.extend(f"  - {problem}" for problem in evidence["problems"])
     return "\n".join(lines)
 
 
@@ -156,6 +187,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(payload)
 
+    if evidence["problems"]:
+        print("arc firmware manifest failed: artifact search is outside repository scope", file=sys.stderr)
+        return 1
     if args.require_artifacts and not evidence["artifacts"]:
         print("arc firmware manifest failed: no firmware artifacts found", file=sys.stderr)
         return 1

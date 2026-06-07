@@ -29,6 +29,7 @@ class FirmwareManifestTest(unittest.TestCase):
 
             evidence = firmware_manifest.collect(root, [Path("build")])
 
+        self.assertTrue(evidence["ok"], evidence["problems"])
         self.assertEqual(evidence["artifact_count"], 2)
         artifacts = {record["path"]: record for record in evidence["artifacts"]}
         self.assertEqual(artifacts["build/app.bin"]["kind"], "firmware-bin")
@@ -56,6 +57,7 @@ class FirmwareManifestTest(unittest.TestCase):
 
             evidence = firmware_manifest.collect(root, [Path("examples")])
 
+        self.assertTrue(evidence["ok"], evidence["problems"])
         self.assertEqual(
             [record["path"] for record in evidence["artifacts"]],
             [
@@ -118,6 +120,38 @@ class FirmwareManifestTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("no firmware artifacts found", result.stderr)
+
+    def test_rejects_search_root_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            root = Path(root_tmp)
+            outside = Path(outside_tmp) / "outside.bin"
+            outside.write_bytes(b"firmware")
+            evidence = firmware_manifest.collect(root, [outside])
+
+        self.assertFalse(evidence["ok"])
+        self.assertEqual(evidence["artifact_count"], 0)
+        self.assertIn(
+            f"firmware search root must stay inside repository: {outside}",
+            evidence["problems"],
+        )
+
+    def test_cli_fails_for_search_root_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            outside = Path(outside_tmp) / "outside.bin"
+            outside.write_bytes(b"firmware")
+            result = subprocess.run(
+                [str(TOOL), "--root", root_tmp, "--format", "json", str(outside)],
+                cwd=ROOT,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertIn("outside repository scope", result.stderr)
 
 
 if __name__ == "__main__":

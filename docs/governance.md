@@ -23,8 +23,8 @@ or distributing Arc-derived artifacts.
 - `tools/source-manifest.py --format json --require-clean` emits the tracked
   regular-file source hash manifest for release source archives and artifact
   bundles.
-- `tools/firmware-manifest.py --format json --require-artifacts` emits SHA-256
-  evidence for firmware `.bin` and `.elf` outputs.
+- `tools/firmware-manifest.py --format json --require-artifacts` emits
+  repository-scoped SHA-256 evidence for firmware `.bin` and `.elf` outputs.
 - `tools/release-evidence.py --format json --require-clean` emits the
   machine-readable release metadata snapshot, policy file hashes, and
   repo-local command reference checks before tagging or publishing a release
