@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,6 +17,10 @@ spec = importlib.util.spec_from_file_location("third_party_manifest_check", TOOL
 assert spec is not None and spec.loader is not None
 third_party_manifest_check = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(third_party_manifest_check)
+
+
+def write_json(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 class ThirdPartyManifestTest(unittest.TestCase):
@@ -73,6 +78,46 @@ class ThirdPartyManifestTest(unittest.TestCase):
         problems = third_party_manifest_check.validate_manifest(manifest, policy)
 
         self.assertIn("missing required component: Arduino-ESP32", problems)
+
+    def test_rejects_manifest_path_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as outside_tmp:
+            manifest = Path(outside_tmp) / "THIRD_PARTY_MANIFEST.json"
+            write_json(manifest, {"schema": 1, "policy_file": "THIRD_PARTY_NOTICES.md", "components": []})
+            evidence = third_party_manifest_check.collect(manifest)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(f"manifest path must stay inside repository: {manifest}", evidence["problems"])
+
+    def test_rejects_policy_file_path_outside_repository(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            manifest = third_party_manifest_check.load_json(MANIFEST)
+            policy = Path(outside_tmp) / "THIRD_PARTY_NOTICES.md"
+            policy.write_text("untrusted notices", encoding="utf-8")
+            manifest["policy_file"] = str(policy)
+            manifest_path = Path(tmp) / "THIRD_PARTY_MANIFEST.json"
+            write_json(manifest_path, manifest)
+            evidence = third_party_manifest_check.collect(manifest_path)
+
+        self.assertFalse(evidence["ok"])
+        self.assertIn(f"policy_file path must stay inside repository: {policy}", evidence["problems"])
+
+    def test_cli_reports_missing_manifest_as_json(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            missing = Path(tmp) / "missing-manifest.json"
+            result = subprocess.run(
+                [str(TOOL), "--format", "json", "--manifest", str(missing)],
+                cwd=ROOT,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertIn(f"manifest file is missing: {missing.relative_to(ROOT).as_posix()}", payload["problems"])
+        self.assertIn("arc third-party manifest failed", result.stderr)
 
 
 if __name__ == "__main__":

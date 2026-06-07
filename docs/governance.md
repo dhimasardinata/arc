@@ -56,7 +56,7 @@ or distributing Arc-derived artifacts.
   Arduino-ESP32, documentation tooling, CI dependencies, and bundled product
   dependencies.
 - `THIRD_PARTY_MANIFEST.json` plus
-  `tools/third-party-manifest-check.py --format json` keeps the repository's
+  `tools/third-party-manifest-check.py --format json` keeps the repository-scoped
   dependency notice boundary machine-checkable.
 - `tools/workflow-pins-check.py --format json` keeps GitHub Actions supply-chain
   references immutable by requiring full commit SHA pins, version comments, and

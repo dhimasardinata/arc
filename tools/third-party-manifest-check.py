@@ -35,6 +35,42 @@ def load_json(path: Path) -> Any:
         return json.load(handle)
 
 
+def repo_input_path(root: Path, path: Path, label: str, problems: list[str]) -> tuple[Path | None, str]:
+    full = path if path.is_absolute() else root / path
+    resolved = full.resolve()
+    try:
+        rel = resolved.relative_to(root.resolve()).as_posix()
+    except ValueError:
+        problems.append(f"{label} path must stay inside repository: {path}")
+        return None, str(path)
+    if not resolved.is_file():
+        problems.append(f"{label} file is missing: {rel}")
+        return None, rel
+    return resolved, rel
+
+
+def load_input_json(root: Path, path: Path, label: str, problems: list[str]) -> tuple[Any | None, str]:
+    resolved, name = repo_input_path(root, path, label, problems)
+    if resolved is None:
+        return None, name
+    try:
+        return load_json(resolved), name
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        problems.append(f"{label} cannot load JSON: {exc}")
+        return None, name
+
+
+def load_input_text(root: Path, path: Path, label: str, problems: list[str]) -> str:
+    resolved, _ = repo_input_path(root, path, label, problems)
+    if resolved is None:
+        return ""
+    try:
+        return resolved.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        problems.append(f"{label} cannot read text: {exc}")
+        return ""
+
+
 def non_empty_string(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
@@ -101,15 +137,17 @@ def validate_manifest(manifest: Any, policy_text: str) -> list[str]:
     return problems
 
 
-def collect(manifest_path: Path) -> dict[str, Any]:
-    manifest = load_json(manifest_path)
+def collect(manifest_path: Path, root: Path = ROOT) -> dict[str, Any]:
+    root = root.resolve()
+    load_problems: list[str] = []
+    manifest, manifest_name = load_input_json(root, manifest_path, "manifest", load_problems)
     policy_name = manifest.get("policy_file") if isinstance(manifest, dict) else None
-    policy_path = ROOT / policy_name if isinstance(policy_name, str) else ROOT / "THIRD_PARTY_NOTICES.md"
-    policy_text = policy_path.read_text(encoding="utf-8") if policy_path.is_file() else ""
-    problems = validate_manifest(manifest, policy_text)
+    policy_path = Path(policy_name) if isinstance(policy_name, str) else Path("THIRD_PARTY_NOTICES.md")
+    policy_text = load_input_text(root, policy_path, "policy_file", load_problems)
+    problems = [*load_problems, *validate_manifest(manifest, policy_text)]
     components = manifest.get("components", []) if isinstance(manifest, dict) else []
     return {
-        "manifest": str(manifest_path.relative_to(ROOT)) if manifest_path.is_relative_to(ROOT) else str(manifest_path),
+        "manifest": manifest_name,
         "policy_file": policy_name,
         "component_count": len(components) if isinstance(components, list) else 0,
         "components": [component.get("name") for component in components if isinstance(component, dict)],
@@ -146,10 +184,6 @@ def main(argv: list[str] | None = None) -> int:
         help="output style: human report or JSON evidence",
     )
     args = parser.parse_args(argv)
-
-    if not args.manifest.is_file():
-        print(f"arc third-party manifest failed: manifest not found: {args.manifest}", file=sys.stderr)
-        return 1
 
     evidence = collect(args.manifest)
     if args.format == "json":
