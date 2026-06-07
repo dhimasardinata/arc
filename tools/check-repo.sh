@@ -84,6 +84,7 @@ python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
 python3 tools/release-evidence.py --format json >/dev/null || die "release evidence manifest failed"
 ./tools/workflow-pins-check.py --format json >/dev/null || die "workflow action pin check failed"
 ./tools/workflow-policy-check.py --format json >/dev/null || die "workflow policy check failed"
+./tools/dependabot-policy-check.py --format json >/dev/null || die "dependabot policy check failed"
 ./tools/evidence-workflow-check.py --format json >/dev/null || die "evidence workflow contract check failed"
 ./tools/npm-lock-check.py --format json >/dev/null || die "npm lockfile evidence check failed"
 ./tools/license-policy-check.py --format json >/dev/null || die "license policy evidence check failed"
@@ -316,10 +317,12 @@ if ! grep -qF 'CONTRIBUTING.md' docs/governance.md \
     || ! grep -qF 'THIRD_PARTY_NOTICES.md' docs/governance.md \
     || ! grep -qF 'THIRD_PARTY_MANIFEST.json' docs/governance.md \
     || ! grep -qF '.github/CODEOWNERS' docs/governance.md \
+    || ! grep -qF '.github/dependabot.yml' docs/governance.md \
     || ! grep -qF 'tools/source-manifest.py --format json --require-clean' docs/governance.md \
     || ! grep -qF 'tools/evidence-index.py --format json' docs/governance.md \
     || ! grep -qF 'tools/evidence-bundle-check.py .arc-artifacts' docs/governance.md \
     || ! grep -qF 'tools/evidence-workflow-check.py --format json' docs/governance.md \
+    || ! grep -qF 'tools/dependabot-policy-check.py --format json' docs/governance.md \
     || ! grep -qF 'tools/license-policy-check.py --format json' docs/governance.md \
     || ! grep -qF 'tools/sbom.py --format json' docs/governance.md \
     || ! grep -qF 'tools/provenance.py --format json' docs/governance.md \
@@ -349,6 +352,10 @@ fi
 
 if [[ ! -x tools/workflow-policy-check.py ]]; then
     die "workflow policy tool must stay executable"
+fi
+
+if [[ ! -x tools/dependabot-policy-check.py ]]; then
+    die "dependabot policy tool must stay executable"
 fi
 
 if [[ ! -x tools/evidence-workflow-check.py ]]; then

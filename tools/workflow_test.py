@@ -233,6 +233,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn('package-ecosystem: "github-actions"', config)
         self.assertIn('package-ecosystem: "npm"', config)
         self.assertIn('directory: "/"', config)
+        self.assertIn('target-branch: "main"', config)
         self.assertIn('interval: "weekly"', config)
         self.assertIn("docs-dependencies", config)
 

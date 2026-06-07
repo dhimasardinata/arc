@@ -24,8 +24,8 @@ The workflow scans:
 - `python`, covering repo tools and documentation generators.
 
 It enables the CodeQL `security-extended` and `security-and-quality` query
-suites plus dependency caching. Firmware builds remain in the normal build
-workflow, while CodeQL stays focused on source-level vulnerability and bug
+suites with dependency caching disabled. Firmware builds remain in the normal
+build workflow, while CodeQL stays focused on source-level vulnerability and bug
 patterns.
 
 ## Dependabot
@@ -39,6 +39,11 @@ The updates are grouped by ecosystem so workflow action bumps and docs
 dependency bumps stay reviewable. Dependabot does not change ESP-IDF by itself;
 Arc's pinned ESP-IDF version and commit stay controlled by `.github/workflows/build.yml`
 and `tools/sync-idf.sh`.
+
+`tools/dependabot-policy-check.py --format json` keeps that update policy
+machine-checkable by requiring the GitHub Actions and npm ecosystems, the root
+directory, `main` as the target branch, Monday Asia/Jakarta schedules, bounded
+open pull requests, and ecosystem-specific groups.
 
 `tools/workflow-pins-check.py --format json` backs that review path by rejecting
 remote workflow actions that are not pinned to full commit SHA refs. Each remote

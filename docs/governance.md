@@ -13,6 +13,8 @@ or distributing Arc-derived artifacts.
 - `.github/ISSUE_TEMPLATE/` separates source/tooling bugs from firmware runtime
   reports and routes vulnerability details away from public issues.
 - `.github/CODEOWNERS` keeps critical areas reviewable by the maintainer.
+- `.github/dependabot.yml` keeps GitHub Actions and docs dependency update
+  lanes scheduled, grouped, and targeted at `main`.
 
 ## Release Path
 
@@ -57,6 +59,8 @@ or distributing Arc-derived artifacts.
 - `tools/workflow-policy-check.py --format json` keeps workflow permissions,
   concurrency, runner image pins, job timeouts, formatter pins, and shell
   expression/cache-write guards inside the repository's approved CI policy.
+- `tools/dependabot-policy-check.py --format json` keeps Dependabot version
+  updates scoped to reviewed GitHub Actions and docs npm dependency lanes.
 - `tools/npm-lock-check.py --format json` keeps the docs dependency lockfile
   synchronized with `package.json`, backed by registry integrity hashes, and
   limited to reviewed install-script packages.
