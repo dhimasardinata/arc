@@ -22,12 +22,12 @@ jobs:
       ARC_PYTHON: "3.12"
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           fetch-depth: 1
 
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ env.ARC_PYTHON }}
 
@@ -97,7 +97,7 @@ jobs:
       - name: Restore ESP-IDF and tools cache
         id: idf-cache
         if: steps.firmware-plan.outputs.count != '0'
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/esp-idf
@@ -109,7 +109,7 @@ jobs:
 
       - name: Restore ccache
         if: steps.firmware-plan.outputs.count != '0'
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.ccache
           key: ${{ runner.os }}-ccache-${{ env.ARC_IDF_REF }}-py${{ env.ARC_PYTHON }}-${{ hashFiles('components/**/*.hpp', 'components/**/*.cpp', 'examples/**/CMakeLists.txt', 'examples/**/sdkconfig.defaults', 'cmake/**/*.cmake') }}
@@ -120,7 +120,7 @@ jobs:
       - name: Restore firmware build cache
         id: firmware-build-cache
         if: steps.firmware-plan.outputs.count != '0'
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .arc-build-cache
           key: ${{ runner.os }}-firmware-build-${{ env.ARC_IDF_REF }}-${{ env.ARC_IDF_TARGET }}-${{ hashFiles('CMakeLists.txt', 'main/CMakeLists.txt', 'sdkconfig.defaults*', 'partitions_*.csv', 'components/**/CMakeLists.txt', 'cmake/**/*.cmake', 'examples/**/CMakeLists.txt', 'examples/**/sdkconfig.defaults*', 'examples/**/partitions_*.csv') }}-${{ github.sha }}
@@ -153,7 +153,7 @@ jobs:
       - name: Save ESP-IDF and tools cache
         if: github.event_name == 'push' && steps.firmware-plan.outputs.count != '0' && steps.idf-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/esp-idf
@@ -395,7 +395,7 @@ jobs:
       - name: Save ccache
         if: github.event_name == 'push' && steps.firmware-plan.outputs.count != '0'
         continue-on-error: true
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.ccache
           key: ${{ runner.os }}-ccache-${{ env.ARC_IDF_REF }}-py${{ env.ARC_PYTHON }}-${{ hashFiles('components/**/*.hpp', 'components/**/*.cpp', 'examples/**/CMakeLists.txt', 'examples/**/sdkconfig.defaults', 'cmake/**/*.cmake') }}
@@ -461,7 +461,7 @@ jobs:
       - name: Save firmware build cache
         if: github.event_name == 'push' && steps.firmware-plan.outputs.count != '0' && steps.build-firmware.outputs.cache_ready == '1'
         continue-on-error: true
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .arc-build-cache
           key: ${{ runner.os }}-firmware-build-${{ env.ARC_IDF_REF }}-${{ env.ARC_IDF_TARGET }}-${{ hashFiles('CMakeLists.txt', 'main/CMakeLists.txt', 'sdkconfig.defaults*', 'partitions_*.csv', 'components/**/CMakeLists.txt', 'cmake/**/*.cmake', 'examples/**/CMakeLists.txt', 'examples/**/sdkconfig.defaults*', 'examples/**/partitions_*.csv') }}-${{ github.sha }}
