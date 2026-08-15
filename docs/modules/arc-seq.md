@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Slot`.
+Source landmarks: `arc/fence.hpp`, `arc/mask.hpp`, `arc/sdk.hpp`.
 
 ## Start From Zero
 
