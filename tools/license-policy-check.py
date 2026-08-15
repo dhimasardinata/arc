@@ -21,6 +21,7 @@ APPROVED_NPM_LICENSES = {
     "CC0-1.0",
     "ISC",
     "MIT",
+    "MPL-2.0",
     "Python-2.0",
     "Unicode-3.0",
     "Unicode-DFS-2016",
