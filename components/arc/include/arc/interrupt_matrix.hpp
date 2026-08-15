@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "arc/result.hpp"
+#include "arc/soc/target.hpp"
 
 namespace arc {
 
@@ -54,7 +55,13 @@ struct InterruptMatrix {
 
 template <std::uint8_t Level, auto Handler>
 struct RawVector {
+#if ARC_TARGET_ARCH_XTENSA
     static_assert(Level > 0U && Level <= 7U, "Xtensa interrupt level must be 1..7");
+#else
+    static_assert(
+        soc::never_v<Level>,
+        "arc::RawVector is Xtensa-only; use policy-backed arc::InterruptMatrix for ESP32-S31/RISC-V");
+#endif
 
     static void invoke(void* const arg = nullptr) noexcept
     {

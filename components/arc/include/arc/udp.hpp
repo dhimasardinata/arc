@@ -39,7 +39,7 @@ template <typename Policy, typename Bus>
 struct Udp {
     using Event = typename Bus::event_type;
 
-    static_assert(Soc::wifi, "arc::net::Udp requires ESP32-S3 Wi-Fi");
+    static_assert(Soc::wifi, "arc::net::Udp requires target Wi-Fi support");
 
     template <auto* Shared>
     static void boot()

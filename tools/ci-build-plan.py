@@ -62,8 +62,11 @@ def changed_since(base: str, root: Path) -> list[str] | None:
     return [line for line in proc.stdout.splitlines() if line]
 
 
-def all_buildable(root: Path) -> list[ArcProject]:
-    return [project for project in projects(root=root) if not project.experimental]
+def split_projects(root: Path) -> tuple[list[ArcProject], list[ArcProject]]:
+    found = projects(root=root)
+    buildable = [project for project in found if not project.experimental]
+    experimental = [project for project in found if project.experimental]
+    return buildable, experimental
 
 
 def project_for(path: str, buildable: list[ArcProject]) -> ArcProject | None:
@@ -91,16 +94,23 @@ def is_non_firmware(path: str) -> bool:
     )
 
 
-def plan(changed: list[str] | None, buildable: list[ArcProject]) -> list[ArcProject]:
+def plan(
+    changed: list[str] | None,
+    buildable: list[ArcProject],
+    experimental: list[ArcProject],
+    include_experimental: bool = False,
+) -> list[ArcProject]:
+    candidates = buildable + experimental if include_experimental else buildable
+
     if changed is None:
-        return buildable
+        return candidates
 
     selected: dict[str, ArcProject] = {}
     root_project = next((project for project in buildable if project.rel == "."), None)
 
     for path in changed:
         if is_shared(path):
-            return buildable
+            return candidates
 
         if is_root(path):
             if root_project is not None:
@@ -112,8 +122,14 @@ def plan(changed: list[str] | None, buildable: list[ArcProject]) -> list[ArcProj
             selected[project.rel] = project
             continue
 
+        project = project_for(path, experimental)
+        if project is not None:
+            if include_experimental:
+                selected[project.rel] = project
+            continue
+
         if path.startswith("examples/"):
-            return buildable
+            return candidates
 
         if is_non_firmware(path):
             continue
@@ -135,15 +151,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--buildable",
         action="store_true",
-        help="Accepted for workflow readability; experimental projects are always skipped.",
+        help="Accepted for workflow readability; experimental projects are skipped unless --include-experimental is set.",
+    )
+    parser.add_argument(
+        "--include-experimental",
+        action="store_true",
+        help="Include experimental projects such as ESP32-S31 examples; caller must provide preview SDK target support.",
     )
     args = parser.parse_args(argv)
 
     root = args.root.resolve()
-    buildable = all_buildable(root)
+    buildable, experimental = split_projects(root)
     changed = args.changed_file if args.changed_file else changed_since(args.base, root) if args.base else None
 
-    for project in plan(changed, buildable):
+    for project in plan(changed, buildable, experimental, include_experimental=args.include_experimental):
         print(project.rel)
     return 0
 

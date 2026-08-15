@@ -23,8 +23,10 @@ def add_root_project(root: Path) -> None:
 
 
 class CiBuildPlanTest(unittest.TestCase):
-    def run_plan(self, root: Path, *changed: str) -> list[str]:
+    def run_plan(self, root: Path, *changed: str, include_experimental: bool = False) -> list[str]:
         args = ["python3", "tools/ci-build-plan.py", "--root", str(root), "--buildable"]
+        if include_experimental:
+            args.append("--include-experimental")
         for path in changed:
             args.extend(("--changed-file", path))
         result = subprocess.run(
@@ -81,6 +83,47 @@ class CiBuildPlanTest(unittest.TestCase):
             planned = self.run_plan(root, "components/arc/include/arc/udp.hpp")
 
         self.assertEqual(planned, [".", "examples/esp32s3/udp"])
+
+    def test_experimental_example_change_skips_default_firmware_builds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            add_root_project(root)
+            add_project(root, "examples/esp32s3/udp")
+            add_project(root, "examples/esp32s31/experimental")
+
+            planned = self.run_plan(root, "examples/esp32s31/experimental/main/app_main.cpp")
+
+        self.assertEqual(planned, [])
+
+    def test_include_experimental_example_change_selects_preview_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            add_root_project(root)
+            add_project(root, "examples/esp32s3/udp")
+            add_project(root, "examples/esp32s31/experimental")
+
+            planned = self.run_plan(
+                root,
+                "examples/esp32s31/experimental/main/app_main.cpp",
+                include_experimental=True,
+            )
+
+        self.assertEqual(planned, ["examples/esp32s31/experimental"])
+
+    def test_include_experimental_shared_change_selects_preview_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            add_root_project(root)
+            add_project(root, "examples/esp32s3/udp")
+            add_project(root, "examples/esp32s31/experimental")
+
+            planned = self.run_plan(
+                root,
+                "components/arc/include/arc/board/esp32s31_korvo.hpp",
+                include_experimental=True,
+            )
+
+        self.assertEqual(planned, [".", "examples/esp32s3/udp", "examples/esp32s31/experimental"])
 
     def test_unknown_example_scope_falls_back_to_all_buildable_projects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

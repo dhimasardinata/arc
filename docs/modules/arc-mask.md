@@ -1,6 +1,6 @@
 # `arc/mask.hpp`
 
-Tiny Xtensa interrupt masking guards.
+Target-aware core-local interrupt masking guards.
 
 ## Fit
 

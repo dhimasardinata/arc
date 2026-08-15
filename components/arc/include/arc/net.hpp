@@ -16,7 +16,7 @@
 namespace arc::net {
 
 struct Radio {
-    static_assert(Soc::wifi, "arc::net::Radio requires ESP32-S3 Wi-Fi");
+    static_assert(Soc::wifi, "arc::net::Radio requires target Wi-Fi support");
 
     static esp_err_t base() noexcept
     {

@@ -213,9 +213,9 @@ struct Spsc {
     {
         const auto head = load_relaxed(&head_);
         const auto next = increment(head);
-        if (next == shadow_tail_) {
+        if (__builtin_expect(next == shadow_tail_, 0)) {
             shadow_tail_ = load_acquire(&tail_);
-            if (next == shadow_tail_) {
+            if (__builtin_expect(next == shadow_tail_, 0)) {
                 return false;
             }
         }
@@ -232,9 +232,9 @@ struct Spsc {
     {
         const auto head = load_relaxed(&head_);
         const auto next = increment(head);
-        if (next == shadow_tail_) {
+        if (__builtin_expect(next == shadow_tail_, 0)) {
             shadow_tail_ = load_acquire(&tail_);
-            if (next == shadow_tail_) {
+            if (__builtin_expect(next == shadow_tail_, 0)) {
                 return false;
             }
         }
@@ -278,9 +278,9 @@ struct Spsc {
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool try_pop(T& value) noexcept
     {
         const auto tail = load_relaxed(&tail_);
-        if (tail == shadow_head_) {
+        if (__builtin_expect(tail == shadow_head_, 0)) {
             shadow_head_ = load_acquire(&head_);
-            if (tail == shadow_head_) {
+            if (__builtin_expect(tail == shadow_head_, 0)) {
                 return false;
             }
         }
@@ -294,9 +294,9 @@ struct Spsc {
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool peek(T& value) noexcept
     {
         const auto tail = load_relaxed(&tail_);
-        if (tail == shadow_head_) {
+        if (__builtin_expect(tail == shadow_head_, 0)) {
             shadow_head_ = load_acquire(&head_);
-            if (tail == shadow_head_) {
+            if (__builtin_expect(tail == shadow_head_, 0)) {
                 return false;
             }
         }
@@ -309,9 +309,9 @@ struct Spsc {
     [[nodiscard]] IRAM_ATTR [[gnu::always_inline]] inline bool drop() noexcept
     {
         const auto tail = load_relaxed(&tail_);
-        if (tail == shadow_head_) {
+        if (__builtin_expect(tail == shadow_head_, 0)) {
             shadow_head_ = load_acquire(&head_);
-            if (tail == shadow_head_) {
+            if (__builtin_expect(tail == shadow_head_, 0)) {
                 return false;
             }
         }

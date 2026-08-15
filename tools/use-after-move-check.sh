@@ -23,6 +23,22 @@ COMPILE_ARGS=(
     -pthread
 )
 
+stamp_dir="${ARC_HOST_BUILD_DIR:-$ROOT/build}/cache"
+stamp_file="$stamp_dir/use-after-move.sum"
+
+calc_hash() {
+    {
+        sha256sum tests/host/logic.cpp
+        find components/arc/include -type f -name '*.hpp' -exec sha256sum {} +
+    } 2>/dev/null | sha256sum | awk '{print $1}'
+}
+
+current_hash="$(calc_hash)"
+if [[ -f "$stamp_file" && "$(<"$stamp_file")" == "$current_hash" ]]; then
+    echo "arc use-after-move check: OK"
+    exit 0
+fi
+
 tmp="$(mktemp -d)"
 cleanup() {
     rm -rf "$tmp"
@@ -58,5 +74,8 @@ clang-tidy \
     tests/host/logic.cpp \
     -- \
     "${COMPILE_ARGS[@]}"
+
+mkdir -p "$stamp_dir"
+printf '%s' "$current_hash" > "$stamp_file"
 
 echo "arc use-after-move check: OK"

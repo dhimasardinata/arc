@@ -104,9 +104,26 @@ struct Text {
         return append(std::string_view{value, std::strlen(value)});
     }
 
-    [[nodiscard]] bool u32(const std::uint32_t value) noexcept
+    [[nodiscard]] bool u32(std::uint32_t value) noexcept
     {
-        return u64(value);
+        if (out_.data() == nullptr) {
+            return false;
+        }
+
+        char digits[10]{};
+        std::size_t count{};
+        do {
+            digits[count++] = static_cast<char>('0' + (value % 10U));
+            value /= 10U;
+        } while (value != 0U);
+
+        if (space() < count) {
+            return false;
+        }
+        while (count != 0U) {
+            out_[pos_++] = digits[--count];
+        }
+        return true;
     }
 
     [[nodiscard]] bool u64(std::uint64_t value) noexcept
@@ -133,7 +150,11 @@ struct Text {
 
     [[nodiscard]] bool usize(const std::size_t value) noexcept
     {
-        return u64(static_cast<std::uint64_t>(value));
+        if constexpr (sizeof(std::size_t) == sizeof(std::uint32_t)) {
+            return u32(static_cast<std::uint32_t>(value));
+        } else {
+            return u64(static_cast<std::uint64_t>(value));
+        }
     }
 
     [[nodiscard]] bool i64(const std::int64_t value) noexcept
@@ -152,7 +173,16 @@ struct Text {
 
     [[nodiscard]] bool i32(const std::int32_t value) noexcept
     {
-        return i64(value);
+        if (value >= 0) {
+            return u32(static_cast<std::uint32_t>(value));
+        }
+        const auto mag = static_cast<std::uint32_t>(-(value + 1)) + 1U;
+        const auto start = pos_;
+        if (!push('-') || !u32(mag)) {
+            pos_ = start;
+            return false;
+        }
+        return true;
     }
 
     [[nodiscard]] bool hex(std::uint64_t value, const std::uint8_t width = 0U) noexcept
@@ -251,6 +281,65 @@ struct Text {
         return true;
     }
 
+    [[nodiscard]] bool f64(double value, const unsigned precision = 4U) noexcept
+    {
+        if (out_.data() == nullptr) {
+            return false;
+        }
+        if (value != value) {
+            return append("nan");
+        }
+        if (value > 1.7976931348623157e+308) {
+            return append("inf");
+        }
+        if (value < -1.7976931348623157e+308) {
+            return append("-inf");
+        }
+        const auto start = pos_;
+        if (value < 0.0) {
+            if (!push('-')) {
+                return false;
+            }
+            value = -value;
+        }
+
+        double round_offset = 0.5;
+        for (unsigned i = 0; i < precision; ++i) {
+            round_offset /= 10.0;
+        }
+        value += round_offset;
+
+        const auto int_part = static_cast<std::uint64_t>(value);
+        if (!u64(int_part)) {
+            pos_ = start;
+            return false;
+        }
+        if (precision == 0U) {
+            return true;
+        }
+        if (!push('.')) {
+            pos_ = start;
+            return false;
+        }
+        double frac = value - static_cast<double>(int_part);
+        for (unsigned i = 0; i < precision; ++i) {
+            frac *= 10.0;
+            const auto digit = static_cast<unsigned>(frac);
+            const auto d_clamped = digit > 9U ? 9U : digit;
+            if (!push(static_cast<char>('0' + d_clamped))) {
+                pos_ = start;
+                return false;
+            }
+            frac -= static_cast<double>(d_clamped);
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool f32(const float value, const unsigned precision = 4U) noexcept
+    {
+        return f64(static_cast<double>(value), precision);
+    }
+
 private:
     [[nodiscard]] static constexpr char hex_digit(const std::uint8_t value) noexcept
     {
@@ -306,7 +395,9 @@ template <typename T, std::size_t Extent>
 template <typename T>
 concept TextArg = std::same_as<std::remove_cvref_t<T>, std::string_view> ||
     std::same_as<std::remove_cvref_t<T>, Hex> ||
-    std::integral<std::remove_cvref_t<T>> || std::is_convertible_v<T, const char*>;
+    std::integral<std::remove_cvref_t<T>> ||
+    std::floating_point<std::remove_cvref_t<T>> ||
+    std::is_convertible_v<T, const char*>;
 
 [[nodiscard]] inline bool put_arg(Text& out, const std::string_view value) noexcept
 {
@@ -338,6 +429,12 @@ template <std::size_t N>
 [[nodiscard]] inline bool put_arg(Text& out, const Hex value) noexcept
 {
     return out.hex(value.value, value.width);
+}
+
+template <std::floating_point T>
+[[nodiscard]] inline bool put_arg(Text& out, const T value) noexcept
+{
+    return out.f64(static_cast<double>(value));
 }
 
 template <std::integral T>

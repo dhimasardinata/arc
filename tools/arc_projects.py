@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
+
+from s31_manifest import S31_PREVIEW_IDF_PATH, S31_TARGET
 
 ROOT = Path(__file__).resolve().parents[1]
 SKIP_PROJECT_PARTS = {"build", "managed_components"}
@@ -100,10 +103,30 @@ def project_json(project: ArcProject) -> dict[str, object]:
     }
 
 
+def s31_preview_idf_path() -> str:
+    return os.environ.get("S31_PREVIEW_IDF_PATH") or os.environ.get("ARC_IDF_PATH") or S31_PREVIEW_IDF_PATH
+
+
+def s31_example(project: ArcProject) -> str:
+    return project.rel.removeprefix("examples/esp32s31/")
+
+
 def build_command(project: ArcProject) -> str:
-    if project.rel == ".":
-        return "idf.py build"
-    return f"idf.py -C {project.rel} build"
+    command = "idf.py build" if project.rel == "." else f"idf.py -C {project.rel} build"
+    if project.target == S31_TARGET:
+        return (
+            f"python3 tools/s31-build.py --idf-path {shlex.quote(s31_preview_idf_path())} "
+            f"--example {shlex.quote(s31_example(project))}"
+        )
+    return command
+
+
+def preflight_command(project: ArcProject) -> str | None:
+    if project.target != S31_TARGET:
+        return None
+    return (
+        f"python3 tools/s31-readiness.py --idf-path {shlex.quote(s31_preview_idf_path())} --require-sdk --format report"
+    )
 
 
 def report(projects: list[ArcProject]) -> dict[str, object]:
@@ -112,6 +135,7 @@ def report(projects: list[ArcProject]) -> dict[str, object]:
         "projects": [
             {
                 **project_json(project),
+                "preflight_command": preflight_command(project),
                 "build_command": build_command(project),
             }
             for project in projects
@@ -141,6 +165,8 @@ def print_report(projects: list[ArcProject]) -> None:
     for project in payload["projects"]:
         marker = " experimental" if project["experimental"] else ""
         print(f"  - {project['path']} ({project['kind']}, {project['target']}{marker})")
+        if project["preflight_command"]:
+            print(f"    preflight: {project['preflight_command']}")
         print(f"    build: {project['build_command']}")
 
 

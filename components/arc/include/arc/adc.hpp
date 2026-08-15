@@ -59,6 +59,8 @@ template <adc_unit_t Unit = ADC_UNIT_1,
 struct AdcBus {
     static_assert(SOC_ADC_SUPPORTED, "ADC is not supported on this target");
 
+    using Resource = ClaimFor<ClaimKind::adc_bus, static_cast<int>(Unit), Unit, Clock, Ulp>;
+
     [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
@@ -121,8 +123,6 @@ struct AdcBus {
     }
 
 private:
-    using Resource = ClaimFor<ClaimKind::adc_bus, static_cast<int>(Unit), Unit, Clock, Ulp>;
-
     struct State {
         adc_oneshot_unit_handle_t handle;
         std::uint32_t init;
@@ -135,6 +135,14 @@ template <typename Bus,
           typename Pad,
           bool Cali = true>
 struct AdcOne {
+    using Resource = ClaimFor<ClaimKind::adc_dev,
+                              (static_cast<int>(Bus::unit()) * SOC_GPIO_PIN_COUNT) + Pad::io(),
+                              Bus::unit(),
+                              Pad::io(),
+                              Pad::atten(),
+                              Pad::width(),
+                              Cali>;
+
     [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
@@ -253,14 +261,6 @@ struct AdcOne {
     }
 
 private:
-    using Resource = ClaimFor<ClaimKind::adc_dev,
-                              (static_cast<int>(Bus::unit()) * SOC_GPIO_PIN_COUNT) + Pad::io(),
-                              Bus::unit(),
-                              Pad::io(),
-                              Pad::atten(),
-                              Pad::width(),
-                              Cali>;
-
     struct State {
         adc_channel_t channel{};
         adc_cali_handle_t cali{};

@@ -66,8 +66,8 @@ header needs another ESP-IDF component, add or fix that mapping in
 
 ESP32-S3 is the stable default.
 
-- Use `source ./env.sh` before builds.
-- Set `ARC_TARGET=esp32s3` only when a script or CI matrix needs to be explicit.
+- Set `ARC_TARGET` first when a build needs a non-default target, then run `source ./env.sh`.
+- Use the default `esp32s3` target unless a script or CI matrix needs to be explicit.
 - Set `ARC_TARGET=esp32p4` explicitly for no-radio ESP32-P4 builds.
 - Keep ESP32-S31 work gated behind `ARC_TARGET=esp32s31` and
   `ARC_EXPERIMENTAL_ESP32S31=ON`.

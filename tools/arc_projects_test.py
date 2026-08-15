@@ -3,12 +3,17 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 import arc_projects
+from s31_manifest import S31_EXAMPLES
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def add_project(root: Path, rel: str) -> None:
@@ -119,7 +124,59 @@ class ArcProjectsTest(unittest.TestCase):
         self.assertEqual(payload["summary"]["targets"], {"esp32s3": 2, "esp32s31": 1})
         self.assertEqual(payload["projects"][0]["build_command"], "idf.py build")
         self.assertEqual(payload["projects"][1]["build_command"], "idf.py -C examples/esp32s3/udp build")
+        self.assertIsNone(payload["projects"][1]["preflight_command"])
+        self.assertEqual(
+            payload["projects"][2]["preflight_command"],
+            "python3 tools/s31-readiness.py --idf-path /path/to/preview-esp-idf --require-sdk --format report",
+        )
+        self.assertEqual(
+            payload["projects"][2]["build_command"],
+            "python3 tools/s31-build.py --idf-path /path/to/preview-esp-idf --example amp",
+        )
         self.assertTrue(payload["projects"][2]["experimental"])
+
+    def test_report_uses_s31_preview_env_path_for_experimental_commands(self) -> None:
+        project = arc_projects.ArcProject(
+            Path("/repo/examples/esp32s31/audio"),
+            "examples/esp32s31/audio",
+            "example",
+            "esp32s31",
+            True,
+        )
+
+        with patch.dict(os.environ, {"S31_PREVIEW_IDF_PATH": "/opt/preview-idf"}, clear=False):
+            payload = arc_projects.report([project])
+
+        self.assertEqual(
+            payload["projects"][0]["preflight_command"],
+            "python3 tools/s31-readiness.py --idf-path /opt/preview-idf --require-sdk --format report",
+        )
+        self.assertEqual(
+            payload["projects"][0]["build_command"],
+            "python3 tools/s31-build.py --idf-path /opt/preview-idf --example audio",
+        )
+
+    def test_report_falls_back_to_arc_idf_path_for_s31_commands(self) -> None:
+        project = arc_projects.ArcProject(
+            Path("/repo/examples/esp32s31/usb"),
+            "examples/esp32s31/usb",
+            "example",
+            "esp32s31",
+            True,
+        )
+
+        with patch.dict(os.environ, {"ARC_IDF_PATH": "/opt/arc-idf"}, clear=False):
+            os.environ.pop("S31_PREVIEW_IDF_PATH", None)
+            payload = arc_projects.report([project])
+
+        self.assertEqual(
+            payload["projects"][0]["preflight_command"],
+            "python3 tools/s31-readiness.py --idf-path /opt/arc-idf --require-sdk --format report",
+        )
+        self.assertEqual(
+            payload["projects"][0]["build_command"],
+            "python3 tools/s31-build.py --idf-path /opt/arc-idf --example usb",
+        )
 
     def test_cli_report_groups_projects_for_humans(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -141,6 +198,14 @@ class ArcProjectsTest(unittest.TestCase):
         self.assertIn("  - . (root, esp32s3)", text)
         self.assertIn("    build: idf.py build", text)
         self.assertIn("  - examples/esp32s31/amp (example, esp32s31 experimental)", text)
+        self.assertIn(
+            "    preflight: python3 tools/s31-readiness.py --idf-path /path/to/preview-esp-idf --require-sdk --format report",
+            text,
+        )
+        self.assertIn(
+            "    build: python3 tools/s31-build.py --idf-path /path/to/preview-esp-idf --example amp",
+            text,
+        )
 
     def test_cli_format_json_includes_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -155,6 +220,15 @@ class ArcProjectsTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(payload["summary"]["projects"], 1)
         self.assertEqual(payload["projects"][0]["build_command"], "idf.py -C examples/esp32s3/udp build")
+
+    def test_repo_s31_manifest_matches_discovered_examples(self) -> None:
+        found = [
+            project.rel.removeprefix("examples/esp32s31/")
+            for project in arc_projects.example_projects(ROOT)
+            if project.target == "esp32s31"
+        ]
+
+        self.assertEqual(found, list(S31_EXAMPLES))
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Burst`, `State`.
+Source landmarks: `Burst`, `State`, `Resource`.
 
 ## Start From Zero
 

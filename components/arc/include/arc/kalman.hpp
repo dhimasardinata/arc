@@ -25,7 +25,8 @@ struct Kalman {
         const Q& q) noexcept
     {
         x = mul_vec(a, x);
-        p = add(mul(mul(a, p), transpose(a)), q);
+        const auto ap = mul(a, p);
+        p = mul_transpose_add(ap, a, q);
     }
 
     ARC_HOT void correct_diagonal(
@@ -35,28 +36,44 @@ struct Kalman {
     {
         const auto hx = mul_vec(h, x);
         const auto hp = mul(h, p);
-        auto s = add(mul(hp, transpose(h)), r);
-        Gain k{};
+        std::array<T, Measurements> inv_denom{};
+        std::array<T, Measurements> w{};
 
-        for (std::size_t measurement = 0; measurement < Measurements; ++measurement) {
-            const auto denom = s(measurement, measurement);
-            if (denom == T{}) {
-                continue;
+#pragma GCC unroll 4
+        for (std::size_t m = 0; m < Measurements; ++m) {
+            T denom = r(m, m);
+#pragma GCC unroll 8
+            for (std::size_t k = 0; k < States; ++k) {
+                denom += hp(m, k) * h(m, k);
             }
-            for (std::size_t state = 0; state < States; ++state) {
-                k(state, measurement) = hp(measurement, state) / denom;
+            if (denom != T{}) {
+                const auto inv = T{1} / denom;
+                inv_denom[m] = inv;
+                w[m] = (z(m, 0) - hx(m, 0)) * inv;
             }
         }
 
+#pragma GCC unroll 8
         for (std::size_t state = 0; state < States; ++state) {
             T delta{};
-            for (std::size_t measurement = 0; measurement < Measurements; ++measurement) {
-                delta += k(state, measurement) * (z(measurement, 0) - hx(measurement, 0));
+#pragma GCC unroll 4
+            for (std::size_t m = 0; m < Measurements; ++m) {
+                delta += hp(m, state) * w[m];
             }
             x(state, 0) += delta;
         }
 
-        p = mul(sub(identity<T, States>(), mul(k, h)), p);
+        for (std::size_t i = 0; i < States; ++i) {
+#pragma GCC unroll 8
+            for (std::size_t j = 0; j < States; ++j) {
+                T sub_val{};
+#pragma GCC unroll 4
+                for (std::size_t m = 0; m < Measurements; ++m) {
+                    sub_val += inv_denom[m] * hp(m, i) * hp(m, j);
+                }
+                p(i, j) -= sub_val;
+            }
+        }
     }
 };
 

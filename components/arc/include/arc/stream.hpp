@@ -110,7 +110,10 @@ static_assert(ByteStream<AnyStream>);
 
 struct Stream {
     template <ByteStream Io>
-    [[nodiscard]] static Status write(Io& io, const void* const data, const std::size_t bytes) noexcept
+    [[nodiscard]] [[gnu::always_inline]] static inline Status write(
+        Io& io,
+        const void* const data,
+        const std::size_t bytes) noexcept
     {
         if (data == nullptr && bytes != 0U) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
@@ -123,13 +126,18 @@ struct Stream {
 
     template <ByteStream Io, typename T, std::size_t Extent>
         requires StreamBytes<T>
-    [[nodiscard]] static Status write(Io& io, const std::span<T, Extent> data) noexcept
+    [[nodiscard]] [[gnu::always_inline]] static inline Status write(
+        Io& io,
+        const std::span<T, Extent> data) noexcept
     {
         return write(io, data.data(), data.size_bytes());
     }
 
     template <ByteStream Io>
-    [[nodiscard]] static Status read_exact(Io& io, void* const data, std::size_t bytes) noexcept
+    [[nodiscard]] [[gnu::always_inline]] static inline Status read_exact(
+        Io& io,
+        void* const data,
+        std::size_t bytes) noexcept
     {
         if (data == nullptr && bytes != 0U) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
@@ -154,16 +162,31 @@ struct Stream {
 
     template <ByteStream Io, typename T, std::size_t Extent>
         requires(StreamBytes<T> && !std::is_const_v<T>)
-    [[nodiscard]] static Status read_exact(Io& io, const std::span<T, Extent> data) noexcept
+    [[nodiscard]] [[gnu::always_inline]] static inline Status read_exact(
+        Io& io,
+        const std::span<T, Extent> data) noexcept
     {
         return read_exact(io, data.data(), data.size_bytes());
     }
 
     template <ByteStream Io>
-    [[nodiscard]] static Status write_frame16(Io& io, const void* const data, const std::size_t bytes) noexcept
+    [[nodiscard]] [[gnu::always_inline]] static inline Status write_frame16(
+        Io& io,
+        const void* const data,
+        const std::size_t bytes) noexcept
     {
         if ((data == nullptr && bytes != 0U) || bytes > 0xffffU) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
+        }
+
+        if (bytes <= 128U) {
+            std::array<std::uint8_t, 130> stack_buf;
+            stack_buf[0] = static_cast<std::uint8_t>(bytes >> 8U);
+            stack_buf[1] = static_cast<std::uint8_t>(bytes);
+            if (bytes != 0U) {
+                std::memcpy(stack_buf.data() + 2U, data, bytes);
+            }
+            return io.send_all(stack_buf.data(), bytes + 2U);
         }
 
         const std::array<std::uint8_t, 2> header{
@@ -174,20 +197,19 @@ struct Stream {
         if (!sent) {
             return sent;
         }
-        if (bytes == 0U) {
-            return ok();
-        }
         return io.send_all(data, bytes);
     }
 
     template <ByteStream Io, typename T, std::size_t Extent>
         requires StreamBytes<T>
-    [[nodiscard]] static Status write_frame16(Io& io, const std::span<T, Extent> data) noexcept
+    [[nodiscard]] [[gnu::always_inline]] static inline Status write_frame16(
+        Io& io,
+        const std::span<T, Extent> data) noexcept
     {
         return write_frame16(io, data.data(), data.size_bytes());
     }
 
-    [[nodiscard]] static Result<std::span<const std::uint8_t>> frame16(
+    [[nodiscard]] [[gnu::always_inline]] static inline Result<std::span<const std::uint8_t>> frame16(
         std::span<std::uint8_t> out,
         const void* const data,
         const std::size_t bytes) noexcept
@@ -212,7 +234,7 @@ struct Stream {
 
     template <typename T, std::size_t OutExtent, std::size_t InExtent>
         requires StreamBytes<T>
-    [[nodiscard]] static Result<std::span<const std::uint8_t>> frame16(
+    [[nodiscard]] [[gnu::always_inline]] static inline Result<std::span<const std::uint8_t>> frame16(
         const std::span<std::uint8_t, OutExtent> out,
         const std::span<T, InExtent> data) noexcept
     {
@@ -220,7 +242,10 @@ struct Stream {
     }
 
     template <ByteStream Io>
-    [[nodiscard]] static Result<std::size_t> read_frame16(Io& io, void* const data, const std::size_t cap) noexcept
+    [[nodiscard]] [[gnu::always_inline]] static inline Result<std::size_t> read_frame16(
+        Io& io,
+        void* const data,
+        const std::size_t cap) noexcept
     {
         if (data == nullptr && cap != 0U) {
             return fail(ESP_ERR_INVALID_ARG);
@@ -246,7 +271,9 @@ struct Stream {
 
     template <ByteStream Io, typename T, std::size_t Extent>
         requires(StreamBytes<T> && !std::is_const_v<T>)
-    [[nodiscard]] static Result<std::size_t> read_frame16(Io& io, const std::span<T, Extent> data) noexcept
+    [[nodiscard]] [[gnu::always_inline]] static inline Result<std::size_t> read_frame16(
+        Io& io,
+        const std::span<T, Extent> data) noexcept
     {
         return read_frame16(io, data.data(), data.size_bytes());
     }

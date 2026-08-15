@@ -6,6 +6,7 @@
 #include <type_traits>
 
 #include "arc/result.hpp"
+#include "arc/soc/target.hpp"
 
 namespace arc {
 
@@ -33,6 +34,9 @@ struct BareCoreStubPolicy {
 template <typename Program, typename Policy = BareCoreStubPolicy>
 struct BareCore {
     static_assert(std::is_empty_v<Program>, "BareCore program must be static and stateless");
+    static_assert(!soc::s31 || soc::has<soc::Cap::amp> || !std::is_same_v<Program, Program>,
+                  "arc::BareCore true AMP is not wired for ESP32-S31; use arc::Tight or arc::App on the Korvo "
+                  "Core0/Core1 map");
 
     [[nodiscard]] static Status boot(
         const std::span<std::byte> stack,

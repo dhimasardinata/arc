@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "arc/fence.hpp"
@@ -10,12 +11,18 @@ namespace arc {
 enum class ClaimKind : std::uint32_t {
     i2c_bus = 0x12c0'0001U,
     i2c_dev = 0x12c0'0002U,
+    i2s_bus = 0x12d5'0001U,
     spi_bus = 0x15c0'0001U,
     spi_dev = 0x15c0'0002U,
     uart = 0x0a47'0001U,
     adc_bus = 0xadc0'0001U,
     adc_dev = 0xadc0'0002U,
     lcd_rgb = 0x1cd0'0001U,
+    sdmmc_slot = 0x5d00'0001U,
+    camera_dvp = 0xca6e'0001U,
+    gpio_pin = 0x6100'0001U,
+    rmt_tx = 0x2470'0001U,
+    usb_otg = 0x05b0'0001U,
     touch_bus = 0x70c0'0001U,
     touch_chan = 0x70c0'0002U,
     rtc_gpio = 0x27c0'0001U,
@@ -113,6 +120,22 @@ struct Claim {
         return current == Token && current_proof == Proof ? ESP_OK : ESP_ERR_INVALID_STATE;
     }
 
+    [[nodiscard]] static esp_err_t take_unique() noexcept
+    {
+        auto& gate = ClaimSlot<Kind, Index>::gate;
+        auto& token = ClaimSlot<Kind, Index>::token;
+        auto& proof = ClaimSlot<Kind, Index>::proof;
+        detail::claim_lock(gate);
+        if (token != 0ULL) {
+            detail::claim_unlock(gate);
+            return ESP_ERR_INVALID_STATE;
+        }
+        token = Token;
+        proof = Proof;
+        detail::claim_unlock(gate);
+        return ESP_OK;
+    }
+
     static void drop() noexcept
     {
         auto& gate = ClaimSlot<Kind, Index>::gate;
@@ -140,5 +163,72 @@ struct Claim {
 
 template <ClaimKind Kind, int Index, auto... Values>
 using ClaimFor = Claim<Kind, Index, claim_token<Values...>(), claim_proof<Kind, Index, Values...>()>;
+
+template <typename... Claims>
+struct ClaimSet {
+    static_assert(sizeof...(Claims) > 0U, "Arc claim set must contain at least one claim");
+
+    [[nodiscard]] static esp_err_t take() noexcept
+    {
+        bool fresh[sizeof...(Claims)]{};
+        auto err = ESP_OK;
+        std::size_t index = 0U;
+        auto take_one = []<typename ClaimT>(bool& was_fresh, esp_err_t& out) noexcept {
+            if (out != ESP_OK) {
+                return;
+            }
+            const auto was_held = ClaimT::held();
+            out = ClaimT::take();
+            was_fresh = out == ESP_OK && !was_held;
+        };
+        (take_one.template operator()<Claims>(fresh[index++], err), ...);
+        if (err != ESP_OK) {
+            rollback(fresh);
+        }
+        return err;
+    }
+
+    [[nodiscard]] static esp_err_t take_unique() noexcept
+    {
+        bool fresh[sizeof...(Claims)]{};
+        auto err = ESP_OK;
+        std::size_t index = 0U;
+        auto take_one = []<typename ClaimT>(bool& was_fresh, esp_err_t& out) noexcept {
+            if (out != ESP_OK) {
+                return;
+            }
+            out = ClaimT::take_unique();
+            was_fresh = out == ESP_OK;
+        };
+        (take_one.template operator()<Claims>(fresh[index++], err), ...);
+        if (err != ESP_OK) {
+            rollback(fresh);
+        }
+        return err;
+    }
+
+    static void drop() noexcept
+    {
+        (Claims::drop(), ...);
+    }
+
+    [[nodiscard]] static bool held() noexcept
+    {
+        return (Claims::held() && ...);
+    }
+
+private:
+    template <std::size_t N>
+    static void rollback(const bool (&fresh)[N]) noexcept
+    {
+        std::size_t index = 0U;
+        auto drop_one = []<typename ClaimT>(const bool was_fresh) noexcept {
+            if (was_fresh) {
+                ClaimT::drop();
+            }
+        };
+        (drop_one.template operator()<Claims>(fresh[index++]), ...);
+    }
+};
 
 }  // namespace arc

@@ -20,6 +20,8 @@ struct Esp32S31 {
     static constexpr bool wifi = true;
     static constexpr bool wifi6 = true;
     static constexpr bool ble = true;
+    static constexpr bool bt54 = true;
+    static constexpr bool bt_classic = true;
     static constexpr bool ieee802154 = true;
     static constexpr bool ethernet_mac = true;
     static constexpr bool usb_otg = true;
@@ -48,15 +50,15 @@ struct Esp32S31 {
         static constexpr bool sense = false;
         static constexpr bool app = true;
         static constexpr bool tight = true;
-        static constexpr bool ptp = false;
-        static constexpr bool ml = false;
+        static constexpr bool ptp = true;
+        static constexpr bool ml = true;
         static constexpr bool cache = true;
         static constexpr bool dma = true;
         static constexpr bool tee = true;
         static constexpr bool world = true;
         static constexpr bool amp = false;
-        static constexpr bool cam = false;
-        static constexpr bool control = false;
+        static constexpr bool cam = true;
+        static constexpr bool control = true;
     };
 };
 

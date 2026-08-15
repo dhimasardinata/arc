@@ -8,7 +8,7 @@ BUILD="${ARC_HOST_BUILD_DIR:-$ROOT/build/host}"
 CXX="${CXX:-g++}"
 
 cmake -S "$ROOT/tests/host" -B "$BUILD" -G Ninja -DCMAKE_CXX_COMPILER="$CXX" >/dev/null
-cmake --build "$BUILD" --target arc-host-bench
+cmake --build "$BUILD" --parallel --target arc-host-bench
 
 BENCH_OUTPUT="$("$BUILD/arc-host-bench")"
 CXX_VERSION="$("$CXX" --version | sed -n '1p')"

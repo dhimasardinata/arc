@@ -50,6 +50,25 @@ struct Uart {
     static_assert(TxBuf >= 0, "UART TX buffer cannot be negative");
     static_assert(Queue >= 0, "UART queue depth cannot be negative");
 
+    using Resource = ClaimFor<ClaimKind::uart,
+                              static_cast<int>(Port),
+                              Port,
+                              Tx,
+                              Rx,
+                              Rts,
+                              Cts,
+                              Baud,
+                              RxBuf,
+                              TxBuf,
+                              Queue,
+                              Intr,
+                              Bits,
+                              Parity,
+                              Stop,
+                              Flow,
+                              Clock,
+                              AdoptExisting>;
+
     [[gnu::cold]] [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
@@ -296,25 +315,6 @@ struct Uart {
     }
 
 private:
-    using Resource = ClaimFor<ClaimKind::uart,
-                              static_cast<int>(Port),
-                              Port,
-                              Tx,
-                              Rx,
-                              Rts,
-                              Cts,
-                              Baud,
-                              RxBuf,
-                              TxBuf,
-                              Queue,
-                              Intr,
-                              Bits,
-                              Parity,
-                              Stop,
-                              Flow,
-                              Clock,
-                              AdoptExisting>;
-
     struct State {
         std::uint32_t init;
     };

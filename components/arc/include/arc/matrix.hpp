@@ -20,7 +20,7 @@ struct Matrix {
         std::is_arithmetic_v<T>,
         "[ARC ERROR] arc::dsp::Matrix scalar must be arithmetic. Action: use an integer or floating-point scalar.");
 
-    std::array<T, Rows * Cols> data{};
+    std::array<T, Rows * Cols> data;
 
     [[nodiscard]] constexpr T& operator()(const std::size_t row, const std::size_t col) noexcept
     {
@@ -49,6 +49,7 @@ template <typename T, std::size_t Rows, std::size_t Cols>
     const Matrix<T, Rows, Cols>& rhs) noexcept
 {
     Matrix<T, Rows, Cols> out{};
+#pragma GCC ivdep
     for (std::size_t i = 0; i < out.data.size(); ++i) {
         out.data[i] = lhs.data[i] + rhs.data[i];
     }
@@ -61,6 +62,7 @@ template <typename T, std::size_t Rows, std::size_t Cols>
     const Matrix<T, Rows, Cols>& rhs) noexcept
 {
     Matrix<T, Rows, Cols> out{};
+#pragma GCC ivdep
     for (std::size_t i = 0; i < out.data.size(); ++i) {
         out.data[i] = lhs.data[i] - rhs.data[i];
     }
@@ -72,6 +74,7 @@ template <typename T, std::size_t Rows, std::size_t Cols>
 {
     Matrix<T, Cols, Rows> out{};
     for (std::size_t row = 0; row < Rows; ++row) {
+#pragma GCC unroll 8
         for (std::size_t col = 0; col < Cols; ++col) {
             out(col, row) = in(row, col);
         }
@@ -84,12 +87,76 @@ template <typename T, std::size_t Rows, std::size_t Inner, std::size_t Cols>
     const Matrix<T, Rows, Inner>& lhs,
     const Matrix<T, Inner, Cols>& rhs) noexcept
 {
-    Matrix<T, Rows, Cols> out{};
+    Matrix<T, Rows, Cols> out;
     for (std::size_t row = 0; row < Rows; ++row) {
         for (std::size_t col = 0; col < Cols; ++col) {
             T acc{};
+#pragma GCC ivdep
+#pragma GCC unroll 8
             for (std::size_t k = 0; k < Inner; ++k) {
                 acc += lhs(row, k) * rhs(k, col);
+            }
+            out(row, col) = acc;
+        }
+    }
+    return out;
+}
+
+template <typename T, std::size_t Rows, std::size_t Inner, std::size_t Cols>
+[[nodiscard]] ARC_HOT inline Matrix<T, Rows, Cols> mul_transpose(
+    const Matrix<T, Rows, Inner>& lhs,
+    const Matrix<T, Cols, Inner>& rhs) noexcept
+{
+    Matrix<T, Rows, Cols> out;
+    for (std::size_t row = 0; row < Rows; ++row) {
+        for (std::size_t col = 0; col < Cols; ++col) {
+            T acc{};
+#pragma GCC ivdep
+#pragma GCC unroll 8
+            for (std::size_t k = 0; k < Inner; ++k) {
+                acc += lhs(row, k) * rhs(col, k);
+            }
+            out(row, col) = acc;
+        }
+    }
+    return out;
+}
+
+template <typename T, std::size_t Rows, std::size_t Inner, std::size_t Cols>
+[[nodiscard]] ARC_HOT inline Matrix<T, Rows, Cols> mul_add(
+    const Matrix<T, Rows, Inner>& lhs,
+    const Matrix<T, Inner, Cols>& rhs,
+    const Matrix<T, Rows, Cols>& addend) noexcept
+{
+    Matrix<T, Rows, Cols> out;
+    for (std::size_t row = 0; row < Rows; ++row) {
+        for (std::size_t col = 0; col < Cols; ++col) {
+            T acc = addend(row, col);
+#pragma GCC ivdep
+#pragma GCC unroll 8
+            for (std::size_t k = 0; k < Inner; ++k) {
+                acc += lhs(row, k) * rhs(k, col);
+            }
+            out(row, col) = acc;
+        }
+    }
+    return out;
+}
+
+template <typename T, std::size_t Rows, std::size_t Inner, std::size_t Cols>
+[[nodiscard]] ARC_HOT inline Matrix<T, Rows, Cols> mul_transpose_add(
+    const Matrix<T, Rows, Inner>& lhs,
+    const Matrix<T, Cols, Inner>& rhs,
+    const Matrix<T, Rows, Cols>& addend) noexcept
+{
+    Matrix<T, Rows, Cols> out;
+    for (std::size_t row = 0; row < Rows; ++row) {
+        for (std::size_t col = 0; col < Cols; ++col) {
+            T acc = addend(row, col);
+#pragma GCC ivdep
+#pragma GCC unroll 8
+            for (std::size_t k = 0; k < Inner; ++k) {
+                acc += lhs(row, k) * rhs(col, k);
             }
             out(row, col) = acc;
         }
@@ -102,7 +169,17 @@ template <typename T, std::size_t Rows, std::size_t Cols>
     const Matrix<T, Rows, Cols>& lhs,
     const Matrix<T, Cols, 1>& rhs) noexcept
 {
-    return mul<T, Rows, Cols, 1>(lhs, rhs);
+    Matrix<T, Rows, 1> out;
+    for (std::size_t row = 0; row < Rows; ++row) {
+        T acc{};
+#pragma GCC ivdep
+#pragma GCC unroll 8
+        for (std::size_t k = 0; k < Cols; ++k) {
+            acc += lhs(row, k) * rhs(k, 0);
+        }
+        out(row, 0) = acc;
+    }
+    return out;
 }
 
 template <std::floating_point T, std::size_t N>

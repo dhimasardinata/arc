@@ -15,6 +15,15 @@ PINS_RE = re.compile(r"\barc::Pins\s*<(?P<body>[^>]*)>", re.MULTILINE | re.DOTAL
 GPIO_NUM_RE = re.compile(r"^GPIO_NUM_(?P<pin>\d+|NC)$")
 INT_SUFFIX_RE = re.compile(r"(ull|llu|ul|lu|u|ll|l)$", re.IGNORECASE)
 OUTPUT_FORMATS = ("text", "report", "dot", "mermaid", "json")
+TARGETS = ("auto", "esp32s3", "esp32s31")
+TARGET_MAX_PIN = {
+    "esp32s3": 48,
+    "esp32s31": 61,
+}
+TARGET_MISSING_PINS = {
+    "esp32s3": frozenset(),
+    "esp32s31": frozenset({29, 41}),
+}
 
 
 @dataclass(frozen=True)
@@ -29,7 +38,18 @@ def git_files(paths: list[Path]) -> list[Path]:
     if paths:
         return paths
     result = subprocess.run(
-        ["git", "ls-files", "README.md", "docs", "examples", "main", "components"],
+        [
+            "git",
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "README.md",
+            "docs",
+            "examples",
+            "main",
+            "components",
+        ],
         cwd=ROOT,
         check=True,
         stdout=subprocess.PIPE,
@@ -128,7 +148,14 @@ def read_packs(files: list[Path]) -> list[Pack]:
     return packs
 
 
-def check_pack(pack: Pack, max_pin: int) -> list[str]:
+def inferred_target(pack: Pack) -> str:
+    path = display(pack.path).lower()
+    if "esp32s31" in path or "esp32-s31" in path:
+        return "esp32s31"
+    return "esp32s3"
+
+
+def check_pack(pack: Pack, max_pin: int, missing_pins: frozenset[int], target: str) -> list[str]:
     problems: list[str] = []
     seen: dict[int, int] = {}
     for index, pin in enumerate(pack.pins):
@@ -141,6 +168,8 @@ def check_pack(pack: Pack, max_pin: int) -> list[str]:
             problems.append(
                 f"{display(pack.path)}:{pack.line}: duplicate GPIO{pin} at positions {previous + 1} and {index + 1}"
             )
+        if pin in missing_pins:
+            problems.append(f"{display(pack.path)}:{pack.line}: GPIO{pin} is not bonded on {target}")
         seen[pin] = index
     return problems
 
@@ -263,7 +292,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "paths", nargs="*", type=Path, help="files or directories to scan; defaults to repo topology docs/code"
     )
-    parser.add_argument("--max-pin", type=int, default=48, help="highest valid ESP32-S3 GPIO number")
+    parser.add_argument("--target", choices=TARGETS, default="auto", help="target GPIO range to check")
+    parser.add_argument("--max-pin", type=int, help="override the highest valid GPIO number")
     parser.add_argument("--quiet", action="store_true", help="only print problems and the final status line")
     parser.add_argument(
         "--strict-unresolved",
@@ -289,7 +319,10 @@ def main(argv: list[str]) -> int:
     packs = read_packs(git_files(paths))
     problems: list[str] = []
     for pack in packs:
-        problems.extend(check_pack(pack, args.max_pin))
+        target = inferred_target(pack) if args.target == "auto" else args.target
+        max_pin = args.max_pin if args.max_pin is not None else TARGET_MAX_PIN[target]
+        missing_pins = frozenset() if args.max_pin is not None else TARGET_MISSING_PINS[target]
+        problems.extend(check_pack(pack, max_pin, missing_pins, target))
         if args.strict_unresolved:
             problems.extend(check_unresolved(pack))
     if not args.quiet:

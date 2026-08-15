@@ -92,6 +92,10 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("go run tools/arc-audit.go -root . -all", text)
         self.assertIn("./tools/arc-prove.sh", text)
         self.assertIn("./tools/topology-check.py --quiet", text)
+        self.assertIn("./tools/s31-readiness.py", text)
+        self.assertIn(
+            "cmake/arc-idf.cmake must fail fast when the selected ESP-IDF lacks ESP32-S31 target metadata", text
+        )
         self.assertIn("python3 tools/compile-fail-check.py", text)
         self.assertIn("./tools/use-after-move-check.sh", text)
         self.assertIn("./tools/safety-case-check.py", text)
@@ -114,7 +118,22 @@ class CheckRepoToolTest(unittest.TestCase):
         self.assertIn("build workflow must upload the firmware evidence index with binaries", text)
         self.assertIn("build workflow must upload repository evidence with explicit retention", text)
         self.assertIn("Restore firmware build cache", text)
-        self.assertIn("\\./tools/ci-build-plan\\.py --buildable", text)
+        self.assertIn(
+            "examples/esp32s31/README.md must show preview ESP-IDF selection and S31 readiness preflight", text
+        )
+        self.assertIn("$dir/README.md must show preview ESP-IDF selection and S31 readiness preflight", text)
+        self.assertIn("export ARC_IDF_PATH=/path/to/preview-esp-idf", text)
+        self.assertIn("plan_args=(--buildable)", text)
+        self.assertIn("plan_args+=(--include-experimental)", text)
+        self.assertIn('./tools/ci-build-plan.py "${plan_args[@]}"', text)
+        self.assertIn("ARC_IDF_TARGET_SET", text)
+        self.assertIn("ARC_IDF_INSTALL_TARGETS", text)
+        self.assertIn("esp32s3 esp32s31", text)
+        self.assertIn("arc-idf-target-set-${ARC_IDF_TARGET_SET}", text)
+        self.assertIn('./tools/s31-readiness.py --idf-path "$HOME/esp-idf" --require-sdk --format report', text)
+        self.assertIn('"$HOME/esp-idf/install.sh" "${idf_targets[@]}"', text)
+        self.assertIn("export ARC_TARGET=esp32s31", text)
+        self.assertIn("export ARC_EXPERIMENTAL_ESP32S31=ON", text)
 
     def test_formal_gate_requires_role_model(self) -> None:
         text = (ROOT / "tools" / "arc-prove.sh").read_text(encoding="utf-8")

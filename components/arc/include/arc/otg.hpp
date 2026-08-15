@@ -5,6 +5,7 @@
 #include "esp_err.h"
 #include "esp_private/usb_phy.h"
 
+#include "arc/claim.hpp"
 #include "arc/result.hpp"
 #include "arc/soc.hpp"
 
@@ -21,6 +22,7 @@ struct Otg {
     using Speed = usb_phy_speed_t;
     using Target = usb_phy_target_t;
     using Status = usb_phy_status_t;
+    using Resource = ClaimFor<ClaimKind::usb_otg, 0, 0>;
 
     constexpr Otg() noexcept = default;
 
@@ -53,9 +55,15 @@ struct Otg {
 
     [[nodiscard]] static Result<Otg> make(const Config& config) noexcept
     {
-        Handle handle{};
-        const auto err = usb_new_phy(&config, &handle);
+        auto err = Resource::take_unique();
         if (err != ESP_OK) {
+            return fail(err);
+        }
+
+        Handle handle{};
+        err = usb_new_phy(&config, &handle);
+        if (err != ESP_OK) {
+            Resource::drop();
             return fail(err);
         }
         return Otg{handle};
@@ -106,8 +114,12 @@ struct Otg {
             return ESP_OK;
         }
 
-        const auto raw = std::exchange(handle_, nullptr);
-        return usb_del_phy(raw);
+        const auto err = usb_del_phy(handle_);
+        if (err == ESP_OK) {
+            handle_ = nullptr;
+            Resource::drop();
+        }
+        return err;
     }
 
     [[nodiscard]] Handle native() const noexcept

@@ -24,7 +24,7 @@ concept UsbBytes = std::is_trivially_copyable_v<std::remove_cv_t<T>>;
 
 template <std::uint32_t Tx = 256U, std::uint32_t Rx = 256U>
 struct Usb {
-    static_assert(SOC_USB_SERIAL_JTAG_SUPPORTED, "arc::Usb requires ESP32-S3 USB Serial/JTAG");
+    static_assert(SOC_USB_SERIAL_JTAG_SUPPORTED, "arc::Usb requires target USB Serial/JTAG support");
     static_assert(Tx > 0U, "USB TX buffer must be non-zero");
     static_assert(Rx > 0U, "USB RX buffer must be non-zero");
 

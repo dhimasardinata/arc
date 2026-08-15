@@ -17,6 +17,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/claim.hpp"
 #include "arc/init.hpp"
 #include "arc/result.hpp"
 #include "arc/sdk.hpp"
@@ -82,10 +83,32 @@ struct I2s {
     static_assert(Desc > 0U, "I2S DMA descriptor count must be non-zero");
     static_assert(Frames > 0U, "I2S DMA frame count must be non-zero");
 
+    using Resource = ClaimFor<ClaimKind::i2s_bus,
+                              (Port >= 0 ? Port : Bclk),
+                              Port,
+                              Bclk,
+                              Ws,
+                              Dout,
+                              Din,
+                              Hz,
+                              Bits,
+                              Slots,
+                              Format,
+                              Desc,
+                              Frames,
+                              Mclk,
+                              Role>;
+
     [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
             return ESP_OK;
+        }
+
+        auto err = Resource::take();
+        if (err != ESP_OK) {
+            Init::fail(state.init);
+            return err;
         }
 
         i2s_chan_config_t chan = I2S_CHANNEL_DEFAULT_CONFIG(Port, Role);
@@ -97,20 +120,23 @@ struct I2s {
         chan.intr_priority = 0;
 
         if constexpr (kTx && kRx) {
-            const auto err = i2s_new_channel(&chan, &state.tx, &state.rx);
+            err = i2s_new_channel(&chan, &state.tx, &state.rx);
             if (err != ESP_OK) {
+                Resource::drop();
                 Init::fail(state.init);
                 return err;
             }
         } else if constexpr (kTx) {
-            const auto err = i2s_new_channel(&chan, &state.tx, nullptr);
+            err = i2s_new_channel(&chan, &state.tx, nullptr);
             if (err != ESP_OK) {
+                Resource::drop();
                 Init::fail(state.init);
                 return err;
             }
         } else {
-            const auto err = i2s_new_channel(&chan, nullptr, &state.rx);
+            err = i2s_new_channel(&chan, nullptr, &state.rx);
             if (err != ESP_OK) {
+                Resource::drop();
                 Init::fail(state.init);
                 return err;
             }
@@ -118,18 +144,20 @@ struct I2s {
 
         auto std = config(Hz);
         if constexpr (kTx) {
-            const auto err = i2s_channel_init_std_mode(state.tx, &std);
+            err = i2s_channel_init_std_mode(state.tx, &std);
             if (err != ESP_OK) {
                 clear();
+                Resource::drop();
                 Init::fail(state.init);
                 return err;
             }
             bind_tx();
         }
         if constexpr (kRx) {
-            const auto err = i2s_channel_init_std_mode(state.rx, &std);
+            err = i2s_channel_init_std_mode(state.rx, &std);
             if (err != ESP_OK) {
                 clear();
+                Resource::drop();
                 Init::fail(state.init);
                 return err;
             }

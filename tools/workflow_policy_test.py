@@ -30,6 +30,7 @@ def write_minimal_required_workflows(root: Path, *, build_body: str | None = Non
 on:
   push:
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -140,7 +141,7 @@ class WorkflowPolicyTest(unittest.TestCase):
                 self.assertTrue(step["bash_strict_preamble"], step["name"])
         self.assertEqual(
             steps[(".github/workflows/build.yml", "esp32s3", "Restore ccache")]["uses"],
-            "actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae",
+            "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
         )
         for step_name in ("Save ESP-IDF and tools cache", "Save ccache", "Save firmware build cache"):
             self.assertIn(
@@ -153,7 +154,7 @@ class WorkflowPolicyTest(unittest.TestCase):
             )
         self.assertEqual(
             steps[(".github/workflows/pages.yml", "build", "Restore npm cache")]["uses"],
-            "actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae",
+            "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
         )
         self.assertIn(
             "github.event_name == 'push'",
@@ -206,7 +207,8 @@ jobs:
 on:
   push:
   pull_request:
-  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
 permissions:
   contents: read
 concurrency:
@@ -223,7 +225,7 @@ jobs:
 
         self.assertFalse(evidence["ok"])
         self.assertIn(
-            ".github/workflows/build.yml: workflow triggers must be push, pull_request",
+            ".github/workflows/build.yml: workflow triggers must be push, pull_request, workflow_dispatch",
             evidence["problems"],
         )
 
@@ -478,6 +480,7 @@ jobs:
 on:
   push:
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

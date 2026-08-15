@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `Otg`, `Config`, `Handle`, `Io`, `Ext`, `Mode`, `Speed`, `Target`, `Status`.
+Source landmarks: `Otg`, `Config`, `Handle`, `Io`, `Ext`, `Mode`, `Speed`, `Target`, `Status`, `Resource`.
 
 ## Start From Zero
 

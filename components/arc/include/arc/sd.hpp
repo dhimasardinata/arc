@@ -11,6 +11,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/claim.hpp"
 #include "arc/init.hpp"
 
 namespace arc {
@@ -31,8 +32,8 @@ template <int Clk = 14,
           bool Format = false,
           std::size_t Alloc = 0U>
 struct Sd {
-    static_assert(SOC_SDMMC_HOST_SUPPORTED, "arc::Sd requires ESP32-S3 SDMMC host");
-    static_assert(Width == 1 || Width == 4, "ESP32-S3 SD slot width must be 1 or 4");
+    static_assert(SOC_SDMMC_HOST_SUPPORTED, "arc::Sd requires target SDMMC host support");
+    static_assert(Width == 1 || Width == 4, "SD slot width must be 1 or 4");
     static_assert(Slot == SDMMC_HOST_SLOT_0 || Slot == SDMMC_HOST_SLOT_1, "invalid SDMMC slot");
     static_assert(Clk >= 0 && Clk < SOC_GPIO_PIN_COUNT, "invalid SDMMC CLK pin");
     static_assert(Cmd >= 0 && Cmd < SOC_GPIO_PIN_COUNT, "invalid SDMMC CMD pin");
@@ -48,10 +49,34 @@ struct Sd {
     static_assert(Hz > 0U, "SDMMC frequency must be non-zero");
     static_assert(MaxFiles > 0, "SD FAT max file count must be non-zero");
 
+    using Resource = ClaimFor<ClaimKind::sdmmc_slot,
+                              Slot,
+                              Slot,
+                              Clk,
+                              Cmd,
+                              D0,
+                              D1,
+                              D2,
+                              D3,
+                              Width,
+                              Cd,
+                              Wp,
+                              Hz,
+                              Pullup,
+                              MaxFiles,
+                              Format,
+                              Alloc>;
+
     [[nodiscard]] static esp_err_t mount(const char* const base = "/sd") noexcept
     {
         if (!Init::begin(state.init)) {
             return ESP_OK;
+        }
+
+        auto err = Resource::take();
+        if (err != ESP_OK) {
+            Init::fail(state.init);
+            return err;
         }
 
         sdmmc_host_t host = SDMMC_HOST_DEFAULT();
@@ -79,11 +104,12 @@ struct Sd {
         cfg.max_files = MaxFiles;
         cfg.allocation_unit_size = Alloc;
 
-        const auto err = esp_vfs_fat_sdmmc_mount(base, &host, &slot, &cfg, &state.card);
+        err = esp_vfs_fat_sdmmc_mount(base, &host, &slot, &cfg, &state.card);
         if (err == ESP_OK) {
             state.base = base;
             Init::pass(state.init);
         } else {
+            Resource::drop();
             Init::fail(state.init);
         }
         return err;
@@ -104,6 +130,7 @@ struct Sd {
         if (err == ESP_OK) {
             state.card = nullptr;
             state.base = nullptr;
+            Resource::drop();
             Init::fail(state.init);
         } else {
             Init::pass(state.init);

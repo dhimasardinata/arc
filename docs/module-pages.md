@@ -44,7 +44,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/hotpatch.hpp` | Executable payload loading and IRAM detour policy hooks. | [Open](/modules/arc-hotpatch) |
 | `arc/hotswap.hpp` | Signed native, BPF, and WASM hot-swap staging policy. | [Open](/modules/arc-hotswap) |
 | `arc/hypervisor.hpp` | Restricted partition planning and trap decisions. | [Open](/modules/arc-hypervisor) |
-| `arc/interrupt_matrix.hpp` | Direct interrupt routing contracts. | [Open](/modules/arc-interrupt_matrix) |
+| `arc/interrupt_matrix.hpp` | Direct interrupt routing contracts with Xtensa-only raw vectors. | [Open](/modules/arc-interrupt_matrix) |
 | `arc/jit.hpp` | Bounded BPF-to-executable-word translation hooks. | [Open](/modules/arc-jit) |
 | `arc/kyber.hpp` | Caller-buffer ML-KEM-shaped polynomial/KEM surfaces. | [Open](/modules/arc-kyber) |
 | `arc/migrator.hpp` | Fixed fleet idle-core selection plus WASM snapshot, transport, and resume helpers. | [Open](/modules/arc-migrator) |
@@ -116,7 +116,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | `arc/flexroute.hpp` | GPIO matrix routing and policy-based spare-route repair. | [Open](/modules/arc-flexroute) |
 | `arc/fuse.hpp` | eFuse, MAC, package, and secure-version reads. | [Open](/modules/arc-fuse) |
 | `arc/gpio.hpp` | General GPIO ownership. | [Open](/modules/arc-gpio) |
-| `arc/mask.hpp` | Tiny Xtensa interrupt masking guards. | [Open](/modules/arc-mask) |
+| `arc/mask.hpp` | Target-aware core-local interrupt masking guards. | [Open](/modules/arc-mask) |
 | `arc/pm.hpp` | CPU/APB/no-light-sleep PM locks. | [Open](/modules/arc-pm) |
 | `arc/power_governor.hpp` | Slack-based boost/release policy hooks. | [Open](/modules/arc-power_governor) |
 | `arc/power_profiler.hpp` | Current and instruction-counter profiling hooks. | [Open](/modules/arc-power_profiler) |
@@ -240,6 +240,7 @@ Use this page when you know the header name. Use the [Module Guide](/modules) wh
 | --- | --- | --- |
 | `arc/audit.hpp` | Opt-in misuse assertions for queues and topology-sensitive lanes. | [Open](/modules/arc-audit) |
 | `arc/bare_core.hpp` | True-AMP Core 1 boot contracts for board policies outside FreeRTOS. | [Open](/modules/arc-bare_core) |
+| `arc/board/esp32s31_korvo.hpp` | ESP32-S31-Korvo-1 board pin facts and topology guards. | [Open](/modules/arc-board-esp32s31_korvo) |
 | `arc/borrow.hpp` | Static-lifetime loans, one-writer edit packs, and loan-pack alias checks with core-owner access gates. | [Open](/modules/arc-borrow) |
 | `arc/bus.hpp` | Compatibility naming for shared event/control buses. | [Open](/modules/arc-bus) |
 | `arc/claim.hpp` | Runtime hardware ownership claims. | [Open](/modules/arc-claim) |

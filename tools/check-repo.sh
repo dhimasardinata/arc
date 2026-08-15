@@ -67,30 +67,145 @@ if grep_files '[[:blank:]]$' "${whitespace_files[@]}" >/dev/null 2>&1; then
     die "tracked or untracked non-ignored files contain trailing whitespace"
 fi
 
-./tools/format.sh --check || die "format check failed; run ./tools/format.sh"
-./tools/tool-tests.sh || die "tool tests failed"
-./tools/profile-manifest-check.py || die "profile manifest check failed"
-./tools/topology-check.py --quiet || die "topology check failed"
-python3 tools/compile-fail-check.py || die "compile-fail contract check failed"
-./tools/arc-prove.sh || die "formal spec check failed"
-./tools/use-after-move-check.sh || die "use-after-move check failed"
-./tools/safety-case-check.py || die "safety-case evidence check failed"
-./tools/firmware-manifest.py --format json >/dev/null || die "firmware artifact manifest check failed"
-./tools/evidence-index.py --format json \
-    --require THIRD_PARTY_MANIFEST.json \
-    THIRD_PARTY_MANIFEST.json >/dev/null || die "evidence index check failed"
-./tools/source-manifest.py --format json >/dev/null || die "source manifest check failed"
-./tools/third-party-manifest-check.py || die "third-party manifest check failed"
-python3 tools/release-evidence.py --format json >/dev/null || die "release evidence manifest failed"
-./tools/workflow-pins-check.py --format json >/dev/null || die "workflow action pin check failed"
-./tools/workflow-policy-check.py --format json >/dev/null || die "workflow policy check failed"
-./tools/dependabot-policy-check.py --format json >/dev/null || die "dependabot policy check failed"
-./tools/evidence-workflow-check.py --format json >/dev/null || die "evidence workflow contract check failed"
-./tools/npm-lock-check.py --format json >/dev/null || die "npm lockfile evidence check failed"
-./tools/license-policy-check.py --format json >/dev/null || die "license policy evidence check failed"
-./tools/secret-scan-check.py --format json >/dev/null || die "secret scan evidence check failed"
-./tools/sbom.py --format json >/dev/null || die "SBOM generation failed"
-./tools/provenance.py --format json THIRD_PARTY_MANIFEST.json >/dev/null || die "provenance generation failed"
+FULL_CHECK=0
+if [[ "${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true" || "${ARC_CHECK_FULL:-0}" == "1" ]]; then
+    FULL_CHECK=1
+fi
+
+for arg in "$@"; do
+    case "$arg" in
+        --full)
+            FULL_CHECK=1
+            ;;
+        --fast)
+            FULL_CHECK=0
+            ;;
+        *)
+            ;;
+    esac
+done
+
+run_parallel_gates() {
+    local tmp
+    tmp="$(mktemp -d)"
+    local pids=()
+    local names=()
+    local logs=()
+    local err_msgs=()
+
+    launch_gate() {
+        local name="$1"
+        local err_msg="$2"
+        shift 2
+        local log="$tmp/${name}.log"
+        names+=("$name")
+        logs+=("$log")
+        err_msgs+=("$err_msg")
+        ( "$@" >"$log" 2>&1 ) &
+        pids+=($!)
+    }
+
+    launch_gate "format" "format check failed; run ./tools/format.sh" ./tools/format.sh --check
+    launch_gate "tool-tests" "tool tests failed" ./tools/tool-tests.sh
+    launch_gate "profile-manifest" "profile manifest check failed" ./tools/profile-manifest-check.py
+    launch_gate "topology" "topology check failed" ./tools/topology-check.py --quiet
+    launch_gate "s31-readiness" "ESP32-S31 readiness check failed" ./tools/s31-readiness.py
+    launch_gate "compile-fail" "compile-fail contract check failed" python3 tools/compile-fail-check.py
+    launch_gate "arc-prove" "formal spec check failed" ./tools/arc-prove.sh
+    launch_gate "use-after-move" "use-after-move check failed" ./tools/use-after-move-check.sh
+
+    local failed=0
+    local first_err="validation gates failed"
+    for i in "${!pids[@]}"; do
+        local pid="${pids[$i]}"
+        local name="${names[$i]}"
+        local log="${logs[$i]}"
+        local err_msg="${err_msgs[$i]}"
+        if ! wait "$pid"; then
+            echo "[-] Gate failed: $name" >&2
+            cat "$log" >&2
+            if ((failed == 0)); then
+                first_err="$err_msg"
+            fi
+            failed=1
+        else
+            cat "$log"
+        fi
+    done
+
+    rm -rf "$tmp"
+    if ((failed != 0)); then
+        die "$first_err"
+    fi
+}
+
+run_parallel_gates
+
+if ((FULL_CHECK != 0)); then
+    run_full_gates() {
+        local tmp
+        tmp="$(mktemp -d)"
+        local pids=()
+        local names=()
+        local logs=()
+        local err_msgs=()
+
+        launch_full() {
+            local name="$1"
+            local err_msg="$2"
+            shift 2
+            local log="$tmp/${name}.log"
+            names+=("$name")
+            logs+=("$log")
+            err_msgs+=("$err_msg")
+            ( "$@" >"$log" 2>&1 ) &
+            pids+=($!)
+        }
+
+        launch_full "safety-case" "safety-case evidence check failed" ./tools/safety-case-check.py
+        launch_full "firmware-manifest" "firmware artifact manifest check failed" ./tools/firmware-manifest.py --format json
+        launch_full "evidence-index" "evidence index check failed" ./tools/evidence-index.py --format json --require THIRD_PARTY_MANIFEST.json THIRD_PARTY_MANIFEST.json
+        launch_full "source-manifest" "source manifest check failed" ./tools/source-manifest.py --format json
+        launch_full "third-party-manifest" "third-party manifest check failed" ./tools/third-party-manifest-check.py
+        launch_full "release-evidence" "release evidence manifest failed" python3 tools/release-evidence.py --format json
+        launch_full "workflow-pins" "workflow action pin check failed" ./tools/workflow-pins-check.py --format json
+        launch_full "workflow-policy" "workflow policy check failed" ./tools/workflow-policy-check.py --format json
+        launch_full "dependabot-policy" "dependabot policy check failed" ./tools/dependabot-policy-check.py --format json
+        launch_full "evidence-workflow" "evidence workflow contract check failed" ./tools/evidence-workflow-check.py --format json
+        launch_full "npm-lock" "npm lockfile evidence check failed" ./tools/npm-lock-check.py --format json
+        launch_full "license-policy" "license policy evidence check failed" ./tools/license-policy-check.py --format json
+        launch_full "secret-scan" "secret scan evidence check failed" ./tools/secret-scan-check.py --format json
+        launch_full "sbom" "SBOM generation failed" ./tools/sbom.py --format json
+        launch_full "provenance" "provenance generation failed" ./tools/provenance.py --format json THIRD_PARTY_MANIFEST.json
+
+        local failed=0
+        local first_err="full evidence checks failed"
+        for i in "${!pids[@]}"; do
+            local pid="${pids[$i]}"
+            local name="${names[$i]}"
+            local log="${logs[$i]}"
+            local err_msg="${err_msgs[$i]}"
+            if ! wait "$pid"; then
+                echo "[-] Full evidence check failed: $name" >&2
+                cat "$log" >&2
+                if ((failed == 0)); then
+                    first_err="$err_msg"
+                fi
+                failed=1
+            else
+                cat "$log"
+            fi
+        done
+
+        rm -rf "$tmp"
+        if ((failed != 0)); then
+            die "$first_err"
+        fi
+    }
+
+    run_full_gates
+fi
+
 go run tools/arc-audit.go -root . -all || die "realtime audit failed"
 
 while IFS= read -r file; do
@@ -179,9 +294,29 @@ for dir in "${esp32s3_dirs[@]}"; do
 done
 
 load_arc_projects esp32s31_dirs --examples --target esp32s31
+if [[ ! -f examples/esp32s31/sdkconfig.defaults ]]; then
+    die "ESP32-S31 examples must share examples/esp32s31/sdkconfig.defaults"
+fi
+if ! grep -qF 'CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../../partitions_16mb.csv"' examples/esp32s31/sdkconfig.defaults \
+    || ! grep -qF 'CONFIG_SPIRAM_TYPE_AUTO=y' examples/esp32s31/sdkconfig.defaults \
+    || ! grep -qF '# CONFIG_SPIRAM_TYPE_ESPPSRAM64 is not set' examples/esp32s31/sdkconfig.defaults; then
+    die "ESP32-S31 defaults must use the root 16 MB partition table and avoid fixed ESP32-S3 PSRAM type"
+fi
+if ! grep -qF 'export ARC_IDF_PATH=/path/to/preview-esp-idf' examples/esp32s31/README.md \
+    || ! grep -qF 'tools/s31-readiness.py --idf-path "$ARC_IDF_PATH" --require-sdk --format report' examples/esp32s31/README.md; then
+    die "examples/esp32s31/README.md must show preview ESP-IDF selection and S31 readiness preflight"
+fi
 for dir in "${esp32s31_dirs[@]}"; do
     if ! grep -qE 'arc_target\(esp32s31\)' "$dir/CMakeLists.txt"; then
         die "$dir/CMakeLists.txt must declare arc_target(esp32s31)"
+    fi
+    if ! grep -qF '../sdkconfig.defaults' "$dir/CMakeLists.txt"; then
+        die "$dir/CMakeLists.txt must include the shared ESP32-S31 Korvo sdkconfig defaults"
+    fi
+    if [[ ! -f "$dir/README.md" ]] \
+        || ! grep -qF 'export ARC_IDF_PATH=/path/to/preview-esp-idf' "$dir/README.md" \
+        || ! grep -qF 'tools/s31-readiness.py --idf-path "$ARC_IDF_PATH" --require-sdk --format report' "$dir/README.md"; then
+        die "$dir/README.md must show preview ESP-IDF selection and S31 readiness preflight"
     fi
 done
 
@@ -191,6 +326,13 @@ fi
 
 if ! grep -qE 'ARC_EXPERIMENTAL_ESP32S31' cmake/arc-idf.cmake; then
     die "cmake/arc-idf.cmake no longer gates ESP32-S31 behind an experimental option"
+fi
+if ! grep -qF 'components/soc/esp32s31' cmake/arc-idf.cmake \
+    || ! grep -qF 'components/hal/esp32s31' cmake/arc-idf.cmake \
+    || ! grep -qF 'tools/cmake/toolchain-esp32s31.cmake' cmake/arc-idf.cmake \
+    || ! grep -qF 'tools/idf_py_actions/constants.py' cmake/arc-idf.cmake \
+    || ! grep -qF 'complete esp32s31 target metadata' cmake/arc-idf.cmake; then
+    die "cmake/arc-idf.cmake must fail fast when the selected ESP-IDF lacks ESP32-S31 target metadata"
 fi
 
 if ! grep -qE 'arc_target' cmake/arc-idf.cmake; then
@@ -235,8 +377,23 @@ if ! grep -qE 'ARC_TARGET:-esp32s3|arc_target.*esp32s3' env.sh env.fish; then
     die "env loaders no longer default IDF_TARGET to esp32s3"
 fi
 
-if ! grep -qE '\./tools/ci-build-plan\.py --buildable' .github/workflows/build.yml; then
-    die "build workflow must plan changed firmware projects through tools/ci-build-plan.py"
+if ! grep -qF 'plan_args=(--buildable)' .github/workflows/build.yml \
+    || ! grep -qF 'plan_args+=(--include-experimental)' .github/workflows/build.yml \
+    || ! grep -qF './tools/ci-build-plan.py "${plan_args[@]}"' .github/workflows/build.yml \
+    || ! grep -qF 'idf_ref:' .github/workflows/build.yml \
+    || ! grep -qF 'ARC_IDF_EFFECTIVE_REF' .github/workflows/build.yml \
+    || ! grep -qF 'github.event.inputs.idf_ref' .github/workflows/build.yml \
+    || ! grep -qF 'fetch --depth 1 origin "$ARC_IDF_EFFECTIVE_REF"' .github/workflows/build.yml \
+    || ! grep -qF 'checkout --force FETCH_HEAD' .github/workflows/build.yml \
+    || ! grep -qF 'ARC_IDF_TARGET_SET' .github/workflows/build.yml \
+    || ! grep -qF 'ARC_IDF_INSTALL_TARGETS' .github/workflows/build.yml \
+    || ! grep -qF 'esp32s3 esp32s31' .github/workflows/build.yml \
+    || ! grep -qF 'arc-idf-target-set-${ARC_IDF_TARGET_SET}' .github/workflows/build.yml \
+    || ! grep -qF './tools/s31-readiness.py --idf-path "$HOME/esp-idf" --require-sdk --format report' .github/workflows/build.yml \
+    || ! grep -qF '"$HOME/esp-idf/install.sh" "${idf_targets[@]}"' .github/workflows/build.yml \
+    || ! grep -qF 'export ARC_TARGET=esp32s31' .github/workflows/build.yml \
+    || ! grep -qF 'export ARC_EXPERIMENTAL_ESP32S31=ON' .github/workflows/build.yml; then
+    die "build workflow must plan changed firmware projects through tools/ci-build-plan.py and gate ESP32-S31 opt-in builds"
 fi
 
 if [[ ! -f SECURITY.md ]]; then
@@ -665,6 +822,7 @@ required_exec=(
     tools/npm-lock-check.py
     tools/provenance.py
     tools/secret-scan-check.py
+    tools/s31-readiness.py
     tools/sbom.py
     tools/source-manifest.py
     tools/third-party-manifest-check.py

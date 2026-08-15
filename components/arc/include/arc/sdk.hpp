@@ -8,6 +8,10 @@ namespace arc {
 
 #if defined(CONFIG_CACHE_L1_CACHE_LINE_SIZE)
 inline constexpr std::size_t cache_line = CONFIG_CACHE_L1_CACHE_LINE_SIZE;
+#elif defined(CONFIG_ESP32S31_DATA_CACHE_LINE_SIZE)
+inline constexpr std::size_t cache_line = CONFIG_ESP32S31_DATA_CACHE_LINE_SIZE;
+#elif defined(CONFIG_ESP32P4_DATA_CACHE_LINE_SIZE)
+inline constexpr std::size_t cache_line = CONFIG_ESP32P4_DATA_CACHE_LINE_SIZE;
 #elif defined(CONFIG_ESP32S3_DATA_CACHE_LINE_SIZE)
 inline constexpr std::size_t cache_line = CONFIG_ESP32S3_DATA_CACHE_LINE_SIZE;
 #else

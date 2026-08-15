@@ -397,7 +397,11 @@ struct Fanin {
 private:
     [[nodiscard]] static constexpr std::size_t wrap(const std::size_t value) noexcept
     {
-        return value >= Producers ? value - Producers : value;
+        if constexpr (std::has_single_bit(Producers)) {
+            return value & (Producers - 1U);
+        } else {
+            return value >= Producers ? (value < 2U * Producers ? value - Producers : value % Producers) : value;
+        }
     }
 
     template <typename Fn>

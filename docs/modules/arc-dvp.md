@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `DvpLines`, `Dvp`, `State`.
+Source landmarks: `DvpLines`, `Dvp`, `State`, `Resource`.
 
 ## Start From Zero
 

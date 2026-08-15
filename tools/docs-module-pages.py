@@ -111,6 +111,8 @@ SPECIAL_FEATURES = {
 
 EXAMPLES = {
     "adc": "examples/esp32s3/scope",
+    "esp32s31": "examples/esp32s31/ptp",
+    "esp32s31_korvo": "examples/esp32s31/audio",
     "bridge": "examples/esp32s3/bridge",
     "burst": "examples/esp32s3/count",
     "can": "examples/esp32s3/can",
@@ -169,6 +171,64 @@ GROUP_EXAMPLES = {
 }
 
 SPECIAL_LANDMARKS = {
+    "arc/board/esp32s31_korvo.hpp": [
+        "Korvo1",
+        "Module",
+        "Wireless",
+        "Onboard",
+        "Audio",
+        "AudioCodec",
+        "I2c",
+        "Lcd",
+        "Display",
+        "Sd",
+        "SpiNand",
+        "Cam",
+        "CamModule",
+        "Uart0",
+        "ConsoleBridge",
+        "Download",
+        "Button",
+        "Led",
+        "Usb",
+        "UsbHost",
+        "Power",
+        "Setup",
+        "Strap",
+        "Resource",
+        "AudioBus",
+        "AudioPa",
+        "CodecI2c",
+        "LcdBus",
+        "SdSlot",
+        "SdCtrl",
+        "SpiNandBus",
+        "CamBus",
+        "ConsoleUart",
+        "ButtonAdc",
+        "StatusLed",
+        "UsbOtg",
+        "Korvo1Signal",
+        "Korvo1CodecGraph",
+        "Korvo1AudioGraph",
+        "Korvo1LcdGraph",
+        "Korvo1SdGraph",
+        "Korvo1NandGraph",
+        "Korvo1CamGraph",
+        "Korvo1ConsoleGraph",
+        "Korvo1StrapGraph",
+    ],
+    "arc/claim.hpp": [
+        "ClaimKind",
+        "ClaimSlot",
+        "Claim",
+        "take",
+        "take_unique",
+        "drop",
+        "held",
+        "ClaimFor",
+        "ClaimSet",
+    ],
     "arc/borrow.hpp": [
         "BorrowMode",
         "StaticRef",
@@ -477,9 +537,15 @@ idf_component_register(
 {include}
 ```"""
     )
+    s31_example = example.startswith("examples/esp32s31/")
+    env_step = (
+        "Set `ARC_IDF_PATH` to an ESP32-S31 preview ESP-IDF checkout, run the S31 readiness preflight, then use `tools/s31-build.py` for the selected Korvo example."
+        if s31_example
+        else "Load the ESP-IDF environment with `. ./env.sh`."
+    )
     start_steps = [
         "Start from the closest example or the root project listed below.",
-        "Load the ESP-IDF environment with `. ./env.sh`.",
+        env_step,
         "Add the include and CMake feature only in the component that owns this lane.",
         "Keep board topology, buffers, and ownership in one visible owner type.",
         "Move from build proof to hardware proof only after the wiring or runtime dependency is known.",
@@ -512,12 +578,6 @@ python3 tools/docs_module_pages_test.py
         runtime_check = """This page does not create a user-facing runtime surface. Runtime proof belongs to
 the public module or example that owns the behavior using this helper."""
     else:
-        build_cmd = "idf.py build" if example == "." else f"idf.py -C {example} build"
-        flash_cmd = (
-            "idf.py -p /dev/ttyACM0 flash monitor"
-            if example == "."
-            else f"idf.py -C {example} -p /dev/ttyACM0 flash monitor"
-        )
         owner_section = """```cpp
 namespace app {
 void boot()
@@ -538,7 +598,24 @@ extern "C" void app_main()
 4. Initialize with the recoverable path while bringing up the board.
 5. Switch to the fail-fast path only after the topology is treated as fixed.
 6. Log from Core 0 after the hot path has handed off a compact event or snapshot."""
-        command_block = f"""```sh
+        if s31_example:
+            example_name = example.rsplit("/", maxsplit=1)[-1]
+            command_block = f"""```sh
+export ARC_IDF_PATH=/path/to/preview-esp-idf
+python3 tools/s31-readiness.py --idf-path "$ARC_IDF_PATH" --require-sdk --format report
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example {example_name} --dry-run
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example {example_name}
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example {example_name} --auto-port --monitor --dry-run
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example {example_name} --auto-port --monitor
+```"""
+        else:
+            build_cmd = "idf.py build" if example == "." else f"idf.py -C {example} build"
+            flash_cmd = (
+                "idf.py -p /dev/ttyACM0 flash monitor"
+                if example == "."
+                else f"idf.py -C {example} -p /dev/ttyACM0 flash monitor"
+            )
+            command_block = f"""```sh
 . ./env.sh
 {build_cmd}
 {flash_cmd}

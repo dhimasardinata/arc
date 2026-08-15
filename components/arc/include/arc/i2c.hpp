@@ -33,6 +33,18 @@ struct I2cBus {
     static_assert(Sda >= 0 && Sda < SOC_GPIO_PIN_COUNT, "invalid I2C SDA pin");
     static_assert(Scl >= 0 && Scl < SOC_GPIO_PIN_COUNT, "invalid I2C SCL pin");
 
+    using Resource = ClaimFor<ClaimKind::i2c_bus,
+                              Port,
+                              Port,
+                              Sda,
+                              Scl,
+                              Pullup,
+                              Glitch,
+                              Clock,
+                              Intr,
+                              Queue,
+                              AdoptExisting>;
+
     [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
@@ -132,18 +144,6 @@ struct I2cBus {
     }
 
 private:
-    using Resource = ClaimFor<ClaimKind::i2c_bus,
-                              Port,
-                              Port,
-                              Sda,
-                              Scl,
-                              Pullup,
-                              Glitch,
-                              Clock,
-                              Intr,
-                              Queue,
-                              AdoptExisting>;
-
     struct State {
         i2c_master_bus_handle_t bus;
         std::uint32_t init;
@@ -161,6 +161,15 @@ template <typename Bus,
 struct I2c {
     static_assert(Addr <= 0x3FFU, "invalid I2C device address");
     static_assert(Hz != 0U, "I2C clock must be non-zero");
+
+    using Resource = ClaimFor<ClaimKind::i2c_dev,
+                              (Bus::port() * 1024) + static_cast<int>(Addr),
+                              Bus::port(),
+                              Addr,
+                              Hz,
+                              AddrLen,
+                              SclWaitUs,
+                              AckCheck>;
 
     [[nodiscard]] static esp_err_t init() noexcept
     {
@@ -331,15 +340,6 @@ struct I2c {
     }
 
 private:
-    using Resource = ClaimFor<ClaimKind::i2c_dev,
-                              (Bus::port() * 1024) + static_cast<int>(Addr),
-                              Bus::port(),
-                              Addr,
-                              Hz,
-                              AddrLen,
-                              SclWaitUs,
-                              AckCheck>;
-
     struct State {
         i2c_master_dev_handle_t dev;
         std::uint32_t init;

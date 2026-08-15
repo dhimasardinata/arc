@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,11 +12,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "topology-check.py"
 
+SPEC = importlib.util.spec_from_file_location("topology_check", TOOL)
+assert SPEC is not None and SPEC.loader is not None
+topology_check = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = topology_check
+SPEC.loader.exec_module(topology_check)
+
 
 class TopologyCheckTest(unittest.TestCase):
-    def run_tool(self, source: str, *args: str) -> subprocess.CompletedProcess[str]:
+    def run_tool(self, source: str, *args: str, filename: str = "board.cpp") -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory(prefix="topology-check-test-") as tmp:
-            path = Path(tmp) / "board.cpp"
+            path = Path(tmp) / filename
             path.write_text(source, encoding="utf-8")
             return subprocess.run(
                 [str(TOOL), *args, str(path)],
@@ -42,6 +50,24 @@ class TopologyCheckTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("GPIO49 exceeds GPIO48", result.stderr)
+
+    def test_accepts_esp32s31_gpio_range_by_path(self) -> None:
+        result = self.run_tool("using Pins = arc::Pins<48, 49, 60, 61>;\n", filename="esp32s31_board.cpp")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("arc topology check: OK (1 pin packs)", result.stdout)
+
+    def test_rejects_esp32s31_missing_gpio(self) -> None:
+        result = self.run_tool("using Pins = arc::Pins<41>;\n", "--target", "esp32s31")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("GPIO41 is not bonded on esp32s31", result.stderr)
+
+    def test_rejects_esp32s31_out_of_range_pin(self) -> None:
+        result = self.run_tool("using Pins = arc::Pins<62>;\n", "--target", "esp32s31")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("GPIO62 exceeds GPIO61", result.stderr)
 
     def test_reports_unresolved_tokens_without_failing(self) -> None:
         result = self.run_tool("using Pins = arc::Pins<CONFIG_LED, 4>;\n")
@@ -111,6 +137,17 @@ class TopologyCheckTest(unittest.TestCase):
         self.assertEqual(payload["packs"][0]["sentinels"], [-1])
         self.assertEqual(payload["packs"][0]["unresolved"], ["CONFIG_LED"])
         self.assertNotIn("arc topology check: OK", result.stdout)
+
+    def test_default_scan_includes_untracked_source_files(self) -> None:
+        path = ROOT / "components" / "arc" / "include" / "arc" / "topology_check_untracked_test.hpp"
+        try:
+            path.write_text("using Pins = arc::Pins<4>;\n", encoding="utf-8")
+
+            files = topology_check.git_files([])
+
+            self.assertIn(path, files)
+        finally:
+            path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

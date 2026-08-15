@@ -15,9 +15,33 @@ target_include_directories(
 )
 target_link_libraries(arc_host_flags INTERFACE pthread)
 
-add_executable(arc-host-logic logic.cpp plane_compile.cpp safety_patterns_compile.cpp fuzz_codecs.cpp)
+add_executable(
+    arc-host-logic
+    logic.cpp
+    plane_compile.cpp
+    safety_patterns_compile.cpp
+    esp32s31_compile.cpp
+    fuzz_codecs.cpp
+)
 target_link_libraries(arc-host-logic PRIVATE arc_host_flags)
 target_compile_options(arc-host-logic PRIVATE -O2 -g)
+
+set(ARC_S31_EXAMPLES amp audio cam console control io lcd ml ptp radio sd security usb)
+set(ARC_S31_EXAMPLE_TARGETS)
+foreach(example IN LISTS ARC_S31_EXAMPLES)
+    add_library(
+        arc-host-s31-example-${example}
+        OBJECT
+        ${CMAKE_CURRENT_LIST_DIR}/../../examples/esp32s31/${example}/main/app_main.cpp
+    )
+    target_link_libraries(arc-host-s31-example-${example} PRIVATE arc_host_flags)
+    target_compile_definitions(arc-host-s31-example-${example} PRIVATE ARC_TARGET_ESP32S31=1)
+    target_compile_options(arc-host-s31-example-${example} PRIVATE -O2 -g)
+    list(APPEND ARC_S31_EXAMPLE_TARGETS arc-host-s31-example-${example})
+endforeach()
+add_custom_target(arc-host-s31-examples)
+add_dependencies(arc-host-s31-examples ${ARC_S31_EXAMPLE_TARGETS})
+add_dependencies(arc-host-logic arc-host-s31-examples)
 
 add_executable(arc-host-bench bench.cpp)
 target_link_libraries(arc-host-bench PRIVATE arc_host_flags)

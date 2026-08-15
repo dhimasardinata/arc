@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import subprocess
@@ -61,6 +62,7 @@ class Case:
     name: str
     source: str
     must_contain: str | None = None
+    prelude: str = ""
 
 
 @dataclass(frozen=True)
@@ -1011,6 +1013,101 @@ void probe()
 """,
         must_contain="scoped role callback cannot return an endpoint",
     ),
+    Case(
+        name="s31_drive_rejects_s3_dedicated_gpio",
+        prelude="#define ARC_TARGET_ESP32S31 1\n",
+        source="""
+#include "arc/drive.hpp"
+
+using Led = arc::Drive<2, 0>;
+static_assert(sizeof(Led) > 0U);
+""",
+        must_contain="arc::Drive uses ESP32-S3 dedicated GPIO registers and is not implemented for ESP32-S31",
+    ),
+    Case(
+        name="s31_sense_rejects_s3_dedicated_gpio",
+        prelude="#define ARC_TARGET_ESP32S31 1\n",
+        source="""
+#include "arc/sense.hpp"
+
+using Button = arc::Sense<42, 0>;
+static_assert(sizeof(Button) > 0U);
+""",
+        must_contain="arc::Sense uses ESP32-S3 dedicated GPIO registers and is not implemented for ESP32-S31",
+    ),
+    Case(
+        name="s31_trax_rejects_riscv_target",
+        prelude="#define ARC_TARGET_ESP32S31 1\n",
+        source="""
+#include "arc/trax.hpp"
+
+void probe()
+{
+    (void)arc::Trax::enable();
+}
+""",
+        must_contain="arc::Trax is not available on ESP32-S31/RISC-V",
+    ),
+    Case(
+        name="s31_mask_rejects_xtensa_interrupt_levels",
+        prelude="#define ARC_TARGET_ESP32S31 1\n",
+        source="""
+#include "arc/mask.hpp"
+
+using BadMask = arc::Mask<2>;
+static_assert(sizeof(BadMask) > 0U);
+""",
+        must_contain="arc::Mask on RISC-V only supports global interrupt masking",
+    ),
+    Case(
+        name="s31_raw_vector_rejects_xtensa_vectors",
+        prelude="#define ARC_TARGET_ESP32S31 1\n",
+        source="""
+#include "arc/interrupt_matrix.hpp"
+
+void handler() noexcept {}
+using Vector = arc::RawVector<1, handler>;
+static_assert(sizeof(Vector) > 0U);
+""",
+        must_contain="arc::RawVector is Xtensa-only",
+    ),
+    Case(
+        name="s31_bare_core_rejects_unwired_true_amp",
+        prelude="#define ARC_TARGET_ESP32S31 1\n",
+        source="""
+#include "arc/bare_core.hpp"
+
+struct Program {
+    static void loop() noexcept {}
+};
+
+using Amp = arc::BareCore<Program>;
+static_assert(sizeof(Amp) > 0U);
+""",
+        must_contain="arc::BareCore true AMP is not wired for ESP32-S31",
+    ),
+    Case(
+        name="s31_touch_bus_rejects_s3_capacitive_touch",
+        prelude="#define ARC_TARGET_ESP32S31 1\n",
+        source="""
+#include "arc/touch.hpp"
+
+using Bus = arc::TouchBus<>;
+static_assert(sizeof(Bus) > 0U);
+""",
+        must_contain="arc::TouchBus is ESP32-S3 capacitive touch only",
+    ),
+    Case(
+        name="s31_touch_rejects_s3_capacitive_touch",
+        prelude="#define ARC_TARGET_ESP32S31 1\n",
+        source="""
+#include "arc/touch.hpp"
+
+using Pad = arc::Touch<arc::TouchBus<>, 1>;
+static_assert(sizeof(Pad) > 0U);
+""",
+        must_contain="arc::Touch is ESP32-S3 capacitive touch only",
+    ),
 )
 
 
@@ -1018,18 +1115,76 @@ def compiler() -> str:
     return os.environ.get("CXX", "c++")
 
 
-def compile_case(case: Case, tmp: Path) -> str | None:
-    source = tmp / f"{case.name}.cpp"
-    source.write_text(PREFIX + "\n" + case.source, encoding="utf-8")
+def compile_pch(tmp: Path) -> dict[str, Path]:
+    pch_map: dict[str, Path] = {}
 
+    pch_header = tmp / "arc_prefix.hpp"
+    pch_header.write_text(PREFIX, encoding="utf-8")
+    pch_file = tmp / "arc_prefix.hpp.gch"
     cmd = [
         compiler(),
         "-std=gnu++23",
-        "-fsyntax-only",
+        "-x",
+        "c++-header",
         "-Itests/host/stubs",
         "-Icomponents/arc/include",
-        str(source),
+        str(pch_header),
+        "-o",
+        str(pch_file),
     ]
+    if subprocess.run(cmd, cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0:
+        pch_map[""] = pch_header
+
+    s31_prelude = "#define ARC_TARGET_ESP32S31 1\n"
+    s31_header = tmp / "arc_prefix_s31.hpp"
+    s31_header.write_text(s31_prelude + PREFIX, encoding="utf-8")
+    s31_file = tmp / "arc_prefix_s31.hpp.gch"
+    cmd_s31 = [
+        compiler(),
+        "-std=gnu++23",
+        "-x",
+        "c++-header",
+        "-Itests/host/stubs",
+        "-Icomponents/arc/include",
+        str(s31_header),
+        "-o",
+        str(s31_file),
+    ]
+    if (
+        subprocess.run(cmd_s31, cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode
+        == 0
+    ):
+        pch_map[s31_prelude] = s31_header
+
+    return pch_map
+
+
+def compile_case(case: Case, tmp: Path, pchs: dict[str, Path]) -> str | None:
+    source = tmp / f"{case.name}.cpp"
+    pch = pchs.get(case.prelude)
+    if pch is not None:
+        source.write_text(case.source, encoding="utf-8")
+        cmd = [
+            compiler(),
+            "-std=gnu++23",
+            "-fsyntax-only",
+            "-Itests/host/stubs",
+            "-Icomponents/arc/include",
+            f"-I{tmp}",
+            "-include",
+            pch.name,
+            str(source),
+        ]
+    else:
+        source.write_text(case.prelude + PREFIX + "\n" + case.source, encoding="utf-8")
+        cmd = [
+            compiler(),
+            "-std=gnu++23",
+            "-fsyntax-only",
+            "-Itests/host/stubs",
+            "-Icomponents/arc/include",
+            str(source),
+        ]
     result = subprocess.run(
         cmd,
         cwd=ROOT,
@@ -1046,14 +1201,19 @@ def compile_case(case: Case, tmp: Path) -> str | None:
     return None
 
 
-def run_cases(cases: tuple[Case, ...] = CASES) -> list[CaseResult]:
-    results: list[CaseResult] = []
+def run_cases(cases: tuple[Case, ...] = CASES, workers: int | None = None) -> list[CaseResult]:
     with tempfile.TemporaryDirectory(prefix="arc-compile-fail-") as tmp_dir:
         tmp = Path(tmp_dir)
-        for case in cases:
-            problem = compile_case(case, tmp)
-            results.append(CaseResult(name=case.name, must_contain=case.must_contain, problem=problem))
-    return results
+        pchs = compile_pch(tmp)
+        max_workers = workers if workers is not None else min(32, (os.cpu_count() or 1) + 4)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_case = {executor.submit(compile_case, case, tmp, pchs): case for case in cases}
+            results_by_case: dict[str, CaseResult] = {}
+            for future in concurrent.futures.as_completed(future_to_case):
+                case = future_to_case[future]
+                problem = future.result()
+                results_by_case[case.name] = CaseResult(name=case.name, must_contain=case.must_contain, problem=problem)
+        return [results_by_case[case.name] for case in cases]
 
 
 def case_group(name: str) -> str:

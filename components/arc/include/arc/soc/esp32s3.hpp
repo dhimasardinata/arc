@@ -20,6 +20,8 @@ struct Esp32S3 {
     static constexpr bool wifi = true;
     static constexpr bool wifi6 = false;
     static constexpr bool ble = true;
+    static constexpr bool bt54 = false;
+    static constexpr bool bt_classic = false;
     static constexpr bool ieee802154 = false;
     static constexpr bool ethernet_mac = false;
     static constexpr bool usb_otg = true;

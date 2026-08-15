@@ -51,7 +51,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - User programs live in `main/app_main.cpp`.
 - `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/math.hpp`, `arc/crypto.hpp`, `arc/robotics.hpp`, and `arc/sandbox.hpp` are profile entry points for subset builds; `arc.hpp` remains the compatibility umbrella and only exposes SDK-backed feature headers whose ESP-IDF components are actually in the build graph.
 - `cmake/arc-deps.cmake` maps Arc feature names to ESP-IDF components so each app can stay explicit without writing a long `REQUIRES` list by hand.
-- `arc::Soc` exposes the ESP32-S3 capability map from `soc_caps.h` as compile-time constants and hard-fails on non-S3 targets.
+- `arc::Soc` exposes the selected ESP32 target capability map from `soc_caps.h` as compile-time constants, with ESP32-S3 baseline guards and explicit experimental ESP32-S31 target facts.
 - `arc::Drive` and `arc::Sense` bind ESP32-S3 dedicated GPIO directly to compile-time types.
 - `arc::Pins` gives one-file board topology checks so duplicate physical pins are caught where hardware truth is declared.
 - `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::Gate`, and `arc::MutexGate` provide initialization, shared-resource lifetime, and task-level locking primitives for static drivers.
@@ -79,9 +79,9 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::AnyOut`, `arc::AnyIn`, `arc::AnyI2c`, `arc::AnySpi`, and `arc::AnyUart` provide no-heap type erasure for slow-path sensor/config/modem drivers that should compile out-of-line instead of becoming fully templated headers.
 - `arc::I2s` owns standard-mode I2S channels, `arc::I2sTdm` covers multichannel framed lanes, and `arc::I2sPdm` covers one-line PDM RX/TX, with both raw `esp_err_t` and opt-in `arc::Result` APIs.
 - `arc::Uart` binds ESP32-S3 UART ports, pins, framing, and buffers with fixed storage and typed read/write APIs.
-- `arc::Usb` binds the ESP32-S3 USB Serial/JTAG lane with typed byte IO.
+- `arc::Usb` binds the target USB Serial/JTAG lane with typed byte IO.
 - `arc::Otg` owns the native USB OTG PHY for host/device stack bring-up without pretending to be a USB class framework.
-- `arc::Sd` mounts ESP32-S3 SD/MMC cards through FAT and keeps raw sector access explicit.
+- `arc::Sd` mounts target SD/MMC cards through FAT and keeps raw sector access explicit.
 - `arc::Fs` mounts SPIFFS, FAT-on-flash, and optional LittleFS VFS paths with fixed handle ownership.
 - `arc::File` gives RAII VFS/POSIX file I/O without leaking `FILE*` ownership into app code.
 - `arc::Count`, `arc::Quadrature`, and `arc::Encoder` offload pulse and quadrature accumulation to the PCNT block.
@@ -94,7 +94,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::dsp::DspAccel`, `duty_svpwm`, `PllObserver`, `SlidingModeObserver`, and `arc::SCurve` extend the motor-control plane for accelerated kernels and smoother trajectories.
 - `arc::simd::float32x4_t`, `int8x16_t`, `uint8x16_t`, `dot_s8`, `arc::simd::Rgb565::from_yuv422`, and `fft_radix2` expose explicit S3-focused math kernels that should not rely on auto-vectorization alone.
 - `arc::ml::Tensor`, `Dense`, `QuantDenseS8`, `Conv2dS8`, `DepthwiseConv2dS8`, `MaxPool2d`, `mapped_weights`, and `Core1Inference` provide a zero-allocation inference surface for fixed-shape models stored in flash/PSRAM spans.
-- `arc::BareCore<Program>` defines the true-AMP Core 1 boot contract for board policies that hold APP CPU outside FreeRTOS and jump directly into a static control loop.
+- `arc::BareCore<Program>` defines the true-AMP Core 1 boot contract for board policies that hold APP CPU outside FreeRTOS and jump directly into a static control loop; ESP32-S31/Korvo rejects this path until an S31 true-AMP policy exists.
 - `arc::power::Intermittent` stores dying-gasp CPU, Tight-loop stack, and RCU state bytes in RTC no-init storage so a board policy can resurrect after brownout.
 - `arc::FramArena<N>`, `FramRef<T>`, and `FramAlloc<N>` carve persistent FRAM/MRAM offsets and delegate typed load/store to board policy.
 - `arc::DmaChain<N>` builds static scatter-gather descriptor rings for CPU-free waveform, display, and camera pipelines; `try_bind(...)` rejects invalid descriptor indexes, empty spans, descriptor lengths that cannot fit the hardware field, and cache-unsafe `arc::CacheLines` bindings, while `arc::OwnedDmaChain<T, N>` keeps DMA-capable buffers owned beside the descriptors.
@@ -124,7 +124,7 @@ The checked-in defaults are now tuned for `ESP32-S3 N16R8`:
 - `arc::crypto::Kyber` adds zero-allocation ML-KEM-shaped keypair, encapsulation, decapsulation, polynomial, NTT, and pointwise surfaces over caller-owned spans or `arc::CapsBuf`.
 - `arc::crypto::Puf` samples SRAM/ADC startup entropy, extracts stable bits, and derives SHA-256 keys when the SHA accelerator headers are available.
 - `arc::crypto::Paillier` composes `exp_mod` and `mul_mod` style big-integer backends for privacy-preserving encrypted telemetry aggregation.
-- `arc::InterruptMatrix` and `RawVector` expose direct interrupt routing contracts for board-specific low-latency ISR stubs.
+- `arc::InterruptMatrix` exposes policy-backed direct interrupt routing; `RawVector` remains Xtensa-only so ESP32-S31/RISC-V gets an explicit compile-time diagnostic.
 - `arc::pack::Overlay<Codec>` reads endian-correct fields directly from DMA/network spans without copying into a local struct.
 - `arc::ulp::riscv::assemble(...)` emits tiny ULP RISC-V programs as compile-time `std::array<uint32_t, N>` blobs.
 - `arc::ulp::Builder`, `Gpio`, `Adc`, `I2c`, and `SleepFsm` provide policy-based C++ building blocks for tiny ULP-side sensing and wake decisions.
@@ -326,7 +326,7 @@ Beginner reading path:
 10. Use `docs/security.md` before relying on CI status for security or release evidence.
 11. Use `docs/api.md` for exact public methods, failure behavior, and ownership notes.
 
-Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target and opt-in libFuzzer harness for HTTP, URI, MQTT, WebSocket, and CoAP parsers. `tools/arc-projects.py --format report` lists root/example firmware projects with target, experimental status, and build command, while default output remains a script-friendly path list. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/compile-cost.py` ranks Clang `-ftime-trace` JSON so template-heavy headers can be optimized from evidence, `tools/arc-audit.go -all` scans every local `loop`/`step` realtime entry call graph, `tools/topology-check.py` scans literal `arc::Pins<...>` packs for duplicate/out-of-range GPIOs, understands integer and `GPIO_NUM_*` tokens, can fail unresolved tokens with `--strict-unresolved`, and can print report, DOT, Mermaid graph, or JSON evidence output, `tools/compile-fail-check.py` keeps negative static-borrow contracts failing and can emit grouped human or JSON case evidence with `--format report` or `--format json`, `tools/source-manifest.py --format json --require-clean` emits a tracked-file hash manifest for release source archives, `tools/firmware-manifest.py --format json --require-artifacts` emits SHA-256 evidence for firmware `.bin` and `.elf` outputs, `tools/evidence-index.py --format json` hashes generated evidence bundles and rejects malformed or failed evidence JSON, `tools/evidence-bundle-check.py .arc-artifacts` verifies evidence-index hashes, provenance subjects, and commit coherence before upload, `tools/evidence-workflow-check.py --format json` verifies CI repository evidence generation, provenance, index, bundle-check, upload ordering, and upload coverage, `tools/sbom.py --format json` emits SPDX 2.3 SBOM evidence from `THIRD_PARTY_MANIFEST.json` and `package-lock.json`, `tools/license-policy-check.py --format json` rejects missing or unapproved docs dependency licenses, `tools/provenance.py --format json` emits in-toto SLSA provenance for evidence or firmware artifact subjects, `tools/workflow-pins-check.py --format json` enforces immutable GitHub Actions refs, `tools/workflow-policy-check.py --format json` validates workflow permissions, concurrency, timeouts, and shell expression guards, `tools/npm-lock-check.py --format json` verifies docs dependency lockfile integrity and reviewed install-script policy, `tools/secret-scan-check.py --format json` scans source-visible files for high-confidence secret leaks, CI uploads `arc-evidence` with source, third-party, safety-case, release metadata, workflow action pin, workflow policy, evidence workflow, npm lockfile, license policy, secret-scan JSON, SPDX SBOM JSON, and in-toto provenance JSON after the bundle coherence gate passes, `tools/use-after-move-check.sh` runs `clang-tidy`'s moved-from-use lint when available, `tools/hil-evidence-check.py --format json` validates captured physical HIL JSONL artifacts as structured board evidence, and `tools/arc-prove.sh` validates the SPSC, role-exposure, and consensus TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
+Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target and opt-in libFuzzer harness for HTTP, URI, MQTT, WebSocket, and CoAP parsers. `tools/arc-projects.py --format report` lists root/example firmware projects with target, experimental status, and build command, including the preview-SDK preflight for ESP32-S31 examples, while default output remains a script-friendly path list. `tools/arc-pack-bridge.py` decodes fixed `arc::pack` frames into JSON/Foxglove-style JSONL, `tools/arc-gen.go` extracts `ARC_PACK_REFLECT` schemas for TypeScript and Go bridge code, `tools/compile-cost.py` ranks Clang `-ftime-trace` JSON so template-heavy headers can be optimized from evidence, `tools/arc-audit.go -all` scans every local `loop`/`step` realtime entry call graph, `tools/topology-check.py` scans literal `arc::Pins<...>` packs for duplicate/out-of-range GPIOs, understands integer and `GPIO_NUM_*` tokens, can fail unresolved tokens with `--strict-unresolved`, and can print report, DOT, Mermaid graph, or JSON evidence output, `tools/compile-fail-check.py` keeps negative static-borrow contracts failing and can emit grouped human or JSON case evidence with `--format report` or `--format json`, `tools/source-manifest.py --format json --require-clean` emits a tracked-file hash manifest for release source archives, `tools/firmware-manifest.py --format json --require-artifacts` emits SHA-256 evidence for firmware `.bin` and `.elf` outputs, `tools/evidence-index.py --format json` hashes generated evidence bundles and rejects malformed or failed evidence JSON, `tools/evidence-bundle-check.py .arc-artifacts` verifies evidence-index hashes, provenance subjects, and commit coherence before upload, `tools/evidence-workflow-check.py --format json` verifies CI repository evidence generation, provenance, index, bundle-check, upload ordering, and upload coverage, `tools/sbom.py --format json` emits SPDX 2.3 SBOM evidence from `THIRD_PARTY_MANIFEST.json` and `package-lock.json`, `tools/license-policy-check.py --format json` rejects missing or unapproved docs dependency licenses, `tools/provenance.py --format json` emits in-toto SLSA provenance for evidence or firmware artifact subjects, `tools/workflow-pins-check.py --format json` enforces immutable GitHub Actions refs, `tools/workflow-policy-check.py --format json` validates workflow permissions, concurrency, timeouts, and shell expression guards, `tools/npm-lock-check.py --format json` verifies docs dependency lockfile integrity and reviewed install-script policy, `tools/secret-scan-check.py --format json` scans source-visible files for high-confidence secret leaks, CI uploads `arc-evidence` with source, third-party, safety-case, release metadata, workflow action pin, workflow policy, evidence workflow, npm lockfile, license policy, secret-scan JSON, SPDX SBOM JSON, and in-toto provenance JSON after the bundle coherence gate passes, `tools/use-after-move-check.sh` runs `clang-tidy`'s moved-from-use lint when available, `tools/hil-evidence-check.py --format json` validates captured physical HIL JSONL artifacts as structured board evidence, and `tools/arc-prove.sh` validates the SPSC, role-exposure, and consensus TLA+ specs before CI builds. `tools/bridge/main.go` listens for UDP telemetry, republishes decoded frames over a dependency-free WebSocket bridge, emits Perfetto power counters, and can chunk PIE hotpatch plans into Fabric/RDMA JSON for physical CI orchestration.
 
 <details>
 <summary>Quick API Map</summary>
@@ -335,7 +335,7 @@ Host tooling: `tests/host/fuzz_codecs.cpp` is a default-compiled smoke target an
 | --- | --- | --- |
 | Profile umbrellas | `arc/core.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/math.hpp`, `arc.hpp` | Subset entry points for substrate, coherency/DMA, no-heap codecs, DSP/math, and the compatibility umbrella |
 | Core plane | `arc/task.hpp`, `arc/borrow.hpp`, `arc/coro.hpp`, `arc/bare_core.hpp`, `arc/intermittent.hpp`, `arc/stack.hpp`, `arc/plane.hpp`, `arc/sketch.hpp`, `arc/tight.hpp`, `arc/lockstep.hpp`, `arc/sim.hpp`, `arc/proof.hpp`, `arc/rtos.hpp`, `arc/fsm.hpp`, `arc/flow.hpp`, `arc/ipc.hpp`, `arc/cli.hpp`, `arc/text.hpp` | `arc::spawn`, `arc::TaskMem`, `arc::Task`, `arc::TaskArena`, `arc::CoreLocal`, `arc::CoreMsg`, `arc::StaticRef`, `arc::StaticLoan`, `arc::StaticEdit`, `arc::LoanPack`, `arc::proof::Pack`, `arc::proof::Deadline`, `arc::BareCore`, `arc::power::Intermittent`, `arc::stack`, `arc::Plane`, `arc::App`, `arc::Tight`, `arc::Lockstep`, `arc::LockstepFault`, `arc::sim::Drive`, `arc::sim::Sense`, `arc::sim::Spi`, `arc::sim::Fifo`, `arc::sim::TraceLog`, `arc::sim::Harness`, `arc::rtos`, `arc::fsm::Automaton`, `arc::Flow`, `arc::Ipc`, `arc::Cli`, `arc::Command`, `arc::Text` |
-| Ownership and topology | `arc/topology.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp`, `arc/roles.hpp` | `arc::Pins`, `arc::Topology`, `arc::Claim`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit`, `arc::Roles` |
+| Ownership and topology | `arc/topology.hpp`, `arc/board/esp32s31_korvo.hpp`, `arc/claim.hpp`, `arc/init.hpp`, `arc/audit.hpp`, `arc/roles.hpp` | `arc::Pins`, `arc::Topology`, `arc::board::Korvo1`, `arc::Claim`, `arc::ClaimSet`, `arc::Gate`, `arc::TryGate`, `arc::MutexGate`, `arc::TryMutexGate`, `arc::Init`, `arc::InitTxn`, `arc::RefInit`, `arc::RefInitTxn`, `arc::RefLease`, `arc::Audit`, `arc::Roles` |
 | Memory and coherency | `arc/caps.hpp`, `arc/cache.hpp`, `arc/cache_lock.hpp`, `arc/hotpatch.hpp`, `arc/copy.hpp`, `arc/dma_chain.hpp`, `arc/axi_graph.hpp`, `arc/pipeline.hpp`, `arc/mmu_span.hpp`, `arc/distributed_mmu.hpp`, `arc/fram.hpp`, `arc/place.hpp`, `arc/prefetch.hpp`, `arc/scrub.hpp` | `arc::dmabuf`, `arc::simdbuf`, `arc::Cache`, `arc::CacheLock`, `arc::HotPatch`, `arc::HotPatchImage`, `arc::HotPatchDetour`, `arc::DmaChain`, `arc::DmaEndpoint`, `arc::AxiGraph`, `arc::AxiPort`, `arc::AxiEdge`, `arc::Pipeline`, `arc::Dma2dWindow`, `arc::bind_rows`, `arc::MmuSpan`, `arc::mmu::DistributedSpan`, `arc::mmu::DistributedPager`, `arc::FramArena`, `arc::FramRef`, `arc::FramAlloc`, `arc::Copy`, `arc::prefetch`, `arc::Scrub` |
 | Lock-free lanes | `arc/spsc.hpp`, `arc/mpsc.hpp`, `arc/fanin.hpp`, `arc/reg.hpp`, `arc/seq.hpp`, `arc/log.hpp`, `arc/postmortem.hpp`, `arc/rpc.hpp`, `arc/rtc_ring.hpp` | `arc::Spsc`, `arc::Mpsc`, `arc::DenseMpsc`, `arc::Fanin`, `arc::Reg`, `arc::SeqReg`, `arc::LogLane`, `arc::Postmortem`, `arc::RpcLane`, `arc::RtcRing` |
 | GPIO and timing | `arc/drive.hpp`, `arc/sense.hpp`, `arc/gpio.hpp`, `arc/flexroute.hpp`, `arc/rtc.hpp`, `arc/timer.hpp`, `arc/etm.hpp`, `arc/time.hpp`, `arc/clock.hpp`, `arc/probe.hpp`, `arc/power_governor.hpp`, `arc/power_profiler.hpp`, `arc/timesync.hpp`, `arc/tdma.hpp`, `arc/covert.hpp`, `arc/lifi.hpp`, `arc/sdr.hpp` | `arc::Drive`, `arc::Sense`, `arc::Gpio`, `arc::matrix::FlexRoute`, `arc::RtcGpio`, `arc::RtcPin`, `arc::Timer`, `arc::Etm`, `arc::EtmRoute`, `arc::Time`, `arc::Clock`, `arc::Probe`, `arc::CycleStats`, `arc::JitterStats`, `arc::DeadlineStats`, `arc::StallStats`, `arc::power::Governor`, `arc::power::Profiler`, `arc::TimeSync`, `arc::net::Tdma`, `arc::covert::Fsk`, `arc::covert::EmTx`, `arc::covert::SonicTx`, `arc::optical::LiFi`, `arc::sdr::PulseSynth`, `arc::sdr::Tx` |
@@ -855,7 +855,7 @@ The env loader works in this order:
 - existing global `IDF_PATH`
 - local `./esp-idf`
 
-It also exports `IDF_TARGET` from `ARC_TARGET`, defaulting to `esp32s3`. Every project CMake entry routes through `cmake/arc-idf.cmake`, which keeps ESP32-S3 as the stable default and rejects unknown targets instead of silently falling back.
+It also exports `IDF_TARGET` from `ARC_TARGET`, defaulting to `esp32s3`. The env loader and every project CMake entry route through Arc target policy, keeping ESP32-S3 as the stable default and rejecting unknown targets instead of silently falling back.
 
 ## Target Selection
 
@@ -863,8 +863,8 @@ Arc keeps ESP32-S3 as the default while allowing explicit non-default targets. T
 
 - `ARC_TARGET=esp32s3` by default; this still forces `IDF_TARGET=esp32s3`.
 - `ARC_TARGET=esp32p4` configures ESP32-P4 when the pinned ESP-IDF checkout provides that target.
-- `ARC_TARGET=esp32s31` only configures when `ARC_EXPERIMENTAL_ESP32S31=ON` is also set.
-- Any unknown `ARC_TARGET` fails during configure.
+- `ARC_TARGET=esp32s31` only loads/configures when `ARC_EXPERIMENTAL_ESP32S31=ON` is also set and the selected ESP-IDF checkout contains complete ESP32-S31 target metadata.
+- Any unknown `ARC_TARGET` fails before configure.
 
 The root firmware and ESP32-S3 examples under `examples/esp32s3/` each declare `arc_target(esp32s3)`, so they fail fast instead of inheriting an incompatible target from the shell. Target-neutral examples live under `examples/portable/`. ESP32-S31 scaffolds live under `examples/esp32s31/`, declare `arc_target(esp32s31)`, and are intentionally skipped by default CI until ESP-IDF exposes a usable `esp32s31` target.
 
@@ -881,21 +881,45 @@ idf.py build
 Example S31 configure flow:
 
 ```bash
-export ARC_TARGET=esp32s31
-export ARC_EXPERIMENTAL_ESP32S31=ON
-. ./env.sh
-idf.py -C examples/esp32s31/ptp build
+export ARC_IDF_PATH=/path/to/preview-esp-idf
+python3 tools/s31-readiness.py --idf-path "$ARC_IDF_PATH" --require-sdk --format report
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example ptp --dry-run
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example ptp
+python3 tools/s31-build.py --list-ports
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example ptp --port /dev/ttyACM0 --monitor --dry-run
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example ptp --port /dev/ttyACM0 --monitor
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example ptp --auto-port --monitor --dry-run
 ```
 
-The current pinned local ESP-IDF checkout does not contain `esp32s31` target metadata, so S31 firmware builds remain blocked on preview SDK support. The scaffolds still define the intended Arc surface:
+The current pinned local ESP-IDF checkout does not contain `esp32s31` target metadata, so S31 firmware builds remain blocked on preview SDK support. Use `ARC_IDF_PATH=/path/to/preview-esp-idf` or `IDF_PATH=/path/to/preview-esp-idf` before `. ./env.sh` once the preview SDK is available with `export.sh`, and run the readiness preflight against that same path before a Korvo build.
 
-- `examples/esp32s31/ptp`
-- `examples/esp32s31/ml`
-- `examples/esp32s31/amp`
-- `examples/esp32s31/cam`
-- `examples/esp32s31/control`
+The scaffolds still define the intended Arc surface:
 
-Migration note: ESP32-S3 and ESP32-S31 share Arc's high-level programming model, including `arc::App`, `arc::Tight`, `arc::Cache`, `arc::DmaChain`, `arc::PtpClock`, ML helpers, and TEE planning types. They do not share low-level private register assumptions. ESP32-S3-only surfaces such as dedicated GPIO `arc::Drive`/`arc::Sense`, Xtensa interrupt masking, and TRAX are guarded so S31 code gets explicit compile-time diagnostics instead of fake S3 behavior.
+- `examples/esp32s31/ptp` with ESP32-S31-Korvo-1 external-PHY timing scaffold
+- `examples/esp32s31/ml` with ESP32-S31-Korvo-1 fixed-shape ML scaffolding
+- `examples/esp32s31/amp` with ESP32-S31-Korvo-1 Core0/Core1 migration policy scaffolding while true bare-core AMP remains off
+- `examples/esp32s31/audio` with ESP32-S31-Korvo-1 ES8389 codec, one/two speaker setup, dual-mic speech/wake topology, two NS4150B PA chips, 2 mm speaker connector pitch, isolated audio power, PA enable pin, and DMA buffer scaffolding
+- `examples/esp32s31/cam` with ESP32-S31-Korvo-1 OV3660 accessory, 3.3 V camera LDO rail facts, JPEG video-streaming facts, and 4.3-inch 800x480 RGB565 camera/LCD bridge topology facts
+- `examples/esp32s31/console` with ESP32-S31-Korvo-1 two data-capable USB cable setup, USB-C UART bridge, manual/automatic download, flashing, power, and guarded UART contract
+- `examples/esp32s31/control` with ESP32-S31-Korvo-1 control-loop placement on the S31 core map
+- `examples/esp32s31/io` with ESP32-S31-Korvo-1 GPIO42 `ADC BUTTON` four-button shared-ADC lane and GPIO37 `WS2812_CTRL` addressable RGB status LED RMT ownership facts
+- `examples/esp32s31/lcd` with ESP32-S31-Korvo-1 LCD expansion-board topology, ST7262E43/GT1151 4.3-inch 800x480 RGB565 panel facts, strap-overlapped control pins, and DMA frame ownership
+- `examples/esp32s31/radio` with ESP32-S31-Korvo-1 module radio facts for Wi-Fi 6, Bluetooth 5.4, Bluetooth Classic, BLE, IEEE 802.15.4, Zigbee 3.0, Thread 1.4, PCB antenna routing, and guarded Arc ESP-NOW/BLE Mesh/Thread contracts
+- `examples/esp32s31/sd` with ESP32-S31-Korvo-1 onboard SDIO 3.0 4-bit microSD pin topology for audio storage/playback, optional SPI NAND pin aliases on the same GPIO20..GPIO25 lane, strap-overlapped control GPIO, exact rework/voltage part counts, and guarded SDMMC mount contract
+- `examples/esp32s31/security` with ESP32-S31 secure boot, flash encryption, TEE, PUF, WorldGuard, and Arc SecureBoot/WorldGuard/PUF/Cloak contract scaffolding
+- `examples/esp32s31/usb` with ESP32-S31-Korvo-1 Type-A high-speed USB host power facts, TPS2051C current-limited switch facts, 3 A high-load input envelope, USB OTG PHY ownership, and USB descriptor scaffolding
+
+`examples/esp32s31/ptp` uses the ESP32-S31 Ethernet MAC capability for timing scaffold work, but `arc::board::Korvo1::Onboard::eth_phy` is false, so Korvo hardware timestamping needs an external Ethernet PHY path.
+`arc::board::Korvo1::Module` records the ESP32-S31-WROOM-3 module, 16 MB flash, 16 MB PSRAM, and PCB antenna. `Korvo1::Setup` records the board bring-up contract: two USB 2.0 Standard-A-to-Type-C data cables, one or two speakers, the power switch, red power LED, and optional microSD. `Korvo1::Power` records the power-only Type-C port, UART Type-C power path, 5 V switch, 3.3 V buck, audio 3.3 V LDO, 5 V power LED, isolated audio power, and 3 A high-load input envelope for speaker plus USB-host work. `Korvo1::Download` records the Korvo manual Boot/RST download flow and automatic DTR/RTS serial download support. `Korvo1::AudioCodec` records dual analog microphones for speech recognition plus near/far-field wake, two NS4150B PA chips, and the 2 mm speaker connector pitch, and `Korvo1::CamModule` records JPEG video-streaming support plus the 3.3 V input LDO rails that generate 2.8 V AVDD and 1.5 V DVDD. `arc::board::Korvo1::Resource` provides typed ownership claims for the Korvo codec I2C bus, I2S audio bus, audio PA enable GPIO, LCD bus, SDMMC slot, SD control GPIO, camera DVP bus, console UART, ADC button, status LED, and USB OTG PHY; the default SDMMC slot and optional SPI NAND bus also share a composite lane claim so a reworked NAND image cannot be active with the default microSD lane. `Korvo1::Usb` records the USB_DP/USB_DM module pins separately from the GPIO topology so they are not confused with GPIO40/GPIO41, while `Korvo1::UsbHost` records the Type-A high-speed host port, downstream power budget, and TPS2051C current-limited switch.
+The same board header exposes `Korvo1*Graph` topology aliases for codec, audio, LCD, SD, optional SPI NAND, camera, console, and boot-strapping signal groups so examples can verify bus routes without pulling in peripheral driver headers. `Korvo1::Display` records the ESP32-S3-LCD-EV-Board-SUB3 4.3-inch 800x480 RGB565 display, ST7262E43 panel driver, and GT1151 touch driver. `Korvo1::Sd` records the default 4-bit SDIO 3.0 microSD lane for audio storage and playback. `Korvo1::SpiNand` records the unpopulated SPI NAND aliases on GPIO20..GPIO25, the required hardware rework, the six base removals, nine base-populated parts, seven extra 1.8 V parts, one extra 3.3 V part, and 1.8 V/3.3 V NAND support so reworked boards can see the exact conflict with the default microSD lane. `Korvo1::Button` records the four UI/audio-test function buttons on GPIO42 `ADC BUTTON`, and `Korvo1::Led` records the single addressable RGB LED as GPIO37 `WS2812_CTRL`. The Espressif V1.1 component overview currently says the RGB LED is driven by GPIO8, but the same pin assignment table maps GPIO8 to LCD DB0 and `WS2812_CTRL` to GPIO37, so Arc follows the pin table for signal ownership. `Korvo1::Strap` includes the ESP32-S31 silicon strapping pins GPIO36/GPIO37 used by Korvo LCD DB15 and the WS2812 status LED, not just the board boot-mode pins.
+The S31 audio, camera, and LCD examples declare the matching driver feature dependencies and compile guarded `arc::I2s`/`arc::I2cBus`, `arc::Dvp`, and `arc::Rgb` aliases when those preview SDK headers are present.
+The board facts are locked to the ESP32-S31-Korvo-1 V1.1 pin assignment table.
+
+S31 examples share `examples/esp32s31/sdkconfig.defaults`, which keeps the root 16 MB partition table reachable from each example and switches PSRAM selection to auto-detect instead of the ESP32-S3 fixed 8 MB PSRAM type. `tools/s31-build.py --monitor` implies `flash`, so Korvo bring-up stays on one selected example and one serial session. Flashing or monitoring requires either `--port` or `--auto-port`; use `--auto-port` only when exactly one Korvo serial port is connected, otherwise pass `--port` explicitly.
+
+Use `./tools/s31-readiness.py --format report` to check the Arc S31/Korvo scaffold and the local SDK target state. Add `--require-sdk` when a preview ESP-IDF checkout is expected to provide complete ESP32-S31 SDK support: `export.sh`, SoC, HAL, ROM, system linker scripts, CMake toolchain, and IDF target registration. Use `python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example audio --dry-run` to print the exact preflight/build commands, or omit `--dry-run` to preflight and build the selected Korvo example once a preview SDK exists. Use `python3 tools/s31-build.py --list-ports` to find likely USB serial paths, then add `--port /dev/ttyACM0 --monitor` to build, flash, and attach ESP-IDF monitor to that one selected board image. Use `--auto-port --monitor` only for the single-connected-board case.
+
+Migration note: ESP32-S3 and ESP32-S31 share Arc's high-level programming model, including `arc::App`, `arc::Tight`, `arc::Cache`, `arc::DmaChain`, `arc::PtpClock`, ML helpers, and TEE planning types. They do not share low-level private register assumptions. ESP32-S3-only surfaces such as dedicated GPIO `arc::Drive`/`arc::Sense`, Xtensa interrupt masking, TRAX, `arc::BareCore` true AMP, and `arc::Touch` capacitive touch are guarded so S31 code gets explicit compile-time diagnostics instead of fake S3 behavior; Korvo's GT1151 display touch is an external controller path.
 
 The public target API follows Arc's short naming policy:
 
@@ -1079,13 +1103,13 @@ Clean generated local state across root and examples:
 
 ### `arc::Soc`
 
-Compile-time ESP32-S3 capability map.
+Compile-time selected ESP32 target capability map.
 
 - Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
 - Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_jtag`, `etm`, `simd`, `async_copy`, `ahb_dma`, `dma2d`, `ppa`, `jpeg`, `h264`, `fast_gpio`, `rtc_gpio`, `rtc_io`, `rtc_hold`, `rtc_wake`, `lcd_i80`, `dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, `ecdsa`, `xts`, `ulp_fsm`, and `ulp_riscv`.
 - Exposes hardware counts such as `gpio_pins`, `rtc_pins`, `adc_units`, `ledc_channels`, `spi_ports`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
-- `etm` and `ecdsa` are deliberately represented even when the pinned ESP32-S3 `soc_caps.h` does not advertise those driver surfaces.
-- Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
+- `etm` and `ecdsa` are deliberately represented when the installed target headers do not advertise those driver surfaces.
+- Contains hard `static_assert` guards for Arc's stable ESP32-S3 baseline contract: dual-core, dedicated GPIO, async AHB-GDMA, and SIMD. Experimental ESP32-S31 coverage is gated through `ARC_TARGET=esp32s31` plus `ARC_EXPERIMENTAL_ESP32S31=ON`.
 
 ### `arc::Pins<...>` and `arc::Topology<Board>`
 
@@ -1851,7 +1875,7 @@ Compile-time USB Serial/JTAG wrapper.
 - `write(...)` and `read(...)` expose `arc::Result<std::size_t>` byte-count overloads.
 - `connected()`, `installed()`, `wait(...)`, and `off()` expose runtime state and teardown.
 
-Use this for ESP32-S3 USB console/control traffic when the native USB Serial/JTAG peripheral is the lane.
+Use this for USB console/control traffic when the target native USB Serial/JTAG peripheral is the lane.
 
 ### `arc::Otg`
 
@@ -2152,14 +2176,16 @@ Compile-time ESP32-S3 capacitive touch wrapper.
 
 Use this for touch keys, wake pads, guarded control surfaces, and low-part-count HMI inputs that should stay typed and deterministic.
 
-### `arc::Mask<Level = XCHAL_EXCM_LEVEL>`
+### `arc::Mask<Level>`
 
-Core-local Xtensa interrupt-level guard.
+Core-local interrupt guard.
 
-- construct it to raise the interrupt level for the current core
+- on Xtensa targets, construct it to raise the interrupt level for the current core
+- on ESP32-S31/RISC-V, `Mask<1>` clears global machine interrupts and restores the previous state on destruction
 - destroy it to restore the previous level
-- `arc::Critical` is the normal “silence OS-visible interrupts” alias
-- `arc::Silence` raises all the way to level `15`
+- `arc::Critical` is the normal “silence OS-visible interrupts” alias for the selected target
+- `arc::Silence` raises all the way to level `15` on Xtensa and maps to `Mask<1>` on RISC-V
+- `Mask<2>` and higher give an explicit compile-time diagnostic on ESP32-S31/RISC-V
 
 Use this only around tiny hot sections where determinism matters more than latency. The guard is force-inlined, so code using it inherits the caller's section; mark callers with `ARC_HOT` / `IRAM_ATTR` when they can run while flash cache is disabled.
 
@@ -3476,7 +3502,7 @@ Security automation lives beside it:
 - `.github/dependabot.yml` opens weekly grouped update PRs for GitHub Actions and npm docs dependencies. ESP-IDF remains pinned and updated through the Arc build workflow and `tools/sync-idf.sh`, not by Dependabot.
 - `docs/security.md` is the short operator page for CodeQL scope, Dependabot scope, and the human security review that still belongs to each product release.
 
-It builds the root baseline, target-neutral examples, and ESP32-S3 examples, then writes each app binary size into the GitHub Actions step summary so size regressions are visible on every push or PR. Experimental ESP32-S31 examples are discovered but skipped by default because they require `ARC_TARGET=esp32s31`, `ARC_EXPERIMENTAL_ESP32S31=ON`, and preview ESP-IDF target support.
+It builds the root baseline, target-neutral examples, and ESP32-S3 examples, then writes each app binary size into the GitHub Actions step summary so size regressions are visible on every push or PR. Experimental ESP32-S31 examples are discovered but skipped by default because they require `ARC_TARGET=esp32s31`, `ARC_EXPERIMENTAL_ESP32S31=ON`, and preview ESP-IDF target support. Once a preview SDK provides the target, use `./tools/ci-build-plan.py --buildable --include-experimental` to include those projects in the affected-build plan. For a manual GitHub run, set `include_experimental=true` and pass the preview SDK commit, tag, or branch through the `idf_ref` input; the workflow keeps the default `ARC_IDF_REF` pin for normal ESP32-S3 runs and uses the override only as `ARC_IDF_EFFECTIVE_REF`.
 
 When a change is intentionally documentation-only and the maintainer asks to skip local build/check, CI remains the validation source for the pushed branch.
 

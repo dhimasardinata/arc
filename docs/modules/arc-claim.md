@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `ClaimSlot`, `Claim`, `ClaimKind`, `ClaimFor`.
+Source landmarks: `ClaimKind`, `ClaimSlot`, `Claim`, `take`, `take_unique`, `drop`, `held`, `ClaimFor`, `ClaimSet`.
 
 ## Start From Zero
 

@@ -2,6 +2,9 @@
 
 #include <cstdint>
 
+#include "arc/soc/target.hpp"
+
+#if ARC_TARGET_IS_ESP32S3
 #include "driver/touch_sens.h"
 #include "esp_check.h"
 #include "soc/soc_caps.h"
@@ -10,9 +13,11 @@
 #include "arc/claim.hpp"
 #include "arc/init.hpp"
 #include "arc/result.hpp"
+#endif
 
 namespace arc {
 
+#if ARC_TARGET_IS_ESP32S3
 template <std::uint32_t PowerOnWaitUs = 256,
           std::uint32_t MeasIntervalUs = 32,
           std::uint32_t MaxMeasTimeUs = 0,
@@ -527,5 +532,23 @@ private:
 
     constinit static inline State state{nullptr, 0U};
 };
+#else
+template <std::uint32_t PowerOnWaitUs = 256,
+          std::uint32_t MeasIntervalUs = 32,
+          std::uint32_t MaxMeasTimeUs = 0,
+          std::uint32_t ChargeTimes = 500>
+struct TouchBus {
+    static_assert(soc::never_v<PowerOnWaitUs>,
+                  "arc::TouchBus is ESP32-S3 capacitive touch only; ESP32-S31 Korvo display touch uses an "
+                  "external GT1151 controller path");
+};
+
+template <typename Bus, int Io, std::uint32_t Active = 2000>
+struct Touch {
+    static_assert(soc::never_v<Io>,
+                  "arc::Touch is ESP32-S3 capacitive touch only; ESP32-S31 Korvo display touch uses an external "
+                  "GT1151 controller path");
+};
+#endif
 
 }  // namespace arc

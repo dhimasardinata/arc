@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 
 #include "arc/fence.hpp"
@@ -75,7 +76,9 @@ struct alignas(cache_line) SeqReg {
     }
 
 private:
-    using Slot = std::array<std::uint8_t, sizeof(T)>;
+    struct alignas(alignof(T) > 4U ? alignof(T) : 4U) Slot {
+        std::array<std::uint8_t, sizeof(T)> bytes{};
+    };
 
     [[nodiscard]] static constexpr std::size_t index(const std::uint32_t seq) noexcept
     {
@@ -84,18 +87,12 @@ private:
 
     static void store_slot(Slot& slot, const T& value) noexcept
     {
-        const auto* const bytes = reinterpret_cast<const std::uint8_t*>(&value);
-        for (std::size_t i = 0U; i < sizeof(T); ++i) {
-            __atomic_store_n(&slot[i], bytes[i], __ATOMIC_RELAXED);
-        }
+        std::memcpy(slot.bytes.data(), &value, sizeof(T));
     }
 
     static void load_slot(const Slot& slot, T& value) noexcept
     {
-        auto* const bytes = reinterpret_cast<std::uint8_t*>(&value);
-        for (std::size_t i = 0U; i < sizeof(T); ++i) {
-            bytes[i] = __atomic_load_n(&slot[i], __ATOMIC_RELAXED);
-        }
+        std::memcpy(&value, slot.bytes.data(), sizeof(T));
     }
 
     alignas(4) std::uint32_t seq_{0};

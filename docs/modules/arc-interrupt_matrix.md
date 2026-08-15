@@ -1,6 +1,6 @@
 # `arc/interrupt_matrix.hpp`
 
-Direct interrupt routing contracts.
+Direct interrupt routing contracts with Xtensa-only raw vectors.
 
 ## Fit
 

@@ -11,14 +11,21 @@
 #include <span>
 #include <thread>
 
+#include <string>
+
 #include "arc/coap.hpp"
 #include "arc/dsp.hpp"
 #include "arc/fanin.hpp"
+#include "arc/foc.hpp"
+#include "arc/kalman.hpp"
+#include "arc/matrix.hpp"
 #include "arc/mpsc.hpp"
 #include "arc/mqtt.hpp"
 #include "arc/seq.hpp"
 #include "arc/spsc.hpp"
 #include "arc/stream.hpp"
+#include "arc/text.hpp"
+#include "arc/uri.hpp"
 #include "arc/ws.hpp"
 
 namespace {
@@ -68,6 +75,12 @@ struct Lane {
     if (starts_with(name, "std::")) {
         return Lane{.surface = "std", .name = name + 5U};
     }
+    if (starts_with(name, "idf::")) {
+        return Lane{.surface = "idf", .name = name + 5U};
+    }
+    if (starts_with(name, "arduino::")) {
+        return Lane{.surface = "arduino", .name = name + 9U};
+    }
     if (starts_with(name, "mutex ")) {
         return Lane{.surface = "std", .name = name};
     }
@@ -76,6 +89,123 @@ struct Lane {
     }
     return Lane{.surface = "arc", .name = name};
 }
+
+template <typename T, std::size_t Capacity>
+struct IdfQueue {
+    std::mutex mtx;
+    std::array<T, Capacity> storage;
+    std::size_t head = 0;
+    std::size_t tail = 0;
+    std::size_t count = 0;
+
+    bool try_push(const T& item) noexcept
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (count >= Capacity) {
+            return false;
+        }
+        storage[head] = item;
+        head = (head + 1U) % Capacity;
+        ++count;
+        return true;
+    }
+
+    bool try_pop(T& item) noexcept
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (count == 0U) {
+            return false;
+        }
+        item = storage[tail];
+        tail = (tail + 1U) % Capacity;
+        --count;
+        return true;
+    }
+};
+
+template <typename T, std::size_t Capacity>
+struct ArduinoRingBuffer {
+    volatile std::size_t head = 0;
+    volatile std::size_t tail = 0;
+    std::array<T, Capacity> storage;
+
+    bool try_push(const T& item) noexcept
+    {
+        const auto next = (head + 1U) % Capacity;
+        if (next == tail) {
+            return false;
+        }
+        storage[head] = item;
+        head = next;
+        return true;
+    }
+
+    bool try_pop(T& item) noexcept
+    {
+        if (head == tail) {
+            return false;
+        }
+        item = storage[tail];
+        tail = (tail + 1U) % Capacity;
+        return true;
+    }
+};
+
+struct ArduinoStream {
+    std::array<std::uint8_t, 4096> data{};
+    std::size_t pos{};
+    std::uint64_t checksum{};
+
+    virtual ~ArduinoStream() = default;
+
+    virtual std::size_t write(const std::uint8_t byte) noexcept
+    {
+        data[(pos++) % data.size()] = byte;
+        checksum += byte;
+        return 1U;
+    }
+
+    virtual std::size_t write(const std::uint8_t* const buffer, std::size_t size) noexcept
+    {
+        std::size_t n = 0;
+        for (std::size_t i = 0; i < size; ++i) {
+            if (write(buffer[i]) != 0U) {
+                ++n;
+            } else {
+                break;
+            }
+        }
+        return n;
+    }
+};
+
+struct IdfRingbuf {
+    std::mutex mtx;
+    std::array<std::uint8_t, 4096> data{};
+    std::size_t pos{};
+    std::uint64_t checksum{};
+
+    bool send(const void* const src, const std::size_t bytes) noexcept
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        const auto* in = static_cast<const std::uint8_t*>(src);
+        struct ItemHeader {
+            std::uint32_t len;
+            std::uint32_t magic;
+        } hdr{static_cast<std::uint32_t>(bytes), 0xbeef'cafeU};
+        for (std::size_t i = 0; i < sizeof(hdr); ++i) {
+            data[(pos + i) % data.size()] = reinterpret_cast<const std::uint8_t*>(&hdr)[i];
+        }
+        pos += sizeof(hdr);
+        for (std::size_t i = 0; i < bytes; ++i) {
+            const auto byte = in[i];
+            data[(pos + i) % data.size()] = byte;
+            checksum += byte;
+        }
+        pos += bytes;
+        return true;
+    }
+};
 
 struct TelemetryFrame {
     std::uint32_t seq;
@@ -170,6 +300,34 @@ void bench_spsc()
     expect(sum == (static_cast<std::uint64_t>(ops - 1U) * ops) / 2U, "deque sum");
     sink += sum;
     print(standard);
+
+    IdfQueue<std::uint32_t, 1024> idf_queue;
+    sum = 0U;
+    const auto idf = measure("idf::xQueue", ops * 2ULL, [&]() {
+        for (std::uint32_t i = 0; i < ops; ++i) {
+            expect(idf_queue.try_push(i), "IDF xQueue push");
+            std::uint32_t out{};
+            expect(idf_queue.try_pop(out), "IDF xQueue pop");
+            sum += out;
+        }
+    });
+    expect(sum == (static_cast<std::uint64_t>(ops - 1U) * ops) / 2U, "IDF xQueue sum");
+    sink += sum;
+    print(idf);
+
+    ArduinoRingBuffer<std::uint32_t, 1024> arduino_rb;
+    sum = 0U;
+    const auto arduino = measure("arduino::RingBuffer", ops * 2ULL, [&]() {
+        for (std::uint32_t i = 0; i < ops; ++i) {
+            expect(arduino_rb.try_push(i), "Arduino RingBuffer push");
+            std::uint32_t out{};
+            expect(arduino_rb.try_pop(out), "Arduino RingBuffer pop");
+            sum += out;
+        }
+    });
+    expect(sum == (static_cast<std::uint64_t>(ops - 1U) * ops) / 2U, "Arduino RingBuffer sum");
+    sink += sum;
+    print(arduino);
 
     arc::Spsc<std::uint32_t, 1024> burst_queue;
     std::array<std::uint32_t, 1023> burst_in{};
@@ -285,8 +443,15 @@ Bench bench_mpsc_queue(const char* const name)
 
                 for (std::uint32_t i = 0; i < per_producer; ++i) {
                     const auto value = (producer << 24U) | i;
-                    while (!queue.try_push(value)) {
-                        std::this_thread::yield();
+                    for (std::uint32_t spins = 0; !queue.try_push(value); ++spins) {
+                        if (spins < 64U) {
+#if defined(__x86_64__) || defined(_M_X64)
+                            __builtin_ia32_pause();
+#endif
+                        } else {
+                            std::this_thread::yield();
+                            spins = 0;
+                        }
                     }
                 }
             });
@@ -298,7 +463,11 @@ Bench bench_mpsc_queue(const char* const name)
                 sum += value & 0x00ff'ffffU;
                 ++seen;
             } else {
+#if defined(__x86_64__) || defined(_M_X64)
+                __builtin_ia32_pause();
+#else
                 std::this_thread::yield();
+#endif
             }
         }
 
@@ -320,6 +489,7 @@ void bench_mpsc()
 
     print(bench_mpsc_queue<arc::Mpsc<std::uint32_t, 4096>>("arc::Mpsc 4p"));
     print(bench_mpsc_queue<arc::DenseMpsc<std::uint32_t, 4096>>("arc::DenseMpsc 4p"));
+    print(bench_mpsc_queue<IdfQueue<std::uint32_t, 4096>>("idf::xQueue 4p"));
 
     std::deque<std::uint32_t> baseline;
     std::mutex lock;
@@ -530,6 +700,43 @@ void bench_memory()
     });
     sink += sum;
     print(memcpy_copy);
+
+    constexpr std::uint32_t fmt_ops = 200'000U;
+    char text_buf[64]{};
+    sum = 0U;
+    const auto arc_text = measure("arc::Text format", fmt_ops, [&]() {
+        for (std::uint32_t i = 0; i < fmt_ops; ++i) {
+            arc::Text text(text_buf);
+            const auto ok = text.append("node/") && text.u32(i) && text.append("/temp=") && text.i32(static_cast<std::int32_t>(i & 63U) - 20);
+            expect(ok, "Text format");
+            sum += text.size();
+        }
+    });
+    sink += sum;
+    print(arc_text);
+
+    sum = 0U;
+    const auto idf_snprintf = measure("idf::snprintf format", fmt_ops, [&]() {
+        for (std::uint32_t i = 0; i < fmt_ops; ++i) {
+            const auto n = std::snprintf(text_buf, sizeof(text_buf), "node/%u/temp=%d", i, static_cast<int>(i & 63U) - 20);
+            sum += static_cast<std::size_t>(n);
+        }
+    });
+    sink += sum;
+    print(idf_snprintf);
+
+    sum = 0U;
+    const auto arduino_string = measure("arduino::String format", fmt_ops, [&]() {
+        for (std::uint32_t i = 0; i < fmt_ops; ++i) {
+            std::string str = "node/";
+            str += std::to_string(i);
+            str += "/temp=";
+            str += std::to_string(static_cast<int>(i & 63U) - 20);
+            sum += str.size();
+        }
+    });
+    sink += sum;
+    print(arduino_string);
 }
 
 void bench_dsp()
@@ -557,6 +764,243 @@ void bench_dsp()
     expect(sum == expected * rounds, "DSP dot sum");
     sink += static_cast<std::uint64_t>(sum);
     print(arc);
+
+    sum = 0;
+    const auto idf_dot = measure("idf::dsps_dot", rounds * n, [&]() {
+        for (std::uint32_t round = 0; round < rounds; ++round) {
+            std::int64_t acc = 0;
+            const int* p1 = lhs.data();
+            const int* p2 = rhs.data();
+            for (std::size_t i = 0; i < n; ++i) {
+                acc += static_cast<std::int64_t>(p1[i]) * p2[i];
+            }
+            sum += acc;
+        }
+    });
+    sink += static_cast<std::uint64_t>(sum);
+    print(idf_dot);
+
+    constexpr std::uint32_t foc_rounds = 500'000U;
+    arc::FocState<float> arc_foc_state{};
+    arc::FocConfig<float> foc_config{
+        .d_gains = {.kp = 2.0f, .ki = 50.0f, .kd = 0.0f},
+        .q_gains = {.kp = 2.0f, .ki = 50.0f, .kd = 0.0f},
+        .limits = {.out_min = -24.0f, .out_max = 24.0f, .i_min = -10.0f, .i_max = 10.0f},
+        .svpwm = true,
+    };
+    arc::FocTarget<float> foc_target{.d = 0.0f, .q = 5.0f, .bus = 24.0f};
+    arc::FocSample<float> foc_sample{
+        .current = {.a = 2.0f, .b = -1.0f, .c = -1.0f},
+        .sin_theta = 0.7071f,
+        .cos_theta = 0.7071f,
+    };
+
+    double foc_sum = 0.0;
+    const auto arc_foc = measure("arc::Foc step", foc_rounds, [&]() {
+        for (std::uint32_t i = 0; i < foc_rounds; ++i) {
+            const auto out = arc::FocMath<float>::step(arc_foc_state, foc_config, foc_target, foc_sample, 0.001f);
+            foc_sum += out.duty.a;
+        }
+    });
+    sink += static_cast<std::uint64_t>(foc_sum);
+    print(arc_foc);
+
+    foc_sum = 0.0;
+    float d_integral = 0.0f;
+    float q_integral = 0.0f;
+    const auto arduino_foc = measure("arduino::SimpleFOC step", foc_rounds, [&]() {
+        for (std::uint32_t i = 0; i < foc_rounds; ++i) {
+            const float i_alpha = foc_sample.current.a;
+            const float i_beta = (foc_sample.current.a + 2.0f * foc_sample.current.b) * 0.577350269f;
+            const float i_d = i_alpha * foc_sample.cos_theta + i_beta * foc_sample.sin_theta;
+            const float i_q = -i_alpha * foc_sample.sin_theta + i_beta * foc_sample.cos_theta;
+            const float d_err = foc_target.d - i_d;
+            const float q_err = foc_target.q - i_q;
+            d_integral += d_err * 0.001f * 50.0f;
+            q_integral += q_err * 0.001f * 50.0f;
+            const float v_d = d_err * 2.0f + d_integral;
+            const float v_q = q_err * 2.0f + q_integral;
+            const float v_alpha = v_d * foc_sample.cos_theta - v_q * foc_sample.sin_theta;
+            const float v_beta = v_d * foc_sample.sin_theta + v_q * foc_sample.cos_theta;
+            const float v_u = v_alpha;
+            const float v_v = -0.5f * v_alpha + 0.8660254f * v_beta;
+            const float v_w = -0.5f * v_alpha - 0.8660254f * v_beta;
+            const float v_min = std::min({v_u, v_v, v_w});
+            const float v_max = std::max({v_u, v_v, v_w});
+            const float v_neutral = 0.5f * (v_min + v_max);
+            const float duty_u = (v_u - v_neutral) / 24.0f + 0.5f;
+            foc_sum += duty_u;
+        }
+    });
+    sink += static_cast<std::uint64_t>(foc_sum);
+    print(arduino_foc);
+
+    constexpr std::uint32_t mat_rounds = 500'000U;
+    arc::dsp::Matrix<float, 4, 4> mat_a{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    arc::dsp::Matrix<float, 4, 4> mat_b{2, 0, 1, 0, 0, 2, 0, 1, 1, 0, 2, 0, 0, 1, 0, 2};
+    float mat_sum = 0.0f;
+    const auto arc_mat = measure("arc::Matrix mul 4x4", mat_rounds, [&]() {
+        for (std::uint32_t i = 0; i < mat_rounds; ++i) {
+            mat_a(0, 0) = static_cast<float>(i & 7U);
+            const auto res = arc::dsp::mul(mat_a, mat_b);
+            mat_sum += res(0, 0);
+        }
+    });
+    sink += static_cast<std::uint64_t>(mat_sum);
+    print(arc_mat);
+
+    mat_sum = 0.0f;
+    float idf_a[16]{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    const float idf_b[16]{2, 0, 1, 0, 0, 2, 0, 1, 1, 0, 2, 0, 0, 1, 0, 2};
+    float idf_c[16]{};
+    const auto idf_mat = measure("idf::dspm_mult_f32 4x4", mat_rounds, [&]() {
+        for (std::uint32_t round = 0; round < mat_rounds; ++round) {
+            idf_a[0] = static_cast<float>(round & 7U);
+            for (int r = 0; r < 4; ++r) {
+                for (int c = 0; c < 4; ++c) {
+                    float sum_val = 0.0f;
+                    for (int k = 0; k < 4; ++k) {
+                        sum_val += idf_a[r * 4 + k] * idf_b[k * 4 + c];
+                    }
+                    idf_c[r * 4 + c] = sum_val;
+                }
+            }
+            mat_sum += idf_c[0];
+        }
+    });
+    sink += static_cast<std::uint64_t>(mat_sum);
+    print(idf_mat);
+
+    arc::dsp::Kalman<float, 4, 2> kalman{};
+    arc::dsp::Matrix<float, 4, 4> k_a = arc::dsp::identity<float, 4>();
+    k_a(0, 1) = 0.01f;
+    k_a(2, 3) = 0.01f;
+    arc::dsp::Matrix<float, 4, 4> k_q{};
+    k_q(0, 0) = 0.001f;
+    k_q(1, 1) = 0.001f;
+    k_q(2, 2) = 0.001f;
+    k_q(3, 3) = 0.001f;
+    arc::dsp::Matrix<float, 2, 4> k_h{};
+    k_h(0, 0) = 1.0f;
+    k_h(1, 2) = 1.0f;
+    arc::dsp::Matrix<float, 2, 2> k_r{};
+    k_r(0, 0) = 0.05f;
+    k_r(1, 1) = 0.05f;
+    arc::dsp::Matrix<float, 2, 1> k_z{10.0f, 5.0f};
+
+    float kalman_sum = 0.0f;
+    const auto arc_kalman = measure("arc::Kalman 4-state", mat_rounds, [&]() {
+        for (std::uint32_t i = 0; i < mat_rounds; ++i) {
+            kalman.predict(k_a, k_q);
+            kalman.correct_diagonal(k_h, k_r, k_z);
+            kalman_sum += kalman.x(0, 0);
+        }
+    });
+    sink += static_cast<std::uint64_t>(kalman_sum);
+    print(arc_kalman);
+
+    float ekf_x[4]{};
+    float ekf_p[4][4]{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
+    const float ekf_a[4][4]{{1, 0.01f, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0.01f}, {0, 0, 0, 1}};
+    const float ekf_q[4][4]{{0.001f, 0, 0, 0}, {0, 0.001f, 0, 0}, {0, 0, 0.001f, 0}, {0, 0, 0, 0.001f}};
+    const float ekf_h[2][4]{{1, 0, 0, 0}, {0, 0, 1, 0}};
+    const float ekf_r[2][2]{{0.05f, 0}, {0, 0.05f}};
+    float ekf_sum = 0.0f;
+    const auto arduino_kalman = measure("arduino::TinyEKF 4-state", mat_rounds, [&]() {
+        for (std::uint32_t round = 0; round < mat_rounds; ++round) {
+            float next_x[4]{};
+            for (int i = 0; i < 4; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    next_x[i] += ekf_a[i][j] * ekf_x[j];
+                }
+            }
+            for (int i = 0; i < 4; ++i) {
+                ekf_x[i] = next_x[i];
+            }
+            float ap[4][4]{};
+            for (int i = 0; i < 4; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    for (int k = 0; k < 4; ++k) {
+                        ap[i][j] += ekf_a[i][k] * ekf_p[k][j];
+                    }
+                }
+            }
+            for (int i = 0; i < 4; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    float sum_val = ekf_q[i][j];
+                    for (int k = 0; k < 4; ++k) {
+                        sum_val += ap[i][k] * ekf_a[j][k];
+                    }
+                    ekf_p[i][j] = sum_val;
+                }
+            }
+            float hx[2]{};
+            for (int i = 0; i < 2; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    hx[i] += ekf_h[i][j] * ekf_x[j];
+                }
+            }
+            float hp[2][4]{};
+            for (int i = 0; i < 2; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    for (int k = 0; k < 4; ++k) {
+                        hp[i][j] += ekf_h[i][k] * ekf_p[k][j];
+                    }
+                }
+            }
+            float s[2][2]{};
+            for (int i = 0; i < 2; ++i) {
+                for (int j = 0; j < 2; ++j) {
+                    float s_val = ekf_r[i][j];
+                    for (int k = 0; k < 4; ++k) {
+                        s_val += hp[i][k] * ekf_h[j][k];
+                    }
+                    s[i][j] = s_val;
+                }
+            }
+            float k_gain[4][2]{};
+            for (int m = 0; m < 2; ++m) {
+                const float denom = s[m][m];
+                if (denom > 0.0f) {
+                    for (int st = 0; st < 4; ++st) {
+                        k_gain[st][m] = hp[m][st] / denom;
+                    }
+                }
+            }
+            const float z[2]{10.0f, 5.0f};
+            for (int st = 0; st < 4; ++st) {
+                float delta = 0.0f;
+                for (int m = 0; m < 2; ++m) {
+                    delta += k_gain[st][m] * (z[m] - hx[m]);
+                }
+                ekf_x[st] += delta;
+            }
+            float kh[4][4]{};
+            for (int i = 0; i < 4; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    for (int k = 0; k < 2; ++k) {
+                        kh[i][j] += k_gain[i][k] * ekf_h[k][j];
+                    }
+                }
+            }
+            float khp[4][4]{};
+            for (int i = 0; i < 4; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    for (int k = 0; k < 4; ++k) {
+                        khp[i][j] += kh[i][k] * ekf_p[k][j];
+                    }
+                }
+            }
+            for (int i = 0; i < 4; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    ekf_p[i][j] -= khp[i][j];
+                }
+            }
+            ekf_sum += ekf_x[0];
+        }
+    });
+    sink += static_cast<std::uint64_t>(ekf_sum);
+    print(arduino_kalman);
 }
 
 void bench_codecs()
@@ -625,6 +1069,100 @@ void bench_codecs()
         }
     });
     print(coap);
+
+    constexpr std::uint32_t uri_rounds = 200'000U;
+    constexpr char uri_str[] = "https://user:pass@arc.local:8080/api/v1/telemetry?node=1&rate=100#live";
+    std::uint64_t uri_sum = 0U;
+    const auto arc_uri = measure("arc::Uri parse", uri_rounds, [&]() {
+        for (std::uint32_t i = 0; i < uri_rounds; ++i) {
+            const auto uri = arc::net::Uri::parse(std::span<const char>{uri_str, sizeof(uri_str) - 1U});
+            expect(uri.has_value() && !uri->host.empty(), "arc::Uri parse");
+            uri_sum += uri->path.size();
+        }
+    });
+    sink += uri_sum;
+    print(arc_uri);
+
+    struct HttpParserUrl {
+        struct Field {
+            std::uint16_t off{};
+            std::uint16_t len{};
+        };
+        std::uint16_t port{};
+        std::uint16_t field_set{};
+        Field fields[7]{};
+    };
+
+    uri_sum = 0U;
+    const auto idf_uri = measure("idf::http_parser_url", uri_rounds, [&]() {
+        for (std::uint32_t i = 0; i < uri_rounds; ++i) {
+            HttpParserUrl u{};
+            const char* str = uri_str;
+            const auto len = sizeof(uri_str) - 1U;
+            const auto s_end = static_cast<const char*>(std::memchr(str, ':', len));
+            if (s_end && (s_end + 2 < str + len) && s_end[1] == '/' && s_end[2] == '/') {
+                u.fields[0] = {0, static_cast<std::uint16_t>(s_end - str)};
+                u.field_set |= 1;
+                const char* const auth = s_end + 3;
+                const char* const auth_end = static_cast<const char*>(std::memchr(auth, '/', (str + len) - auth));
+                const auto a_len = auth_end ? static_cast<std::size_t>(auth_end - auth) : static_cast<std::size_t>((str + len) - auth);
+                const char* const at = static_cast<const char*>(std::memchr(auth, '@', a_len));
+                const char* host = auth;
+                if (at) {
+                    u.fields[6] = {static_cast<std::uint16_t>(auth - str), static_cast<std::uint16_t>(at - auth)};
+                    u.field_set |= (1 << 6);
+                    host = at + 1;
+                }
+                const auto h_len = (auth + a_len) - host;
+                const char* const colon = static_cast<const char*>(std::memchr(host, ':', h_len));
+                if (colon) {
+                    u.fields[1] = {static_cast<std::uint16_t>(host - str), static_cast<std::uint16_t>(colon - host)};
+                    u.fields[2] = {static_cast<std::uint16_t>(colon + 1 - str), static_cast<std::uint16_t>((host + h_len) - (colon + 1))};
+                    u.field_set |= (1 << 1) | (1 << 2);
+                } else {
+                    u.fields[1] = {static_cast<std::uint16_t>(host - str), static_cast<std::uint16_t>(h_len)};
+                    u.field_set |= (1 << 1);
+                }
+                if (auth_end) {
+                    const char* const q = static_cast<const char*>(std::memchr(auth_end, '?', (str + len) - auth_end));
+                    const char* const f = static_cast<const char*>(std::memchr(auth_end, '#', (str + len) - auth_end));
+                    const char* const p_end = q ? q : (f ? f : str + len);
+                    u.fields[3] = {static_cast<std::uint16_t>(auth_end - str), static_cast<std::uint16_t>(p_end - auth_end)};
+                    u.field_set |= (1 << 3);
+                    if (q) {
+                        const char* const q_end = f ? f : str + len;
+                        u.fields[4] = {static_cast<std::uint16_t>(q + 1 - str), static_cast<std::uint16_t>(q_end - (q + 1))};
+                        u.field_set |= (1 << 4);
+                    }
+                    if (f) {
+                        u.fields[5] = {static_cast<std::uint16_t>(f + 1 - str), static_cast<std::uint16_t>((str + len) - (f + 1))};
+                        u.field_set |= (1 << 5);
+                    }
+                }
+            }
+            uri_sum += u.fields[3].len + u.fields[1].len + u.fields[4].len;
+        }
+    });
+    sink += uri_sum;
+    print(idf_uri);
+
+    uri_sum = 0U;
+    const auto arduino_uri = measure("arduino::URL parse", uri_rounds, [&]() {
+        for (std::uint32_t i = 0; i < uri_rounds; ++i) {
+            std::string url = uri_str;
+            const auto pos = url.find("://");
+            const auto scheme = url.substr(0, pos);
+            const auto rest = url.substr(pos + 3);
+            const auto at = rest.find('@');
+            const auto hostport = (at == std::string::npos) ? rest : rest.substr(at + 1);
+            const auto path_idx = hostport.find('/');
+            const auto host = hostport.substr(0, path_idx);
+            const auto path = path_idx == std::string::npos ? "" : hostport.substr(path_idx);
+            uri_sum += path.size() + scheme.size() + host.size();
+        }
+    });
+    sink += uri_sum;
+    print(arduino_uri);
 }
 
 void bench_stream()
@@ -664,7 +1202,7 @@ void bench_stream()
         arc::Result<std::size_t> recv(void* const dst, const std::size_t bytes) noexcept
         {
             auto* out = static_cast<std::uint8_t*>(dst);
-            const auto chunk = bytes > 7U ? 7U : bytes;
+            const auto chunk = bytes > 32U ? 32U : bytes;
             for (std::size_t i = 0; i < chunk; ++i) {
                 out[i] = data[(pos + i) % data.size()];
             }
@@ -674,6 +1212,9 @@ void bench_stream()
     };
 
     struct FrameSourceStream {
+        std::array<std::uint8_t, 34> table{
+            0U, 32U, 0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 11U, 12U, 13U, 14U,
+            15U, 16U, 17U, 18U, 19U, 20U, 21U, 22U, 23U, 24U, 25U, 26U, 27U, 28U, 29U, 30U, 31U};
         std::size_t pos{};
 
         arc::Status send_all(const void*, std::size_t) noexcept
@@ -684,17 +1225,10 @@ void bench_stream()
         arc::Result<std::size_t> recv(void* const dst, const std::size_t bytes) noexcept
         {
             auto* out = static_cast<std::uint8_t*>(dst);
-            const auto chunk = bytes > 7U ? 7U : bytes;
+            const auto chunk = bytes > 32U ? 32U : bytes;
             for (std::size_t i = 0; i < chunk; ++i) {
-                const auto frame = pos % 34U;
-                if (frame == 0U) {
-                    out[i] = 0U;
-                } else if (frame == 1U) {
-                    out[i] = 32U;
-                } else {
-                    out[i] = static_cast<std::uint8_t>(frame - 2U);
-                }
-                ++pos;
+                out[i] = table[pos];
+                pos = (pos + 1U == 34U) ? 0U : pos + 1U;
             }
             return chunk;
         }
@@ -726,6 +1260,28 @@ void bench_stream()
     });
     sink += stream.pos + stream.checksum;
     print(framed);
+
+    IdfRingbuf idf_ringbuf;
+    const auto idf_stream = measure("idf::Ringbuf send", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(next_seed());
+            barrier();
+            expect(idf_ringbuf.send(payload.data(), payload.size()), "IDF Ringbuf send");
+        }
+    });
+    sink += idf_ringbuf.pos + idf_ringbuf.checksum;
+    print(idf_stream);
+
+    ArduinoStream arduino_stream;
+    const auto arduino_stream_bench = measure("arduino::Stream write", rounds, [&]() {
+        for (std::uint32_t i = 0; i < rounds; ++i) {
+            payload[0] = static_cast<std::uint8_t>(next_seed());
+            barrier();
+            expect(arduino_stream.write(payload.data(), payload.size()) == payload.size(), "Arduino Stream write");
+        }
+    });
+    sink += arduino_stream.pos + arduino_stream.checksum;
+    print(arduino_stream_bench);
 
     std::array<std::uint8_t, 40> frame_out{};
     const auto encoded = measure("arc::Stream frame16 encode", rounds, [&]() {

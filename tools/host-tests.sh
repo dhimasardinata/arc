@@ -8,6 +8,6 @@ BUILD="${ARC_HOST_BUILD_DIR:-$ROOT/build/host}"
 CXX="${CXX:-g++}"
 
 cmake -S "$ROOT/tests/host" -B "$BUILD" -G Ninja -DCMAKE_CXX_COMPILER="$CXX" >/dev/null
-cmake --build "$BUILD" --target arc-host-logic
+cmake --build "$BUILD" --parallel --target arc-host-logic
 
-"$BUILD/arc-host-logic"
+"$BUILD/arc-host-logic" "$@"

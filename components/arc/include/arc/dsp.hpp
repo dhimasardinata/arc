@@ -83,10 +83,12 @@ template <typename T>
 template <typename T>
 [[nodiscard]] constexpr Phase3<T> inverse_clarke(const AlphaBeta<T> value) noexcept
 {
+    const auto beta_term = static_cast<T>(0.8660254037844386) * value.beta;
+    const auto alpha_half = static_cast<T>(-0.5) * value.alpha;
     return {
         .a = value.alpha,
-        .b = (T{-0.5} * value.alpha) + (T{0.8660254037844386} * value.beta),
-        .c = (T{-0.5} * value.alpha) - (T{0.8660254037844386} * value.beta),
+        .b = alpha_half + beta_term,
+        .c = alpha_half - beta_term,
     };
 }
 
@@ -120,15 +122,15 @@ template <typename T>
     const T bus_voltage) noexcept
 {
     if (bus_voltage <= T{}) {
-        return {T{0.5}, T{0.5}, T{0.5}};
+        return {static_cast<T>(0.5), static_cast<T>(0.5), static_cast<T>(0.5)};
     }
 
     const auto phase = inverse_clarke(voltage);
-    const auto scale = T{0.5} / bus_voltage;
+    const auto scale = static_cast<T>(0.5) / bus_voltage;
     return {
-        .a = clamp(T{0.5} + (phase.a * scale), T{}, T{1}),
-        .b = clamp(T{0.5} + (phase.b * scale), T{}, T{1}),
-        .c = clamp(T{0.5} + (phase.c * scale), T{}, T{1}),
+        .a = clamp(static_cast<T>(0.5) + (phase.a * scale), T{}, static_cast<T>(1)),
+        .b = clamp(static_cast<T>(0.5) + (phase.b * scale), T{}, static_cast<T>(1)),
+        .c = clamp(static_cast<T>(0.5) + (phase.c * scale), T{}, static_cast<T>(1)),
     };
 }
 
@@ -138,18 +140,18 @@ template <typename T>
     const T bus_voltage) noexcept
 {
     if (bus_voltage <= T{}) {
-        return {T{0.5}, T{0.5}, T{0.5}};
+        return {static_cast<T>(0.5), static_cast<T>(0.5), static_cast<T>(0.5)};
     }
 
-    auto phase = inverse_clarke(voltage);
-    const auto min_v = phase.a < phase.b ? (phase.a < phase.c ? phase.a : phase.c) : (phase.b < phase.c ? phase.b : phase.c);
-    const auto max_v = phase.a > phase.b ? (phase.a > phase.c ? phase.a : phase.c) : (phase.b > phase.c ? phase.b : phase.c);
-    const auto offset = (max_v + min_v) * T{-0.5};
-    const auto scale = T{0.5} / bus_voltage;
+    const auto phase = inverse_clarke(voltage);
+    const auto min_v = std::min({phase.a, phase.b, phase.c});
+    const auto max_v = std::max({phase.a, phase.b, phase.c});
+    const auto offset = (max_v + min_v) * static_cast<T>(-0.5);
+    const auto scale = static_cast<T>(0.5) / bus_voltage;
     return {
-        .a = clamp(T{0.5} + ((phase.a + offset) * scale), T{}, T{1}),
-        .b = clamp(T{0.5} + ((phase.b + offset) * scale), T{}, T{1}),
-        .c = clamp(T{0.5} + ((phase.c + offset) * scale), T{}, T{1}),
+        .a = clamp(static_cast<T>(0.5) + ((phase.a + offset) * scale), T{}, static_cast<T>(1)),
+        .b = clamp(static_cast<T>(0.5) + ((phase.b + offset) * scale), T{}, static_cast<T>(1)),
+        .c = clamp(static_cast<T>(0.5) + ((phase.c + offset) * scale), T{}, static_cast<T>(1)),
     };
 }
 
@@ -275,6 +277,7 @@ ARC_HOT inline void scale(
     const std::size_t count) noexcept
 {
 #pragma GCC ivdep
+#pragma GCC unroll 16
     for (std::size_t i = 0; i < count; ++i) {
         out[i] = in[i] * gain;
     }
@@ -288,6 +291,7 @@ ARC_HOT inline void mix(
     const std::size_t count) noexcept
 {
 #pragma GCC ivdep
+#pragma GCC unroll 16
     for (std::size_t i = 0; i < count; ++i) {
         out[i] = lhs[i] + rhs[i];
     }
@@ -301,6 +305,7 @@ ARC_HOT inline void mac(
     const std::size_t count) noexcept
 {
 #pragma GCC ivdep
+#pragma GCC unroll 16
     for (std::size_t i = 0; i < count; ++i) {
         acc[i] += in[i] * gain;
     }
@@ -312,6 +317,8 @@ template <typename T>
     const std::size_t count) noexcept
 {
     T top{};
+#pragma GCC ivdep
+#pragma GCC unroll 16
     for (std::size_t i = 0; i < count; ++i) {
         const auto value = magnitude(in[i]);
         top = value > top ? value : top;
@@ -337,7 +344,7 @@ struct Fir {
         state.head = 0U;
     }
 
-    [[nodiscard]] ARC_HOT static T step(
+    [[nodiscard]] ARC_HOT static inline T step(
         State& state,
         const Coeffs& taps,
         const T sample) noexcept
@@ -346,9 +353,16 @@ struct Fir {
         state.hist[state.head] = sample;
 
         T acc{};
-        for (std::size_t i = 0; i < Taps; ++i) {
-            const auto slot = state.head + i < Taps ? state.head + i : state.head + i - Taps;
-            acc += state.hist[slot] * taps[i];
+        const std::size_t first = Taps - state.head;
+#pragma GCC ivdep
+#pragma GCC unroll 8
+        for (std::size_t i = 0; i < first; ++i) {
+            acc += state.hist[state.head + i] * taps[i];
+        }
+#pragma GCC ivdep
+#pragma GCC unroll 8
+        for (std::size_t i = first; i < Taps; ++i) {
+            acc += state.hist[i - first] * taps[i];
         }
         return acc;
     }
@@ -410,13 +424,18 @@ struct Pid {
         const auto error = setpoint - measurement;
         state.integral = clamp(state.integral + (error * dt), limits.i_min, limits.i_max);
 
-        const auto derivative = state.primed ? (measurement - state.previous_measurement) / dt : T{};
+        T derivative_term{};
+        if (gains.kd != T{}) {
+            if (state.primed) {
+                derivative_term = gains.kd * ((measurement - state.previous_measurement) / dt);
+            }
+            state.previous_measurement = measurement;
+            state.primed = true;
+        }
         state.previous_error = error;
-        state.previous_measurement = measurement;
-        state.primed = true;
 
         return clamp(
-            (gains.kp * error) + (gains.ki * state.integral) - (gains.kd * derivative),
+            (gains.kp * error) + (gains.ki * state.integral) - derivative_term,
             limits.out_min,
             limits.out_max);
     }

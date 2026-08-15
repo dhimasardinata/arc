@@ -13,6 +13,7 @@
 #include "soc/gpio_num.h"
 #include "soc/soc_caps.h"
 
+#include "arc/claim.hpp"
 #include "arc/detail/cold.hpp"
 #include "arc/init.hpp"
 
@@ -29,6 +30,8 @@ struct Burst {
     static_assert(Hz != 0U, "RMT resolution must be non-zero");
     static_assert(Symbols >= 2U && (Symbols % 2U) == 0U, "RMT symbol buffer must be even and non-zero");
     static_assert(Depth > 0U, "RMT queue depth must be non-zero");
+
+    using Resource = ClaimFor<ClaimKind::rmt_tx, Pin, Pin, Hz, Symbols, Depth, Dma, Source>;
 
     [[nodiscard]] static constexpr rmt_symbol_word_t symbol(
         const std::uint16_t d0,
@@ -162,10 +165,23 @@ private:
             return;
         }
 
-        ESP_ERROR_CHECK(detail::cold::burst_create(
+        auto err = Resource::take();
+        if (err != ESP_OK) {
+            Init::fail(state.init);
+            ESP_ERROR_CHECK(err);
+            return;
+        }
+
+        err = detail::cold::burst_create(
             {Pin, Hz, Symbols, Depth, Dma, Source},
             &state.channel,
-            &state.encoder));
+            &state.encoder);
+        if (err != ESP_OK) {
+            Resource::drop();
+            Init::fail(state.init);
+            ESP_ERROR_CHECK(err);
+            return;
+        }
         Init::pass(state.init);
     }
 };

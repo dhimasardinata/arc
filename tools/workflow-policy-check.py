@@ -32,7 +32,7 @@ JOB_PERMISSIONS = {
 }
 EXPECTED_TRIGGERS = {
     ".github/workflows/build.yml": {
-        "events": ("push", "pull_request"),
+        "events": ("push", "pull_request", "workflow_dispatch"),
     },
     ".github/workflows/codeql.yml": {
         "events": ("push", "pull_request", "schedule", "workflow_dispatch"),

@@ -6,13 +6,13 @@ This page mirrors the API section from `README.md` so the same reference is avai
 
 ### `arc::Soc`
 
-Compile-time ESP32-S3 capability map.
+Compile-time selected ESP32 target capability map.
 
 - Uses ESP-IDF `soc_caps.h` directly, so the constants match the installed target headers.
 - Exposes feature booleans such as `wifi`, `ble`, `ble5`, `ble_mesh`, `ble_privacy`, `usb_otg`, `usb_jtag`, `etm`, `simd`, `async_copy`, `ahb_dma`, `dma2d`, `ppa`, `jpeg`, `h264`, `fast_gpio`, `rtc_gpio`, `rtc_io`, `rtc_hold`, `rtc_wake`, `lcd_i80`, `dvp`, `aes_dma`, `sha512_256`, `hmac`, `sign`, `ecdsa`, `xts`, `ulp_fsm`, and `ulp_riscv`.
 - Exposes hardware counts such as `gpio_pins`, `rtc_pins`, `adc_units`, `ledc_channels`, `spi_ports`, `rmt_words`, `uart_ports`, `sdmmc_slots`, `rsa_bits`, and `ds_bits`.
-- `etm` and `ecdsa` are deliberately represented even when the pinned ESP32-S3 `soc_caps.h` does not advertise those driver surfaces.
-- Contains hard `static_assert` guards for Arc's baseline contract: dual-core ESP32-S3, dedicated GPIO, async AHB-GDMA, and SIMD.
+- `etm` and `ecdsa` are deliberately represented when the installed target headers do not advertise those driver surfaces.
+- Contains hard `static_assert` guards for Arc's stable ESP32-S3 baseline contract: dual-core, dedicated GPIO, async AHB-GDMA, and SIMD. Experimental ESP32-S31 coverage is gated through `ARC_TARGET=esp32s31` plus `ARC_EXPERIMENTAL_ESP32S31=ON`.
 
 ### `arc::Pins<...>` and `arc::Topology<Board>`
 
@@ -21,6 +21,7 @@ Compile-time board topology guard.
 - `arc::Pins<...>` asserts that all non-negative physical pins in the pack are unique.
 - `Pins::count`, `Pins::has<Pin>()`, and `Pins::index<Pin>()` keep board-owner assertions short without repeating the pin list.
 - `arc::Topology<Board>` checks that `Board::pins` exists and passes the uniqueness rule.
+- `arc::board::Korvo1` provides ESP32-S31-Korvo-1 pin facts for the board's audio, LCD, SD, camera, UART, button, and strapping lanes.
 - `tools/topology-check.py --format report`, `--format dot`, `--format mermaid`, and `--format json` turn literal pin packs into reviewable host-side evidence, including integer literals and ESP-IDF `GPIO_NUM_*` tokens.
 - `tools/topology-check.py --strict-unresolved` makes unresolved pin tokens fail instead of staying informational.
 - Use it in one central `Board`/`Hw` declaration, not scattered through application files.
@@ -806,7 +807,7 @@ Compile-time USB Serial/JTAG wrapper.
 - `write(...)` and `read(...)` expose `arc::Result<std::size_t>` byte-count overloads.
 - `connected()`, `installed()`, `wait(...)`, and `off()` expose runtime state and teardown.
 
-Use this for ESP32-S3 USB console/control traffic when the native USB Serial/JTAG peripheral is the lane.
+Use this for USB console/control traffic when the target native USB Serial/JTAG peripheral is the lane.
 
 ### `arc::Otg`
 
@@ -1107,14 +1108,16 @@ Compile-time ESP32-S3 capacitive touch wrapper.
 
 Use this for touch keys, wake pads, guarded control surfaces, and low-part-count HMI inputs that should stay typed and deterministic.
 
-### `arc::Mask<Level = XCHAL_EXCM_LEVEL>`
+### `arc::Mask<Level>`
 
-Core-local Xtensa interrupt-level guard.
+Core-local interrupt guard.
 
-- construct it to raise the interrupt level for the current core
+- on Xtensa targets, construct it to raise the interrupt level for the current core
+- on ESP32-S31/RISC-V, `Mask<1>` clears global machine interrupts and restores the previous state on destruction
 - destroy it to restore the previous level
-- `arc::Critical` is the normal “silence OS-visible interrupts” alias
-- `arc::Silence` raises all the way to level `15`
+- `arc::Critical` is the normal “silence OS-visible interrupts” alias for the selected target
+- `arc::Silence` raises all the way to level `15` on Xtensa and maps to `Mask<1>` on RISC-V
+- `Mask<2>` and higher give an explicit compile-time diagnostic on ESP32-S31/RISC-V
 
 Use this only around tiny hot sections where determinism matters more than latency. The guard is force-inlined, so code using it inherits the caller's section; mark callers with `ARC_HOT` / `IRAM_ATTR` when they can run while flash cache is disabled.
 

@@ -8,9 +8,62 @@
 
 #include "esp_err.h"
 
+#include "arc/place.hpp"
 #include "arc/result.hpp"
 
 namespace arc::net {
+
+namespace detail {
+
+inline constexpr std::uint8_t kUriUnreserved = 0x01;
+inline constexpr std::uint8_t kUriSubdelim = 0x02;
+inline constexpr std::uint8_t kUriComponent = 0x04;
+inline constexpr std::uint8_t kUriAlpha = 0x08;
+inline constexpr std::uint8_t kUriDigit = 0x10;
+inline constexpr std::uint8_t kUriUserinfo = 0x20;
+inline constexpr std::uint8_t kUriHost = 0x40;
+inline constexpr std::uint8_t kUriScheme = 0x80;
+
+inline constexpr std::array<std::uint8_t, 256> make_uri_char_table() noexcept
+{
+    std::array<std::uint8_t, 256> table{};
+    for (int i = 0; i < 256; ++i) {
+        const auto ch = static_cast<char>(i);
+        const auto byte = static_cast<std::uint8_t>(i);
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+            table[i] |= kUriAlpha | kUriUnreserved | kUriScheme;
+        }
+        if (ch >= '0' && ch <= '9') {
+            table[i] |= kUriDigit | kUriUnreserved | kUriScheme;
+        }
+        if (ch == '-' || ch == '.' || ch == '_' || ch == '~') {
+            table[i] |= kUriUnreserved;
+        }
+        if (ch == '+' || ch == '-' || ch == '.') {
+            table[i] |= kUriScheme;
+        }
+        if (ch == '!' || ch == '$' || ch == '&' || ch == '\'' || ch == '(' || ch == ')' || ch == '*' ||
+            ch == '+' || ch == ',' || ch == ';' || ch == '=') {
+            table[i] |= kUriSubdelim;
+        }
+        if (table[i] & (kUriUnreserved | kUriSubdelim)) {
+            table[i] |= kUriHost | kUriUserinfo;
+        }
+        if (ch == ':') {
+            table[i] |= kUriUserinfo;
+        }
+        if (byte > 0x20U && byte != 0x7fU) {
+            if ((table[i] & (kUriUnreserved | kUriSubdelim)) || ch == ':' || ch == '@' || ch == '/') {
+                table[i] |= kUriComponent;
+            }
+        }
+    }
+    return table;
+}
+
+alignas(64) inline constexpr auto kUriCharTable = make_uri_char_table();
+
+}  // namespace detail
 
 struct UriView {
     std::span<const char> scheme{};
@@ -46,62 +99,177 @@ struct UriEndpoint {
 };
 
 struct Uri {
-    [[nodiscard]] static Result<UriView> parse(const char* const text) noexcept
+    [[nodiscard]] static inline ARC_HOT Result<UriView> parse(const std::span<const char> in) noexcept
+    {
+        if (!valid_span(in)) {
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+
+        UriView out{};
+        const char* const p_start = in.data();
+        const char* const p_end = p_start + in.size();
+        const char* p = p_start;
+
+        if (p < p_end && (detail::kUriCharTable[static_cast<std::uint8_t>(*p)] & detail::kUriAlpha) != 0) {
+            const char* seg = p + 1;
+            while (seg < p_end && (detail::kUriCharTable[static_cast<std::uint8_t>(*seg)] & detail::kUriScheme) != 0) {
+                ++seg;
+            }
+            if (seg < p_end && *seg == ':') {
+                out.scheme = std::span<const char>(p, static_cast<std::size_t>(seg - p));
+                p = seg + 1;
+            } else {
+                const char* check = seg;
+                while (check < p_end && *check != '/' && *check != '?' && *check != '#') {
+                    if (*check == ':') {
+                        return fail(ESP_ERR_INVALID_ARG);
+                    }
+                    ++check;
+                }
+            }
+        } else {
+            const char* check = p;
+            while (check < p_end && *check != '/' && *check != '?' && *check != '#') {
+                if (*check == ':') {
+                    return fail(ESP_ERR_INVALID_ARG);
+                }
+                ++check;
+            }
+        }
+
+        if (p_end - p >= 2 && p[0] == '/' && p[1] == '/') {
+            p += 2;
+            const char* const auth_start = p;
+            while (p < p_end && *p != '/' && *p != '?' && *p != '#') {
+                ++p;
+            }
+            out.authority = std::span<const char>(auth_start, static_cast<std::size_t>(p - auth_start));
+            if (!split_authority(out)) {
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+        }
+
+        const char* const path_start = p;
+        while (p + 8 <= p_end) {
+            const auto f0 = detail::kUriCharTable[static_cast<std::uint8_t>(p[0])];
+            const auto f1 = detail::kUriCharTable[static_cast<std::uint8_t>(p[1])];
+            const auto f2 = detail::kUriCharTable[static_cast<std::uint8_t>(p[2])];
+            const auto f3 = detail::kUriCharTable[static_cast<std::uint8_t>(p[3])];
+            const auto f4 = detail::kUriCharTable[static_cast<std::uint8_t>(p[4])];
+            const auto f5 = detail::kUriCharTable[static_cast<std::uint8_t>(p[5])];
+            const auto f6 = detail::kUriCharTable[static_cast<std::uint8_t>(p[6])];
+            const auto f7 = detail::kUriCharTable[static_cast<std::uint8_t>(p[7])];
+            if (((f0 & f1 & f2 & f3 & f4 & f5 & f6 & f7) & detail::kUriComponent) != 0) {
+                p += 8;
+                continue;
+            }
+            break;
+        }
+        while (p < p_end) {
+            const auto ch = *p;
+            if ((detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriComponent) != 0) {
+                ++p;
+                continue;
+            }
+            if (ch == '?' || ch == '#') {
+                break;
+            }
+            if (ch == '%') {
+                if (p_end - p < 3 || hex(p[1]) < 0 || hex(p[2]) < 0) {
+                    return fail(ESP_ERR_INVALID_ARG);
+                }
+                p += 3;
+                continue;
+            }
+            return fail(ESP_ERR_INVALID_ARG);
+        }
+        out.path = std::span<const char>(path_start, static_cast<std::size_t>(p - path_start));
+
+        if (p < p_end && *p == '?') {
+            ++p;
+            const char* const query_start = p;
+            while (p + 8 <= p_end) {
+                const auto f0 = detail::kUriCharTable[static_cast<std::uint8_t>(p[0])];
+                const auto f1 = detail::kUriCharTable[static_cast<std::uint8_t>(p[1])];
+                const auto f2 = detail::kUriCharTable[static_cast<std::uint8_t>(p[2])];
+                const auto f3 = detail::kUriCharTable[static_cast<std::uint8_t>(p[3])];
+                const auto f4 = detail::kUriCharTable[static_cast<std::uint8_t>(p[4])];
+                const auto f5 = detail::kUriCharTable[static_cast<std::uint8_t>(p[5])];
+                const auto f6 = detail::kUriCharTable[static_cast<std::uint8_t>(p[6])];
+                const auto f7 = detail::kUriCharTable[static_cast<std::uint8_t>(p[7])];
+                if (((f0 & f1 & f2 & f3 & f4 & f5 & f6 & f7) & detail::kUriComponent) != 0) {
+                    p += 8;
+                    continue;
+                }
+                break;
+            }
+            while (p < p_end) {
+                const auto ch = *p;
+                if ((detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriComponent) != 0 || ch == '?') {
+                    ++p;
+                    continue;
+                }
+                if (ch == '#') {
+                    break;
+                }
+                if (ch == '%') {
+                    if (p_end - p < 3 || hex(p[1]) < 0 || hex(p[2]) < 0) {
+                        return fail(ESP_ERR_INVALID_ARG);
+                    }
+                    p += 3;
+                    continue;
+                }
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            out.query = std::span<const char>(query_start, static_cast<std::size_t>(p - query_start));
+            out.has_query = true;
+        }
+
+        if (p < p_end && *p == '#') {
+            ++p;
+            const char* const frag_start = p;
+            while (p + 8 <= p_end) {
+                const auto f0 = detail::kUriCharTable[static_cast<std::uint8_t>(p[0])];
+                const auto f1 = detail::kUriCharTable[static_cast<std::uint8_t>(p[1])];
+                const auto f2 = detail::kUriCharTable[static_cast<std::uint8_t>(p[2])];
+                const auto f3 = detail::kUriCharTable[static_cast<std::uint8_t>(p[3])];
+                const auto f4 = detail::kUriCharTable[static_cast<std::uint8_t>(p[4])];
+                const auto f5 = detail::kUriCharTable[static_cast<std::uint8_t>(p[5])];
+                const auto f6 = detail::kUriCharTable[static_cast<std::uint8_t>(p[6])];
+                const auto f7 = detail::kUriCharTable[static_cast<std::uint8_t>(p[7])];
+                if (((f0 & f1 & f2 & f3 & f4 & f5 & f6 & f7) & detail::kUriComponent) != 0) {
+                    p += 8;
+                    continue;
+                }
+                break;
+            }
+            while (p < p_end) {
+                const auto ch = *p;
+                if ((detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriComponent) != 0 || ch == '?') {
+                    ++p;
+                    continue;
+                }
+                if (ch == '%') {
+                    if (p_end - p < 3 || hex(p[1]) < 0 || hex(p[2]) < 0) {
+                        return fail(ESP_ERR_INVALID_ARG);
+                    }
+                    p += 3;
+                    continue;
+                }
+                return fail(ESP_ERR_INVALID_ARG);
+            }
+            out.fragment = std::span<const char>(frag_start, static_cast<std::size_t>(p - frag_start));
+        }
+
+        return out;
+    }
+
+    [[nodiscard]] static inline Result<UriView> parse(const char* const text) noexcept
     {
         if (text == nullptr) {
             return fail(ESP_ERR_INVALID_ARG);
         }
         return parse(std::span<const char>{text, std::strlen(text)});
-    }
-
-    [[nodiscard]] static Result<UriView> parse(const std::span<const char> in) noexcept
-    {
-        if (!valid_span(in) || !valid_text(in)) {
-            return fail(ESP_ERR_INVALID_ARG);
-        }
-
-        UriView out{};
-        auto pos = std::size_t{0U};
-
-        const auto first = find_any(in, 0U, ":/?#");
-        if (first != npos && in[first] == ':') {
-            out.scheme = in.first(first);
-            if (!valid_scheme(out.scheme)) {
-                return fail(ESP_ERR_INVALID_ARG);
-            }
-            pos = first + 1U;
-        }
-
-        if (starts(in, pos, "//")) {
-            const auto start = pos + 2U;
-            auto end = find_any(in, start, "/?#");
-            if (end == npos) {
-                end = in.size();
-            }
-            out.authority = in.subspan(start, end - start);
-            if (!split_authority(out)) {
-                return fail(ESP_ERR_INVALID_ARG);
-            }
-            pos = end;
-        }
-
-        const auto fragment = find_char(in, '#', pos, in.size());
-        const auto limit = fragment == npos ? in.size() : fragment;
-        const auto query = find_char(in, '?', pos, limit);
-        const auto path_end = query == npos ? limit : query;
-        out.path = in.subspan(pos, path_end - pos);
-        if (query != npos) {
-            out.query = in.subspan(query + 1U, limit - query - 1U);
-            out.has_query = true;
-        }
-        if (fragment != npos) {
-            out.fragment = in.subspan(fragment + 1U);
-        }
-        if (!valid_path(out.path) || (out.has_query && !valid_query(out.query)) ||
-            !valid_fragment(out.fragment)) {
-            return fail(ESP_ERR_INVALID_ARG);
-        }
-        return out;
     }
 
     [[nodiscard]] static Result<UriQueryParam> next(
@@ -443,99 +611,168 @@ private:
         return out_first < in_last && in_first < out_last;
     }
 
-    [[nodiscard]] static bool split_authority(UriView& out) noexcept
+    [[nodiscard]] static inline ARC_HOT bool split_authority(UriView& out) noexcept
     {
         if (out.authority.empty()) {
             return false;
         }
 
-        auto hostport = out.authority;
-        const auto at = find_last(out.authority, '@');
-        if (at != npos) {
-            out.userinfo = out.authority.first(at);
-            hostport = out.authority.subspan(at + 1U);
-            if (out.userinfo.empty() || hostport.empty() || !valid_userinfo(out.userinfo)) {
+        const char* p = out.authority.data();
+        const char* const end = p + out.authority.size();
+
+        const void* const at_ptr = std::memchr(p, '@', out.authority.size());
+        if (at_ptr != nullptr) {
+            const char* const at_pos = static_cast<const char*>(at_ptr);
+            out.userinfo = std::span<const char>(p, static_cast<std::size_t>(at_pos - p));
+            if (out.userinfo.empty() || !valid_userinfo(out.userinfo)) {
                 return false;
             }
+            p = at_pos + 1;
         }
 
-        if (hostport.empty()) {
+        if (p == end) {
             return false;
         }
-        if (hostport[0] == '[') {
-            const auto close = find_char(hostport, ']', 1U, hostport.size());
-            if (close == npos || close == 1U) {
+
+        if (*p == '[') {
+            const void* const close_ptr = std::memchr(p + 1, ']', static_cast<std::size_t>(end - (p + 1)));
+            if (close_ptr == nullptr) {
                 return false;
             }
-            out.host = hostport.subspan(1U, close - 1U);
-            if (!valid_lit(out.host)) {
+            const char* const close_pos = static_cast<const char*>(close_ptr);
+            out.host = std::span<const char>(p + 1, static_cast<std::size_t>(close_pos - (p + 1)));
+            if (out.host.empty() || !valid_lit(out.host)) {
                 return false;
             }
-            if (close + 1U == hostport.size()) {
+            p = close_pos + 1;
+            if (p == end) {
                 return true;
             }
-            if (hostport[close + 1U] != ':') {
+            if (*p != ':') {
                 return false;
             }
-            out.port = hostport.subspan(close + 2U);
+            ++p;
+            out.port = std::span<const char>(p, static_cast<std::size_t>(end - p));
             return valid_port(out.port);
         }
 
-        const auto colon = find_char(hostport, ':', 0U, hostport.size());
-        if (colon == npos) {
-            out.host = hostport;
-            return valid_host(out.host);
+        const char* const host_start = p;
+        while (p + 8 <= end) {
+            const auto f0 = detail::kUriCharTable[static_cast<std::uint8_t>(p[0])];
+            const auto f1 = detail::kUriCharTable[static_cast<std::uint8_t>(p[1])];
+            const auto f2 = detail::kUriCharTable[static_cast<std::uint8_t>(p[2])];
+            const auto f3 = detail::kUriCharTable[static_cast<std::uint8_t>(p[3])];
+            const auto f4 = detail::kUriCharTable[static_cast<std::uint8_t>(p[4])];
+            const auto f5 = detail::kUriCharTable[static_cast<std::uint8_t>(p[5])];
+            const auto f6 = detail::kUriCharTable[static_cast<std::uint8_t>(p[6])];
+            const auto f7 = detail::kUriCharTable[static_cast<std::uint8_t>(p[7])];
+            if (((f0 & f1 & f2 & f3 & f4 & f5 & f6 & f7) & detail::kUriHost) != 0 &&
+                p[0] != ':' && p[1] != ':' && p[2] != ':' && p[3] != ':' &&
+                p[4] != ':' && p[5] != ':' && p[6] != ':' && p[7] != ':') {
+                p += 8;
+                continue;
+            }
+            break;
         }
-        if (find_char(hostport, ':', colon + 1U, hostport.size()) != npos) {
+        while (p < end && *p != ':') {
+            const auto ch = *p;
+            if ((detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriHost) != 0) {
+                ++p;
+                continue;
+            }
+            if (ch == '%' && end - p >= 3 && hex(p[1]) >= 0 && hex(p[2]) >= 0) {
+                p += 3;
+                continue;
+            }
             return false;
         }
-        out.host = hostport.first(colon);
-        out.port = hostport.subspan(colon + 1U);
-        return valid_host(out.host) && valid_port(out.port);
+        out.host = std::span<const char>(host_start, static_cast<std::size_t>(p - host_start));
+        if (out.host.empty()) {
+            return false;
+        }
+
+        if (p < end && *p == ':') {
+            ++p;
+            const char* const port_start = p;
+            if (p == end || end - p > 5) {
+                return false;
+            }
+            std::uint32_t port_val = 0U;
+            while (p < end) {
+                const auto ch = *p;
+                if (ch < '0' || ch > '9') {
+                    return false;
+                }
+                port_val = (port_val * 10U) + static_cast<std::uint32_t>(ch - '0');
+                ++p;
+            }
+            if (port_val > 65535U) {
+                return false;
+            }
+            out.port = std::span<const char>(port_start, static_cast<std::size_t>(p - port_start));
+        }
+
+        return true;
     }
 
     [[nodiscard]] static bool valid_userinfo(const std::span<const char> text) noexcept
     {
-        if (!valid_span(text)) {
-            return false;
-        }
-        for (std::size_t i = 0U; i < text.size(); ++i) {
-            const auto ch = text[i];
-            if (ch == '%') {
-                if (text.size() - i < 3U) {
-                    return false;
-                }
-                const auto hi = hex(text[i + 1U]);
-                const auto lo = hex(text[i + 2U]);
-                if (hi < 0 || lo < 0) {
-                    return false;
-                }
-                const auto value = static_cast<char>((static_cast<unsigned>(hi) << 4U) | static_cast<unsigned>(lo));
-                if (!userinfo_char(value)) {
-                    return false;
-                }
-                i += 2U;
+        const char* p = text.data();
+        const char* const end = p + text.size();
+        while (p + 8 <= end) {
+            const auto f0 = detail::kUriCharTable[static_cast<std::uint8_t>(p[0])];
+            const auto f1 = detail::kUriCharTable[static_cast<std::uint8_t>(p[1])];
+            const auto f2 = detail::kUriCharTable[static_cast<std::uint8_t>(p[2])];
+            const auto f3 = detail::kUriCharTable[static_cast<std::uint8_t>(p[3])];
+            const auto f4 = detail::kUriCharTable[static_cast<std::uint8_t>(p[4])];
+            const auto f5 = detail::kUriCharTable[static_cast<std::uint8_t>(p[5])];
+            const auto f6 = detail::kUriCharTable[static_cast<std::uint8_t>(p[6])];
+            const auto f7 = detail::kUriCharTable[static_cast<std::uint8_t>(p[7])];
+            if (((f0 & f1 & f2 & f3 & f4 & f5 & f6 & f7) & detail::kUriUserinfo) != 0 &&
+                p[0] != '%' && p[1] != '%' && p[2] != '%' && p[3] != '%' &&
+                p[4] != '%' && p[5] != '%' && p[6] != '%' && p[7] != '%') {
+                p += 8;
                 continue;
             }
-            if (!userinfo_char(ch)) {
-                return false;
+            break;
+        }
+        while (p < end) {
+            const auto ch = *p;
+            if ((detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriUserinfo) != 0) {
+                ++p;
+                continue;
             }
+            if (ch == '%' && end - p >= 3) {
+                const auto hi = hex(p[1]);
+                const auto lo = hex(p[2]);
+                if (hi >= 0 && lo >= 0) {
+                    const auto value = static_cast<char>((static_cast<unsigned>(hi) << 4U) | static_cast<unsigned>(lo));
+                    if ((detail::kUriCharTable[static_cast<std::uint8_t>(value)] & detail::kUriUserinfo) != 0) {
+                        p += 3;
+                        continue;
+                    }
+                }
+            }
+            return false;
         }
         return true;
     }
 
     [[nodiscard]] static bool valid_host(const std::span<const char> text) noexcept
     {
-        if (text.empty() || !valid_span(text)) {
+        if (text.empty()) {
             return false;
         }
-        for (std::size_t i = 0U; i < text.size(); ++i) {
-            const auto ch = text[i];
-            if (unreserved(static_cast<std::uint8_t>(ch)) || subdelim(ch)) {
+        const char* p = text.data();
+        const char* const end = p + text.size();
+        while (p < end) {
+            const auto ch = *p;
+            if ((detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriHost) != 0) {
+                ++p;
                 continue;
             }
-            if (ch == '%' && text.size() - i >= 3U && hex(text[i + 1U]) >= 0 && hex(text[i + 2U]) >= 0) {
-                i += 2U;
+            if (ch == '%' && end - p >= 3 && hex(p[1]) >= 0 && hex(p[2]) >= 0) {
+                p += 3;
                 continue;
             }
             return false;
@@ -763,13 +1000,18 @@ private:
 
     [[nodiscard]] static bool valid_scheme(const std::span<const char> text) noexcept
     {
-        if (text.empty() || !alpha(text[0])) {
+        if (text.empty() || (detail::kUriCharTable[static_cast<std::uint8_t>(text[0])] & detail::kUriAlpha) == 0) {
             return false;
         }
-        for (const auto ch : text.subspan(1U)) {
-            if (!alpha(ch) && !digit(ch) && ch != '+' && ch != '-' && ch != '.') {
+        const char* p = text.data() + 1;
+        const char* const end = text.data() + text.size();
+        while (p < end) {
+            const auto ch = *p;
+            const auto flags = detail::kUriCharTable[static_cast<std::uint8_t>(ch)];
+            if ((flags & (detail::kUriAlpha | detail::kUriDigit)) == 0 && ch != '+' && ch != '-' && ch != '.') {
                 return false;
             }
+            ++p;
         }
         return true;
     }
@@ -818,16 +1060,18 @@ private:
             return false;
         }
         for (std::size_t i = 0U; i < text.size(); ++i) {
-            if (text[i] == '%') {
+            const auto ch = text[i];
+            if (component_char(ch) || (allow_question && ch == '?')) {
+                continue;
+            }
+            if (ch == '%') {
                 if (text.size() - i < 3U || hex(text[i + 1U]) < 0 || hex(text[i + 2U]) < 0) {
                     return false;
                 }
                 i += 2U;
                 continue;
             }
-            if (!component_char(text[i]) && !(allow_question && text[i] == '?')) {
-                return false;
-            }
+            return false;
         }
         return true;
     }
@@ -840,21 +1084,17 @@ private:
 
     [[nodiscard]] static bool parse_port(const std::span<const char> text, std::uint32_t& value) noexcept
     {
-        if (text.empty()) {
+        if (text.empty() || text.size() > 5U) {
             return false;
         }
         value = 0U;
         for (const auto ch : text) {
-            if (!digit(ch)) {
+            if (ch < '0' || ch > '9') {
                 return false;
             }
-            const auto digit_value = static_cast<std::uint32_t>(ch - '0');
-            if (value > (65535U - digit_value) / 10U) {
-                return false;
-            }
-            value = (value * 10U) + digit_value;
+            value = (value * 10U) + static_cast<std::uint32_t>(ch - '0');
         }
-        return true;
+        return value <= 65535U;
     }
 
     [[nodiscard]] static bool starts(const std::span<const char> text, const std::size_t pos, const char* prefix) noexcept
@@ -881,28 +1121,19 @@ private:
         return false;
     }
 
-    [[nodiscard]] static bool raw_host_char(const char ch) noexcept
+    [[nodiscard]] static constexpr bool raw_host_char(const char ch) noexcept
     {
-        const auto byte = static_cast<std::uint8_t>(ch);
-        return unreserved(byte) || subdelim(ch) || ch == ':';
+        return (detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriUserinfo) != 0;
     }
 
-    [[nodiscard]] static bool userinfo_char(const char ch) noexcept
+    [[nodiscard]] static constexpr bool userinfo_char(const char ch) noexcept
     {
-        const auto byte = static_cast<std::uint8_t>(ch);
-        if (byte <= 0x20U || byte == 0x7fU) {
-            return false;
-        }
-        return unreserved(byte) || subdelim(ch) || ch == ':';
+        return (detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriUserinfo) != 0;
     }
 
-    [[nodiscard]] static bool component_char(const char ch) noexcept
+    [[nodiscard]] static constexpr bool component_char(const char ch) noexcept
     {
-        const auto byte = static_cast<std::uint8_t>(ch);
-        if (byte <= 0x20U || byte == 0x7fU) {
-            return false;
-        }
-        return unreserved(byte) || subdelim(ch) || ch == ':' || ch == '@' || ch == '/';
+        return (detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriComponent) != 0;
     }
 
     [[nodiscard]] static bool decoded_host_char(
@@ -929,8 +1160,9 @@ private:
         const char* const chars) noexcept
     {
         for (std::size_t i = start; i < text.size(); ++i) {
+            const auto c = text[i];
             for (std::size_t j = 0U; chars[j] != '\0'; ++j) {
-                if (text[i] == chars[j]) {
+                if (c == chars[j]) {
                     return i;
                 }
             }
@@ -944,10 +1176,12 @@ private:
         const std::size_t start,
         const std::size_t limit) noexcept
     {
-        for (std::size_t i = start; i < limit; ++i) {
-            if (text[i] == ch) {
-                return i;
-            }
+        if (start >= limit || limit > text.size()) {
+            return npos;
+        }
+        const void* const match = std::memchr(text.data() + start, static_cast<unsigned char>(ch), limit - start);
+        if (match != nullptr) {
+            return static_cast<std::size_t>(static_cast<const char*>(match) - text.data());
         }
         return npos;
     }
@@ -962,7 +1196,7 @@ private:
         return npos;
     }
 
-    [[nodiscard]] static bool put(const std::span<char> out, std::size_t& used, const char ch) noexcept
+    [[nodiscard]] static bool put(std::span<char> out, std::size_t& used, const char ch) noexcept
     {
         if (used >= out.size()) {
             return false;
@@ -972,7 +1206,7 @@ private:
     }
 
     [[nodiscard]] static bool append(
-        const std::span<char> out,
+        std::span<char> out,
         std::size_t& used,
         const std::span<const char> text) noexcept
     {
@@ -985,14 +1219,14 @@ private:
         return true;
     }
 
-    [[nodiscard]] static bool alpha(const char ch) noexcept
+    [[nodiscard]] static constexpr bool alpha(const char ch) noexcept
     {
-        return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+        return (detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriAlpha) != 0;
     }
 
-    [[nodiscard]] static bool digit(const char ch) noexcept
+    [[nodiscard]] static constexpr bool digit(const char ch) noexcept
     {
-        return ch >= '0' && ch <= '9';
+        return (detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriDigit) != 0;
     }
 
     [[nodiscard]] static int hex(const char ch) noexcept
@@ -1020,16 +1254,14 @@ private:
         return ch >= 'A' && ch <= 'Z' ? static_cast<char>(ch - 'A' + 'a') : ch;
     }
 
-    [[nodiscard]] static bool unreserved(const std::uint8_t ch) noexcept
+    [[nodiscard]] static constexpr bool unreserved(const std::uint8_t ch) noexcept
     {
-        return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') ||
-            ch == '-' || ch == '.' || ch == '_' || ch == '~';
+        return (detail::kUriCharTable[ch] & detail::kUriUnreserved) != 0;
     }
 
-    [[nodiscard]] static bool subdelim(const char ch) noexcept
+    [[nodiscard]] static constexpr bool subdelim(const char ch) noexcept
     {
-        return ch == '!' || ch == '$' || ch == '&' || ch == '\'' || ch == '(' || ch == ')' || ch == '*' ||
-            ch == '+' || ch == ',' || ch == ';' || ch == '=';
+        return (detail::kUriCharTable[static_cast<std::uint8_t>(ch)] & detail::kUriSubdelim) != 0;
     }
 };
 

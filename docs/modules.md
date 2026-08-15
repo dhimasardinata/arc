@@ -84,6 +84,7 @@ Use these when deciding who owns work, lifetime, and access.
 | `arc/audit.hpp` | Opt-in misuse assertions for queues and topology-sensitive lanes. |
 | `arc/roles.hpp` | Producer/consumer endpoint exposure without exposing root queue mutation. |
 | `arc/topology.hpp` | One-file board pin topology checks through `arc::Pins`. |
+| `arc/board/esp32s31_korvo.hpp` | ESP32-S31-Korvo-1 board pin facts and topology guards. |
 | `arc/fsm.hpp` | Compile-time automata and transition-table checks. |
 | `arc/flow.hpp` | Static source-lane-sink data path composition. |
 | `arc/ipc.hpp` | Emergency and cross-partition IPC policy surface. |
@@ -161,7 +162,7 @@ hardware block.
 | `arc/tdma.hpp` | Deterministic radio transmit windows. |
 | `arc/wave.hpp` | CPU-owned square-wave generation with explicit timing-source policy. |
 | `arc/probe.hpp` | Cycle, jitter, deadline, and stall statistics. |
-| `arc/mask.hpp` | Tiny Xtensa interrupt masking guards. |
+| `arc/mask.hpp` | Target-aware core-local interrupt masking guards. |
 | `arc/power_governor.hpp` | Slack-based boost/release policy hooks. |
 | `arc/power_profiler.hpp` | Current and instruction-counter profiling hooks. |
 | `arc/temp.hpp` | Internal die-temperature sensor. |
@@ -318,7 +319,7 @@ rules stay above Arc.
 | `arc/chaos.hpp` | Bounded fault injection and postmortem logging. |
 | `arc/crypto_dma.hpp` | Hardware-to-hardware crypto descriptor job planning. |
 | `arc/crypto_selftest.hpp` | Caller-owned KAT-style crypto self-test workspaces. |
-| `arc/interrupt_matrix.hpp` | Direct interrupt routing contracts. |
+| `arc/interrupt_matrix.hpp` | Direct interrupt routing contracts with Xtensa-only raw vectors. |
 | `arc/provisioning.hpp` | Provisioning-state wrappers. |
 
 ## ULP And Low-Power Coprocessor

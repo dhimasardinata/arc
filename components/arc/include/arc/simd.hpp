@@ -173,13 +173,34 @@ struct Rgb565 {
             return fail(ESP_ERR_NO_MEM);
         }
 
-        for (std::size_t in = 0, out = 0; in < yuv.size(); in += 4U, out += 2U) {
-            const auto y0 = yuv[in];
-            const auto u = yuv[in + 1U];
-            const auto y1 = yuv[in + 2U];
-            const auto v = yuv[in + 3U];
-            rgb[out] = from_yuv(y0, u, v);
-            rgb[out + 1U] = from_yuv(y1, u, v);
+        const auto* __restrict const in_ptr = yuv.data();
+        auto* __restrict const out_ptr = rgb.data();
+        const auto in_size = yuv.size();
+
+#pragma GCC ivdep
+        for (std::size_t in = 0, out = 0; in < in_size; in += 4U, out += 2U) {
+            const auto y0 = in_ptr[in];
+            const auto u = in_ptr[in + 1U];
+            const auto y1 = in_ptr[in + 2U];
+            const auto v = in_ptr[in + 3U];
+
+            const auto d = static_cast<std::int32_t>(u) - 128;
+            const auto e = static_cast<std::int32_t>(v) - 128;
+            const auto r_chroma = 409 * e + 128;
+            const auto g_chroma = -100 * d - 208 * e + 128;
+            const auto b_chroma = 516 * d + 128;
+
+            const auto c0 = (static_cast<std::int32_t>(y0) - 16) * 298;
+            const auto r0 = clamp_u8((c0 + r_chroma) >> 8);
+            const auto g0 = clamp_u8((c0 + g_chroma) >> 8);
+            const auto b0 = clamp_u8((c0 + b_chroma) >> 8);
+            out_ptr[out] = pack(r0, g0, b0);
+
+            const auto c1 = (static_cast<std::int32_t>(y1) - 16) * 298;
+            const auto r1 = clamp_u8((c1 + r_chroma) >> 8);
+            const auto g1 = clamp_u8((c1 + g_chroma) >> 8);
+            const auto b1 = clamp_u8((c1 + b_chroma) >> 8);
+            out_ptr[out + 1U] = pack(r1, g1, b1);
         }
         return pixels;
     }

@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `I2s`, `State`, `I2sTdm`, `I2sPdm`, `I2sStd`, `I2sTdmFmt`, `I2sPdmData`.
+Source landmarks: `I2s`, `State`, `I2sTdm`, `I2sPdm`, `I2sStd`, `I2sTdmFmt`, `I2sPdmData`, `Resource`.
 
 ## Start From Zero
 

@@ -4,6 +4,7 @@
 // SDK headers are visible through the current component dependency graph.
 
 #include "arc/core.hpp"
+#include "arc/board/esp32s31_korvo.hpp"
 #include "arc/math.hpp"
 #include "arc/memory.hpp"
 #include "arc/net_codecs.hpp"
@@ -13,7 +14,7 @@
 #include "arc/ble.hpp"
 #endif
 
-#if __has_include("mbedtls/bignum.h")
+#if __has_include("mbedtls/bignum.h") && __has_include("mbedtls/esp_config.h") && defined(SOC_MPI_SUPPORTED) && SOC_MPI_SUPPORTED
 #include "arc/mpi.hpp"
 #endif
 

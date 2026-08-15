@@ -36,7 +36,7 @@ idf_component_register(
 
 ## Source Landmarks
 
-Source landmarks: `arc/core.hpp`, `arc/math.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/soc.hpp`, `arc/ble.hpp`, `arc/mpi.hpp`, `arc/aes.hpp`.
+Source landmarks: `arc/core.hpp`, `arc/board/esp32s31_korvo.hpp`, `arc/math.hpp`, `arc/memory.hpp`, `arc/net_codecs.hpp`, `arc/soc.hpp`, `arc/ble.hpp`, `arc/mpi.hpp`.
 
 ## Start From Zero
 

@@ -14,6 +14,7 @@
 #include "soc/soc_caps.h"
 
 #include "arc/caps.hpp"
+#include "arc/claim.hpp"
 #include "arc/init.hpp"
 
 namespace arc {
@@ -97,10 +98,35 @@ struct Dvp<DvpLines<DataPins...>,
     static_assert(BurstBytes == 0U || ((BurstBytes & (BurstBytes - 1U)) == 0U), "DVP DMA burst must be zero or a power of two");
     static_assert(ExternalClock || XclkHz != 0U, "DVP generated XCLK must have a non-zero frequency");
 
+    using Resource = ClaimFor<ClaimKind::camera_dvp,
+                              0,
+                              DataPins...,
+                              Vsync,
+                              Pclk,
+                              De,
+                              Xclk,
+                              H,
+                              V,
+                              In,
+                              Out,
+                              XclkHz,
+                              BurstBytes,
+                              ExternalClock,
+                              SwapBytes,
+                              SwapBits,
+                              Backup,
+                              Source>;
+
     [[nodiscard]] static esp_err_t init() noexcept
     {
         if (!Init::begin(state.init)) {
             return ESP_OK;
+        }
+
+        auto err = Resource::take();
+        if (err != ESP_OK) {
+            Init::fail(state.init);
+            return err;
         }
 
         esp_cam_ctlr_dvp_pin_config_t pins{};
@@ -136,9 +162,10 @@ struct Dvp<DvpLines<DataPins...>,
         config.dma_burst_size = BurstBytes;
         config.xclk_freq = XclkHz;
         config.pin = &pins;
-        const auto err = esp_cam_new_dvp_ctlr(&config, &state.cam);
+        err = esp_cam_new_dvp_ctlr(&config, &state.cam);
         if (err != ESP_OK) {
             state.cam = nullptr;
+            Resource::drop();
             Init::fail(state.init);
             return err;
         }

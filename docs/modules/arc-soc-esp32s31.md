@@ -13,7 +13,7 @@ Experimental ESP32-S31 target facts.
 - Header: `arc/soc/esp32s31.hpp`
 - Module group: Target And Naming Contract
 - CMake feature: `core`
-- Closest example: `.`
+- Closest example: `examples/esp32s31/ptp`
 
 Declare `arc_requires(main_requires core)` in the component that includes this header.
 
@@ -41,7 +41,7 @@ Source landmarks: `Esp32S31`, `Api`, `Arch`.
 ## Start From Zero
 
 - Start from the closest example or the root project listed below.
-- Load the ESP-IDF environment with `. ./env.sh`.
+- Set `ARC_IDF_PATH` to an ESP32-S31 preview ESP-IDF checkout, run the S31 readiness preflight, then use `tools/s31-build.py` for the selected Korvo example.
 - Add the include and CMake feature only in the component that owns this lane.
 - Keep board topology, buffers, and ownership in one visible owner type.
 - Move from build proof to hardware proof only after the wiring or runtime dependency is known.
@@ -74,12 +74,15 @@ extern "C" void app_main()
 
 ## Build Or Example
 
-The root project is the smallest place to try this module.
+The closest shipped example is `examples/esp32s31/ptp`.
 
 ```sh
-. ./env.sh
-idf.py build
-idf.py -p /dev/ttyACM0 flash monitor
+export ARC_IDF_PATH=/path/to/preview-esp-idf
+python3 tools/s31-readiness.py --idf-path "$ARC_IDF_PATH" --require-sdk --format report
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example ptp --dry-run
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example ptp
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example ptp --auto-port --monitor --dry-run
+python3 tools/s31-build.py --idf-path "$ARC_IDF_PATH" --example ptp --auto-port --monitor
 ```
 
 ## Runtime Check

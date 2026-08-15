@@ -20,6 +20,8 @@ struct Esp32P4 {
     static constexpr bool wifi = false;
     static constexpr bool wifi6 = false;
     static constexpr bool ble = false;
+    static constexpr bool bt54 = false;
+    static constexpr bool bt_classic = false;
     static constexpr bool ieee802154 = false;
     static constexpr bool ethernet_mac = true;
     static constexpr bool usb_otg = true;

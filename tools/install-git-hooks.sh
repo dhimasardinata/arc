@@ -43,7 +43,7 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 ./tools/format.sh --check
-./tools/check-repo.sh
+./tools/check-repo.sh --full
 HOOK
 
 chmod +x "$HOOK_DIR/pre-commit" "$HOOK_DIR/pre-push"

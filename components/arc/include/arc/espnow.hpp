@@ -88,7 +88,7 @@ template <typename Policy, typename Bus>
 struct EspNow {
     using Event = typename Bus::event_type;
 
-    static_assert(Soc::wifi, "arc::net::EspNow requires ESP32-S3 Wi-Fi");
+    static_assert(Soc::wifi, "arc::net::EspNow requires target Wi-Fi support");
     static_assert(std::is_trivially_copyable_v<Event>, "ESP-NOW event payload must be trivially copyable");
     static_assert(sizeof(Event) <= ESP_NOW_MAX_DATA_LEN, "ESP-NOW event payload too large");
     static_assert(Policy::peer.size() == ESP_NOW_ETH_ALEN, "ESP-NOW peer must be 6 bytes");

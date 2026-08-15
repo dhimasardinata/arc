@@ -92,6 +92,29 @@ class DocsModulePagesTest(unittest.TestCase):
 
         self.assertEqual(bad, [])
 
+    def test_s31_module_pages_use_build_driver(self) -> None:
+        bad = []
+        expected = (
+            "export ARC_IDF_PATH=/path/to/preview-esp-idf\n"
+            'python3 tools/s31-readiness.py --idf-path "$ARC_IDF_PATH" --require-sdk --format report\n'
+        )
+        forbidden = (
+            "export ARC_TARGET=esp32s31",
+            "export ARC_EXPERIMENTAL_ESP32S31=ON",
+            "idf.py -C examples/esp32s31/",
+        )
+        for page in (ROOT / "docs" / "modules").glob("*.md"):
+            text = page.read_text(encoding="utf-8")
+            if "examples/esp32s31/" not in text:
+                continue
+            example = re.search(
+                r'python3 tools/s31-build\.py --idf-path "\$ARC_IDF_PATH" --example ([a-z0-9_-]+)', text
+            )
+            if expected not in text or example is None or any(item in text for item in forbidden):
+                bad.append(str(page.relative_to(ROOT)))
+
+        self.assertEqual(bad, [])
+
 
 if __name__ == "__main__":
     unittest.main()

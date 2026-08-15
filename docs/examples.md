@@ -62,13 +62,28 @@ These projects are present so the intended API shape is visible, but they stay
 gated behind `ARC_TARGET=esp32s31` and `ARC_EXPERIMENTAL_ESP32S31=ON` until a
 usable ESP32-S31 ESP-IDF target exists in the pinned SDK.
 
+They share `examples/esp32s31/sdkconfig.defaults` for the Korvo-class 16 MB
+flash layout and PSRAM auto-detect path.
+
+Run `./tools/s31-readiness.py --format report` to separate Arc scaffold drift
+from missing local ESP-IDF `esp32s31` target metadata. Use `--require-sdk` only
+when the preview SDK target should already be present.
+
 | Example | Intended surface |
 | --- | --- |
-| `examples/esp32s31/amp` | AMP-style split-core policy scaffolding. |
-| `examples/esp32s31/cam` | Camera/data-path scaffolding. |
-| `examples/esp32s31/control` | Control-loop scaffolding. |
-| `examples/esp32s31/ml` | Fixed-shape ML scaffolding. |
-| `examples/esp32s31/ptp` | Precision-time scaffolding. |
+| `examples/esp32s31/amp` | ESP32-S31-Korvo-1 Core0/Core1 migration policy scaffolding; true bare-core AMP remains off until an S31 policy exists. |
+| `examples/esp32s31/audio` | ESP32-S31-Korvo-1 audio codec, PA enable pin, and DMA buffer scaffolding. |
+| `examples/esp32s31/cam` | Camera/data-path scaffolding with ESP32-S31-Korvo-1 board topology facts. |
+| `examples/esp32s31/console` | ESP32-S31-Korvo-1 UART0 console topology and guarded UART contract. |
+| `examples/esp32s31/control` | ESP32-S31-Korvo-1 control-loop scaffolding on the S31 core map. |
+| `examples/esp32s31/io` | ESP32-S31-Korvo-1 ADC button and WS2812 status LED RMT ownership facts. |
+| `examples/esp32s31/lcd` | ESP32-S31-Korvo-1 RGB LCD topology, strap-overlapped control pins, and DMA frame ownership. |
+| `examples/esp32s31/ml` | ESP32-S31-Korvo-1 fixed-shape ML scaffolding. |
+| `examples/esp32s31/ptp` | Precision-time scaffolding; Korvo needs an external Ethernet PHY path for hardware timestamping. |
+| `examples/esp32s31/radio` | ESP32-S31-Korvo-1 Wi-Fi 6, Bluetooth 5.4, Bluetooth Classic, BLE, IEEE 802.15.4, Zigbee 3.0, Thread 1.4, and guarded Arc ESP-NOW/BLE Mesh/Thread contracts. |
+| `examples/esp32s31/sd` | ESP32-S31-Korvo-1 onboard microSD pin topology, strap-overlapped control GPIO, and guarded SDMMC mount contract. |
+| `examples/esp32s31/security` | ESP32-S31 secure boot, flash encryption, TEE, PUF, WorldGuard, and Arc SecureBoot/WorldGuard/PUF/Cloak contract scaffolding. |
+| `examples/esp32s31/usb` | ESP32-S31-Korvo-1 USB OTG PHY ownership and USB descriptor scaffolding. |
 
 ## Reading Order
 

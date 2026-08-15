@@ -15,15 +15,18 @@ source ./env.sh
 echo "$IDF_TARGET"
 ```
 
-Expected target for normal work is `esp32s3`. If the shell cannot find
-`idf.py`, reload the ESP-IDF environment through `source ./env.sh` before
-debugging Arc itself.
+Expected target for normal work is `esp32s3`, or the value exported in
+`ARC_TARGET` for an explicit non-default build. ESP32-S31 also needs
+`ARC_EXPERIMENTAL_ESP32S31=ON`. If the shell cannot find `idf.py`, reload the
+ESP-IDF environment through `source ./env.sh` before debugging Arc itself.
 
 ## Fast Symptom Map
 
 | Symptom | Likely cause | Fix | Proof |
 | --- | --- | --- | --- |
-| `IDF_TARGET` is not `esp32s3` | shell was not loaded through Arc's wrapper | run `source ./env.sh` in the current shell | `echo "$IDF_TARGET"` prints `esp32s3` |
+| `IDF_TARGET` does not match `ARC_TARGET` or the default `esp32s3` | shell was not loaded through Arc's wrapper, or target variables were changed after loading it | export `ARC_TARGET=...` first, then run `source ./env.sh` in the current shell | `echo "$IDF_TARGET"` prints the selected Arc target |
+| `ARC_TARGET=esp32s31 requires ARC_EXPERIMENTAL_ESP32S31=ON` | ESP32-S31 was selected without the experimental gate | export both `ARC_TARGET=esp32s31` and `ARC_EXPERIMENTAL_ESP32S31=ON` before `source ./env.sh` | `echo "$IDF_TARGET"` prints `esp32s31` |
+| `does not include complete esp32s31 target metadata` | the selected ESP-IDF checkout is not a complete ESP32-S31 preview SDK | set `ARC_IDF_PATH` or `IDF_PATH` to an ESP-IDF checkout with `export.sh` plus S31 SoC, HAL, ROM, linker-script, toolchain, and target-registry metadata | `python3 tools/s31-readiness.py --idf-path "$ARC_IDF_PATH" --require-sdk` reports `ready` |
 | docs or scripts mention `idf.py set-target` | target bypasses Arc's target policy | export `ARC_TARGET=...` before `source ./env.sh` | repo check stays clean |
 | header include fails in firmware build | missing Arc feature in component CMake | add the matching `arc_requires(...)` feature | the same `idf.py build` reaches compile/link |
 | public header validation fails | CMake dependency map or include surface drifted | fix `cmake/arc-deps.cmake` or the header include | `tools/clangd-compile-commands.py --validate-arc-headers` passes |

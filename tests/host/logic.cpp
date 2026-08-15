@@ -25,6 +25,7 @@
 #include "arc/bare_core.hpp"
 #include "arc/bft.hpp"
 #include "arc/ble_mesh.hpp"
+#include "arc/board/esp32s31_korvo.hpp"
 #include "arc/blackbox.hpp"
 #include "arc/borrow.hpp"
 #include "arc/burst.hpp"
@@ -43,6 +44,7 @@
 #include "arc/dsp.hpp"
 #include "arc/digital_twin.hpp"
 #include "arc/distributed_mmu.hpp"
+#include "arc/dvp.hpp"
 #include "arc/ecs.hpp"
 #include "arc/ethernet.hpp"
 #include "arc/fanin.hpp"
@@ -61,6 +63,7 @@
 #include "arc/hypervisor.hpp"
 #include "arc/http.hpp"
 #include "arc/http_server.hpp"
+#include "arc/i2s.hpp"
 #include "arc/init.hpp"
 #include "arc/interrupt_matrix.hpp"
 #include "arc/ipc.hpp"
@@ -97,6 +100,7 @@
 #include "arc/netrpc.hpp"
 #include "arc/nvs_crypto.hpp"
 #include "arc/ota.hpp"
+#include "arc/otg.hpp"
 #include "arc/paillier.hpp"
 #include "arc/pack.hpp"
 #include "arc/perfetto.hpp"
@@ -261,6 +265,230 @@ static_assert(HostTopologyGraph::edges[0].to == 1U);
 static_assert(HostTopologyGraph::edges[0].signal == 10U);
 static_assert(decltype(arc::topology_manifest<HostTopology>())::pins[3] == 18);
 static_assert(decltype(arc::topology_graph<HostTopology, arc::PinRoute<2, 18>>())::edges[0].to == 3U);
+using S31Korvo = arc::board::Korvo1;
+static_assert(arc::Topology<S31Korvo>);
+static_assert(std::string_view{S31Korvo::revision} == "v1.1");
+static_assert(std::string_view{S31Korvo::Module::model} == "ESP32-S31-WROOM-3");
+static_assert(S31Korvo::Module::flash_mb == S31Korvo::flash_mb);
+static_assert(S31Korvo::Module::psram_mb == S31Korvo::psram_mb);
+static_assert(S31Korvo::Module::pcb_antenna);
+static_assert(S31Korvo::Wireless::wifi);
+static_assert(S31Korvo::Wireless::wifi6);
+static_assert(S31Korvo::Wireless::ble);
+static_assert(S31Korvo::Wireless::bt54);
+static_assert(S31Korvo::Wireless::bt_classic);
+static_assert(S31Korvo::Wireless::ieee802154);
+static_assert(S31Korvo::Wireless::zigbee3);
+static_assert(S31Korvo::Wireless::thread14);
+static_assert(S31Korvo::Wireless::wifi6 == arc::soc::Esp32S31::wifi6);
+static_assert(S31Korvo::Wireless::ble == arc::soc::Esp32S31::ble);
+static_assert(S31Korvo::Wireless::bt54 == arc::soc::Esp32S31::bt54);
+static_assert(S31Korvo::Wireless::bt_classic == arc::soc::Esp32S31::bt_classic);
+static_assert(S31Korvo::Wireless::ieee802154 == arc::soc::Esp32S31::ieee802154);
+static_assert(S31Korvo::Wireless::pcb_antenna == S31Korvo::Module::pcb_antenna);
+static_assert(S31Korvo::Onboard::audio);
+static_assert(S31Korvo::Onboard::lcd);
+static_assert(S31Korvo::Onboard::camera);
+static_assert(S31Korvo::Onboard::microsd);
+static_assert(S31Korvo::Onboard::button);
+static_assert(S31Korvo::Onboard::status_led);
+static_assert(!S31Korvo::Onboard::spi_nand);
+static_assert(S31Korvo::Onboard::usb_otg);
+static_assert(!S31Korvo::Onboard::eth_phy);
+static_assert(S31Korvo::pins::count == 54U);
+static_assert(S31Korvo::pins::has<S31Korvo::Lcd::sck>());
+static_assert(S31Korvo::pins::has<S31Korvo::Cam::hsync>());
+static_assert(!S31Korvo::pins::has<29>());
+static_assert(!S31Korvo::pins::has<41>());
+static_assert(S31Korvo::Audio::mclk == 2);
+static_assert(S31Korvo::Audio::sclk == 3);
+static_assert(S31Korvo::Audio::lrclk == 4);
+static_assert(S31Korvo::Audio::dsin == 5);
+static_assert(S31Korvo::Audio::sdout == 6);
+static_assert(S31Korvo::Audio::pa == 7);
+static_assert(std::string_view{S31Korvo::AudioCodec::model} == "ES8389");
+static_assert(std::string_view{S31Korvo::AudioCodec::pa_model} == "NS4150B");
+static_assert(S31Korvo::AudioCodec::pa_count == 2U);
+static_assert(S31Korvo::AudioCodec::mic_count == 2U);
+static_assert(S31Korvo::AudioCodec::speaker_count == 2U);
+static_assert(S31Korvo::AudioCodec::speaker_ohm == 4U);
+static_assert(S31Korvo::AudioCodec::speaker_w == 3U);
+static_assert(S31Korvo::AudioCodec::pitch_mm == 2U);
+static_assert(S31Korvo::AudioCodec::pitch_mil == 80U);
+static_assert(S31Korvo::AudioCodec::stereo);
+static_assert(S31Korvo::AudioCodec::dual_adc);
+static_assert(S31Korvo::AudioCodec::dual_dac);
+static_assert(S31Korvo::AudioCodec::analog_mics);
+static_assert(S31Korvo::AudioCodec::speech);
+static_assert(S31Korvo::AudioCodec::near_wake);
+static_assert(S31Korvo::AudioCodec::far_wake);
+static_assert(S31Korvo::I2c::sda == 0);
+static_assert(S31Korvo::I2c::scl == 1);
+static_assert(S31Korvo::Lcd::db0 == 8);
+static_assert(S31Korvo::Lcd::db11 == 19);
+static_assert(S31Korvo::Lcd::db12 == 33);
+static_assert(S31Korvo::Lcd::db15 == 36);
+static_assert(S31Korvo::Lcd::cs == 38);
+static_assert(S31Korvo::Lcd::pclk == 40);
+static_assert(S31Korvo::Lcd::hen == 43);
+static_assert(S31Korvo::Lcd::hsync == 44);
+static_assert(S31Korvo::Lcd::vsync == 45);
+static_assert(S31Korvo::Lcd::mosi == 60);
+static_assert(S31Korvo::Lcd::sck == 61);
+static_assert(S31Korvo::Display::external);
+static_assert(S31Korvo::Display::connector);
+static_assert(std::string_view{S31Korvo::Display::expansion} == "ESP32-S3-LCD-EV-Board-SUB3");
+static_assert(std::string_view{S31Korvo::Display::panel_driver} == "ST7262E43");
+static_assert(std::string_view{S31Korvo::Display::touch_driver} == "GT1151");
+static_assert(S31Korvo::Display::inch_x10 == 43U);
+static_assert(S31Korvo::Display::hres == 800U);
+static_assert(S31Korvo::Display::vres == 480U);
+static_assert(S31Korvo::Display::rgb);
+static_assert(S31Korvo::Display::rgb565);
+static_assert(S31Korvo::Display::touch);
+static_assert(S31Korvo::Sd::width == 4U);
+static_assert(S31Korvo::Sd::sdio3);
+static_assert(S31Korvo::Sd::audio_store);
+static_assert(S31Korvo::Sd::playback);
+static_assert(S31Korvo::Sd::d0 == 20);
+static_assert(S31Korvo::Sd::d1 == 21);
+static_assert(S31Korvo::Sd::d2 == 22);
+static_assert(S31Korvo::Sd::d3 == 23);
+static_assert(S31Korvo::Sd::clk == 24);
+static_assert(S31Korvo::Sd::cmd == 25);
+static_assert(S31Korvo::Sd::ctrl == 39);
+static_assert(!S31Korvo::SpiNand::connected);
+static_assert(S31Korvo::SpiNand::shares_sd);
+static_assert(S31Korvo::SpiNand::requires_rework);
+static_assert(S31Korvo::SpiNand::supports_1v8);
+static_assert(S31Korvo::SpiNand::supports_3v3);
+static_assert(std::string_view{S31Korvo::SpiNand::remove} == "R7,R65,R66,R67,R68,R69");
+static_assert(std::string_view{S31Korvo::SpiNand::base_pop} == "R22,R23,R1,R2,R3,R4,C6,R20,U4");
+static_assert(std::string_view{S31Korvo::SpiNand::v18_pop} == "R134,C66,C80,R100,U1,C82,C67");
+static_assert(std::string_view{S31Korvo::SpiNand::v33_pop} == "R135");
+static_assert(S31Korvo::SpiNand::remove_count == 6U);
+static_assert(S31Korvo::SpiNand::base_count == 9U);
+static_assert(S31Korvo::SpiNand::v18_count == 7U);
+static_assert(S31Korvo::SpiNand::v33_count == 1U);
+static_assert(S31Korvo::SpiNand::clk == S31Korvo::Sd::d0);
+static_assert(S31Korvo::SpiNand::d == S31Korvo::Sd::d1);
+static_assert(S31Korvo::SpiNand::q == S31Korvo::Sd::d2);
+static_assert(S31Korvo::SpiNand::cs == S31Korvo::Sd::d3);
+static_assert(S31Korvo::SpiNand::hold == S31Korvo::Sd::clk);
+static_assert(S31Korvo::SpiNand::wp == S31Korvo::Sd::cmd);
+static_assert(S31Korvo::Cam::d0 == 46);
+static_assert(S31Korvo::Cam::d7 == 53);
+static_assert(S31Korvo::Cam::pclk == 54);
+static_assert(S31Korvo::Cam::xclk == 55);
+static_assert(S31Korvo::Cam::vsync == 56);
+static_assert(S31Korvo::Cam::hsync == 57);
+static_assert(S31Korvo::CamModule::external);
+static_assert(S31Korvo::CamModule::connector);
+static_assert(std::string_view{S31Korvo::CamModule::model} == "OV3660");
+static_assert(S31Korvo::CamModule::ldo_in_mv == 3300U);
+static_assert(S31Korvo::CamModule::avdd_mv == 2800U);
+static_assert(S31Korvo::CamModule::dvdd_mv == 1500U);
+static_assert(S31Korvo::CamModule::avdd_ldo);
+static_assert(S31Korvo::CamModule::dvdd_ldo);
+static_assert(S31Korvo::CamModule::video_stream);
+static_assert(S31Korvo::CamModule::jpeg_stream);
+static_assert(S31Korvo::Uart0::tx == 58);
+static_assert(S31Korvo::Uart0::rx == 59);
+static_assert(S31Korvo::ConsoleBridge::usb_c);
+static_assert(S31Korvo::ConsoleBridge::powers_board);
+static_assert(S31Korvo::ConsoleBridge::flash);
+static_assert(S31Korvo::ConsoleBridge::max_baud == 3'000'000U);
+static_assert(S31Korvo::Download::uart);
+static_assert(S31Korvo::Download::manual);
+static_assert(S31Korvo::Download::auto_download);
+static_assert(S31Korvo::Download::dtr_rts);
+static_assert(S31Korvo::Download::boot_btn);
+static_assert(S31Korvo::Download::rst_btn);
+static_assert(S31Korvo::Button::adc == 42);
+static_assert(std::string_view{S31Korvo::Button::signal} == "ADC BUTTON");
+static_assert(S31Korvo::Button::count == 4);
+static_assert(S31Korvo::Button::play == 0);
+static_assert(S31Korvo::Button::set == 1);
+static_assert(S31Korvo::Button::vol_down == 2);
+static_assert(S31Korvo::Button::vol_up == 3);
+static_assert(S31Korvo::Button::shared_adc);
+static_assert(S31Korvo::Button::ui_control);
+static_assert(S31Korvo::Button::audio_test);
+static_assert(S31Korvo::Led::ws2812 == 37);
+static_assert(std::string_view{S31Korvo::Led::signal} == "WS2812_CTRL");
+static_assert(S31Korvo::Led::count == 1U);
+static_assert(S31Korvo::Led::rgb);
+static_assert(S31Korvo::Led::addressable);
+static_assert(S31Korvo::Usb::dp_module_pin == 40);
+static_assert(S31Korvo::Usb::dm_module_pin == 41);
+static_assert(S31Korvo::Usb::dp_gpio == -1);
+static_assert(S31Korvo::Usb::dm_gpio == -1);
+static_assert(!S31Korvo::Usb::module_pins_are_gpio);
+static_assert(!S31Korvo::pins::has<S31Korvo::Usb::dp_gpio>());
+static_assert(!S31Korvo::pins::has<S31Korvo::Usb::dm_gpio>());
+static_assert(S31Korvo::UsbHost::type_a);
+static_assert(S31Korvo::UsbHost::high_speed);
+static_assert(S31Korvo::UsbHost::downstream_power);
+static_assert(S31Korvo::UsbHost::current_limited);
+static_assert(std::string_view{S31Korvo::UsbHost::switch_model} == "TPS2051C");
+static_assert(S31Korvo::UsbHost::downstream_ma == 500U);
+static_assert(S31Korvo::UsbHost::port == 1U);
+static_assert(S31Korvo::Power::power_only);
+static_assert(S31Korvo::Power::uart_power);
+static_assert(S31Korvo::Power::switch_5v);
+static_assert(S31Korvo::Power::audio_split);
+static_assert(S31Korvo::Power::buck_3v3);
+static_assert(S31Korvo::Power::audio_ldo_3v3);
+static_assert(S31Korvo::Power::power_led_5v);
+static_assert(S31Korvo::Power::input_ma == 3'000U);
+static_assert(S31Korvo::Setup::usb_cables == 2U);
+static_assert(S31Korvo::Setup::usb2);
+static_assert(S31Korvo::Setup::a_to_c);
+static_assert(S31Korvo::Setup::data_cable);
+static_assert(S31Korvo::Setup::speaker_min == 1U);
+static_assert(S31Korvo::Setup::speaker_max == S31Korvo::AudioCodec::speaker_count);
+static_assert(S31Korvo::Setup::switch_on);
+static_assert(S31Korvo::Setup::red_led);
+static_assert(S31Korvo::Setup::microsd_optional);
+static_assert(S31Korvo::Strap::lcd_db15 == 36);
+static_assert(S31Korvo::Strap::status_led == 37);
+static_assert(S31Korvo::Strap::b0 == 38);
+static_assert(S31Korvo::Strap::b1 == 39);
+static_assert(S31Korvo::Strap::b2 == 40);
+static_assert(S31Korvo::Strap::b3 == 60);
+static_assert(S31Korvo::Strap::b4 == 61);
+static_assert(arc::board::Korvo1CodecGraph::edge_count == 1U);
+static_assert(arc::board::Korvo1AudioGraph::edge_count == 5U);
+static_assert(arc::board::Korvo1LcdGraph::edge_count == 8U);
+static_assert(arc::board::Korvo1SdGraph::edge_count == 6U);
+static_assert(arc::board::Korvo1NandGraph::edge_count == 5U);
+static_assert(arc::board::Korvo1CamGraph::edge_count == 5U);
+static_assert(arc::board::Korvo1ConsoleGraph::edge_count == 1U);
+static_assert(arc::board::Korvo1StrapGraph::edge_count == 6U);
+static_assert(arc::board::Korvo1AudioGraph::edges[0].signal == arc::board::Korvo1Signal::audio_clock);
+static_assert(arc::board::Korvo1LcdGraph::edges[6].signal == arc::board::Korvo1Signal::lcd_spi);
+static_assert(arc::board::Korvo1LcdGraph::edges[7].signal == arc::board::Korvo1Signal::lcd_spi);
+static_assert(arc::board::Korvo1SdGraph::edges[0].signal == arc::board::Korvo1Signal::sd_control);
+static_assert(arc::board::Korvo1NandGraph::edges[0].signal == arc::board::Korvo1Signal::nand_data);
+static_assert(arc::board::Korvo1NandGraph::edges[4].signal == arc::board::Korvo1Signal::nand_control);
+static_assert(arc::board::Korvo1CamGraph::edges[1].signal == arc::board::Korvo1Signal::cam_data);
+static_assert(arc::board::Korvo1ConsoleGraph::edges[0].signal == arc::board::Korvo1Signal::console_uart);
+static_assert(arc::board::Korvo1StrapGraph::edges[0].signal == arc::board::Korvo1Signal::strap_pin);
+static_assert(arc::board::Korvo1StrapGraph::edges[1].signal == arc::board::Korvo1Signal::strap_pin);
+static_assert(arc::board::Korvo1StrapGraph::edges[2].signal == arc::board::Korvo1Signal::strap_boot);
+static_assert(arc::board::Korvo1StrapGraph::edges[5].signal == arc::board::Korvo1Signal::strap_boot);
+static_assert(sizeof(S31Korvo::Resource::AudioBus) > 0U);
+static_assert(sizeof(S31Korvo::Resource::AudioPa) > 0U);
+static_assert(sizeof(S31Korvo::Resource::CodecI2c) > 0U);
+static_assert(sizeof(S31Korvo::Resource::LcdBus) > 0U);
+static_assert(sizeof(S31Korvo::Resource::SdSlot) > 0U);
+static_assert(sizeof(S31Korvo::Resource::SdCtrl) > 0U);
+static_assert(sizeof(S31Korvo::Resource::SpiNandBus) > 0U);
+static_assert(sizeof(S31Korvo::Resource::CamBus) > 0U);
+static_assert(sizeof(S31Korvo::Resource::ConsoleUart) > 0U);
+static_assert(sizeof(S31Korvo::Resource::ButtonAdc) > 0U);
+static_assert(sizeof(S31Korvo::Resource::StatusLed) > 0U);
+static_assert(sizeof(S31Korvo::Resource::UsbOtg) > 0U);
 static_assert(arc::Result<int>{2}.and_then([](int value) { return arc::Result<int>{value + 1}; }).value() == 3);
 static_assert(arc::status_code(arc::ok()) == ESP_OK);
 
@@ -5686,6 +5914,16 @@ void test_text()
     expect(
         formatted.has_value() && std::string_view{formatted->data(), formatted->size()} == "temp=-12 mv=3300 ok=true pc=0x01af {}",
         "format_to writes common telemetry without heap formatting");
+
+    std::array<char, 64> float_buf{};
+    arc::Text float_text{std::span(float_buf)};
+    expect(float_text.f32(3.1415f, 2U) && std::string_view{float_text.view()} == "3.14", "Text f32 formats 2 decimals");
+    float_text.clear();
+    expect(float_text.f64(-0.005, 3U) && std::string_view{float_text.view()} == "-0.005", "Text f64 formats negative fractional");
+    float_text.clear();
+    const auto float_fmt = arc::format_to(std::span(float_buf), "pi={}", 3.14159);
+    expect(float_fmt.has_value() && std::string_view{float_fmt->data(), float_fmt->size()} == "pi=3.1416", "format_to formats float args");
+
     std::array<char, 4> small_fmt{};
     expect(!arc::format_to(std::span(small_fmt), "{}", "too long"), "format_to rejects small buffer");
     expect(!arc::format_to(std::span(fmt), "{} {}", 1), "format_to rejects missing arg");
@@ -6320,11 +6558,97 @@ void test_claim()
     expect(Same::take() == ESP_OK, "Claim identical owner shares");
     expect(Other::take() == ESP_ERR_INVALID_STATE, "Claim different token rejects");
     expect(TokenCollision::take() == ESP_ERR_INVALID_STATE, "Claim token collision rejects");
+    expect(Same::take_unique() == ESP_ERR_INVALID_STATE, "Claim unique rejects duplicate owner");
     expect(Owner::held(), "Claim owner held");
     Owner::drop();
     expect(!Owner::held(), "Claim owner drops");
+    expect(Owner::take_unique() == ESP_OK, "Claim unique first owner succeeds");
+    Owner::drop();
     expect(Other::take() == ESP_OK, "Claim other owner succeeds after drop");
     Other::drop();
+
+    using SetA0 = arc::ClaimFor<arc::ClaimKind::gpio_pin, 900, 1>;
+    using SetA1 = arc::ClaimFor<arc::ClaimKind::gpio_pin, 901, 1>;
+    using SetB0 = arc::ClaimFor<arc::ClaimKind::gpio_pin, 902, 2>;
+    using SetB1 = arc::ClaimFor<arc::ClaimKind::gpio_pin, 901, 2>;
+    using SetA = arc::ClaimSet<SetA0, SetA1>;
+    using SetB = arc::ClaimSet<SetB0, SetB1>;
+    SetA::drop();
+    SetB::drop();
+    expect(SetA::take() == ESP_OK, "ClaimSet first owner succeeds");
+    expect(SetA::held(), "ClaimSet owner held");
+    expect(SetA::take_unique() == ESP_ERR_INVALID_STATE, "ClaimSet unique rejects duplicate owner");
+    expect(SetB::take() == ESP_ERR_INVALID_STATE, "ClaimSet rejects later conflicting claim");
+    expect(!SetB0::held(), "ClaimSet rolls back earlier claims on failure");
+    SetA::drop();
+    expect(!SetA::held(), "ClaimSet owner drops");
+    expect(SetB::take_unique() == ESP_OK, "ClaimSet unique succeeds after conflicting set drops");
+    SetB::drop();
+
+    using Audio = arc::board::Korvo1::Resource::AudioBus;
+    using AudioPa = arc::board::Korvo1::Resource::AudioPa;
+    using CodecI2c = arc::board::Korvo1::Resource::CodecI2c;
+    using Lcd = arc::board::Korvo1::Resource::LcdBus;
+    using Sd = arc::board::Korvo1::Resource::SdSlot;
+    using SdCtrl = arc::board::Korvo1::Resource::SdCtrl;
+    using SpiNand = arc::board::Korvo1::Resource::SpiNandBus;
+    using Cam = arc::board::Korvo1::Resource::CamBus;
+    using Console = arc::board::Korvo1::Resource::ConsoleUart;
+    using Button = arc::board::Korvo1::Resource::ButtonAdc;
+    using Led = arc::board::Korvo1::Resource::StatusLed;
+    using UsbOtg = arc::board::Korvo1::Resource::UsbOtg;
+    Audio::drop();
+    AudioPa::drop();
+    CodecI2c::drop();
+    Lcd::drop();
+    Sd::drop();
+    SdCtrl::drop();
+    SpiNand::drop();
+    Cam::drop();
+    Console::drop();
+    Button::drop();
+    Led::drop();
+    UsbOtg::drop();
+    expect(Audio::take() == ESP_OK, "Korvo audio resource claim succeeds");
+    expect(AudioPa::take() == ESP_OK, "Korvo audio PA resource claim succeeds");
+    expect(CodecI2c::take() == ESP_OK, "Korvo codec I2C resource claim succeeds");
+    expect(Lcd::take() == ESP_OK, "Korvo LCD resource claim succeeds");
+    expect(Sd::take() == ESP_OK, "Korvo SD slot resource claim succeeds");
+    expect(SdCtrl::take() == ESP_OK, "Korvo SD control resource claim succeeds");
+    expect(SpiNand::take() == ESP_ERR_INVALID_STATE, "Korvo optional SPI NAND rejects mounted SD lane");
+    expect(Cam::take() == ESP_OK, "Korvo camera resource claim succeeds");
+    expect(Console::take() == ESP_OK, "Korvo console UART resource claim succeeds");
+    expect(Button::take() == ESP_OK, "Korvo button ADC resource claim succeeds");
+    expect(Led::take() == ESP_OK, "Korvo status LED resource claim succeeds");
+    expect(UsbOtg::take() == ESP_OK, "Korvo USB OTG resource claim succeeds");
+    expect(Audio::held(), "Korvo audio resource remains held");
+    expect(AudioPa::held(), "Korvo audio PA resource remains held");
+    expect(CodecI2c::held(), "Korvo codec I2C resource remains held");
+    expect(Lcd::held(), "Korvo LCD resource remains held");
+    expect(Sd::held(), "Korvo SD slot resource remains held");
+    expect(SdCtrl::held(), "Korvo SD control resource remains held");
+    expect(Cam::held(), "Korvo camera resource remains held");
+    expect(Console::held(), "Korvo console UART resource remains held");
+    expect(Button::held(), "Korvo button ADC resource remains held");
+    expect(Led::held(), "Korvo status LED resource remains held");
+    expect(UsbOtg::held(), "Korvo USB OTG resource remains held");
+    Sd::drop();
+    expect(!Sd::held(), "Korvo SD slot drops before optional SPI NAND rework lane");
+    expect(SpiNand::take() == ESP_OK, "Korvo optional SPI NAND resource claim succeeds after SD drops");
+    expect(Sd::take() == ESP_ERR_INVALID_STATE, "Korvo SD rejects active optional SPI NAND lane");
+    expect(SpiNand::held(), "Korvo optional SPI NAND resource remains held");
+    Audio::drop();
+    AudioPa::drop();
+    CodecI2c::drop();
+    Lcd::drop();
+    Sd::drop();
+    SdCtrl::drop();
+    SpiNand::drop();
+    Cam::drop();
+    Console::drop();
+    Button::drop();
+    Led::drop();
+    UsbOtg::drop();
 }
 
 void test_file()
@@ -8253,6 +8577,8 @@ void test_resilient_edge_goal_surfaces()
 void test_current_goal_surfaces()
 {
     using HostBurst = arc::Burst<1, 1'000'000>;
+    static_assert(sizeof(HostBurst::Resource) > 0U);
+    HostBurst::Resource::drop();
     std::array<rmt_symbol_word_t, 2> burst_symbols{
         HostBurst::symbol(1U, true, 1U, false),
         HostBurst::symbol(2U, false, 2U, true),
@@ -8271,6 +8597,44 @@ void test_current_goal_surfaces()
     expect(HostBurst::send(burst_symbols) == ESP_OK && arc_host_rmt_transmit_calls == 1 &&
                arc_host_rmt_last_bytes == burst_symbols.size() * sizeof(rmt_symbol_word_t),
            "Burst send forwards checked symbol bytes");
+    expect(HostBurst::Resource::held(), "Burst RMT TX resource remains held after init");
+
+    using HostI2s = arc::I2s<13, 14, 15, 16, 48'000>;
+    static_assert(sizeof(HostI2s::Resource) > 0U);
+    HostI2s::Resource::drop();
+    expect(HostI2s::init() == ESP_OK && HostI2s::Resource::held(), "I2S resource claim succeeds");
+
+    using HostDvp = arc::Dvp<
+        arc::DvpLines<
+            arc::board::Korvo1::Cam::d0,
+            arc::board::Korvo1::Cam::d1,
+            arc::board::Korvo1::Cam::d2,
+            arc::board::Korvo1::Cam::d3,
+            arc::board::Korvo1::Cam::d4,
+            arc::board::Korvo1::Cam::d5,
+            arc::board::Korvo1::Cam::d6,
+            arc::board::Korvo1::Cam::d7>,
+        arc::board::Korvo1::Cam::vsync,
+        arc::board::Korvo1::Cam::pclk,
+        arc::board::Korvo1::Cam::hsync,
+        arc::board::Korvo1::Cam::xclk,
+        320U,
+        240U>;
+    static_assert(HostDvp::width() == 8U);
+    static_assert(sizeof(HostDvp::Resource) > 0U);
+    HostDvp::Resource::drop();
+    expect(HostDvp::init() == ESP_OK && HostDvp::Resource::held(), "DVP resource claim succeeds");
+
+    using HostOtg = arc::Otg;
+    static_assert(sizeof(HostOtg::Resource) > 0U);
+    HostOtg::Resource::drop();
+    auto host_otg = HostOtg::host();
+    expect(host_otg.has_value() && HostOtg::Resource::held(), "OTG resource claim succeeds");
+    expect(!HostOtg::host().has_value(), "OTG rejects duplicate active PHY owner");
+    if (host_otg.has_value()) {
+        auto phy = std::move(host_otg).value();
+        expect(phy.off() == ESP_OK && !HostOtg::Resource::held(), "OTG resource drops on off");
+    }
 
     using HostSpiBus = arc::SpiBus<SPI2_HOST, 1, 2, 3, 16>;
     using HostSpi = arc::Spi<HostSpiBus, -1, 1'000'000U, 0, 1>;
@@ -10191,70 +10555,158 @@ void test_task_arena()
            "TaskArena rejects alignment overflow");
 }
 
+struct TestCase {
+    std::string_view name;
+    void (*fn)();
+};
+
+constexpr TestCase kTests[] = {
+    {"result", test_result},
+    {"flow", test_flow},
+    {"any_io", test_any_io},
+    {"spsc", test_spsc},
+    {"core_local", test_core_local},
+    {"static_borrow", test_static_borrow},
+    {"lockstep", test_lockstep},
+    {"sim", test_sim},
+    {"checked_spsc", test_checked_spsc},
+    {"mpsc_single", test_mpsc_single},
+    {"compact_mpsc", test_compact_mpsc},
+    {"checked_mpsc", test_checked_mpsc},
+    {"mpsc_threads", test_mpsc_threads},
+    {"fanin", test_fanin},
+    {"checked_fanin", test_checked_fanin},
+    {"rpc_lane", test_rpc_lane},
+    {"mqtt", test_mqtt},
+    {"ws", test_ws},
+    {"coap", test_coap},
+    {"uri", test_uri},
+    {"http_client", test_http_client},
+    {"uri_dial_helpers", test_uri_dial_helpers},
+    {"codec_fuzzer_smoke", test_codec_fuzzer_smoke},
+    {"invalid_codecs", test_invalid_codecs},
+    {"http_server", test_http_server},
+    {"caps", test_caps},
+    {"dsp", test_dsp},
+    {"foc_motion_tdma", test_foc_motion_tdma},
+    {"ml_tensor", test_ml_tensor},
+    {"simd_ml_pipeline", test_simd_ml_pipeline},
+    {"csi_hotpatch", test_csi_hotpatch},
+    {"netrpc_pms_secure_update", test_netrpc_pms_secure_update},
+    {"matrix_kalman_storage_swarm", test_matrix_kalman_storage_swarm},
+    {"trace_provision_ethernet_flashoff_hil_ecs", test_trace_provision_ethernet_flashoff_hil_ecs},
+    {"log_lane", test_log_lane},
+    {"text", test_text},
+    {"trace_event", test_trace_event},
+    {"postmortem", test_postmortem},
+    {"timesync", test_timesync},
+    {"pack", test_pack},
+    {"static_silicon_facades", test_static_silicon_facades},
+    {"rcu", test_rcu},
+    {"ulp_shared", test_ulp_shared},
+    {"probe_stats", test_probe_stats},
+    {"seqreg", test_seqreg},
+    {"claim", test_claim},
+    {"file", test_file},
+    {"fs", test_fs},
+    {"store", test_store},
+    {"stream", test_stream},
+    {"pipeline_usb_ulp", test_pipeline_usb_ulp},
+    {"pru_isp_vision", test_pru_isp_vision},
+    {"vm_bpf", test_vm_bpf},
+    {"ulp_ml_paillier_covert", test_ulp_ml_paillier_covert},
+    {"goal_wave_surfaces", test_goal_wave_surfaces},
+    {"resilient_edge_goal_surfaces", test_resilient_edge_goal_surfaces},
+    {"current_goal_surfaces", test_current_goal_surfaces},
+    {"memory_scrub", test_memory_scrub},
+    {"hive_goal_surfaces", test_hive_goal_surfaces},
+    {"task_arena", test_task_arena},
+    {"refinit", test_refinit},
+};
+
+bool case_insensitive_contains(const std::string_view str, const std::string_view filter) noexcept
+{
+    if (filter.empty()) {
+        return true;
+    }
+    if (filter.size() > str.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i <= str.size() - filter.size(); ++i) {
+        bool match = true;
+        for (std::size_t j = 0; j < filter.size(); ++j) {
+            auto c1 = static_cast<unsigned char>(str[i + j]);
+            auto c2 = static_cast<unsigned char>(filter[j]);
+            if (c1 >= 'A' && c1 <= 'Z') {
+                c1 += ('a' - 'A');
+            }
+            if (c2 >= 'A' && c2 <= 'Z') {
+                c2 += ('a' - 'A');
+            }
+            if (c1 != c2) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
-int main()
+int main(int argc, char* argv[])
 {
-    test_result();
-    test_flow();
-    test_any_io();
-    test_spsc();
-    test_core_local();
-    test_static_borrow();
-    test_lockstep();
-    test_sim();
-    test_checked_spsc();
-    test_mpsc_single();
-    test_compact_mpsc();
-    test_checked_mpsc();
-    test_mpsc_threads();
-    test_fanin();
-    test_checked_fanin();
-    test_rpc_lane();
-    test_mqtt();
-    test_ws();
-    test_coap();
-    test_uri();
-    test_http_client();
-    test_uri_dial_helpers();
-    test_codec_fuzzer_smoke();
-    test_invalid_codecs();
-    test_http_server();
-    test_caps();
-    test_dsp();
-    test_foc_motion_tdma();
-    test_ml_tensor();
-    test_simd_ml_pipeline();
-    test_csi_hotpatch();
-    test_netrpc_pms_secure_update();
-    test_matrix_kalman_storage_swarm();
-    test_trace_provision_ethernet_flashoff_hil_ecs();
-    test_log_lane();
-    test_text();
-    test_trace_event();
-    test_postmortem();
-    test_timesync();
-    test_pack();
-    test_static_silicon_facades();
-    test_rcu();
-    test_ulp_shared();
-    test_probe_stats();
-    test_seqreg();
-    test_claim();
-    test_file();
-    test_fs();
-    test_store();
-    test_stream();
-    test_pipeline_usb_ulp();
-    test_pru_isp_vision();
-    test_vm_bpf();
-    test_ulp_ml_paillier_covert();
-    test_goal_wave_surfaces();
-    test_resilient_edge_goal_surfaces();
-    test_current_goal_surfaces();
-    test_memory_scrub();
-    test_hive_goal_surfaces();
-    test_task_arena();
-    test_refinit();
+    bool list_only = false;
+    std::vector<std::string_view> filters;
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view arg = argv[i];
+        if (arg == "--list" || arg == "-l") {
+            list_only = true;
+        } else if (arg == "--help" || arg == "-h") {
+            std::printf("Usage: %s [--list] [filter...]\n", argv[0]);
+            std::printf("Runs all test suites or only tests matching specified filter substrings.\n");
+            return 0;
+        } else if (!arg.starts_with("-")) {
+            filters.push_back(arg);
+        }
+    }
+
+    if (list_only) {
+        std::printf("Available test suites (%zu):\n", std::size(kTests));
+        for (const auto& test : kTests) {
+            std::printf("  %.*s\n", static_cast<int>(test.name.size()), test.name.data());
+        }
+        return 0;
+    }
+
+    std::size_t executed = 0U;
+    for (const auto& test : kTests) {
+        if (!filters.empty()) {
+            bool matched = false;
+            for (const auto& filter : filters) {
+                if (case_insensitive_contains(test.name, filter)) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                continue;
+            }
+        }
+
+        test.fn();
+        ++executed;
+    }
+
+    if (executed == 0U && !filters.empty()) {
+        std::fprintf(stderr, "arc host tests: no tests matched given filter(s)\n");
+        return 1;
+    }
+
     std::puts("arc host tests: OK");
+    return 0;
 }

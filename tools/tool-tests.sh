@@ -11,6 +11,31 @@ if ((${#tests[@]} == 0)); then
     exit 1
 fi
 
+if [[ "${1:-}" == "--list" || "${1:-}" == "-l" ]]; then
+    echo "Available tool tests (${#tests[@]}):"
+    for t in "${tests[@]}"; do
+        echo "  $t"
+    done
+    exit 0
+fi
+
+if ((${#@} > 0)); then
+    filtered=()
+    for t in "${tests[@]}"; do
+        for pattern in "$@"; do
+            if [[ "$t" == *"$pattern"* ]]; then
+                filtered+=("$t")
+                break
+            fi
+        done
+    done
+    if ((${#filtered[@]} == 0)); then
+        echo "arc tool tests: no tests matched filter '$*'" >&2
+        exit 1
+    fi
+    tests=("${filtered[@]}")
+fi
+
 jobs="${ARC_TOOL_TEST_JOBS:-}"
 if [[ ! "$jobs" =~ ^[0-9]+$ || "$jobs" -le 0 ]]; then
     jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
