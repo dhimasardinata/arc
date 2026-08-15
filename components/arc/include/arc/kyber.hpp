@@ -120,17 +120,7 @@ struct Kyber {
         if (!valid_span(out) || !valid_span(lhs) || !valid_span(rhs)) {
             return Status{fail(ESP_ERR_INVALID_ARG)};
         }
-        auto i = std::size_t{};
-        for (; i + simd::int16x8_lanes <= n; i += simd::int16x8_lanes) {
-            const auto l = simd::load_s16x8(lhs.data() + i);
-            const auto r = simd::load_s16x8(rhs.data() + i);
-            simd::int16x8_t product{};
-            for (std::size_t lane = 0; lane < simd::int16x8_lanes; ++lane) {
-                product[lane] = mul(l[lane], r[lane]);
-            }
-            simd::store_s16x8(out.data() + i, product);
-        }
-        for (; i < n; ++i) {
+        for (std::size_t i = 0; i < n; ++i) {
             out[i] = mul(lhs[i], rhs[i]);
         }
         return ok();
