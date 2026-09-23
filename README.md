@@ -14,6 +14,8 @@ Arc is an ESP-IDF base for ESP32-S3 firmware that treats Core 0 and Core 1 diffe
 
 Website: `https://dhimasardinata.github.io/arc/`.
 
+Portfolio: <https://dhimasardinata.netlify.app/>.
+
 License: `AGPL-3.0-only`. Arc is open source, but intentionally strict copyleft: if you distribute modified firmware or run modified network-accessible services built from Arc, keep the corresponding Arc-covered source available under the same license terms. Proprietary or private-source Arc rights require a signed paid commercial agreement; cloning or embedding this repository does not create that grant.
 
 Arc is not a convenience wrapper around ESP-IDF. It is a typed substrate for firmware that needs deterministic hot loops, explicit DMA/cache ownership, static task memory, and transport/protocol composition without hidden heap policy.
