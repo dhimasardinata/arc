@@ -27,7 +27,7 @@ inline constexpr std::uint8_t kUriScheme = 0x80;
 inline constexpr std::array<std::uint8_t, 256> make_uri_char_table() noexcept
 {
     std::array<std::uint8_t, 256> table{};
-    for (int i = 0; i < 256; ++i) {
+    for (std::size_t i = 0; i < table.size(); ++i) {
         const auto ch = static_cast<char>(i);
         const auto byte = static_cast<std::uint8_t>(i);
         if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
