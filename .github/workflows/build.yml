@@ -10,6 +10,11 @@ on:
         required: false
         type: boolean
         default: false
+      include_framework_benchmarks:
+        description: "Run the slower host comparison against ESP-IDF and Arduino-ESP32 sources."
+        required: false
+        type: boolean
+        default: false
       idf_ref:
         description: "Optional ESP-IDF commit, tag, or branch for manual preview-target runs."
         required: false
@@ -312,8 +317,14 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x tools/host-bench.sh
-          chmod +x tools/framework-compare.sh
           ./tools/host-bench.sh
+
+      - name: Framework host benchmarks
+        if: steps.firmware-plan.outputs.count != '0' && github.event_name == 'workflow_dispatch' && github.event.inputs.include_framework_benchmarks == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/framework-compare.sh
           ARC_SKIP_HOST_BENCH=1 ARC_IDF_PATH="$HOME/esp-idf" ./tools/framework-compare.sh
 
       - name: Build firmware

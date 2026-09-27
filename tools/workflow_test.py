@@ -64,6 +64,17 @@ class WorkflowTest(unittest.TestCase):
         self.assertGreater(build_firmware, 0)
         self.assertLess(host_benchmarks, build_firmware)
 
+    def test_framework_benchmarks_are_opt_in(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        self.assertIn("include_framework_benchmarks:", workflow)
+        self.assertIn("name: Framework host benchmarks", workflow)
+        self.assertIn(
+            "github.event.inputs.include_framework_benchmarks == 'true'",
+            workflow,
+        )
+        self.assertIn("ARC_SKIP_HOST_BENCH=1 ARC_IDF_PATH=", workflow)
+
     def test_repo_sanity_carries_strict_audit_before_firmware_builds(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
         check_repo = (ROOT / "tools" / "check-repo.sh").read_text(encoding="utf-8")
@@ -240,7 +251,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertNotIn("cache: npm", workflow)
         self.assertIn("actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d", workflow)
         self.assertIn("actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9", workflow)
-        self.assertIn("actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128", workflow)
+        self.assertIn("actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346", workflow)
 
     def test_codeql_workflow_scans_source_without_firmware_build(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")

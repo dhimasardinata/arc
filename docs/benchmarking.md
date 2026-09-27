@@ -20,6 +20,8 @@ For framework-adjacent host lanes, run:
 
 That script reports the checked-out ESP-IDF and Arduino-ESP32 source versions, then measures host-buildable Arc, raw ESP-IDF mbedTLS, and Arduino core paths where the same process can execute the compared code honestly.
 
+The regular CI workflow runs the Arc host regression benchmark on firmware changes. The slower framework comparison is available through `workflow_dispatch` by enabling `include_framework_benchmarks`; it checks out and compiles Arduino-ESP32 sources.
+
 ## ESP32-S3 Firmware Benchmarks
 
 The on-device benchmark is:
