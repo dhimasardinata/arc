@@ -174,6 +174,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn('"$HOME/esp-idf/install.sh" "${idf_targets[@]}"', workflow)
         self.assertIn("export ARC_TARGET=esp32s31", workflow)
         self.assertIn("export ARC_EXPERIMENTAL_ESP32S31=ON", workflow)
+        self.assertIn("export IDF_TARGET=esp32s31", workflow)
         self.assertIn("cat .arc-build-projects", workflow)
         self.assertIn("steps.firmware-plan.outputs.count != '0'", workflow)
 
@@ -201,6 +202,14 @@ class WorkflowTest(unittest.TestCase):
         self.assertNotIn("uses: actions/cache@", workflow)
         self.assertIn("github.event_name == 'push' && steps.firmware-plan.outputs.count != '0'", workflow)
         self.assertIn("continue-on-error: true", workflow)
+
+    def test_firmware_projects_build_with_bounded_parallelism(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+
+        self.assertIn('ARC_BUILD_CONCURRENCY: "2"', workflow)
+        self.assertIn('run_build_batch "${batch_dirs[@]}"', workflow)
+        self.assertIn('build_project "$dir" "$result" > "$log" 2>&1 &', workflow)
+        self.assertIn("if ! idf.py build || ! idf.py size; then", workflow)
 
     def test_firmware_artifact_manifest_is_uploaded_with_binaries(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")

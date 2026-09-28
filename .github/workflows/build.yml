@@ -333,6 +333,7 @@ jobs:
         shell: bash
         env:
           ARC_BUILD_CACHE_MAX_PROJECTS: "4"
+          ARC_BUILD_CONCURRENCY: "2"
         run: |
           set -euo pipefail
           export ARC_IDF_PATH="$HOME/esp-idf"
@@ -411,12 +412,16 @@ jobs:
           else
             mkdir -p "$build_cache_root"
           fi
-          for dir in "${project_dirs[@]}"; do
+          build_project() {
+            local dir="$1"
+            local result_file="$2"
+            local label bin
+            set -euo pipefail
             if [[ "$dir" == "." ]]; then
               label=root
               export ARC_TARGET=esp32s3
-              unset ARC_EXPERIMENTAL_ESP32S31
               export IDF_TARGET=esp32s3
+              unset ARC_EXPERIMENTAL_ESP32S31 || true
             else
               label="${dir#examples/}"
               label="${label//\//-}"
@@ -426,8 +431,8 @@ jobs:
                 export IDF_TARGET=esp32s31
               else
                 export ARC_TARGET=esp32s3
-                unset ARC_EXPERIMENTAL_ESP32S31
                 export IDF_TARGET=esp32s3
+                unset ARC_EXPERIMENTAL_ESP32S31 || true
               fi
             fi
             echo "::group::build $label"
@@ -435,20 +440,78 @@ jobs:
               restore_build_dir "$dir"
             fi
             pushd "$dir" >/dev/null
-            if ! idf.py build; then
+            if ! idf.py build || ! idf.py size; then
               dump_idf_logs "$label"
-              exit 1
+              popd >/dev/null
+              echo "::endgroup::"
+              return 1
             fi
-            idf.py size
             bin="$(app_bin)"
-            echo "$label $bin $(stat -c '%s' "build/$bin") bytes" >> "$GITHUB_STEP_SUMMARY"
+            if [[ -z "$bin" ]]; then
+              echo "no application binary found for $label" >&2
+              popd >/dev/null
+              echo "::endgroup::"
+              return 1
+            fi
+            printf '%s %s %s bytes\n' "$label" "$bin" "$(stat -c '%s' "build/$bin")" > "$result_file"
             popd >/dev/null
             if ((${#project_dirs[@]} <= cache_limit)); then
               save_build_dir "$dir"
-              cache_ready=1
             fi
             echo "::endgroup::"
+          }
+
+          build_concurrency="${ARC_BUILD_CONCURRENCY:-2}"
+          if [[ ! "$build_concurrency" =~ ^[1-9][0-9]*$ ]]; then
+            echo "ARC_BUILD_CONCURRENCY must be a positive integer" >&2
+            exit 1
+          fi
+          echo "Building ${#project_dirs[@]} firmware projects with concurrency $build_concurrency"
+          build_logs="$(mktemp -d)"
+          trap 'rm -rf "$build_logs"' EXIT
+          run_build_batch() {
+            local -a batch=("$@")
+            local pids=() logs=() results=()
+            local failed=0
+            for dir in "${batch[@]}"; do
+              local slug="$(cache_slug "$dir")"
+              local log="$build_logs/$slug.log"
+              local result="$build_logs/$slug.result"
+              logs+=("$log")
+              results+=("$result")
+              build_project "$dir" "$result" > "$log" 2>&1 &
+              pids+=("$!")
+            done
+            for pid in "${pids[@]}"; do
+              if ! wait "$pid"; then
+                failed=1
+              fi
+            done
+            for log in "${logs[@]}"; do
+              cat "$log"
+            done
+            if ((failed != 0)); then
+              return 1
+            fi
+            for result in "${results[@]}"; do
+              cat "$result" >> "$GITHUB_STEP_SUMMARY"
+            done
+          }
+
+          batch_dirs=()
+          for dir in "${project_dirs[@]}"; do
+            batch_dirs+=("$dir")
+            if ((${#batch_dirs[@]} >= build_concurrency)); then
+              run_build_batch "${batch_dirs[@]}"
+              batch_dirs=()
+            fi
           done
+          if ((${#batch_dirs[@]} > 0)); then
+            run_build_batch "${batch_dirs[@]}"
+          fi
+          if ((${#project_dirs[@]} <= cache_limit)); then
+            cache_ready=1
+          fi
           echo "cache_ready=$cache_ready" >> "$GITHUB_OUTPUT"
           ccache --show-stats || true
 
